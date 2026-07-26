@@ -685,7 +685,7 @@ export async function runSeed() {
   }
 
   // Process the last 3 months as PAID runs (reuses the same logic the API exposes)
-  const { processPayrollRun, markRunPaid } = await import("@/modules/payroll/payroll.repository");
+  const { processPayrollRun, markRunPaid } = await import("../modules/payroll/payroll.repository.js");
   for (let i = 3; i >= 1; i--) {
     const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
     const runRecord = (await processPayrollRun(d.getMonth() + 1, d.getFullYear())) as any;

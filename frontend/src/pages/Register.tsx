@@ -4,9 +4,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate } from "react-router-dom";
 import { ShieldCheck } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { getErrorMessage } from "@/lib/api";
+import { AuthApi } from "@/lib/endpoints";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/Field";
 import { BrandWordmark } from "@/components/layout/BrandMark";
@@ -14,45 +14,35 @@ import { AuraIllustration } from "@/components/layout/AuraIllustration";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email address."),
-  password: z.string().min(1, "Password is required."),
+  password: z.string().min(8, "Password must be at least 8 characters long."),
+  confirmPassword: z.string().min(1, "Please confirm your password."),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords do not match.",
+  path: ["confirmPassword"],
 });
+
 type FormValues = z.infer<typeof schema>;
 
-const DEMO_ACCOUNTS = [
-  { label: "Super Admin", email: "admin@aadhyaraj.com" },
-  { label: "HR Admin", email: "hr.admin@aadhyaraj.com" },
-  { label: "Manager", email: "manager.demo@aadhyaraj.com" },
-  { label: "Recruiter", email: "recruiter.demo@aadhyaraj.com" },
-  { label: "Finance", email: "finance.demo@aadhyaraj.com" },
-  { label: "Employee", email: "employee.demo@aadhyaraj.com" },
-];
-const DEMO_PASSWORD = "Welcome@123";
-
-export default function Login() {
-  const { login } = useAuth();
+export default function Register() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
 
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormValues>({
+  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
   });
 
   const onSubmit = async (values: FormValues) => {
     setSubmitting(true);
     try {
-      await login(values.email, values.password);
-      navigate("/app/dashboard");
+      await AuthApi.register(values.email, values.password, values.confirmPassword);
+      showToast("Account created. You can sign in now.", "success");
+      navigate("/login");
     } catch (err) {
-      showToast(getErrorMessage(err, "We couldn't sign you in. Check your details and try again."), "error");
+      showToast(getErrorMessage(err, "We couldn't create your account."), "error");
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const fillDemo = (email: string) => {
-    setValue("email", email);
-    setValue("password", DEMO_PASSWORD);
   };
 
   return (
@@ -64,9 +54,9 @@ export default function Login() {
         </div>
         <div className="relative z-10">
           <p className="font-display text-2xl font-medium leading-snug text-white">
-            "The new HRMS turned our scattered HR processes into one calm, connected system."
+            "Create your employee account and start managing your HR experience in one place."
           </p>
-          <p className="mt-4 text-sm text-white/70">Mira Sharma · Chief Executive Officer, Aadhyaraj Technologies</p>
+          <p className="mt-4 text-sm text-white/70">Aadhyaraj HRMS · Employee onboarding</p>
         </div>
         <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 -left-10 h-80 w-80 rounded-full bg-gold-300/20 blur-3xl" />
@@ -77,41 +67,27 @@ export default function Login() {
           <div className="mb-8 lg:hidden">
             <BrandWordmark />
           </div>
-          <h1 className="font-display text-2xl font-medium text-ink">Welcome back</h1>
-          <p className="mt-1.5 text-sm text-ink-faint">Sign in to your Aadhyaraj HRMS workspace.</p>
+          <h1 className="font-display text-2xl font-medium text-ink">Create your account</h1>
+          <p className="mt-1.5 text-sm text-ink-faint">Register as an employee to access your HR workspace.</p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="mt-7 space-y-4">
             <TextField label="Work email" type="email" placeholder="you@aadhyaraj.com" required error={errors.email?.message} {...register("email")} />
             <TextField label="Password" type="password" placeholder="••••••••" required error={errors.password?.message} {...register("password")} />
+            <TextField label="Confirm password" type="password" placeholder="••••••••" required error={errors.confirmPassword?.message} {...register("confirmPassword")} />
             <Button type="submit" className="w-full" size="lg" isLoading={submitting}>
-              Sign in
+              Create account
             </Button>
           </form>
 
-          <div className="mt-8">
+          <div className="mt-8 rounded-2xl border border-line/70 bg-white p-4">
             <div className="flex items-center gap-2 text-[12px] font-medium text-ink-faint">
-              <ShieldCheck size={14} /> Quick demo access
+              <ShieldCheck size={14} /> Your account will be created as an employee profile.
             </div>
-            <p className="mt-1.5 text-[12px] text-ink-faint">Tap a role to autofill credentials, then sign in.</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {DEMO_ACCOUNTS.map((acc) => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => fillDemo(acc.email)}
-                  className="rounded-full border border-line bg-white px-3 py-1.5 text-[12px] font-medium text-ink-soft transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
-                >
-                  {acc.label}
-                </button>
-              ))}
-            </div>
+            <p className="mt-1.5 text-[12px] text-ink-faint">Once registered, you can sign in immediately and update your personal details.</p>
           </div>
 
-          <p className="mt-6 text-center text-[12px] text-ink-faint">
-            New employee? <Link to="/register" className="font-medium text-brand-600 hover:text-brand-700">Create an account</Link>
-          </p>
-          <p className="mt-4 text-center text-[12px] text-ink-faint">
-            <Link to="/" className="hover:text-ink-soft">← Back to homepage</Link>
+          <p className="mt-10 text-center text-[12px] text-ink-faint">
+            Already have an account? <Link to="/login" className="font-medium text-brand-600 hover:text-brand-700">Sign in</Link>
           </p>
         </div>
       </div>

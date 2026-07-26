@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -35,16 +35,23 @@ type SalaryForm = z.infer<typeof salarySchema>;
 
 export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [tab, setTab] = useState("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [salaryOpen, setSalaryOpen] = useState(false);
   const [docTypeOpen, setDocTypeOpen] = useState(false);
 
-  const { data: employee, isLoading } = useQuery({ queryKey: ["employee", id], queryFn: () => EmployeesApi.get(id!), enabled: !!id });
+  const effectiveId = id ?? user?.employee?.id;
+  const { data: employee, isLoading } = useQuery({ queryKey: ["employee", effectiveId], queryFn: () => EmployeesApi.get(effectiveId!), enabled: !!effectiveId });
 
-  const isSelf = user?.employee?.id === id;
+  const isSelf = user?.employee?.id === effectiveId;
   const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
+
+  useEffect(() => {
+    if (!effectiveId || !user || isAdmin || isSelf) return;
+    navigate(`/app/employees/${user.employee?.id ?? "dashboard"}`, { replace: true });
+  }, [effectiveId, isAdmin, isSelf, navigate, user]);
   const isFinance = user?.role === "FINANCE";
   const canViewPayroll = isSelf || isAdmin || isFinance;
   const canEdit = isSelf || isAdmin;
@@ -131,6 +138,7 @@ function OverviewTab({ employee }: { employee: any }) {
           <Info label="Personal email" value={employee.personalEmail ?? "—"} />
           <Info label="Employment type" value={employee.employmentType.replace("_", " ")} />
           <Info label="City" value={employee.city ?? "—"} />
+          <Info label="State" value={employee.state ?? "—"} />
           <Info label="Country" value={employee.country} />
           <Info label="Address" value={employee.address ?? "—"} />
           <Info label="Emergency contact" value={employee.emergencyContactName ?? "—"} />
@@ -419,14 +427,25 @@ function EditEmployeeModal({ open, onClose, employee, isAdmin }: { open: boolean
   const queryClient = useQueryClient();
   const { register, handleSubmit } = useForm({
     defaultValues: {
-      phone: employee.phone ?? "", personalEmail: employee.personalEmail ?? "", address: employee.address ?? "",
-      city: employee.city ?? "", emergencyContactName: employee.emergencyContactName ?? "", emergencyContactPhone: employee.emergencyContactPhone ?? "",
+      firstName: employee.firstName ?? "",
+      lastName: employee.lastName ?? "",
+      gender: employee.gender ?? "",
+      dateOfBirth: employee.dateOfBirth ?? "",
+      phone: employee.phone ?? "",
+      personalEmail: employee.personalEmail ?? "",
+      address: employee.address ?? "",
+      city: employee.city ?? "",
+      state: employee.state ?? "",
+      country: employee.country ?? "India",
+      emergencyContactName: employee.emergencyContactName ?? "",
+      emergencyContactPhone: employee.emergencyContactPhone ?? "",
+      avatarUrl: employee.avatarUrl ?? "",
       status: employee.status,
     },
   });
 
   const mutation = useMutation({
-    mutationFn: (payload: any) => EmployeesApi.update(employee.id, payload),
+    mutationFn: (payload: any) => (isAdmin ? EmployeesApi.update(employee.id, payload) : EmployeesApi.updateMe(payload)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employee", employee.id] });
       showToast("Profile updated.");
@@ -443,12 +462,19 @@ function EditEmployeeModal({ open, onClose, employee, isAdmin }: { open: boolean
       </>
     }>
       <form className="grid gap-4 sm:grid-cols-2">
+        <TextField label="First name" {...register("firstName")} />
+        <TextField label="Last name" {...register("lastName")} />
+        <TextField label="Gender" {...register("gender")} />
+        <TextField label="Date of birth" type="date" {...register("dateOfBirth")} />
         <TextField label="Phone" {...register("phone")} />
         <TextField label="Personal email" type="email" {...register("personalEmail")} />
-        <TextField label="City" {...register("city")} />
         <TextField label="Address" className="sm:col-span-2" {...register("address")} />
+        <TextField label="City" {...register("city")} />
+        <TextField label="State" {...register("state")} />
+        <TextField label="Country" {...register("country")} />
         <TextField label="Emergency contact name" {...register("emergencyContactName")} />
         <TextField label="Emergency contact phone" {...register("emergencyContactPhone")} />
+        <TextField label="Profile image URL" className="sm:col-span-2" {...register("avatarUrl")} />
         {isAdmin && (
           <div className="sm:col-span-2">
             <label className="text-[13px] font-medium text-ink-soft">Employment status</label>

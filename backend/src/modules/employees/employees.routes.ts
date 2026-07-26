@@ -19,7 +19,7 @@ const listQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-employeesRouter.get("/", validate(listQuerySchema, "query"), async (req, res, next) => {
+employeesRouter.get("/", validate(listQuerySchema, "query"), isManagerOrAbove, async (req, res, next) => {
   try {
     res.json(await repo.listEmployees(req.query as any));
   } catch (err) {
@@ -27,7 +27,7 @@ employeesRouter.get("/", validate(listQuerySchema, "query"), async (req, res, ne
   }
 });
 
-employeesRouter.get("/managers", async (_req, res, next) => {
+employeesRouter.get("/managers", isManagerOrAbove, async (_req, res, next) => {
   try {
     res.json({ managers: await repo.getManagersList() });
   } catch (err) {
@@ -35,7 +35,7 @@ employeesRouter.get("/managers", async (_req, res, next) => {
   }
 });
 
-employeesRouter.get("/org-chart", async (_req, res, next) => {
+employeesRouter.get("/org-chart", isManagerOrAbove, async (_req, res, next) => {
   try {
     res.json({ chart: await repo.getOrgChart() });
   } catch (err) {
@@ -80,13 +80,16 @@ employeesRouter.get("/:id", async (req, res, next) => {
   try {
     const employee = await repo.getEmployeeById(req.params.id);
     if (!employee) throw AppError.notFound("Employee not found.");
+    const isSelf = req.user!.employeeId === req.params.id;
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(req.user!.role);
+    if (!isSelf && !isPrivileged) throw AppError.forbidden();
     res.json({ employee });
   } catch (err) {
     next(err);
   }
 });
 
-employeesRouter.get("/:id/direct-reports", async (req, res, next) => {
+employeesRouter.get("/:id/direct-reports", isManagerOrAbove, async (req, res, next) => {
   try {
     res.json({ employees: await repo.listDirectReports(req.params.id) });
   } catch (err) {
@@ -123,6 +126,8 @@ employeesRouter.post("/", isAdmin, validate(createEmployeeSchema), async (req, r
 const updateEmployeeSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
+  gender: z.string().nullable().optional(),
+  dateOfBirth: z.string().nullable().optional(),
   departmentId: z.string().optional(),
   designationId: z.string().optional(),
   managerId: z.string().nullable().optional(),
@@ -132,10 +137,40 @@ const updateEmployeeSchema = z.object({
   personalEmail: z.string().email().optional(),
   address: z.string().optional(),
   city: z.string().optional(),
+  state: z.string().nullable().optional(),
+  country: z.string().optional(),
   emergencyContactName: z.string().optional(),
   emergencyContactPhone: z.string().optional(),
   avatarUrl: z.string().optional(),
   dateOfExit: z.string().nullable().optional(),
+});
+
+employeesRouter.patch("/me", validate(updateEmployeeSchema), async (req, res, next) => {
+  try {
+    const employee = await repo.getEmployeeByUserId(req.user!.userId);
+    if (!employee) throw AppError.notFound("Employee profile not found.");
+
+    const body = {
+      firstName: req.body.firstName,
+      lastName: req.body.lastName,
+      gender: req.body.gender,
+      dateOfBirth: req.body.dateOfBirth,
+      phone: req.body.phone,
+      personalEmail: req.body.personalEmail,
+      address: req.body.address,
+      city: req.body.city,
+      state: req.body.state,
+      country: req.body.country,
+      emergencyContactName: req.body.emergencyContactName,
+      emergencyContactPhone: req.body.emergencyContactPhone,
+      avatarUrl: req.body.avatarUrl,
+    };
+
+    const updated = await repo.updateEmployee(employee.id, body);
+    res.json({ employee: updated });
+  } catch (err) {
+    next(err);
+  }
 });
 
 employeesRouter.patch("/:id", validate(updateEmployeeSchema), async (req, res, next) => {

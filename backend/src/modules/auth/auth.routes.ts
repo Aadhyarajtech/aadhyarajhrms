@@ -6,6 +6,8 @@ import { env } from "@/config/env";
 import { validate } from "@/middleware/validate";
 import { authenticate } from "@/middleware/auth";
 import { AppError } from "@/utils/errors";
+import { Department, Designation, Employee, User } from "@/db/models";
+import { nowIso } from "@/db/connection";
 import { findUserByEmail, findAuthProfile, touchLastLogin, updatePassword } from "./auth.repository";
 
 export const authRouter = Router();
@@ -13,6 +15,15 @@ export const authRouter = Router();
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email address."),
   password: z.string().min(1, "Password is required."),
+});
+
+const registerSchema = z.object({
+  email: z.string().email("Enter a valid email address."),
+  password: z.string().min(8, "Password must be at least 8 characters long."),
+  confirmPassword: z.string().min(1, "Please confirm your password."),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords do not match.",
+  path: ["confirmPassword"],
 });
 
 function signToken(profile: { id: string; email: string; role: string; employeeId: string | null }) {
@@ -45,6 +56,81 @@ function serializeProfile(p: NonNullable<Awaited<ReturnType<typeof findAuthProfi
       : null,
   };
 }
+
+authRouter.post("/register", validate(registerSchema), async (req, res, next) => {
+  try {
+    const { email, password } = req.body as z.infer<typeof registerSchema>;
+    const normalizedEmail = email.toLowerCase().trim();
+    const existing = await findUserByEmail(normalizedEmail);
+    if (existing) {
+      throw AppError.badRequest("An account with this email already exists.");
+    }
+
+    const now = nowIso();
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const user = await User.create({
+      email: normalizedEmail,
+      passwordHash,
+      role: "EMPLOYEE",
+      isActive: true,
+      mustResetPwd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    let department = await Department.findOne({}).sort({ createdAt: 1 }).lean();
+    let designation = await Designation.findOne({}).sort({ createdAt: 1 }).lean();
+    if (!department) {
+      department = await Department.create({
+        name: "General",
+        code: "GEN",
+        description: "Default department created for self-registered employees.",
+        colorHex: "#5B4FE5",
+        headId: null,
+        createdAt: now,
+      });
+    }
+    if (!designation) {
+      designation = await Designation.create({
+        title: "Employee",
+        level: 1,
+        departmentId: department._id,
+      });
+    }
+    const employeeCode = `ART-${new Date().getFullYear()}-${String((await Employee.countDocuments({})) + 1).padStart(4, "0")}`;
+
+    await Employee.create({
+      employeeCode,
+      userId: user._id,
+      firstName: normalizedEmail.split("@")[0] || "Employee",
+      lastName: "User",
+      gender: null,
+      dateOfBirth: null,
+      personalEmail: null,
+      phone: null,
+      address: null,
+      city: null,
+      state: null,
+      country: "India",
+      departmentId: department._id,
+      designationId: designation._id,
+      managerId: null,
+      employmentType: "FULL_TIME",
+      status: "ACTIVE",
+      dateOfJoining: now,
+      dateOfExit: null,
+      emergencyContactName: null,
+      emergencyContactPhone: null,
+      avatarUrl: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    res.status(201).json({ message: "Registration successful. You can now sign in." });
+  } catch (err) {
+    next(err);
+  }
+});
 
 authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
   try {

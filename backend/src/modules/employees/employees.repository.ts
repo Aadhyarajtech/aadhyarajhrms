@@ -171,6 +171,8 @@ export async function createEmployee(input: CreateEmployeeInput) {
 export interface UpdateEmployeeInput {
   firstName?: string;
   lastName?: string;
+  gender?: string | null;
+  dateOfBirth?: string | null;
   departmentId?: string;
   designationId?: string;
   managerId?: string | null;
@@ -180,6 +182,8 @@ export interface UpdateEmployeeInput {
   personalEmail?: string;
   address?: string;
   city?: string;
+  state?: string | null;
+  country?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   avatarUrl?: string;
@@ -202,10 +206,14 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         managerId: merged.managerId ?? null,
         employmentType: merged.employmentType,
         status: merged.status,
+        gender: merged.gender ?? null,
+        dateOfBirth: merged.dateOfBirth ?? null,
         phone: merged.phone ?? null,
         personalEmail: merged.personalEmail ?? null,
         address: merged.address ?? null,
         city: merged.city ?? null,
+        state: merged.state ?? null,
+        country: merged.country ?? "India",
         emergencyContactName: merged.emergencyContactName ?? null,
         emergencyContactPhone: merged.emergencyContactPhone ?? null,
         avatarUrl: merged.avatarUrl ?? null,

@@ -34,6 +34,7 @@ export interface Employee {
   phone: string | null;
   address: string | null;
   city: string | null;
+  state: string | null;
   country: string;
   departmentId: string;
   departmentName: string;

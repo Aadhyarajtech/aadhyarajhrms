@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, Clock, CalendarDays, Briefcase, Target, Wallet,
-  Megaphone, Settings, X,
+  Megaphone, Settings, UserCircle2, X,
 } from "lucide-react";
 import { BrandWordmark } from "./BrandMark";
 import { useAuth } from "@/context/AuthContext";
@@ -17,15 +17,17 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/app/employees", label: "Employees", icon: Users },
-  { to: "/app/org-chart", label: "Org Chart", icon: Network },
   { to: "/app/attendance", label: "Attendance", icon: Clock },
   { to: "/app/leave", label: "Leave", icon: CalendarDays },
-  { to: "/app/recruitment", label: "Recruitment", icon: Briefcase, roles: ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"] },
   { to: "/app/performance", label: "Performance", icon: Target },
   { to: "/app/payroll", label: "Payroll", icon: Wallet },
-  { to: "/app/announcements", label: "Announcements", icon: Megaphone },
-  { to: "/app/settings", label: "Settings", icon: Settings, roles: ["SUPER_ADMIN", "HR_ADMIN"] },
+  { to: "/app/documents", label: "Documents", icon: Briefcase },
+  { to: "/app/employees/", label: "My Profile", icon: UserCircle2 },
+  { to: "/app/settings", label: "Settings", icon: Settings },
+  { to: "/app/employees", label: "Employees", icon: Users, roles: ["SUPER_ADMIN", "HR_ADMIN"] },
+  { to: "/app/org-chart", label: "Org Chart", icon: Network, roles: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"] },
+  { to: "/app/recruitment", label: "Recruitment", icon: Briefcase, roles: ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"] },
+  { to: "/app/announcements", label: "Announcements", icon: Megaphone, roles: ["SUPER_ADMIN", "HR_ADMIN"] },
 ];
 
 export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; onCloseMobile: () => void }) {
@@ -33,6 +35,8 @@ export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; on
   const role = user?.role;
 
   const items = NAV_ITEMS.filter((item) => !item.roles || (role && item.roles.includes(role)));
+  const profilePath = user?.employee?.id ? `/app/employees/${user.employee.id}` : `/app/settings/account`;
+  const settingsPath = role === "EMPLOYEE" ? "/app/settings/account" : "/app/settings";
 
   const content = (
     <div className="flex h-full flex-col">
@@ -43,22 +47,25 @@ export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; on
         </button>
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
-        {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={onCloseMobile}
-            className={({ isActive }) =>
-              cx(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors",
-                isActive ? "bg-brand-50 text-brand-700" : "text-ink-soft hover:bg-black/[0.04] hover:text-ink"
-              )
-            }
-          >
-            <item.icon size={18} strokeWidth={2} />
-            {item.label}
-          </NavLink>
-        ))}
+        {items.map((item) => {
+          const resolvedTo = item.to === "/app/employees/" ? profilePath : item.to === "/app/settings" ? settingsPath : item.to;
+          return (
+            <NavLink
+              key={item.to}
+              to={resolvedTo}
+              onClick={onCloseMobile}
+              className={({ isActive }) =>
+                cx(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors",
+                  isActive ? "bg-brand-50 text-brand-700" : "text-ink-soft hover:bg-black/[0.04] hover:text-ink"
+                )
+              }
+            >
+              <item.icon size={18} strokeWidth={2} />
+              {item.label}
+            </NavLink>
+          );
+        })}
       </nav>
       <div className="border-t border-line/70 p-4">
         <div className="rounded-2xl bg-gradient-to-br from-brand-50 to-gold-50 p-4">

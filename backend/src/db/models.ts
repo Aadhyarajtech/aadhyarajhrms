@@ -104,6 +104,7 @@ export interface EmployeeDoc {
   phone: string | null;
   address: string | null;
   city: string | null;
+  state: string | null;
   country: string;
   departmentId: string;
   designationId: string;
@@ -132,6 +133,7 @@ const employeeSchema = new Schema<EmployeeDoc>(
     phone: { type: String, default: null },
     address: { type: String, default: null },
     city: { type: String, default: null },
+    state: { type: String, default: null },
     country: { type: String, default: "India" },
     departmentId: { type: String, required: true },
     designationId: { type: String, required: true },

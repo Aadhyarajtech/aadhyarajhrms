@@ -8,8 +8,10 @@ import type {
 // --- Auth --------------------------------------------------------------------
 export const AuthApi = {
   login: (email: string, password: string) =>
-    api.post<{ token: string; user: AuthUser }>("/auth/login", { email, password }).then((r) => r.data),
-  me: () => api.get<{ user: AuthUser }>("/auth/me").then((r) => r.data.user),
+    api.post<{ token: string; user: AuthUser }>('/auth/login', { email, password }).then((r) => r.data),
+  register: (email: string, password: string, confirmPassword: string) =>
+    api.post('/auth/register', { email, password, confirmPassword }).then((r) => r.data),
+  me: () => api.get<{ user: AuthUser }>('/auth/me').then((r) => r.data.user),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post("/auth/change-password", { currentPassword, newPassword }).then((r) => r.data),
 };
@@ -27,6 +29,7 @@ export const EmployeesApi = {
   orgChart: () => api.get<{ chart: any[] }>("/employees/org-chart").then((r) => r.data.chart),
   create: (payload: Record<string, unknown>) => api.post<{ employee: Employee }>("/employees", payload).then((r) => r.data.employee),
   update: (id: string, payload: Record<string, unknown>) => api.patch<{ employee: Employee }>(`/employees/${id}`, payload).then((r) => r.data.employee),
+  updateMe: (payload: Record<string, unknown>) => api.patch<{ employee: Employee }>('/employees/me', payload).then((r) => r.data.employee),
   headcountByDepartment: () => api.get<{ data: { department: string; color: string; count: number }[] }>("/employees/analytics/headcount-by-department").then((r) => r.data.data),
   genderDiversity: () => api.get<{ data: { gender: string; count: number }[] }>("/employees/analytics/gender-diversity").then((r) => r.data.data),
   employmentType: () => api.get<{ data: { type: string; count: number }[] }>("/employees/analytics/employment-type").then((r) => r.data.data),
