@@ -1,3 +1,4 @@
+// path: src/app.ts
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -25,20 +26,44 @@ export function createApp() {
   const app = express();
 
   app.use(helmet({ crossOriginResourcePolicy: false }));
-  app.use(cors({ origin: env.clientOrigin, credentials: true }));
+  app.use(
+    cors({
+      origin(origin, callback) {
+        // `origin` is undefined for same-origin/non-browser requests (curl, Postman, server-to-server) — allow those.
+        if (!origin || env.clientOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(`CORS blocked for origin: ${origin}`));
+        }
+      },
+      credentials: true,
+    }),
+  );
   app.use(compression());
   app.use(express.json({ limit: "2mb" }));
   app.use(morgan(env.isProd ? "combined" : "dev"));
 
-  const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 600, standardHeaders: true, legacyHeaders: false });
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
   app.use("/api", apiLimiter);
 
-  const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
   app.use("/api/auth/login", authLimiter);
 
   app.use("/uploads", express.static(UPLOAD_DIR_ABSOLUTE));
 
-  app.get("/api/health", (_req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
+  app.get("/api/health", (_req, res) =>
+    res.json({ status: "ok", time: new Date().toISOString() }),
+  );
 
   app.use("/api/auth", authRouter);
   app.use("/api/employees", employeesRouter);
