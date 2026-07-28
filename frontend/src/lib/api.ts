@@ -1,10 +1,11 @@
 // path: src/lib/api.ts
 import axios from "axios";
 
-// Reads from .env (VITE_API_URL) so the two stay in sync; falls back to the
-// known-good production URL if the env var is missing at build time.
+// Reads from .env (VITE_API_URL) so the two stay in sync; falls back to
+// the local dev proxy in development, or the known-good production URL in prod.
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "https://aadhyarajhrms-1.onrender.com/api";
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? "/api" : "https://aadhyarajhrms-1.onrender.com/api");
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
