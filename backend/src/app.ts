@@ -33,7 +33,15 @@ export function createApp() {
         if (!origin || env.clientOrigins.includes(origin)) {
           callback(null, true);
         } else {
-          callback(new Error(`CORS blocked for origin: ${origin}`));
+          // Passing `false` (not an Error) tells the cors package to simply
+          // omit the Access-Control-Allow-* headers and move on, instead of
+          // throwing into Express's error handler and returning a 500.
+          // A rejected origin should look like "no CORS headers" to the
+          // browser, not "server crashed".
+          console.warn(
+            `[cors] blocked request from disallowed origin: ${origin}`,
+          );
+          callback(null, false);
         }
       },
       credentials: true,
