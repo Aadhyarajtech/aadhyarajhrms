@@ -1,11 +1,11 @@
 export function BrandMark({ size = 32 }: { size?: number }) {
   return (
     <img
-      src="logo.jpeg"
+      src="/logo.jpeg"
       alt="Aadhyaraj Technologies logo"
       width={size}
       height={size}
-      className="shrink-0 roundex-xl object-cover"
+      className="shrink-0 rounded-xl object-cover"
     />
   );
 }

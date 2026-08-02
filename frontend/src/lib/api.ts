@@ -1,11 +1,12 @@
 // path: src/lib/api.ts
 import axios from "axios";
 
-// Reads from .env (VITE_API_URL) so the two stay in sync; falls back to
-// the local dev proxy in development, or the known-good production URL in prod.
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "/api" : "https://aadhyarajhrms-1.onrender.com/api");
+// In local development, always go through Vite's proxy so the UI talks to
+// the backend running on localhost:4000. Only use the explicit public URL in
+// production builds.
+const API_BASE_URL = import.meta.env.DEV
+  ? "/api"
+  : import.meta.env.VITE_API_URL || "https://aadhyarajhrms-1.onrender.com/api";
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
