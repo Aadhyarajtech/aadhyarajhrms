@@ -56,6 +56,10 @@ export default function App() {
           path="/settings"
           element={<Navigate to="/app/settings/account" replace />}
         />
+        <Route
+          path="/recruitment"
+          element={<Navigate to="/app/recruitment" replace />}
+        />
 
         <Route
           path="/app"
