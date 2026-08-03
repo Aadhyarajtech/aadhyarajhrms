@@ -40,6 +40,22 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/leave" element={<Navigate to="/app/leave" replace />} />
+        <Route
+          path="/performance"
+          element={<Navigate to="/app/performance" replace />}
+        />
+        <Route
+          path="/payroll"
+          element={<Navigate to="/app/payroll" replace />}
+        />
+        <Route
+          path="/documents"
+          element={<Navigate to="/app/documents" replace />}
+        />
+        <Route
+          path="/settings"
+          element={<Navigate to="/app/settings/account" replace />}
+        />
 
         <Route
           path="/app"
