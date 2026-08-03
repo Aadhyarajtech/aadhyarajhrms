@@ -8,7 +8,9 @@ const Landing = lazy(() => import("@/pages/Landing"));
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
-const EmployeeDirectory = lazy(() => import("@/pages/employees/EmployeeDirectory"));
+const EmployeeDirectory = lazy(
+  () => import("@/pages/employees/EmployeeDirectory"),
+);
 const EmployeeProfile = lazy(() => import("@/pages/employees/EmployeeProfile"));
 const OrgChart = lazy(() => import("@/pages/employees/OrgChart"));
 const Attendance = lazy(() => import("@/pages/Attendance"));
@@ -37,6 +39,7 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/leave" element={<Navigate to="/app/leave" replace />} />
 
         <Route
           path="/app"
@@ -48,16 +51,32 @@ export default function App() {
         >
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="employees" element={<ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}><EmployeeDirectory /></ProtectedRoute>} />
+          <Route
+            path="employees"
+            element={
+              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
+                <EmployeeDirectory />
+              </ProtectedRoute>
+            }
+          />
           <Route path="employees/:id" element={<EmployeeProfile />} />
           <Route path="documents" element={<EmployeeProfile />} />
-          <Route path="org-chart" element={<ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN", "MANAGER"]}><OrgChart /></ProtectedRoute>} />
+          <Route
+            path="org-chart"
+            element={
+              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN", "MANAGER"]}>
+                <OrgChart />
+              </ProtectedRoute>
+            }
+          />
           <Route path="attendance" element={<Attendance />} />
           <Route path="leave" element={<Leave />} />
           <Route
             path="recruitment"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}>
+              <ProtectedRoute
+                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
+              >
                 <Recruitment />
               </ProtectedRoute>
             }
@@ -65,14 +84,23 @@ export default function App() {
           <Route
             path="recruitment/:jobId"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}>
+              <ProtectedRoute
+                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
+              >
                 <JobDetail />
               </ProtectedRoute>
             }
           />
           <Route path="performance" element={<Performance />} />
           <Route path="payroll" element={<Payroll />} />
-          <Route path="announcements" element={<ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}><Announcements /></ProtectedRoute>} />
+          <Route
+            path="announcements"
+            element={
+              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
+                <Announcements />
+              </ProtectedRoute>
+            }
+          />
           <Route path="settings/account" element={<AccountSettings />} />
           <Route
             path="settings"
