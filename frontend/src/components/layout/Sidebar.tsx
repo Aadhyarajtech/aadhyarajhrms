@@ -118,7 +118,7 @@ export function Sidebar({
           );
         })}
       </nav>
-      <div className="border-t border-line/70 p-4">
+      {/* <div className="border-t border-line/70 p-4">
         <div className="rounded-2xl bg-gradient-to-br from-brand-50 to-gold-50 p-4">
           <p className="font-display text-[13px] font-medium text-ink">
             Need help?
@@ -127,7 +127,7 @@ export function Sidebar({
             Reach IT & Security for access or technical issues.
           </p>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 
