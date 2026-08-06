@@ -125,7 +125,15 @@ export default function App() {
           <Route
             path="settings"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "MANAGER",
+                  "RECRUITER",
+                  "FINANCE",
+                ]}
+              >
                 <Settings />
               </ProtectedRoute>
             }
