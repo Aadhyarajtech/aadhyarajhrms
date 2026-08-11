@@ -11,8 +11,11 @@ import {
   Megaphone,
   Settings,
   UserCircle2,
+  Receipt,
+  ClipboardList,
   X,
 } from "lucide-react";
+
 import { BrandWordmark } from "./BrandMark";
 import { useAuth } from "@/context/AuthContext";
 import { cx } from "@/lib/format";
@@ -26,32 +29,94 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/app/attendance", label: "Attendance", icon: Clock },
-  { to: "/app/leave", label: "Leave", icon: CalendarDays },
-  { to: "/app/performance", label: "Performance", icon: Target },
-  { to: "/app/payroll", label: "Payroll", icon: Wallet },
-  { to: "/app/documents", label: "Documents", icon: Briefcase },
-  { to: "/app/employees/", label: "My Profile", icon: UserCircle2 },
-  { to: "/app/settings", label: "Settings", icon: Settings },
+  {
+    to: "/app/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+  },
+
+  {
+    to: "/app/my-tickets",
+    label: "My Tickets",
+    icon: Receipt,
+  },
+
+  {
+    to: "/app/tickets",
+    label: "Tickets",
+    icon: ClipboardList,
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "FINANCE",
+      "IT_SUPPORT",
+    ],
+  },
+
+  {
+    to: "/app/attendance",
+    label: "Attendance",
+    icon: Clock,
+  },
+
+  {
+    to: "/app/leave",
+    label: "Leave",
+    icon: CalendarDays,
+  },
+
+  {
+    to: "/app/performance",
+    label: "Performance",
+    icon: Target,
+  },
+
+  {
+    to: "/app/payroll",
+    label: "Payroll",
+    icon: Wallet,
+  },
+
+  {
+    to: "/app/documents",
+    label: "Documents",
+    icon: Briefcase,
+  },
+
+  {
+    to: "/app/employees/",
+    label: "My Profile",
+    icon: UserCircle2,
+  },
+
+  {
+    to: "/app/settings",
+    label: "Settings",
+    icon: Settings,
+  },
+
   {
     to: "/app/employees",
     label: "Employees",
     icon: Users,
     roles: ["SUPER_ADMIN", "HR_ADMIN"],
   },
+
   {
     to: "/app/org-chart",
     label: "Org Chart",
     icon: Network,
     roles: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"],
   },
+
   {
     to: "/app/recruitment",
     label: "Recruitment",
     icon: Briefcase,
     roles: ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"],
   },
+
   {
     to: "/app/announcements",
     label: "Announcements",
@@ -68,29 +133,42 @@ export function Sidebar({
   onCloseMobile: () => void;
 }) {
   const { user } = useAuth();
+
+  console.log("USER:", user);
+  console.log("ROLE:", user?.role);
+
   const role = user?.role;
 
   const items = NAV_ITEMS.filter(
-    (item) => !item.roles || (role && item.roles.includes(role)),
+    (item) =>
+      !item.roles ||
+      (role && item.roles.includes(role))
   );
+
   const profilePath = user?.employee?.id
     ? `/app/employees/${user.employee.id}`
-    : `/app/settings/account`;
+    : "/app/settings/account";
+
   const settingsPath =
-    role === "EMPLOYEE" ? "/app/settings/account" : "/app/settings";
+    role === "EMPLOYEE"
+      ? "/app/settings/account"
+      : "/app/settings";
 
   const content = (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-5 pt-6 pb-5">
+      <div className="mb-6 flex items-center justify-between">
         <BrandWordmark />
+
         <button
+          type="button"
           onClick={onCloseMobile}
-          className="rounded-lg p-1 text-ink-faint hover:bg-black/5 md:hidden"
+          className="rounded-lg p-2 text-ink-soft hover:bg-black/[0.04] lg:hidden"
         >
           <X size={18} />
         </button>
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
+
+      <nav className="space-y-1">
         {items.map((item) => {
           const resolvedTo =
             item.to === "/app/employees/"
@@ -98,6 +176,7 @@ export function Sidebar({
               : item.to === "/app/settings"
                 ? settingsPath
                 : item.to;
+
           return (
             <NavLink
               key={item.to}
@@ -108,7 +187,7 @@ export function Sidebar({
                   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors",
                   isActive
                     ? "bg-brand-50 text-brand-700"
-                    : "text-ink-soft hover:bg-black/[0.04] hover:text-ink",
+                    : "text-ink-soft hover:bg-black/[0.04] hover:text-ink"
                 )
               }
             >
@@ -118,31 +197,35 @@ export function Sidebar({
           );
         })}
       </nav>
-      {/* <div className="border-t border-line/70 p-4">
-        <div className="rounded-2xl bg-gradient-to-br from-brand-50 to-gold-50 p-4">
-          <p className="font-display text-[13px] font-medium text-ink">
+
+      <div className="mt-auto pt-6">
+        <div className="rounded-xl bg-black/[0.03] p-3">
+          <p className="text-xs font-medium text-ink">
             Need help?
           </p>
-          <p className="mt-1 text-[12px] text-ink-faint">
+
+          <p className="mt-1 text-xs text-ink-faint">
             Reach IT & Security for access or technical issues.
           </p>
         </div>
-      </div> */}
+      </div>
     </div>
   );
 
   return (
     <>
-      <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:border-line/70 md:bg-white">
+      <aside className="hidden h-full w-64 shrink-0 border-r border-line bg-white p-5 lg:block">
         {content}
       </aside>
+
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <div
-            className="absolute inset-0 bg-ink/40 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/30"
             onClick={onCloseMobile}
           />
-          <aside className="absolute inset-y-0 left-0 w-72 bg-white shadow-lifted animate-fade-up">
+
+          <aside className="relative h-full w-72 bg-white p-5 shadow-xl">
             {content}
           </aside>
         </div>

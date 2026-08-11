@@ -413,15 +413,17 @@ export async function runSeed() {
   const taSpecialist = findByTitle("Talent Acquisition Specialist")[0];
   const financeManager = findByTitle("Finance Manager")[0];
   const swEngineeringReport = allEmployees.find((e) => e.managerId === engManager?.id) ?? findByTitle("Senior Software Engineer")[0];
-
+  const itSupportSpecialist =findByTitle("IT Support Specialist")[0];
+  
   await reassignDemoAccount(itVp, "admin@aadhyaraj.com", "SUPER_ADMIN");
   await reassignDemoAccount(hrVp, "hr.admin@aadhyaraj.com", "HR_ADMIN");
   await reassignDemoAccount(engManager, "manager.demo@aadhyaraj.com", "MANAGER");
   await reassignDemoAccount(taSpecialist, "recruiter.demo@aadhyaraj.com", "RECRUITER");
   await reassignDemoAccount(financeManager, "finance.demo@aadhyaraj.com", "FINANCE");
   await reassignDemoAccount(swEngineeringReport, "employee.demo@aadhyaraj.com", "EMPLOYEE");
+  await reassignDemoAccount(itSupportSpecialist, "it.support.demo@aadhyaraj.com", "IT_SUPPORT");
 
-  const demoAccountIds = new Set([itVp.id, hrVp.id, engManager.id, taSpecialist.id, financeManager.id, swEngineeringReport.id]);
+  const demoAccountIds = new Set([itVp.id, hrVp.id, engManager.id, taSpecialist.id, financeManager.id, swEngineeringReport.id, itSupportSpecialist.id,]);
 
   // --- Holidays (illustrative, India) ---------------------------------------
   console.log("Seeding holidays...");
@@ -746,6 +748,7 @@ export async function runSeed() {
   console.log(`  Recruiter      -> recruiter.demo@aadhyaraj.com`);
   console.log(`  Finance        -> finance.demo@aadhyaraj.com`);
   console.log(`  Employee       -> employee.demo@aadhyaraj.com`);
+  console.log(`  IT Support     -> it.support.demo@aadhyaraj.com`);
   console.log("  (Every other seeded employee can also log in with their");
   console.log("   @aadhyaraj.com email and the same password.)");
   console.log("----------------------------------------------------------------");
@@ -761,5 +764,8 @@ export async function seedIfEmpty() {
 }
 
 // Allow running this file directly via `npm run seed` for a manual, forced reseed.
-
+runSeed().catch((err) => {
+  console.error("Seed failed:", err);
+  process.exit(1);
+});
 

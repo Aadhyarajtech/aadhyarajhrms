@@ -24,7 +24,9 @@ const DEMO_ACCOUNTS = [
   { label: "Manager", email: "manager.demo@aadhyaraj.com" },
   { label: "Recruiter", email: "recruiter.demo@aadhyaraj.com" },
   { label: "Finance", email: "finance.demo@aadhyaraj.com" },
+  { label: "IT Support", email: "it.support.demo@aadhyaraj.com" },
   { label: "Employee", email: "employee.demo@aadhyaraj.com" },
+  
 ];
 const DEMO_PASSWORD = "Welcome@123";
 

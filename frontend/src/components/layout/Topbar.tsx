@@ -9,6 +9,7 @@ import {
   UserCircle2,
   Clock,
   Check,
+  TicketPlus,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -18,7 +19,13 @@ import { Button } from "@/components/ui/Button";
 import { timeAgo, cx } from "@/lib/format";
 import { getErrorMessage } from "@/lib/api";
 
-export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
+export function Topbar({
+  onOpenMobileNav,
+  onRaiseTicket,
+}: {
+  onOpenMobileNav: () => void;
+  onRaiseTicket: () => void;
+}) {
   const { user, logout } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -77,7 +84,26 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
     await NotificationsApi.markRead(id);
     queryClient.invalidateQueries({ queryKey: ["notifications"] });
     setNotifOpen(false);
-    if (link) navigate(link);
+    if (link) {
+      // Normalize legacy backend links that point to routes without the '/app' prefix.
+      // If link is an absolute URL, open it directly. If it starts with '/' but not '/app',
+      // prefix with '/app' so the frontend router resolves it correctly.
+      try {
+        if (/^https?:\/\//.test(link)) {
+          window.open(link, "_blank");
+          return;
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      let normalized = link;
+      if (normalized.startsWith("/") && !normalized.startsWith("/app/")) {
+        normalized = "/app" + normalized;
+      }
+
+      navigate(normalized);
+    }
   };
 
   return (
@@ -101,33 +127,44 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
 
       <div className="flex items-center gap-2 sm:gap-3">
         {user?.employee && (
-          <div className="hidden items-center gap-2 sm:flex">
-            {todayAttendance?.checkIn && !todayAttendance?.checkOut ? (
-              <Button
-                size="sm"
-                variant="outline"
-                leftIcon={<Clock size={14} />}
-                onClick={() => checkOutMutation.mutate()}
-                isLoading={checkOutMutation.isPending}
-              >
-                Check out
-              </Button>
-            ) : todayAttendance?.checkOut ? (
-              <span className="inline-flex items-center gap-1.5 rounded-xl bg-success-50 px-3 py-2 text-[13px] font-medium text-success-700">
-                <Check size={14} /> Day complete
-              </span>
-            ) : (
-              <Button
-                size="sm"
-                leftIcon={<Clock size={14} />}
-                onClick={() => checkInMutation.mutate()}
-                isLoading={checkInMutation.isPending}
-              >
-                Check in
-              </Button>
-            )}
-          </div>
-        )}
+  <div className="hidden items-center gap-2 sm:flex">
+
+    <Button
+      size="sm"
+      variant="secondary"
+       leftIcon={<TicketPlus size={14} />}
+  onClick={onRaiseTicket}
+>
+  Raise Ticket
+</Button>
+
+    {todayAttendance?.checkIn && !todayAttendance?.checkOut ? (
+      <Button
+        size="sm"
+        variant="outline"
+        leftIcon={<Clock size={14} />}
+        onClick={() => checkOutMutation.mutate()}
+        isLoading={checkOutMutation.isPending}
+      >
+        Check out
+      </Button>
+    ) : todayAttendance?.checkOut ? (
+      <span className="inline-flex items-center gap-1.5 rounded-xl bg-success-50 px-3 py-2 text-[13px] font-medium text-success-700">
+        <Check size={14} /> Day complete
+      </span>
+    ) : (
+      <Button
+        size="sm"
+        leftIcon={<Clock size={14} />}
+        onClick={() => checkInMutation.mutate()}
+        isLoading={checkInMutation.isPending}
+      >
+        Check in
+      </Button>
+    )}
+
+  </div>
+)}
 
         <div className="relative" ref={notifRef}>
           <button
@@ -247,6 +284,8 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
           )}
         </div>
       </div>
+     
     </header>
   );
 }
+

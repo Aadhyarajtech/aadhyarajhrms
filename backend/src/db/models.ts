@@ -635,6 +635,7 @@ export type NotificationType =
   | "PAYROLL"
   | "PERFORMANCE"
   | "RECRUITMENT"
+  | "TICKET_MESSAGE"
   | "SYSTEM";
 
 export interface NotificationDoc {
@@ -654,7 +655,7 @@ const notificationSchema = new Schema<NotificationDoc>(
     userId: { type: String, required: true },
     type: {
       type: String,
-      enum: ["LEAVE_REQUEST", "LEAVE_DECISION", "ANNOUNCEMENT", "PAYROLL", "PERFORMANCE", "RECRUITMENT", "SYSTEM"],
+      enum: ["LEAVE_REQUEST", "LEAVE_DECISION", "ANNOUNCEMENT", "PAYROLL", "PERFORMANCE", "RECRUITMENT", "TICKET_MESSAGE", "SYSTEM"],
       default: "SYSTEM",
     },
     title: { type: String, required: true },
@@ -752,3 +753,128 @@ const auditLogSchema = new Schema<AuditLogDoc>(
 );
 auditLogSchema.index({ entity: 1, entityId: 1 });
 export const AuditLog = model<AuditLogDoc>("AuditLog", auditLogSchema);
+// ---------------------------------------------------------------------------
+// Tickets
+// ---------------------------------------------------------------------------
+
+export interface TicketDoc {
+  _id: string;
+  ticketId: string;
+  employeeId: string;
+
+  category:
+    | "HR"
+    | "Payroll"
+    | "Leave"
+    | "Attendance"
+    | "Recruitment"
+    | "Employee Referral"
+    | "IT Support";
+
+  priority: "LOW" | "MEDIUM" | "HIGH";
+
+  subject: string;
+  description: string;
+
+  attachment: string | null;
+
+  assignedTo: string;
+
+  status:
+    | "OPEN"
+    | "IN_PROGRESS"
+    | "WAITING_FOR_EMPLOYEE"
+    | "RESOLVED"
+    | "CLOSED";
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+const ticketSchema = new Schema<TicketDoc>(
+  {
+    _id: idField("tkt"),
+
+    ticketId: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+
+    employeeId: {
+      type: String,
+      required: true,
+    },
+
+    category: {
+      type: String,
+      enum: [
+        "HR",
+        "Payroll",
+        "Leave",
+        "Attendance",
+        "Recruitment",
+        "Employee Referral",
+        "IT Support",
+      ],
+      required: true,
+    },
+
+    priority: {
+      type: String,
+      enum: ["LOW", "MEDIUM", "HIGH"],
+      default: "MEDIUM",
+    },
+
+    subject: {
+      type: String,
+      required: true,
+    },
+
+    description: {
+      type: String,
+      required: true,
+    },
+
+    attachment: {
+      type: String,
+      default: null,
+    },
+
+    assignedTo: {
+      type: String,
+      required: true,
+    },
+
+    status: {
+      type: String,
+      enum: [
+        "OPEN",
+        "IN_PROGRESS",
+        "WAITING_FOR_EMPLOYEE",
+        "RESOLVED",
+        "CLOSED",
+      ],
+      default: "OPEN",
+    },
+
+    createdAt: {
+      type: String,
+      required: true,
+    },
+
+    updatedAt: {
+      type: String,
+      required: true,
+    },
+  },
+  baseOptions
+);
+
+ticketSchema.index({ employeeId: 1 });
+
+ticketSchema.index({ assignedTo: 1 });
+
+ticketSchema.index({ status: 1 });
+
+export const Ticket = model<TicketDoc>("Ticket", ticketSchema);
