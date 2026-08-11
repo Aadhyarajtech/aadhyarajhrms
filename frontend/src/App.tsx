@@ -1,65 +1,130 @@
 import { Suspense, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+
 import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Loader2 } from "lucide-react";
 
+// =========================================================
+// PUBLIC PAGES
+// =========================================================
+
 const Landing = lazy(() => import("@/pages/Landing"));
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
+
+// =========================================================
+// MAIN PAGES
+// =========================================================
+
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const MyTickets = lazy(() => import("@/pages/MyTickets"));
+const Tickets = lazy(() => import("@/pages/Tickets"));
+
+// IMPORTANT:
+// TicketConversation is the chat/message page.
+const TicketConversation = lazy(
+  () => import("@/pages/TicketConversation"),
+);
+
+// =========================================================
+// EMPLOYEES
+// =========================================================
+
 const EmployeeDirectory = lazy(
   () => import("@/pages/employees/EmployeeDirectory"),
 );
-const EmployeeProfile = lazy(() => import("@/pages/employees/EmployeeProfile"));
-const OrgChart = lazy(() => import("@/pages/employees/OrgChart"));
+
+const EmployeeProfile = lazy(
+  () => import("@/pages/employees/EmployeeProfile"),
+);
+
+const OrgChart = lazy(
+  () => import("@/pages/employees/OrgChart"),
+);
+
+// =========================================================
+// HR MODULES
+// =========================================================
+
 const Attendance = lazy(() => import("@/pages/Attendance"));
 const Leave = lazy(() => import("@/pages/Leave"));
-const Recruitment = lazy(() => import("@/pages/recruitment/Recruitment"));
-const JobDetail = lazy(() => import("@/pages/recruitment/JobDetail"));
+
+const Recruitment = lazy(
+  () => import("@/pages/recruitment/Recruitment"),
+);
+
+const JobDetail = lazy(
+  () => import("@/pages/recruitment/JobDetail"),
+);
+
 const Performance = lazy(() => import("@/pages/Performance"));
 const Payroll = lazy(() => import("@/pages/Payroll"));
-const Announcements = lazy(() => import("@/pages/Announcements"));
-const Settings = lazy(() => import("@/pages/settings/Settings"));
-const AccountSettings = lazy(() => import("@/pages/settings/AccountSettings"));
+const Announcements = lazy(
+  () => import("@/pages/Announcements"),
+);
+
+// =========================================================
+// SETTINGS
+// =========================================================
+
+const Settings = lazy(
+  () => import("@/pages/settings/Settings"),
+);
+
+const AccountSettings = lazy(
+  () => import("@/pages/settings/AccountSettings"),
+);
+
+// =========================================================
+// 404
+// =========================================================
+
 const NotFound = lazy(() => import("@/pages/NotFound"));
+
+// =========================================================
+// LOADING
+// =========================================================
 
 function PageFallback() {
   return (
-    <div className="flex h-[60vh] items-center justify-center">
-      <Loader2 className="animate-spin text-brand-500" size={26} />
+    <div className="flex min-h-[300px] items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-brand-600" />
     </div>
   );
 }
+
+// =========================================================
+// APP
+// =========================================================
 
 export default function App() {
   return (
     <Suspense fallback={<PageFallback />}>
       <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/leave" element={<Navigate to="/app/leave" replace />} />
+
+        {/* =====================================================
+            PUBLIC ROUTES
+        ===================================================== */}
+
         <Route
-          path="/performance"
-          element={<Navigate to="/app/performance" replace />}
+          path="/"
+          element={<Landing />}
         />
+
         <Route
-          path="/payroll"
-          element={<Navigate to="/app/payroll" replace />}
+          path="/login"
+          element={<Login />}
         />
+
         <Route
-          path="/documents"
-          element={<Navigate to="/app/documents" replace />}
+          path="/register"
+          element={<Register />}
         />
-        <Route
-          path="/settings"
-          element={<Navigate to="/app/settings/account" replace />}
-        />
-        <Route
-          path="/recruitment"
-          element={<Navigate to="/app/recruitment" replace />}
-        />
+
+        {/* =====================================================
+            PROTECTED APPLICATION
+        ===================================================== */}
 
         <Route
           path="/app"
@@ -69,59 +134,249 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
+
+          {/* =================================================
+              DEFAULT
+          ================================================= */}
+
+          <Route
+            index
+            element={
+              <Navigate
+                to="dashboard"
+                replace
+              />
+            }
+          />
+
+          {/* =================================================
+              DASHBOARD
+          ================================================= */}
+
+          <Route
+            path="dashboard"
+            element={<Dashboard />}
+          />
+
+          {/* =================================================
+              MY TICKETS
+          ================================================= */}
+
+          <Route
+            path="my-tickets"
+            element={<MyTickets />}
+          />
+
+          {/* =================================================
+              ADMIN / HR TICKETS
+          ================================================= */}
+
+          <Route
+            path="tickets"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "MANAGER",
+                  "FINANCE",
+                  "IT_SUPPORT",
+                ]}
+              >
+                <Tickets />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* =================================================
+              IMPORTANT:
+
+              /app/tickets/:id
+
+              Clicking "Chat / Message" or "View" from
+              Ticket Management opens TicketConversation.
+          ================================================= */}
+
+          <Route
+            path="tickets/:id"
+            element={
+              <ProtectedRoute>
+                <TicketConversation />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* =================================================
+              OLD CHAT URL SUPPORT
+
+              This keeps the previous URL working too:
+              /app/ticket-conversation/:id
+          ================================================= */}
+
+          <Route
+            path="ticket-conversation/:id"
+            element={
+              <ProtectedRoute>
+                <TicketConversation />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* =================================================
+              EMPLOYEES
+          ================================================= */}
+
           <Route
             path="employees"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                ]}
+              >
                 <EmployeeDirectory />
               </ProtectedRoute>
             }
           />
-          <Route path="employees/:id" element={<EmployeeProfile />} />
-          <Route path="documents" element={<EmployeeProfile />} />
+
+          <Route
+            path="employees/:id"
+            element={<EmployeeProfile />}
+          />
+
+          {/* =================================================
+              ORG CHART
+          ================================================= */}
+
           <Route
             path="org-chart"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN", "MANAGER"]}>
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "MANAGER",
+                ]}
+              >
                 <OrgChart />
               </ProtectedRoute>
             }
           />
-          <Route path="attendance" element={<Attendance />} />
-          <Route path="leave" element={<Leave />} />
+
+          {/* =================================================
+              ATTENDANCE
+          ================================================= */}
+
+          <Route
+            path="attendance"
+            element={<Attendance />}
+          />
+
+          {/* =================================================
+              LEAVE
+          ================================================= */}
+
+          <Route
+            path="leave"
+            element={<Leave />}
+          />
+
+          {/* =================================================
+              RECRUITMENT
+          ================================================= */}
+
           <Route
             path="recruitment"
             element={
               <ProtectedRoute
-                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "RECRUITER",
+                  "MANAGER",
+                ]}
               >
                 <Recruitment />
               </ProtectedRoute>
             }
           />
+
           <Route
             path="recruitment/:jobId"
             element={
               <ProtectedRoute
-                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "RECRUITER",
+                  "MANAGER",
+                ]}
               >
                 <JobDetail />
               </ProtectedRoute>
             }
           />
-          <Route path="performance" element={<Performance />} />
-          <Route path="payroll" element={<Payroll />} />
+
+          {/* =================================================
+              PERFORMANCE
+          ================================================= */}
+
+          <Route
+            path="performance"
+            element={<Performance />}
+          />
+
+          {/* =================================================
+              PAYROLL
+          ================================================= */}
+
+          <Route
+            path="payroll"
+            element={<Payroll />}
+          />
+
+          {/* =================================================
+              DOCUMENTS
+          ================================================= */}
+
+          <Route
+            path="documents"
+            element={
+              <Navigate
+                to="/app/dashboard"
+                replace
+              />
+            }
+          />
+
+          {/* =================================================
+              ANNOUNCEMENTS
+          ================================================= */}
+
           <Route
             path="announcements"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                ]}
+              >
                 <Announcements />
               </ProtectedRoute>
             }
           />
-          <Route path="settings/account" element={<AccountSettings />} />
+
+          {/* =================================================
+              SETTINGS
+          ================================================= */}
+
+          <Route
+            path="settings/account"
+            element={<AccountSettings />}
+          />
+
           <Route
             path="settings"
             element={
@@ -138,9 +393,27 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* =================================================
+              UNKNOWN APP ROUTE
+          ================================================= */}
+
+          <Route
+            path="*"
+            element={<NotFound />}
+          />
+
         </Route>
 
-        <Route path="*" element={<NotFound />} />
+        {/* =====================================================
+            UNKNOWN PUBLIC ROUTE
+        ===================================================== */}
+
+        <Route
+          path="*"
+          element={<NotFound />}
+        />
+
       </Routes>
     </Suspense>
   );

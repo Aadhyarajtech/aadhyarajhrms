@@ -1,14 +1,24 @@
 // path: src/app.ts
+
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
-import path from "node:path";
+
 import { env } from "@/config/env";
-import { notFoundHandler, errorHandler } from "@/middleware/errorHandler";
+
+import {
+  notFoundHandler,
+  errorHandler,
+} from "@/middleware/errorHandler";
+
 import { UPLOAD_DIR_ABSOLUTE } from "@/middleware/upload";
+
+// =========================================================
+// ROUTES
+// =========================================================
 
 import { authRouter } from "@/modules/auth/auth.routes";
 import { employeesRouter } from "@/modules/employees/employees.routes";
@@ -22,34 +32,78 @@ import { notificationsRouter } from "@/modules/notifications/notifications.route
 import { documentsRouter } from "@/modules/documents/documents.routes";
 import { dashboardRouter } from "@/modules/dashboard/dashboard.routes";
 
+// =========================================================
+// TICKET ROUTES
+// =========================================================
+
+import { ticketRouter } from "@/modules/tickets/ticket.routes";
+import { ticketMessageRouter } from "@/modules/tickets/ticketMessage.routes";
+
+// =========================================================
+// CREATE APP
+// =========================================================
+
 export function createApp() {
   const app = express();
 
-  app.use(helmet({ crossOriginResourcePolicy: false }));
+  // =======================================================
+  // SECURITY
+  // =======================================================
+
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+    }),
+  );
+
+  // =======================================================
+  // CORS
+  // =======================================================
+
   app.use(
     cors({
       origin(origin, callback) {
-        // `origin` is undefined for same-origin/non-browser requests (curl, Postman, server-to-server) — allow those.
+        // Allow requests without an Origin header
+        // such as Postman, curl and server-to-server requests.
         if (!origin || env.clientOrigins.includes(origin)) {
           callback(null, true);
-        } else {
-          // Passing `false` (not an Error) tells the cors package to simply
-          // omit the Access-Control-Allow-* headers and move on, instead of
-          // throwing into Express's error handler and returning a 500.
-          // A rejected origin should look like "no CORS headers" to the
-          // browser, not "server crashed".
-          console.warn(
-            `[cors] blocked request from disallowed origin: ${origin}`,
-          );
-          callback(null, false);
+          return;
         }
+
+        console.warn(
+          `[cors] blocked request from disallowed origin: ${origin}`,
+        );
+
+        callback(null, false);
       },
+
       credentials: true,
     }),
   );
+
+  // =======================================================
+  // GENERAL MIDDLEWARE
+  // =======================================================
+
   app.use(compression());
-  app.use(express.json({ limit: "2mb" }));
-  app.use(morgan(env.isProd ? "combined" : "dev"));
+
+  app.use(
+    express.json({
+      limit: "2mb",
+    }),
+  );
+
+  app.use(
+    morgan(
+      env.isProd
+        ? "combined"
+        : "dev",
+    ),
+  );
+
+  // =======================================================
+  // API RATE LIMIT
+  // =======================================================
 
   const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -57,7 +111,12 @@ export function createApp() {
     standardHeaders: true,
     legacyHeaders: false,
   });
+
   app.use("/api", apiLimiter);
+
+  // =======================================================
+  // LOGIN RATE LIMIT
+  // =======================================================
 
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -65,28 +124,177 @@ export function createApp() {
     standardHeaders: true,
     legacyHeaders: false,
   });
-  app.use("/api/auth/login", authLimiter);
 
-  app.use("/uploads", express.static(UPLOAD_DIR_ABSOLUTE));
-
-  app.get("/api/health", (_req, res) =>
-    res.json({ status: "ok", time: new Date().toISOString() }),
+  app.use(
+    "/api/auth/login",
+    authLimiter,
   );
 
-  app.use("/api/auth", authRouter);
-  app.use("/api/employees", employeesRouter);
-  app.use("/api/organization", organizationRouter);
-  app.use("/api/attendance", attendanceRouter);
-  app.use("/api/leave", leaveRouter);
-  app.use("/api/recruitment", recruitmentRouter);
-  app.use("/api/performance", performanceRouter);
-  app.use("/api/payroll", payrollRouter);
-  app.use("/api/notifications", notificationsRouter);
-  app.use("/api/documents", documentsRouter);
-  app.use("/api/dashboard", dashboardRouter);
+  // =======================================================
+  // UPLOADS
+  // =======================================================
 
-  app.use(notFoundHandler);
-  app.use(errorHandler);
+  app.use(
+    "/uploads",
+    express.static(UPLOAD_DIR_ABSOLUTE),
+  );
+
+  // =======================================================
+  // HEALTH CHECK
+  // =======================================================
+
+  app.get(
+    "/api/health",
+    (_req, res) => {
+      res.json({
+        status: "ok",
+        time: new Date().toISOString(),
+      });
+    },
+  );
+
+  // =======================================================
+  // AUTH
+  // =======================================================
+
+  app.use(
+    "/api/auth",
+    authRouter,
+  );
+
+  // =======================================================
+  // EMPLOYEES
+  // =======================================================
+
+  app.use(
+    "/api/employees",
+    employeesRouter,
+  );
+
+  // =======================================================
+  // ORGANIZATION
+  // =======================================================
+
+  app.use(
+    "/api/organization",
+    organizationRouter,
+  );
+
+  // =======================================================
+  // ATTENDANCE
+  // =======================================================
+
+  app.use(
+    "/api/attendance",
+    attendanceRouter,
+  );
+
+  // =======================================================
+  // LEAVE
+  // =======================================================
+
+  app.use(
+    "/api/leave",
+    leaveRouter,
+  );
+
+  // =======================================================
+  // RECRUITMENT
+  // =======================================================
+
+  app.use(
+    "/api/recruitment",
+    recruitmentRouter,
+  );
+
+  // =======================================================
+  // PERFORMANCE
+  // =======================================================
+
+  app.use(
+    "/api/performance",
+    performanceRouter,
+  );
+
+  // =======================================================
+  // PAYROLL
+  // =======================================================
+
+  app.use(
+    "/api/payroll",
+    payrollRouter,
+  );
+
+  // =======================================================
+  // NOTIFICATIONS
+  // =======================================================
+
+  app.use(
+    "/api/notifications",
+    notificationsRouter,
+  );
+
+  // =======================================================
+  // DOCUMENTS
+  // =======================================================
+
+  app.use(
+    "/api/documents",
+    documentsRouter,
+  );
+
+  // =======================================================
+  // TICKETS
+  // =======================================================
+
+  app.use(
+    "/api/tickets",
+    ticketRouter,
+  );
+
+  // =======================================================
+  // TICKET MESSAGES
+  //
+  // GET:
+  // /api/tickets/:id/messages
+  //
+  // POST:
+  // /api/tickets/:id/messages
+  //
+  // This router handles:
+  // Employee -> HR Admin messages
+  // HR Admin -> Employee messages
+  // =======================================================
+
+  app.use(
+    "/api/tickets",
+    ticketMessageRouter,
+  );
+
+  // =======================================================
+  // DASHBOARD
+  // =======================================================
+
+  app.use(
+    "/api/dashboard",
+    dashboardRouter,
+  );
+
+  // =======================================================
+  // 404 HANDLER
+  // =======================================================
+
+  app.use(
+    notFoundHandler,
+  );
+
+  // =======================================================
+  // ERROR HANDLER
+  // =======================================================
+
+  app.use(
+    errorHandler,
+  );
 
   return app;
 }

@@ -1,21 +1,24 @@
 import { createApp } from "@/app";
 import { connectDB } from "@/db/connection";
-import { seedIfEmpty } from "@/db/seed";
 import { env } from "@/config/env";
 import { logger } from "@/utils/logger";
 
 async function start() {
   await connectDB();
-  await seedIfEmpty();
 
   const app = createApp();
 
   app.listen(env.port, () => {
-    logger.info(`Aadhyaraj HRMS API listening on http://localhost:${env.port}`, { env: env.nodeEnv });
+    logger.info(
+      `Aadhyaraj HRMS API listening on http://localhost:${env.port}`,
+      { env: env.nodeEnv }
+    );
   });
 }
 
 start().catch((err) => {
-  logger.error("Failed to start server", { message: err instanceof Error ? err.message : String(err) });
+  logger.error("Failed to start server", {
+    message: err instanceof Error ? err.message : String(err),
+  });
   process.exit(1);
 });
