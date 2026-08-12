@@ -46,6 +46,20 @@ export function getErrorMessage(
   return fallback;
 }
 
+export function resolveAssetUrl(value?: string | null): string | null {
+  if (!value) return null;
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return value;
+  }
+
+  const rawBase = import.meta.env.VITE_API_URL || "/api";
+  const baseOrigin = rawBase.startsWith("http")
+    ? new URL(rawBase).origin
+    : window.location.origin;
+
+  return new URL(value.startsWith("/") ? value : `/${value}`, baseOrigin).toString();
+}
+
 let onUnauthorized: (() => void) | null = null;
 export function registerUnauthorizedHandler(handler: () => void) {
   onUnauthorized = handler;

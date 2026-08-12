@@ -60,6 +60,7 @@ const JobDetail = lazy(
 
 const Performance = lazy(() => import("@/pages/Performance"));
 const Payroll = lazy(() => import("@/pages/Payroll"));
+const Documents = lazy(() => import("@/pages/Documents"));
 const Announcements = lazy(
   () => import("@/pages/Announcements"),
 );
@@ -342,12 +343,7 @@ export default function App() {
 
           <Route
             path="documents"
-            element={
-              <Navigate
-                to="/app/dashboard"
-                replace
-              />
-            }
+            element={<Documents />}
           />
 
           {/* =================================================

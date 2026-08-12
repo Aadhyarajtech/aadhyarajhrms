@@ -134,9 +134,6 @@ export function Sidebar({
 }) {
   const { user } = useAuth();
 
-  console.log("USER:", user);
-  console.log("ROLE:", user?.role);
-
   const role = user?.role;
 
   const items = NAV_ITEMS.filter(

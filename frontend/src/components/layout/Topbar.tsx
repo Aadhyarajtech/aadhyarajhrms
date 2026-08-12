@@ -93,7 +93,7 @@ export function Topbar({
           window.open(link, "_blank");
           return;
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
 
