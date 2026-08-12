@@ -12,7 +12,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 
-import { api } from "@/lib/api";
+import { api, resolveAssetUrl } from "@/lib/api";
 
 const STATUS_OPTIONS = [
   "OPEN",
@@ -171,7 +171,7 @@ export default function Tickets() {
                   <td className="p-3 text-sm">
                     {ticket.attachment ? (
                       <a
-                        href={`http://localhost:4000${ticket.attachment}`}
+                        href={resolveAssetUrl(ticket.attachment) ?? "#"}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="font-medium text-brand-600 hover:underline"
