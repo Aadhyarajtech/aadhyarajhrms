@@ -17,6 +17,8 @@ import type {
   SalaryStructure,
   PayrollRun,
   Payslip,
+  PayslipRequest,
+  PayslipRequestPeriod,
   Notification,
   Announcement,
   Holiday,
@@ -452,6 +454,28 @@ export const PayrollApi = {
         data: { month: number; year: number; totalNet: number }[];
       }>("/payroll/analytics/cost-trend", { params: { months } })
       .then((r) => r.data.data),
+  createPayslipRequest: (period: PayslipRequestPeriod) =>
+    api
+      .post<{
+        request: PayslipRequest;
+      }>("/payroll/payslip-requests", { period })
+      .then((r) => r.data.request),
+  myPayslipRequests: () =>
+    api
+      .get<{ requests: PayslipRequest[] }>("/payroll/payslip-requests/mine")
+      .then((r) => r.data.requests),
+  payslipRequests: () =>
+    api
+      .get<{ requests: PayslipRequest[] }>("/payroll/payslip-requests")
+      .then((r) => r.data.requests),
+  payslipRequest: (id: string) =>
+    api
+      .get<{ request: PayslipRequest }>(`/payroll/payslip-requests/${id}`)
+      .then((r) => r.data.request),
+  sendPayslipRequest: (id: string) =>
+    api
+      .post<{ request: PayslipRequest }>(`/payroll/payslip-requests/${id}/send`)
+      .then((r) => r.data.request),
 };
 
 // --- Notifications & Announcements -------------------------------------------------
