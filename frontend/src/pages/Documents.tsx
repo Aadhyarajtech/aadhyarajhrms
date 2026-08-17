@@ -602,8 +602,8 @@ function UploadDocumentModal({
     queryFn: () =>
       EmployeesApi.list(
         isManager
-          ? { managerId: selfEmployeeId, pageSize: 200 }
-          : { pageSize: 200 },
+          ? { managerId: selfEmployeeId, pageSize: 100 }
+          : { pageSize: 100 },
       ),
     enabled: open,
   });
@@ -807,8 +807,8 @@ function RequestDocumentModal({
     queryFn: () =>
       EmployeesApi.list(
         isManager
-          ? { managerId: selfEmployeeId, pageSize: 200 }
-          : { pageSize: 200 },
+          ? { managerId: selfEmployeeId, pageSize: 100 }
+          : { pageSize: 100 },
       ),
     enabled: open,
   });

@@ -696,6 +696,50 @@ const payslipSchema = new Schema<PayslipDoc>(
 payslipSchema.index({ payrollRunId: 1, employeeId: 1 }, { unique: true });
 export const Payslip = model<PayslipDoc>("Payslip", payslipSchema);
 
+export type PayslipRequestPeriod = "3_MONTHS" | "6_MONTHS" | "12_MONTHS";
+export type PayslipRequestStatus = "PENDING" | "SENT" | "REJECTED";
+
+export interface PayslipRequestDoc {
+  _id: string;
+  employeeId: string;
+  requestedByUserId: string;
+  period: PayslipRequestPeriod;
+  status: PayslipRequestStatus;
+  payslipIds: string[];
+  processedByUserId: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+}
+
+const payslipRequestSchema = new Schema<PayslipRequestDoc>(
+  {
+    _id: idField("preq"),
+    employeeId: { type: String, required: true },
+    requestedByUserId: { type: String, required: true },
+    period: {
+      type: String,
+      enum: ["3_MONTHS", "6_MONTHS", "12_MONTHS"],
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["PENDING", "SENT", "REJECTED"],
+      default: "PENDING",
+    },
+    payslipIds: { type: [String], default: [] },
+    processedByUserId: { type: String, default: null },
+    requestedAt: { type: String, required: true },
+    completedAt: { type: String, default: null },
+  },
+  baseOptions,
+);
+payslipRequestSchema.index({ employeeId: 1, requestedAt: -1 });
+payslipRequestSchema.index({ status: 1 });
+export const PayslipRequest = model<PayslipRequestDoc>(
+  "PayslipRequest",
+  payslipRequestSchema,
+);
+
 // ---------------------------------------------------------------------------
 // Announcements & notifications
 // ---------------------------------------------------------------------------
