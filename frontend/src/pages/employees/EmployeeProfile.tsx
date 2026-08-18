@@ -5,10 +5,26 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
-  Mail, Phone, MapPin, Calendar, Briefcase, Edit3, FileText, Laptop, Upload, Wallet, Target, Clock,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  Briefcase,
+  Edit3,
+  FileText,
+  Laptop,
+  Upload,
+  Wallet,
+  Target,
+  Clock,
 } from "lucide-react";
 import {
-  EmployeesApi, AttendanceApi, LeaveApi, PerformanceApi, PayrollApi, DocumentsApi,
+  EmployeesApi,
+  AttendanceApi,
+  LeaveApi,
+  PerformanceApi,
+  PayrollApi,
+  DocumentsApi,
 } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -22,14 +38,25 @@ import { TextField } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
 import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
 import { ProgressRing } from "@/components/ui/ProgressRing";
-import { formatDate, formatCurrencyINR, formatTime, monthName, cx } from "@/lib/format";
+import {
+  formatDate,
+  formatCurrencyINR,
+  formatTime,
+  monthName,
+  cx,
+} from "@/lib/format";
 
 const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
 
 const salarySchema = z.object({
-  basic: z.coerce.number().min(0), hra: z.coerce.number().min(0), conveyance: z.coerce.number().min(0),
-  medical: z.coerce.number().min(0), specialAllowance: z.coerce.number().min(0), pf: z.coerce.number().min(0),
-  professionalTax: z.coerce.number().min(0), incomeTax: z.coerce.number().min(0),
+  basic: z.coerce.number().min(0),
+  hra: z.coerce.number().min(0),
+  conveyance: z.coerce.number().min(0),
+  medical: z.coerce.number().min(0),
+  specialAllowance: z.coerce.number().min(0),
+  pf: z.coerce.number().min(0),
+  professionalTax: z.coerce.number().min(0),
+  incomeTax: z.coerce.number().min(0),
 });
 type SalaryForm = z.infer<typeof salarySchema>;
 
@@ -43,14 +70,20 @@ export default function EmployeeProfile() {
   const [docTypeOpen, setDocTypeOpen] = useState(false);
 
   const effectiveId = id ?? user?.employee?.id;
-  const { data: employee, isLoading } = useQuery({ queryKey: ["employee", effectiveId], queryFn: () => EmployeesApi.get(effectiveId!), enabled: !!effectiveId });
+  const { data: employee, isLoading } = useQuery({
+    queryKey: ["employee", effectiveId],
+    queryFn: () => EmployeesApi.get(effectiveId!),
+    enabled: !!effectiveId,
+  });
 
   const isSelf = user?.employee?.id === effectiveId;
   const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
 
   useEffect(() => {
     if (!effectiveId || !user || isAdmin || isSelf) return;
-    navigate(`/app/employees/${user.employee?.id ?? "dashboard"}`, { replace: true });
+    navigate(`/app/employees/${user.employee?.id ?? "dashboard"}`, {
+      replace: true,
+    });
   }, [effectiveId, isAdmin, isSelf, navigate, user]);
   const isFinance = user?.role === "FINANCE";
   const canViewPayroll = isSelf || isAdmin || isFinance;
@@ -79,31 +112,65 @@ export default function EmployeeProfile() {
       <Card className="mb-6 bg-gradient-to-br from-white to-canvas">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col items-center gap-4 sm:flex-row">
-            <Avatar firstName={employee.firstName} lastName={employee.lastName} src={employee.avatarUrl} size="xl" />
+            <Avatar
+              firstName={employee.firstName}
+              lastName={employee.lastName}
+              src={employee.avatarUrl}
+              size="xl"
+            />
             <div className="text-center sm:text-left">
               <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                <h1 className="font-display text-xl font-medium text-ink">{employee.firstName} {employee.lastName}</h1>
+                <h1 className="font-display text-xl font-medium text-ink">
+                  {employee.firstName} {employee.lastName}
+                </h1>
                 <StatusBadge status={employee.status} />
               </div>
-              <p className="mt-0.5 text-[14px] text-ink-faint">{employee.designationTitle} · {employee.departmentName}</p>
+              <p className="mt-0.5 text-[14px] text-ink-faint">
+                {employee.designationTitle} · {employee.departmentName}
+              </p>
               <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-[12.5px] text-ink-faint sm:justify-start">
-                <span className="flex items-center gap-1.5"><Mail size={13} /> {employee.email}</span>
-                {employee.phone && <span className="flex items-center gap-1.5"><Phone size={13} /> {employee.phone}</span>}
-                {employee.city && <span className="flex items-center gap-1.5"><MapPin size={13} /> {employee.city}</span>}
-                <span className="flex items-center gap-1.5"><Calendar size={13} /> Joined {formatDate(employee.dateOfJoining)}</span>
+                <span className="flex items-center gap-1.5">
+                  <Mail size={13} /> {employee.email}
+                </span>
+                {employee.phone && (
+                  <span className="flex items-center gap-1.5">
+                    <Phone size={13} /> {employee.phone}
+                  </span>
+                )}
+                {employee.city && (
+                  <span className="flex items-center gap-1.5">
+                    <MapPin size={13} /> {employee.city}
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5">
+                  <Calendar size={13} /> Joined{" "}
+                  {formatDate(employee.dateOfJoining)}
+                </span>
               </div>
             </div>
           </div>
           <div className="flex items-center justify-center gap-2">
-            <Badge tone="brand" className="font-mono">{employee.employeeCode}</Badge>
+            <Badge tone="brand" className="font-mono">
+              {employee.employeeCode}
+            </Badge>
             {canEdit && (
-              <Button size="sm" variant="outline" leftIcon={<Edit3 size={14} />} onClick={() => setEditOpen(true)}>Edit</Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Edit3 size={14} />}
+                onClick={() => setEditOpen(true)}
+              >
+                Edit
+              </Button>
             )}
           </div>
         </div>
         {employee.managerFirstName && (
           <div className="mt-5 flex items-center gap-2 border-t border-line/70 pt-4 text-[13px] text-ink-faint">
-            <Briefcase size={14} /> Reports to <span className="font-medium text-ink">{employee.managerFirstName} {employee.managerLastName}</span>
+            <Briefcase size={14} /> Reports to{" "}
+            <span className="font-medium text-ink">
+              {employee.managerFirstName} {employee.managerLastName}
+            </span>
           </div>
         )}
       </Card>
@@ -112,16 +179,45 @@ export default function EmployeeProfile() {
 
       {tab === "overview" && <OverviewTab employee={employee} />}
       {tab === "attendance" && <AttendanceTab employeeId={employee.id} />}
-      {tab === "leave" && <LeaveTab employeeId={employee.id} canManage={isAdmin} />}
+      {tab === "leave" && (
+        <LeaveTab employeeId={employee.id} canManage={isAdmin} />
+      )}
       {tab === "performance" && <PerformanceTab employeeId={employee.id} />}
       {tab === "payroll" && canViewPayroll && (
-        <PayrollTab employeeId={employee.id} canEditStructure={isAdmin} onEditSalary={() => setSalaryOpen(true)} />
+        <PayrollTab
+          employeeId={employee.id}
+          canEditStructure={isAdmin}
+          onEditSalary={() => setSalaryOpen(true)}
+        />
       )}
-      {tab === "documents" && <DocumentsTab employeeId={employee.id} canManage={isAdmin} onUpload={() => setDocTypeOpen(true)} />}
+      {tab === "documents" && (
+        <DocumentsTab
+          employeeId={employee.id}
+          canManage={isAdmin}
+          onUpload={() => setDocTypeOpen(true)}
+        />
+      )}
 
-      <EditEmployeeModal open={editOpen} onClose={() => setEditOpen(false)} employee={employee} isAdmin={isAdmin} />
-      {isAdmin && <SalaryModal open={salaryOpen} onClose={() => setSalaryOpen(false)} employeeId={employee.id} />}
-      {isAdmin && <UploadDocModal open={docTypeOpen} onClose={() => setDocTypeOpen(false)} employeeId={employee.id} />}
+      <EditEmployeeModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        employee={employee}
+        isAdmin={isAdmin}
+      />
+      {isAdmin && (
+        <SalaryModal
+          open={salaryOpen}
+          onClose={() => setSalaryOpen(false)}
+          employeeId={employee.id}
+        />
+      )}
+      {isAdmin && (
+        <UploadDocModal
+          open={docTypeOpen}
+          onClose={() => setDocTypeOpen(false)}
+          employeeId={employee.id}
+        />
+      )}
     </div>
   );
 }
@@ -134,23 +230,43 @@ function OverviewTab({ employee }: { employee: any }) {
         <CardHeader title="Personal information" />
         <dl className="grid grid-cols-2 gap-y-4 text-[13.5px] sm:grid-cols-3">
           <Info label="Gender" value={employee.gender ?? "—"} />
-          <Info label="Date of birth" value={employee.dateOfBirth ? formatDate(employee.dateOfBirth) : "—"} />
+          <Info
+            label="Date of birth"
+            value={
+              employee.dateOfBirth ? formatDate(employee.dateOfBirth) : "—"
+            }
+          />
           <Info label="Personal email" value={employee.personalEmail ?? "—"} />
-          <Info label="Employment type" value={employee.employmentType.replace("_", " ")} />
+          <Info
+            label="Employment type"
+            value={employee.employmentType.replace("_", " ")}
+          />
           <Info label="City" value={employee.city ?? "—"} />
           <Info label="State" value={employee.state ?? "—"} />
           <Info label="Country" value={employee.country} />
           <Info label="Address" value={employee.address ?? "—"} />
-          <Info label="Emergency contact" value={employee.emergencyContactName ?? "—"} />
-          <Info label="Emergency phone" value={employee.emergencyContactPhone ?? "—"} />
+          <Info
+            label="Emergency contact"
+            value={employee.emergencyContactName ?? "—"}
+          />
+          <Info
+            label="Emergency phone"
+            value={employee.emergencyContactPhone ?? "—"}
+          />
         </dl>
       </Card>
       <Card className="bg-gradient-to-br from-brand-600 to-brand-800 text-white">
         <p className="text-[12px] font-medium text-white/70">System role</p>
-        <p className="mt-1 font-display text-xl font-medium">{employee.role.replace("_", " ")}</p>
+        <p className="mt-1 font-display text-xl font-medium">
+          {employee.role.replace("_", " ")}
+        </p>
         <div className="mt-4 h-px bg-white/15" />
-        <p className="mt-4 text-[12px] font-medium text-white/70">Designation level</p>
-        <p className="mt-1 text-[14px]">{employee.designationTitle} · Level {employee.designationLevel}</p>
+        <p className="mt-4 text-[12px] font-medium text-white/70">
+          Designation level
+        </p>
+        <p className="mt-1 text-[14px]">
+          {employee.designationTitle} · Level {employee.designationLevel}
+        </p>
       </Card>
     </div>
   );
@@ -170,15 +286,29 @@ function AttendanceTab({ employeeId }: { employeeId: string }) {
   const now = new Date();
   const { data, isLoading } = useQuery({
     queryKey: ["attendance", "employee", employeeId, now.getMonth()],
-    queryFn: () => AttendanceApi.forEmployee(employeeId, now.getMonth() + 1, now.getFullYear()),
+    queryFn: () =>
+      AttendanceApi.forEmployee(
+        employeeId,
+        now.getMonth() + 1,
+        now.getFullYear(),
+      ),
   });
 
   if (isLoading) return <Skeleton className="h-64 rounded-3xl" />;
-  if (!data?.length) return <EmptyState icon={Clock} title="No attendance records yet" description="Records will appear here once the employee starts checking in." />;
+  if (!data?.length)
+    return (
+      <EmptyState
+        icon={Clock}
+        title="No attendance records yet"
+        description="Records will appear here once the employee starts checking in."
+      />
+    );
 
   return (
     <Card>
-      <CardHeader title={`Attendance — ${monthName(now.getMonth() + 1)} ${now.getFullYear()}`} />
+      <CardHeader
+        title={`Attendance — ${monthName(now.getMonth() + 1)} ${now.getFullYear()}`}
+      />
       <div className="overflow-x-auto">
         <table className="w-full text-left text-[13px]">
           <thead>
@@ -194,10 +324,18 @@ function AttendanceTab({ employeeId }: { employeeId: string }) {
             {data.map((r) => (
               <tr key={r.id} className="border-t border-line/60">
                 <td className="py-2.5">{formatDate(r.date)}</td>
-                <td className="py-2.5 text-ink-faint">{r.checkIn ? formatTime(r.checkIn) : "—"}</td>
-                <td className="py-2.5 text-ink-faint">{r.checkOut ? formatTime(r.checkOut) : "—"}</td>
-                <td className="py-2.5 text-ink-faint">{r.workHours ? `${r.workHours}h` : "—"}</td>
-                <td className="py-2.5"><StatusBadge status={r.status} /></td>
+                <td className="py-2.5 text-ink-faint">
+                  {r.checkIn ? formatTime(r.checkIn) : "—"}
+                </td>
+                <td className="py-2.5 text-ink-faint">
+                  {r.checkOut ? formatTime(r.checkOut) : "—"}
+                </td>
+                <td className="py-2.5 text-ink-faint">
+                  {r.workHours ? `${r.workHours}h` : "—"}
+                </td>
+                <td className="py-2.5">
+                  <StatusBadge status={r.status} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -221,19 +359,27 @@ function LeaveTab({ employeeId }: { employeeId: string; canManage: boolean }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-3">
-        {balancesLoading ? (
-          Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-3xl" />)
-        ) : (
-          balances?.map((b) => (
-            <Card key={b.id} className="flex items-center justify-between">
-              <div>
-                <p className="text-[13px] font-medium text-ink">{b.name}</p>
-                <p className="mt-1 text-[12px] text-ink-faint">{b.allotted - b.used} of {b.allotted} days left</p>
-              </div>
-              <ProgressRing value={((b.allotted - b.used) / b.allotted) * 100} size={48} strokeWidth={5} color={b.colorHex} trackColor="#F1F0EE" />
-            </Card>
-          ))
-        )}
+        {balancesLoading
+          ? Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-3xl" />
+            ))
+          : balances?.map((b) => (
+              <Card key={b.id} className="flex items-center justify-between">
+                <div>
+                  <p className="text-[13px] font-medium text-ink">{b.name}</p>
+                  <p className="mt-1 text-[12px] text-ink-faint">
+                    {b.allotted - b.used} of {b.allotted} days left
+                  </p>
+                </div>
+                <ProgressRing
+                  value={((b.allotted - b.used) / b.allotted) * 100}
+                  size={48}
+                  strokeWidth={5}
+                  color={b.colorHex}
+                  trackColor="#F1F0EE"
+                />
+              </Card>
+            ))}
       </div>
 
       <Card>
@@ -245,10 +391,18 @@ function LeaveTab({ employeeId }: { employeeId: string; canManage: boolean }) {
         ) : (
           <div className="space-y-3">
             {requests.map((r) => (
-              <div key={r.id} className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3">
+              <div
+                key={r.id}
+                className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
+              >
                 <div>
-                  <p className="text-[13px] font-medium text-ink">{r.leaveTypeName} · {r.totalDays} day(s)</p>
-                  <p className="text-[12px] text-ink-faint">{formatDate(r.startDate)} – {formatDate(r.endDate)} · {r.reason}</p>
+                  <p className="text-[13px] font-medium text-ink">
+                    {r.leaveTypeName} · {r.totalDays} day(s)
+                  </p>
+                  <p className="text-[12px] text-ink-faint">
+                    {formatDate(r.startDate)} – {formatDate(r.endDate)} ·{" "}
+                    {r.reason}
+                  </p>
                 </div>
                 <StatusBadge status={r.status} />
               </div>
@@ -275,17 +429,31 @@ function PerformanceTab({ employeeId }: { employeeId: string }) {
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader title="Review history" />
-        {reviewsLoading ? <Skeleton className="h-32 rounded-2xl" /> : !reviews?.length ? (
+        {reviewsLoading ? (
+          <Skeleton className="h-32 rounded-2xl" />
+        ) : !reviews?.length ? (
           <p className="text-[13px] text-ink-faint">No reviews recorded yet.</p>
         ) : (
           <div className="space-y-3">
             {reviews.map((r) => (
-              <div key={r.id} className="rounded-2xl border border-line/60 px-4 py-3">
+              <div
+                key={r.id}
+                className="rounded-2xl border border-line/60 px-4 py-3"
+              >
                 <div className="flex items-center justify-between">
-                  <p className="text-[13px] font-medium text-ink">{r.cycleName}</p>
+                  <p className="text-[13px] font-medium text-ink">
+                    {r.cycleName}
+                  </p>
                   <StatusBadge status={r.status} />
                 </div>
-                {r.finalRating && <p className="mt-1 text-[12px] text-ink-faint">Final rating: <span className="font-medium text-ink">{r.finalRating}/5</span></p>}
+                {r.finalRating && (
+                  <p className="mt-1 text-[12px] text-ink-faint">
+                    Final rating:{" "}
+                    <span className="font-medium text-ink">
+                      {r.finalRating}/5
+                    </span>
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -293,8 +461,14 @@ function PerformanceTab({ employeeId }: { employeeId: string }) {
       </Card>
       <Card>
         <CardHeader title="Active goals" />
-        {goalsLoading ? <Skeleton className="h-32 rounded-2xl" /> : !goals?.length ? (
-          <EmptyState icon={Target} title="No goals set" description="Goals will appear here once added from the Performance module." />
+        {goalsLoading ? (
+          <Skeleton className="h-32 rounded-2xl" />
+        ) : !goals?.length ? (
+          <EmptyState
+            icon={Target}
+            title="No goals set"
+            description="Goals will appear here once added from the Performance module."
+          />
         ) : (
           <div className="space-y-4">
             {goals.map((g) => (
@@ -304,7 +478,15 @@ function PerformanceTab({ employeeId }: { employeeId: string }) {
                   <span className="text-ink-faint">{g.progress}%</span>
                 </div>
                 <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-ink/5">
-                  <div className={cx("h-full rounded-full", g.status === "AT_RISK" ? "bg-warning-500" : "bg-brand-500")} style={{ width: `${g.progress}%` }} />
+                  <div
+                    className={cx(
+                      "h-full rounded-full",
+                      g.status === "AT_RISK"
+                        ? "bg-warning-500"
+                        : "bg-brand-500",
+                    )}
+                    style={{ width: `${g.progress}%` }}
+                  />
                 </div>
               </div>
             ))}
@@ -316,9 +498,24 @@ function PerformanceTab({ employeeId }: { employeeId: string }) {
 }
 
 // ----------------------------------------------------------------------------
-function PayrollTab({ employeeId, canEditStructure, onEditSalary }: { employeeId: string; canEditStructure: boolean; onEditSalary: () => void }) {
-  const { data: payslips, isLoading } = useQuery({ queryKey: ["payslips", employeeId], queryFn: () => PayrollApi.payslipsForEmployee(employeeId) });
-  const { data: structure } = useQuery({ queryKey: ["salary-structure", employeeId], queryFn: () => PayrollApi.getSalaryStructure(employeeId), enabled: canEditStructure });
+function PayrollTab({
+  employeeId,
+  canEditStructure,
+  onEditSalary,
+}: {
+  employeeId: string;
+  canEditStructure: boolean;
+  onEditSalary: () => void;
+}) {
+  const { data: payslips, isLoading } = useQuery({
+    queryKey: ["payslips", employeeId],
+    queryFn: () => PayrollApi.payslipsForEmployee(employeeId),
+  });
+  const { data: structure } = useQuery({
+    queryKey: ["salary-structure", employeeId],
+    queryFn: () => PayrollApi.getSalaryStructure(employeeId),
+    enabled: canEditStructure,
+  });
 
   return (
     <div className="space-y-6">
@@ -326,14 +523,30 @@ function PayrollTab({ employeeId, canEditStructure, onEditSalary }: { employeeId
         <Card>
           <CardHeader
             title="Salary structure"
-            subtitle={structure ? `Effective from ${formatDate(structure.effectiveFrom)}` : "Not configured yet"}
-            action={<Button size="sm" variant="outline" leftIcon={<Wallet size={14} />} onClick={onEditSalary}>{structure ? "Update" : "Set up"}</Button>}
+            subtitle={
+              structure
+                ? `Effective from ${formatDate(structure.effectiveFrom)}`
+                : "Not configured yet"
+            }
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Wallet size={14} />}
+                onClick={onEditSalary}
+              >
+                {structure ? "Update" : "Set up"}
+              </Button>
+            }
           />
           {structure && (
             <div className="grid grid-cols-2 gap-y-3 text-[13px] sm:grid-cols-4">
               <Info label="Basic" value={formatCurrencyINR(structure.basic)} />
               <Info label="HRA" value={formatCurrencyINR(structure.hra)} />
-              <Info label="Special allowance" value={formatCurrencyINR(structure.specialAllowance)} />
+              <Info
+                label="Special allowance"
+                value={formatCurrencyINR(structure.specialAllowance)}
+              />
               <Info label="PF" value={formatCurrencyINR(structure.pf)} />
             </div>
           )}
@@ -342,8 +555,14 @@ function PayrollTab({ employeeId, canEditStructure, onEditSalary }: { employeeId
 
       <Card>
         <CardHeader title="Payslip history" />
-        {isLoading ? <Skeleton className="h-40 rounded-2xl" /> : !payslips?.length ? (
-          <EmptyState icon={Wallet} title="No payslips yet" description="Payslips appear here once payroll has been processed for this employee." />
+        {isLoading ? (
+          <Skeleton className="h-40 rounded-2xl" />
+        ) : !payslips?.length ? (
+          <EmptyState
+            icon={Wallet}
+            title="No payslips yet"
+            description="Payslips appear here once payroll has been processed for this employee."
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[13px]">
@@ -359,11 +578,21 @@ function PayrollTab({ employeeId, canEditStructure, onEditSalary }: { employeeId
               <tbody>
                 {payslips.map((p) => (
                   <tr key={p.id} className="border-t border-line/60">
-                    <td className="py-2.5">{monthName(p.month!)} {p.year}</td>
-                    <td className="py-2.5 text-ink-faint">{formatCurrencyINR(p.grossEarnings)}</td>
-                    <td className="py-2.5 text-ink-faint">{formatCurrencyINR(p.totalDeductions)}</td>
-                    <td className="py-2.5 font-medium text-ink">{formatCurrencyINR(p.netPay)}</td>
-                    <td className="py-2.5"><StatusBadge status={p.runStatus!} /></td>
+                    <td className="py-2.5">
+                      {monthName(p.month!)} {p.year}
+                    </td>
+                    <td className="py-2.5 text-ink-faint">
+                      {formatCurrencyINR(p.grossEarnings)}
+                    </td>
+                    <td className="py-2.5 text-ink-faint">
+                      {formatCurrencyINR(p.totalDeductions)}
+                    </td>
+                    <td className="py-2.5 font-medium text-ink">
+                      {formatCurrencyINR(p.netPay)}
+                    </td>
+                    <td className="py-2.5">
+                      <StatusBadge status={p.runStatus!} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -376,20 +605,60 @@ function PayrollTab({ employeeId, canEditStructure, onEditSalary }: { employeeId
 }
 
 // ----------------------------------------------------------------------------
-function DocumentsTab({ employeeId, canManage, onUpload }: { employeeId: string; canManage: boolean; onUpload: () => void }) {
-  const { data: documents, isLoading: docsLoading } = useQuery({ queryKey: ["documents", employeeId], queryFn: () => DocumentsApi.list(employeeId) });
-  const { data: assets, isLoading: assetsLoading } = useQuery({ queryKey: ["assets", employeeId], queryFn: () => DocumentsApi.assetsForEmployee(employeeId) });
+function DocumentsTab({
+  employeeId,
+  canManage,
+  onUpload,
+}: {
+  employeeId: string;
+  canManage: boolean;
+  onUpload: () => void;
+}) {
+  const { data: documents, isLoading: docsLoading } = useQuery({
+    queryKey: ["documents", employeeId],
+    queryFn: () => DocumentsApi.list(employeeId),
+  });
+  const { data: assets, isLoading: assetsLoading } = useQuery({
+    queryKey: ["assets", employeeId],
+    queryFn: () => DocumentsApi.assetsForEmployee(employeeId),
+  });
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
-        <CardHeader title="Documents" action={canManage && <Button size="sm" variant="outline" leftIcon={<Upload size={14} />} onClick={onUpload}>Upload</Button>} />
-        {docsLoading ? <Skeleton className="h-32 rounded-2xl" /> : !documents?.length ? (
-          <EmptyState icon={FileText} title="No documents on file" description="Offer letters, ID proofs, and contracts will show up here." />
+        <CardHeader
+          title="Documents"
+          action={
+            canManage && (
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Upload size={14} />}
+                onClick={onUpload}
+              >
+                Upload
+              </Button>
+            )
+          }
+        />
+        {docsLoading ? (
+          <Skeleton className="h-32 rounded-2xl" />
+        ) : !documents?.length ? (
+          <EmptyState
+            icon={FileText}
+            title="No documents on file"
+            description="Offer letters, ID proofs, and contracts will show up here."
+          />
         ) : (
           <div className="space-y-2">
             {documents.map((d) => (
-              <a key={d.id} href={d.fileUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-xl border border-line/60 px-4 py-2.5 transition hover:border-brand-300 hover:bg-brand-50">
+              <a
+                key={d.id}
+                href={d.fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-between rounded-xl border border-line/60 px-4 py-2.5 transition hover:border-brand-300 hover:bg-brand-50"
+              >
                 <span className="flex items-center gap-2.5 text-[13px] text-ink">
                   <FileText size={15} className="text-brand-500" /> {d.fileName}
                 </span>
@@ -401,15 +670,22 @@ function DocumentsTab({ employeeId, canManage, onUpload }: { employeeId: string;
       </Card>
       <Card>
         <CardHeader title="Assigned assets" />
-        {assetsLoading ? <Skeleton className="h-32 rounded-2xl" /> : !assets?.length ? (
+        {assetsLoading ? (
+          <Skeleton className="h-32 rounded-2xl" />
+        ) : !assets?.length ? (
           <EmptyState icon={Laptop} title="No assets assigned" />
         ) : (
           <div className="space-y-2">
             {assets.map((a) => (
-              <div key={a.id} className="flex items-center justify-between rounded-xl border border-line/60 px-4 py-2.5">
+              <div
+                key={a.id}
+                className="flex items-center justify-between rounded-xl border border-line/60 px-4 py-2.5"
+              >
                 <div>
                   <p className="text-[13px] font-medium text-ink">{a.name}</p>
-                  <p className="font-mono text-[11px] text-ink-faint">{a.assetTag}</p>
+                  <p className="font-mono text-[11px] text-ink-faint">
+                    {a.assetTag}
+                  </p>
                 </div>
                 <StatusBadge status={a.status} />
               </div>
@@ -422,7 +698,17 @@ function DocumentsTab({ employeeId, canManage, onUpload }: { employeeId: string;
 }
 
 // ----------------------------------------------------------------------------
-function EditEmployeeModal({ open, onClose, employee, isAdmin }: { open: boolean; onClose: () => void; employee: any; isAdmin: boolean }) {
+function EditEmployeeModal({
+  open,
+  onClose,
+  employee,
+  isAdmin,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employee: any;
+  isAdmin: boolean;
+}) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { register, handleSubmit } = useForm({
@@ -445,7 +731,10 @@ function EditEmployeeModal({ open, onClose, employee, isAdmin }: { open: boolean
   });
 
   const mutation = useMutation({
-    mutationFn: (payload: any) => (isAdmin ? EmployeesApi.update(employee.id, payload) : EmployeesApi.updateMe(payload)),
+    mutationFn: (payload: any) =>
+      isAdmin
+        ? EmployeesApi.update(employee.id, payload)
+        : EmployeesApi.updateMe(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employee", employee.id] });
       showToast("Profile updated.");
@@ -455,35 +744,76 @@ function EditEmployeeModal({ open, onClose, employee, isAdmin }: { open: boolean
   });
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit profile" size="lg" footer={
-      <>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={handleSubmit((v) => mutation.mutate(v))} isLoading={mutation.isPending}>Save changes</Button>
-      </>
-    }>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Edit profile"
+      size="lg"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit((v) => mutation.mutate(v))}
+            isLoading={mutation.isPending}
+          >
+            Save changes
+          </Button>
+        </>
+      }
+    >
       <form className="grid gap-4 sm:grid-cols-2">
         <TextField label="First name" {...register("firstName")} />
         <TextField label="Last name" {...register("lastName")} />
         <TextField label="Gender" {...register("gender")} />
-        <TextField label="Date of birth" type="date" {...register("dateOfBirth")} />
+        <TextField
+          label="Date of birth"
+          type="date"
+          {...register("dateOfBirth")}
+        />
         <TextField label="Phone" {...register("phone")} />
-        <TextField label="Personal email" type="email" {...register("personalEmail")} />
-        <TextField label="Address" className="sm:col-span-2" {...register("address")} />
+        <TextField
+          label="Personal email"
+          type="email"
+          {...register("personalEmail")}
+        />
+        <TextField
+          label="Address"
+          className="sm:col-span-2"
+          {...register("address")}
+        />
         <TextField label="City" {...register("city")} />
         <TextField label="State" {...register("state")} />
         <TextField label="Country" {...register("country")} />
-        <TextField label="Emergency contact name" {...register("emergencyContactName")} />
-        <TextField label="Emergency contact phone" {...register("emergencyContactPhone")} />
-        <TextField label="Profile image URL" className="sm:col-span-2" {...register("avatarUrl")} />
+        <TextField
+          label="Emergency contact name"
+          {...register("emergencyContactName")}
+        />
+        <TextField
+          label="Emergency contact phone"
+          {...register("emergencyContactPhone")}
+        />
+        <TextField
+          label="Profile image URL"
+          className="sm:col-span-2"
+          {...register("avatarUrl")}
+        />
         {isAdmin && (
           <div className="sm:col-span-2">
-            <label className="text-[13px] font-medium text-ink-soft">Employment status</label>
-            <select {...register("status")} className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm">
+            <label className="text-[13px] font-medium text-ink-soft">
+              Employment status
+            </label>
+            <select
+              {...register("status")}
+              className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+            >
               <option value="ACTIVE">Active</option>
+              <option value="ON_PROBATION">On probation</option>
               <option value="ON_LEAVE">On leave</option>
               <option value="NOTICE_PERIOD">Notice period</option>
-              <option value="RESIGNED">Resigned</option>
-              <option value="TERMINATED">Terminated</option>
+              <option value="INACTIVE">Inactive</option>
+              <option value="ON_HOLD">On hold</option>
             </select>
           </div>
         )}
@@ -492,16 +822,33 @@ function EditEmployeeModal({ open, onClose, employee, isAdmin }: { open: boolean
   );
 }
 
-function SalaryModal({ open, onClose, employeeId }: { open: boolean; onClose: () => void; employeeId: string }) {
+function SalaryModal({
+  open,
+  onClose,
+  employeeId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employeeId: string;
+}) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const { data: existing } = useQuery({ queryKey: ["salary-structure", employeeId], queryFn: () => PayrollApi.getSalaryStructure(employeeId), enabled: open });
-  const { register, handleSubmit } = useForm<SalaryForm>({ resolver: zodResolver(salarySchema) });
+  const { data: existing } = useQuery({
+    queryKey: ["salary-structure", employeeId],
+    queryFn: () => PayrollApi.getSalaryStructure(employeeId),
+    enabled: open,
+  });
+  const { register, handleSubmit } = useForm<SalaryForm>({
+    resolver: zodResolver(salarySchema),
+  });
 
   const mutation = useMutation({
-    mutationFn: (payload: SalaryForm) => PayrollApi.upsertSalaryStructure({ employeeId, ...payload }),
+    mutationFn: (payload: SalaryForm) =>
+      PayrollApi.upsertSalaryStructure({ employeeId, ...payload }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["salary-structure", employeeId] });
+      queryClient.invalidateQueries({
+        queryKey: ["salary-structure", employeeId],
+      });
       showToast("Salary structure saved.");
       onClose();
     },
@@ -509,27 +856,88 @@ function SalaryModal({ open, onClose, employeeId }: { open: boolean; onClose: ()
   });
 
   return (
-    <Modal open={open} onClose={onClose} title="Salary structure" size="lg" footer={
-      <>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={handleSubmit((v) => mutation.mutate(v))} isLoading={mutation.isPending}>Save</Button>
-      </>
-    }>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Salary structure"
+      size="lg"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit((v) => mutation.mutate(v))}
+            isLoading={mutation.isPending}
+          >
+            Save
+          </Button>
+        </>
+      }
+    >
       <form className="grid gap-4 sm:grid-cols-2" key={existing?.id ?? "new"}>
-        <TextField label="Basic" type="number" defaultValue={existing?.basic} {...register("basic")} />
-        <TextField label="HRA" type="number" defaultValue={existing?.hra} {...register("hra")} />
-        <TextField label="Conveyance" type="number" defaultValue={existing?.conveyance} {...register("conveyance")} />
-        <TextField label="Medical" type="number" defaultValue={existing?.medical} {...register("medical")} />
-        <TextField label="Special allowance" type="number" defaultValue={existing?.specialAllowance} {...register("specialAllowance")} />
-        <TextField label="Provident Fund (PF)" type="number" defaultValue={existing?.pf} {...register("pf")} />
-        <TextField label="Professional tax" type="number" defaultValue={existing?.professionalTax} {...register("professionalTax")} />
-        <TextField label="Income tax (TDS)" type="number" defaultValue={existing?.incomeTax} {...register("incomeTax")} />
+        <TextField
+          label="Basic"
+          type="number"
+          defaultValue={existing?.basic}
+          {...register("basic")}
+        />
+        <TextField
+          label="HRA"
+          type="number"
+          defaultValue={existing?.hra}
+          {...register("hra")}
+        />
+        <TextField
+          label="Conveyance"
+          type="number"
+          defaultValue={existing?.conveyance}
+          {...register("conveyance")}
+        />
+        <TextField
+          label="Medical"
+          type="number"
+          defaultValue={existing?.medical}
+          {...register("medical")}
+        />
+        <TextField
+          label="Special allowance"
+          type="number"
+          defaultValue={existing?.specialAllowance}
+          {...register("specialAllowance")}
+        />
+        <TextField
+          label="Provident Fund (PF)"
+          type="number"
+          defaultValue={existing?.pf}
+          {...register("pf")}
+        />
+        <TextField
+          label="Professional tax"
+          type="number"
+          defaultValue={existing?.professionalTax}
+          {...register("professionalTax")}
+        />
+        <TextField
+          label="Income tax (TDS)"
+          type="number"
+          defaultValue={existing?.incomeTax}
+          {...register("incomeTax")}
+        />
       </form>
     </Modal>
   );
 }
 
-function UploadDocModal({ open, onClose, employeeId }: { open: boolean; onClose: () => void; employeeId: string }) {
+function UploadDocModal({
+  open,
+  onClose,
+  employeeId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employeeId: string;
+}) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
@@ -547,16 +955,35 @@ function UploadDocModal({ open, onClose, employeeId }: { open: boolean; onClose:
   });
 
   return (
-    <Modal open={open} onClose={onClose} title="Upload document" footer={
-      <>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={() => mutation.mutate()} isLoading={mutation.isPending} disabled={!file}>Upload</Button>
-      </>
-    }>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Upload document"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            isLoading={mutation.isPending}
+            disabled={!file}
+          >
+            Upload
+          </Button>
+        </>
+      }
+    >
       <div className="space-y-4">
         <div>
-          <label className="text-[13px] font-medium text-ink-soft">Document type</label>
-          <select value={type} onChange={(e) => setType(e.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm">
+          <label className="text-[13px] font-medium text-ink-soft">
+            Document type
+          </label>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+          >
             <option value="OFFER_LETTER">Offer letter</option>
             <option value="ID_PROOF">ID proof</option>
             <option value="ADDRESS_PROOF">Address proof</option>
@@ -567,7 +994,11 @@ function UploadDocModal({ open, onClose, employeeId }: { open: boolean; onClose:
         </div>
         <div>
           <label className="text-[13px] font-medium text-ink-soft">File</label>
-          <input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-[13px]" />
+          <input
+            type="file"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="mt-1.5 block w-full text-[13px]"
+          />
         </div>
       </div>
     </Modal>

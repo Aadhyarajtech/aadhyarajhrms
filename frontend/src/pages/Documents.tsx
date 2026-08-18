@@ -795,6 +795,7 @@ function RequestDocumentModal({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const [type, setType] = useState<EmployeeProvidedDocType>("ID_PROOF");
   const [note, setNote] = useState("");
 
@@ -802,17 +803,35 @@ function RequestDocumentModal({
 
   // A MANAGER can only request documents from employees assigned to them;
   // SUPER_ADMIN/HR_ADMIN can request from anyone in the company.
-  const { data: employeesData } = useQuery({
-    queryKey: ["employees", "for-document-request", isManager, selfEmployeeId],
+  const { data: employeesData, isLoading: employeesLoading } = useQuery({
+    queryKey: [
+      "employees",
+      "for-document-request",
+      isManager,
+      selfEmployeeId,
+      employeeSearch,
+    ],
     queryFn: () =>
       EmployeesApi.list(
         isManager
-          ? { managerId: selfEmployeeId, pageSize: 100 }
-          : { pageSize: 100 },
+          ? {
+              managerId: selfEmployeeId,
+              pageSize: 100,
+              search: employeeSearch.trim() || undefined,
+            }
+          : { search: employeeSearch.trim() || undefined, pageSize: 100 },
       ),
     enabled: open,
   });
-  const employees = employeesData?.employees ?? [];
+  const employees = useMemo(() => {
+    return [...(employeesData?.employees ?? [])].sort((a: any, b: any) => {
+      const nameA = `${a.firstName ?? ""} ${a.lastName ?? ""}`.trim();
+      const nameB = `${b.firstName ?? ""} ${b.lastName ?? ""}`.trim();
+      return nameA.localeCompare(nameB, undefined, {
+        sensitivity: "base",
+      });
+    });
+  }, [employeesData?.employees]);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -824,6 +843,7 @@ function RequestDocumentModal({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["document-requests"] });
       setSelectedEmployeeId("");
+      setEmployeeSearch("");
       setType("ID_PROOF");
       setNote("");
       showToast("Document request sent.");
@@ -858,18 +878,48 @@ function RequestDocumentModal({
           <label className="text-[13px] font-medium text-ink-soft">
             Employee
           </label>
-          <select
-            value={selectedEmployeeId}
-            onChange={(e) => setSelectedEmployeeId(e.target.value)}
+          <input
+            type="text"
+            value={employeeSearch}
+            onChange={(e) => {
+              setEmployeeSearch(e.target.value);
+              setSelectedEmployeeId("");
+            }}
+            placeholder="Search employee..."
             className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink outline-none focus:border-brand-400"
-          >
-            <option value="">Select an employee</option>
-            {employees.map((emp: any) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.firstName} {emp.lastName}
-              </option>
-            ))}
-          </select>
+          />
+
+          <div className="mt-2 max-h-60 overflow-y-auto rounded-xl border border-line bg-white">
+            {employeesLoading ? (
+              <div className="px-3.5 py-3 text-sm text-ink-faint">
+                Loading employees...
+              </div>
+            ) : employees.length > 0 ? (
+              employees.map((emp: any) => (
+                <button
+                  key={emp.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEmployeeId(emp.id);
+                    setEmployeeSearch(
+                      `${emp.firstName ?? ""} ${emp.lastName ?? ""}`.trim(),
+                    );
+                  }}
+                  className={`block w-full px-3.5 py-2.5 text-left text-sm hover:bg-brand-50 ${
+                    selectedEmployeeId === emp.id
+                      ? "bg-brand-50 text-brand-700"
+                      : "text-ink"
+                  }`}
+                >
+                  {emp.firstName} {emp.lastName}
+                </button>
+              ))
+            ) : employeeSearch.trim() ? (
+              <div className="px-3.5 py-3 text-sm text-ink-faint">
+                No employees found
+              </div>
+            ) : null}
+          </div>
         </div>
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
