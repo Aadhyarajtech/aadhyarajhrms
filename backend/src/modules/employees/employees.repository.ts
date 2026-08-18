@@ -16,7 +16,9 @@ async function enrichEmployees(employeeDocs: any[]) {
 
   const departmentIds = [...new Set(employeeDocs.map((e) => e.departmentId))];
   const designationIds = [...new Set(employeeDocs.map((e) => e.designationId))];
-  const managerIds = [...new Set(employeeDocs.map((e) => e.managerId).filter(Boolean))];
+  const managerIds = [
+    ...new Set(employeeDocs.map((e) => e.managerId).filter(Boolean)),
+  ];
   const userIds = [...new Set(employeeDocs.map((e) => e.userId))];
 
   const [departments, designations, managers, users] = await Promise.all([
@@ -69,10 +71,20 @@ export async function listEmployees(filters: EmployeeFilters) {
   if (filters.managerId) query.managerId = filters.managerId;
 
   if (filters.search) {
-    const regex = new RegExp(filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    const matchingUsers = await User.find({ email: regex }).select("_id").lean();
+    const regex = new RegExp(
+      filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      "i",
+    );
+    const matchingUsers = await User.find({ email: regex })
+      .select("_id")
+      .lean();
     const userIds = matchingUsers.map((u) => u._id);
-    query.$or = [{ firstName: regex }, { lastName: regex }, { employeeCode: regex }, { userId: { $in: userIds } }];
+    query.$or = [
+      { firstName: regex },
+      { lastName: regex },
+      { employeeCode: regex },
+      { userId: { $in: userIds } },
+    ];
   }
 
   const page = filters.page ?? 1;
@@ -80,7 +92,11 @@ export async function listEmployees(filters: EmployeeFilters) {
   const offset = (page - 1) * pageSize;
 
   const [rows, total] = await Promise.all([
-    Employee.find(query).sort({ createdAt: -1 }).skip(offset).limit(pageSize).lean(),
+    Employee.find(query)
+      .sort({ createdAt: -1 })
+      .skip(offset)
+      .limit(pageSize)
+      .lean(),
     Employee.countDocuments(query),
   ]);
 
@@ -128,6 +144,9 @@ export interface CreateEmployeeInput {
   phone?: string;
   city?: string;
   personalEmail?: string;
+  grade?: string;
+  workLocation?: string;
+  probationPeriodMonths: number;
   temporaryPassword: string;
 }
 
@@ -159,8 +178,33 @@ export async function createEmployee(input: CreateEmployeeInput) {
     designationId: input.designationId,
     managerId: input.managerId ?? null,
     employmentType: (input.employmentType as any) ?? "FULL_TIME",
-    status: "ACTIVE",
+
+    grade: input.grade ?? null,
+    workLocation: input.workLocation ?? null,
+    probationPeriodMonths: input.probationPeriodMonths ?? null,
+    probationStartDate:
+      input.probationPeriodMonths && input.probationPeriodMonths > 0
+        ? input.dateOfJoining
+        : null,
+    probationEndDate:
+      input.probationPeriodMonths && input.probationPeriodMonths > 0
+        ? (() => {
+            const date = new Date(input.dateOfJoining);
+            date.setMonth(date.getMonth() + input.probationPeriodMonths);
+            return date.toISOString();
+          })()
+        : null,
+    probationReminderSentAt: null,
+
+    status:
+      input.probationPeriodMonths && input.probationPeriodMonths > 0
+        ? "ON_PROBATION"
+        : "ACTIVE",
+
     dateOfJoining: input.dateOfJoining,
+    isArchived: false,
+    archivedAt: null,
+    offboardingChecklist: null,
     createdAt: now,
     updatedAt: now,
   });
@@ -177,6 +221,12 @@ export interface UpdateEmployeeInput {
   designationId?: string;
   managerId?: string | null;
   employmentType?: string;
+  grade?: string | null;
+  workLocation?: string | null;
+  probationPeriodMonths?: number | null;
+  probationStartDate?: string | null;
+  probationEndDate?: string | null;
+  probationReminderSentAt?: string | null;
   status?: string;
   phone?: string;
   personalEmail?: string;
@@ -186,8 +236,51 @@ export interface UpdateEmployeeInput {
   country?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  signatureUrl?: string | null;
+
+  education?: {
+    qualification: string;
+    institution: string;
+    specialization?: string | null;
+    startYear?: number | null;
+    endYear?: number | null;
+    grade?: string | null;
+  }[];
+
+  certifications?: {
+    name: string;
+    issuingOrganization?: string | null;
+    issueDate?: string | null;
+    expiryDate?: string | null;
+    credentialId?: string | null;
+  }[];
+
+  workHistory?: {
+    companyName: string;
+    designation?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    responsibilities?: string | null;
+  }[];
+
+  skills?: {
+    name: string;
+    category?: string | null;
+    competencyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "EXPERT";
+  }[];
   avatarUrl?: string;
+
   dateOfExit?: string | null;
+  isArchived?: boolean;
+  archivedAt?: string | null;
+
+  offboardingChecklist?: {
+    assetReturn: boolean;
+    accessRevoked: boolean;
+    exitInterview: boolean;
+    finalSettlement: boolean;
+    completedAt: string | null;
+  } | null;
 }
 
 export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
@@ -205,6 +298,16 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         designationId: merged.designationId,
         managerId: merged.managerId ?? null,
         employmentType: merged.employmentType,
+        grade: merged.grade ?? null,
+        workLocation: merged.workLocation ?? null,
+        probationPeriodMonths: merged.probationPeriodMonths ?? null,
+        probationStartDate: merged.probationStartDate ?? null,
+        probationEndDate: merged.probationEndDate ?? null,
+        probationReminderSentAt:
+          merged.probationEndDate !== current.probationEndDate ||
+          merged.probationStartDate !== current.probationStartDate
+            ? null
+            : (current.probationReminderSentAt ?? null),
         status: merged.status,
         gender: merged.gender ?? null,
         dateOfBirth: merged.dateOfBirth ?? null,
@@ -218,15 +321,54 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         emergencyContactPhone: merged.emergencyContactPhone ?? null,
         avatarUrl: merged.avatarUrl ?? null,
         dateOfExit: merged.dateOfExit ?? null,
+
+        isArchived:
+          merged.status === "INACTIVE"
+            ? true
+            : (merged.isArchived ?? current.isArchived ?? false),
+
+        archivedAt:
+          merged.status === "INACTIVE"
+            ? current.status === "INACTIVE" && current.archivedAt
+              ? current.archivedAt
+              : nowIso()
+            : (merged.archivedAt ?? current.archivedAt ?? null),
+
+        offboardingChecklist:
+          merged.status === "NOTICE_PERIOD"
+            ? current.status === "NOTICE_PERIOD" && current.offboardingChecklist
+              ? current.offboardingChecklist
+              : {
+                  assetReturn: false,
+                  accessRevoked: false,
+                  exitInterview: false,
+                  finalSettlement: false,
+                  completedAt: null,
+                }
+            : (merged.offboardingChecklist ??
+              current.offboardingChecklist ??
+              null),
+
         updatedAt: nowIso(),
       },
-    }
+    },
   );
   return getEmployeeById(id);
 }
 
 export async function getOrgChart() {
-  const rows = await Employee.find({ status: { $ne: "TERMINATED" } }).lean();
+  const rows = await Employee.find({
+    status: {
+      $in: [
+        "ACTIVE",
+        "ON_PROBATION",
+        "ON_LEAVE",
+        "NOTICE_PERIOD",
+        "INACTIVE",
+        "ON_HOLD",
+      ],
+    },
+  }).lean();
   const designationIds = [...new Set(rows.map((e) => e.designationId))];
   const departmentIds = [...new Set(rows.map((e) => e.departmentId))];
   const [designations, departments] = await Promise.all([
@@ -236,7 +378,11 @@ export async function getOrgChart() {
   const desMap = new Map(designations.map((d) => [d._id, d]));
   const deptMap = new Map(departments.map((d) => [d._id, d]));
 
-  const sorted = [...rows].sort((a, b) => (desMap.get(b.designationId)?.level ?? 0) - (desMap.get(a.designationId)?.level ?? 0));
+  const sorted = [...rows].sort(
+    (a, b) =>
+      (desMap.get(b.designationId)?.level ?? 0) -
+      (desMap.get(a.designationId)?.level ?? 0),
+  );
 
   const camel = sorted.map((e) => ({
     id: e._id,
@@ -250,7 +396,9 @@ export async function getOrgChart() {
     departmentColor: deptMap.get(e.departmentId)?.colorHex ?? null,
   }));
 
-  const byId = new Map(camel.map((e) => [e.id, { ...e, directReports: [] as any[] }]));
+  const byId = new Map(
+    camel.map((e) => [e.id, { ...e, directReports: [] as any[] }]),
+  );
   const roots: any[] = [];
 
   for (const emp of byId.values()) {
@@ -272,14 +420,23 @@ export async function getHeadcountByDepartment() {
   const countMap = new Map(counts.map((c) => [c._id, c.count]));
 
   return departments
-    .map((d) => ({ department: d.name, color: d.colorHex, count: countMap.get(d._id) ?? 0 }))
+    .map((d) => ({
+      department: d.name,
+      color: d.colorHex,
+      count: countMap.get(d._id) ?? 0,
+    }))
     .sort((a, b) => b.count - a.count);
 }
 
 export async function getGenderDiversity() {
   const rows = await Employee.aggregate([
     { $match: { status: "ACTIVE" } },
-    { $group: { _id: { $ifNull: ["$gender", "Unspecified"] }, count: { $sum: 1 } } },
+    {
+      $group: {
+        _id: { $ifNull: ["$gender", "Unspecified"] },
+        count: { $sum: 1 },
+      },
+    },
   ]);
   return rows.map((r) => ({ gender: r._id, count: r.count }));
 }
@@ -293,7 +450,9 @@ export async function getEmploymentTypeBreakdown() {
 }
 
 export async function getHeadcountTrend(months = 6) {
-  const rows = await Employee.find({}).select("dateOfJoining dateOfExit").lean();
+  const rows = await Employee.find({})
+    .select("dateOfJoining dateOfExit")
+    .lean();
   const trend: { month: string; headcount: number }[] = [];
   const today = new Date();
   for (let i = months - 1; i >= 0; i--) {
@@ -304,7 +463,10 @@ export async function getHeadcountTrend(months = 6) {
       const exited = r.dateOfExit ? new Date(r.dateOfExit) : null;
       return joined <= cutoff && (!exited || exited > cutoff);
     }).length;
-    trend.push({ month: d.toLocaleString("en-IN", { month: "short", year: "2-digit" }), headcount: count });
+    trend.push({
+      month: d.toLocaleString("en-IN", { month: "short", year: "2-digit" }),
+      headcount: count,
+    });
   }
   return trend;
 }
@@ -313,7 +475,10 @@ export async function getManagersList() {
   const designations = await Designation.find({ level: { $gte: 4 } }).lean();
   const designationIds = designations.map((d) => d._id);
   const desMap = new Map(designations.map((d) => [d._id, d]));
-  const rows = await Employee.find({ designationId: { $in: designationIds }, status: "ACTIVE" })
+  const rows = await Employee.find({
+    designationId: { $in: designationIds },
+    status: "ACTIVE",
+  })
     .sort({ firstName: 1 })
     .lean();
 
@@ -330,4 +495,19 @@ export async function getManagersList() {
     });
   }
   return result;
+}
+
+export async function updateUserActiveStatus(
+  userId: string,
+  isActive: boolean,
+) {
+  await User.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        isActive,
+        updatedAt: nowIso(),
+      },
+    },
+  );
 }

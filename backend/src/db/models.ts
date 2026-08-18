@@ -133,15 +133,68 @@ export interface EmployeeDoc {
   designationId: string;
   managerId: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
-  status: "ACTIVE" | "ON_LEAVE" | "NOTICE_PERIOD" | "TERMINATED" | "RESIGNED";
+  grade: string | null;
+  workLocation: string | null;
+  probationPeriodMonths: number | null;
+  probationStartDate: string | null;
+  probationEndDate: string | null;
+  probationReminderSentAt: string | null;
+  status:
+    | "ACTIVE"
+    | "ON_PROBATION"
+    | "ON_LEAVE"
+    | "NOTICE_PERIOD"
+    | "INACTIVE"
+    | "ON_HOLD";
   dateOfJoining: string;
   dateOfExit: string | null;
+  isArchived: boolean;
+  archivedAt: string | null;
+  offboardingChecklist: {
+    assetReturn: boolean;
+    accessRevoked: boolean;
+    exitInterview: boolean;
+    finalSettlement: boolean;
+    completedAt: string | null;
+  } | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   emergencyContactRelationship: string | null;
   emergencyContactEmail: string | null;
   employeeAadhaar: string | null;
   employeePan: string | null;
+  signatureUrl: string | null;
+
+  education: {
+    qualification: string;
+    institution: string;
+    specialization: string | null;
+    startYear: number | null;
+    endYear: number | null;
+    grade: string | null;
+  }[];
+
+  certifications: {
+    name: string;
+    issuingOrganization: string | null;
+    issueDate: string | null;
+    expiryDate: string | null;
+    credentialId: string | null;
+  }[];
+
+  workHistory: {
+    companyName: string;
+    designation: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    responsibilities: string | null;
+  }[];
+
+  skills: {
+    name: string;
+    category: string | null;
+    competencyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "EXPERT";
+  }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -175,13 +228,85 @@ const employeeSchema = new Schema<EmployeeDoc>(
       enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"],
       default: "FULL_TIME",
     },
+    grade: {
+      type: String,
+      default: null,
+    },
+
+    workLocation: {
+      type: String,
+      default: null,
+    },
+
+    probationPeriodMonths: {
+      type: Number,
+      default: null,
+    },
+
+    probationStartDate: {
+      type: String,
+      default: null,
+    },
+
+    probationEndDate: {
+      type: String,
+      default: null,
+    },
+    probationRemainderSentAt: {
+      type: String,
+      default: null,
+    },
     status: {
       type: String,
-      enum: ["ACTIVE", "ON_LEAVE", "NOTICE_PERIOD", "TERMINATED", "RESIGNED"],
+      enum: [
+        "ACTIVE",
+        "ON_PROBATION",
+        "ON_LEAVE",
+        "NOTICE_PERIOD",
+        "INACTIVE",
+        "ON_HOLD",
+      ],
       default: "ACTIVE",
     },
     dateOfJoining: { type: String, required: true },
     dateOfExit: { type: String, default: null },
+
+    isArchived: {
+      type: Boolean,
+      default: false,
+    },
+
+    archivedAt: {
+      type: String,
+      default: null,
+    },
+
+    offboardingChecklist: {
+      type: {
+        assetReturn: {
+          type: Boolean,
+          default: false,
+        },
+        accessRevoked: {
+          type: Boolean,
+          default: false,
+        },
+        exitInterview: {
+          type: Boolean,
+          default: false,
+        },
+        finalSettlement: {
+          type: Boolean,
+          default: false,
+        },
+        completedAt: {
+          type: String,
+          default: null,
+        },
+      },
+      default: null,
+    },
+
     emergencyContactName: { type: String, default: null },
     emergencyContactPhone: { type: String, default: null },
     emergencyContactRelationship: { type: String, default: null },
@@ -189,6 +314,65 @@ const employeeSchema = new Schema<EmployeeDoc>(
     employeeAadhaar: { type: String, default: null },
     employeePan: { type: String, default: null },
     createdAt: { type: String, required: true },
+    signatureUrl: {
+      type: String,
+      default: null,
+    },
+
+    education: {
+      type: [
+        {
+          qualification: { type: String, required: true },
+          institution: { type: String, required: true },
+          specialization: { type: String, default: null },
+          startYear: { type: Number, default: null },
+          endYear: { type: Number, default: null },
+          grade: { type: String, default: null },
+        },
+      ],
+      default: [],
+    },
+
+    certifications: {
+      type: [
+        {
+          name: { type: String, required: true },
+          issuingOrganization: { type: String, default: null },
+          issueDate: { type: String, default: null },
+          expiryDate: { type: String, default: null },
+          credentialId: { type: String, default: null },
+        },
+      ],
+      default: [],
+    },
+
+    workHistory: {
+      type: [
+        {
+          companyName: { type: String, required: true },
+          designation: { type: String, default: null },
+          startDate: { type: String, default: null },
+          endDate: { type: String, default: null },
+          responsibilities: { type: String, default: null },
+        },
+      ],
+      default: [],
+    },
+
+    skills: {
+      type: [
+        {
+          name: { type: String, required: true },
+          category: { type: String, default: null },
+          competencyLevel: {
+            type: String,
+            enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"],
+            default: "BEGINNER",
+          },
+        },
+      ],
+      default: [],
+    },
     updatedAt: { type: String, required: true },
   },
   baseOptions,
