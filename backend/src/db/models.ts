@@ -252,7 +252,7 @@ const employeeSchema = new Schema<EmployeeDoc>(
       type: String,
       default: null,
     },
-    probationRemainderSentAt: {
+    probationReminderSentAt: {
       type: String,
       default: null,
     },
