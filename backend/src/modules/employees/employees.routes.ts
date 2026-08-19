@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
+import { profileImageUpload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 import { isAdmin, isManagerOrAbove } from "@/middleware/rbac";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
@@ -18,6 +19,40 @@ const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
 });
+
+employeesRouter.post(
+  "/:id/avatar",
+  profileImageUpload.single("avatar"),
+  async (req, res, next) => {
+    try {
+      const requester = req.user!;
+
+      const employee = await repo.getEmployeeById(req.params.id);
+
+      if (!employee) throw AppError.notFound("Employee not found.");
+
+      const isSelf = requester.employeeId === req.params.id;
+      const isPrevileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(requester.role);
+
+      if (!isSelf && !isPrevileged) throw AppError.forbidden();
+
+      if (!req.file) throw AppError.badRequest("Profile image is required.");
+
+      const avatarUrl = `${UPLOADS_PUBLIC_PATH} / ${req.file.filename}`;
+
+      const updated = await repo.updateEmployee(req.params.id, {
+        avatarUrl,
+      });
+
+      res.json({
+        avatarUrl,
+        employee: updated,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 employeesRouter.get(
   "/",
@@ -239,6 +274,7 @@ const updateEmployeeSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   gender: z.string().nullable().optional(),
+  maritalStatus: z.string().nullable().optional(),
   dateOfBirth: z.string().nullable().optional(),
   departmentId: z.string().optional(),
   designationId: z.string().optional(),
@@ -269,8 +305,12 @@ const updateEmployeeSchema = z.object({
   country: z.string().optional(),
   emergencyContactName: z.string().optional(),
   emergencyContactPhone: z.string().optional(),
+  emergencyContactRelationship: z.string().nullable().optional(),
+  emergencyContactEmail: z.string().email().nullable().optional(),
+  employeeAadhaar: z.string().nullable().optional(),
+  employeePan: z.string().nullable().optional(),
   avatarUrl: z.string().optional(),
-  signatureUrl: z.string().nullable().optional(),
+  signature: z.string().nullable().optional(),
 
   education: z
     .array(
@@ -330,7 +370,6 @@ const updateOffboardingChecklistSchema = z.object({
   accessRevoked: z.boolean().optional(),
   exitInterview: z.boolean().optional(),
   finalSettlement: z.boolean().optional(),
-  completedAt: z.string().nullable().optional(),
 });
 
 employeesRouter.patch(
@@ -345,6 +384,7 @@ employeesRouter.patch(
         firstName: req.body.firstName,
         lastName: req.body.lastName,
         gender: req.body.gender,
+        maritalStatus: req.body.maritalStatus,
         dateOfBirth: req.body.dateOfBirth,
         phone: req.body.phone,
         personalEmail: req.body.personalEmail,
@@ -352,9 +392,21 @@ employeesRouter.patch(
         city: req.body.city,
         state: req.body.state,
         country: req.body.country,
+
         emergencyContactName: req.body.emergencyContactName,
         emergencyContactPhone: req.body.emergencyContactPhone,
+        emergencyContactRelationship: req.body.emergencyContactRelationship,
+        emergencyContactEmail: req.body.emergencyContactEmail,
+
+        employeeAadhaar: req.body.employeeAadhaar,
+        employeePan: req.body.employeePan,
+        signature: req.body.signature,
         avatarUrl: req.body.avatarUrl,
+
+        education: req.body.education,
+        certifications: req.body.certifications,
+        workHistory: req.body.workHistory,
+        skills: req.body.skills,
       };
 
       const updated = await repo.updateEmployee(employee.id, body);

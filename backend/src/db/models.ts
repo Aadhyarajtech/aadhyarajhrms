@@ -163,7 +163,7 @@ export interface EmployeeDoc {
   emergencyContactEmail: string | null;
   employeeAadhaar: string | null;
   employeePan: string | null;
-  signatureUrl: string | null;
+  signature: string | null;
 
   education: {
     qualification: string;
@@ -314,7 +314,7 @@ const employeeSchema = new Schema<EmployeeDoc>(
     employeeAadhaar: { type: String, default: null },
     employeePan: { type: String, default: null },
     createdAt: { type: String, required: true },
-    signatureUrl: {
+    signature: {
       type: String,
       default: null,
     },

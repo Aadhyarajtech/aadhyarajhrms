@@ -10,7 +10,10 @@ const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
     const safeExt = path.extname(file.originalname).slice(0, 10);
-    cb(null, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${safeExt}`);
+    cb(
+      null,
+      `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${safeExt}`,
+    );
   },
 });
 
@@ -28,11 +31,32 @@ export const upload = multer({
   limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
   fileFilter: (_req, file, cb) => {
     if (!ALLOWED_MIME.has(file.mimetype)) {
-      return cb(new Error("Unsupported file type. Please upload a PDF, Word document, or image."));
+      return cb(
+        new Error(
+          "Unsupported file type. Please upload a PDF, Word document, or image.",
+        ),
+      );
     }
     cb(null, true);
   },
 });
 
 export const UPLOADS_PUBLIC_PATH = "/uploads";
+const PROFILE_IMAGE_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+export const profileImageUpload = multer({
+  storage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!PROFILE_IMAGE_MIME.has(file.mimetype)) {
+      return cb(
+        new Error(
+          "Invalid profile image. Please upload a PNG, JPEG, or WebP image.",
+        ),
+      );
+    }
+
+    cb(null, true);
+  },
+});
 export const UPLOAD_DIR_ABSOLUTE = UPLOAD_DIR;

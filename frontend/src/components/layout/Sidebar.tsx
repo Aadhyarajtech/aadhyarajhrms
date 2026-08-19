@@ -45,13 +45,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/tickets",
     label: "Tickets",
     icon: ClipboardList,
-    roles: [
-      "SUPER_ADMIN",
-      "HR_ADMIN",
-      "MANAGER",
-      "FINANCE",
-      "IT_SUPPORT",
-    ],
+    roles: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER", "FINANCE", "IT_SUPPORT"],
   },
 
   {
@@ -137,9 +131,7 @@ export function Sidebar({
   const role = user?.role;
 
   const items = NAV_ITEMS.filter(
-    (item) =>
-      !item.roles ||
-      (role && item.roles.includes(role))
+    (item) => !item.roles || (role && item.roles.includes(role)),
   );
 
   const profilePath = user?.employee?.id
@@ -147,9 +139,7 @@ export function Sidebar({
     : "/app/settings/account";
 
   const settingsPath =
-    role === "EMPLOYEE"
-      ? "/app/settings/account"
-      : "/app/settings";
+    role === "EMPLOYEE" ? "/app/settings/account" : "/app/settings";
 
   const content = (
     <div className="flex h-full flex-col">
@@ -184,7 +174,7 @@ export function Sidebar({
                   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors",
                   isActive
                     ? "bg-brand-50 text-brand-700"
-                    : "text-ink-soft hover:bg-black/[0.04] hover:text-ink"
+                    : "text-ink-soft hover:bg-black/[0.04] hover:text-ink",
                 )
               }
             >
@@ -195,7 +185,7 @@ export function Sidebar({
         })}
       </nav>
 
-      <div className="mt-auto pt-6">
+      {/* <div className="mt-auto pt-6">
         <div className="rounded-xl bg-black/[0.03] p-3">
           <p className="text-xs font-medium text-ink">
             Need help?
@@ -205,7 +195,7 @@ export function Sidebar({
             Reach IT & Security for access or technical issues.
           </p>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 

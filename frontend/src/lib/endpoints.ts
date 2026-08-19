@@ -121,6 +121,21 @@ export const EmployeesApi = {
         data: { month: string; headcount: number }[];
       }>("/employees/analytics/headcount-trend", { params: { months } })
       .then((r) => r.data.data),
+  uploadAvatar: (id: string, file: File) => {
+    const form = new FormData();
+    form.append("avatar", file);
+
+    return api
+      .post<{
+        avatarUrl: string;
+        employee: Employee;
+      }>(`/employees/${id}/avatar`, form, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+      .then((r) => r.data);
+  },
 };
 
 // --- Organization (departments, designations, holidays) ----------------------
