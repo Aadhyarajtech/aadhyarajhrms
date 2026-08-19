@@ -148,6 +148,52 @@ export interface CreateEmployeeInput {
   workLocation?: string;
   probationPeriodMonths: number;
   temporaryPassword: string;
+  dateOfBirth?: string | null;
+  address?: string;
+  state?: string | null;
+  country?: string;
+  maritalStatus?: string | null;
+
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelationship?: string | null;
+  emergencyContactEmail?: string | null;
+
+  employeeAadhaar?: string | null;
+  employeePan?: string | null;
+  signature?: string | null;
+  avatarUrl?: string;
+
+  education?: {
+    qualification: string;
+    institution: string;
+    specialization?: string | null;
+    startYear?: number | null;
+    endYear?: number | null;
+    grade?: string | null;
+  }[];
+
+  certifications?: {
+    name: string;
+    issuingOrganization?: string | null;
+    issueDate?: string | null;
+    expiryDate?: string | null;
+    credentialId?: string | null;
+  }[];
+
+  workHistory?: {
+    companyName: string;
+    designation?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    responsibilities?: string | null;
+  }[];
+
+  skills?: {
+    name: string;
+    category?: string | null;
+    competencyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "EXPERT";
+  }[];
 }
 
 export async function createEmployee(input: CreateEmployeeInput) {
@@ -174,6 +220,26 @@ export async function createEmployee(input: CreateEmployeeInput) {
     phone: input.phone ?? null,
     personalEmail: input.personalEmail ?? null,
     city: input.city ?? null,
+    dateOfBirth: input.dateOfBirth ?? null,
+    address: input.address ?? null,
+    state: input.state ?? null,
+    country: input.country ?? "India",
+    maritalStatus: input.maritalStatus ?? null,
+
+    emergencyContactName: input.emergencyContactName ?? null,
+    emergencyContactPhone: input.emergencyContactPhone ?? null,
+    emergencyContactRelationship: input.emergencyContactRelationship ?? null,
+    emergencyContactEmail: input.emergencyContactEmail ?? null,
+
+    employeeAadhaar: input.employeeAadhaar ?? null,
+    employeePan: input.employeePan ?? null,
+    signature: input.signature ?? null,
+    avatarUrl: input.avatarUrl ?? null,
+
+    education: input.education ?? [],
+    certifications: input.certifications ?? [],
+    workHistory: input.workHistory ?? [],
+    skills: input.skills ?? [],
     departmentId: input.departmentId,
     designationId: input.designationId,
     managerId: input.managerId ?? null,
@@ -216,6 +282,7 @@ export interface UpdateEmployeeInput {
   firstName?: string;
   lastName?: string;
   gender?: string | null;
+  maritalStatus?: string | null;
   dateOfBirth?: string | null;
   departmentId?: string;
   designationId?: string;
@@ -226,7 +293,6 @@ export interface UpdateEmployeeInput {
   probationPeriodMonths?: number | null;
   probationStartDate?: string | null;
   probationEndDate?: string | null;
-  probationReminderSentAt?: string | null;
   status?: string;
   phone?: string;
   personalEmail?: string;
@@ -236,7 +302,11 @@ export interface UpdateEmployeeInput {
   country?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
-  signatureUrl?: string | null;
+  emergencyContactRelationship?: string | null;
+  emergencyContactEmail?: string | null;
+  employeeAadhaar?: string | null;
+  employeePan?: string | null;
+  signature?: string | null;
 
   education?: {
     qualification: string;
@@ -310,6 +380,7 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
             : (current.probationReminderSentAt ?? null),
         status: merged.status,
         gender: merged.gender ?? null,
+        maritalStatus: merged.maritalStatus ?? null,
         dateOfBirth: merged.dateOfBirth ?? null,
         phone: merged.phone ?? null,
         personalEmail: merged.personalEmail ?? null,
@@ -319,7 +390,18 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         country: merged.country ?? "India",
         emergencyContactName: merged.emergencyContactName ?? null,
         emergencyContactPhone: merged.emergencyContactPhone ?? null,
+        emergencyContactRelationship:
+          merged.emergencyContactRelationship ?? null,
+        emergencyContactEmail: merged.emergencyContactEmail ?? null,
+
+        employeeAadhaar: merged.employeeAadhaar ?? null,
+        employeePan: merged.employeePan ?? null,
+        signature: merged.signature ?? null,
         avatarUrl: merged.avatarUrl ?? null,
+        education: merged.education ?? current.education ?? [],
+        certifications: merged.certifications ?? current.certifications ?? [],
+        workHistory: merged.workHistory ?? current.workHistory ?? [],
+        skills: merged.skills ?? current.skills ?? [],
         dateOfExit: merged.dateOfExit ?? null,
 
         isArchived:

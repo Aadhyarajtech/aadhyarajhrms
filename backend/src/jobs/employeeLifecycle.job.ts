@@ -13,9 +13,8 @@ async function checkProbationReminders() {
         $ne: null,
         $lte: now.toISOString(),
       },
-    })
-      .select("_id employeeCode userId firstName lastName probationEndDate")
-      .lean();
+      probationReminderSentAt: null,
+    });
 
     if (employees.length === 0) {
       return;
@@ -42,6 +41,16 @@ async function checkProbationReminders() {
           link: `/employees/${employee._id}`,
         });
       }
+
+      await Employee.updateOne(
+        { _id: employee._id },
+        {
+          $set: {
+            probationReminderSentAt: nowIso(),
+            updatedAt: nowIso(),
+          },
+        },
+      );
     }
 
     console.log(

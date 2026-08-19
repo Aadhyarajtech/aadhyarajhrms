@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -224,59 +224,275 @@ export default function EmployeeProfile() {
 
 // ----------------------------------------------------------------------------
 function OverviewTab({ employee }: { employee: any }) {
+  const education = Array.isArray(employee.education) ? employee.education : [];
+  const certifications = Array.isArray(employee.certifications)
+    ? employee.certifications
+    : [];
+  const workHistory = Array.isArray(employee.workHistory)
+    ? employee.workHistory
+    : [];
+  const skills = Array.isArray(employee.skills) ? employee.skills : [];
+
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <CardHeader title="Personal information" />
-        <dl className="grid grid-cols-2 gap-y-4 text-[13.5px] sm:grid-cols-3">
-          <Info label="Gender" value={employee.gender ?? "—"} />
-          <Info
-            label="Date of birth"
-            value={
-              employee.dateOfBirth ? formatDate(employee.dateOfBirth) : "—"
-            }
-          />
-          <Info label="Personal email" value={employee.personalEmail ?? "—"} />
-          <Info
-            label="Employment type"
-            value={employee.employmentType.replace("_", " ")}
-          />
-          <Info label="City" value={employee.city ?? "—"} />
-          <Info label="State" value={employee.state ?? "—"} />
-          <Info label="Country" value={employee.country} />
-          <Info label="Address" value={employee.address ?? "—"} />
-          <Info
-            label="Emergency contact"
-            value={employee.emergencyContactName ?? "—"}
-          />
-          <Info
-            label="Emergency phone"
-            value={employee.emergencyContactPhone ?? "—"}
-          />
-        </dl>
-      </Card>
-      <Card className="bg-gradient-to-br from-brand-600 to-brand-800 text-white">
-        <p className="text-[12px] font-medium text-white/70">System role</p>
-        <p className="mt-1 font-display text-xl font-medium">
-          {employee.role.replace("_", " ")}
-        </p>
-        <div className="mt-4 h-px bg-white/15" />
-        <p className="mt-4 text-[12px] font-medium text-white/70">
-          Designation level
-        </p>
-        <p className="mt-1 text-[14px]">
-          {employee.designationTitle} · Level {employee.designationLevel}
-        </p>
-      </Card>
+    <div className="space-y-6">
+      {/* Personal information */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader title="Personal information" />
+          <dl className="grid grid-cols-2 gap-y-4 text-[13.5px] sm:grid-cols-3">
+            <Info label="Gender" value={employee.gender ?? "—"} />
+
+            <Info
+              label="Marital status"
+              value={
+                employee.maritalStatus
+                  ? employee.maritalStatus.replace(/_/g, " ")
+                  : "—"
+              }
+            />
+
+            <Info
+              label="Date of birth"
+              value={
+                employee.dateOfBirth ? formatDate(employee.dateOfBirth) : "—"
+              }
+            />
+
+            <Info
+              label="Personal email"
+              value={employee.personalEmail ?? "—"}
+            />
+
+            <Info
+              label="Employment type"
+              value={
+                employee.employmentType
+                  ? employee.employmentType.replace(/_/g, " ")
+                  : "—"
+              }
+            />
+
+            <Info label="City" value={employee.city ?? "—"} />
+            <Info label="State" value={employee.state ?? "—"} />
+            <Info label="Country" value={employee.country ?? "—"} />
+            <Info label="Address" value={employee.address ?? "—"} />
+
+            <Info
+              label="Emergency contact"
+              value={employee.emergencyContactName ?? "—"}
+            />
+
+            <Info
+              label="Emergency phone"
+              value={employee.emergencyContactPhone ?? "—"}
+            />
+
+            <Info
+              label="Emergency relationship"
+              value={employee.emergencyContactRelationship ?? "—"}
+            />
+
+            <Info
+              label="Emergency email"
+              value={employee.emergencyContactEmail ?? "—"}
+            />
+
+            <Info label="Aadhaar" value={employee.employeeAadhaar ?? "—"} />
+            <Info label="PAN" value={employee.employeePan ?? "—"} />
+          </dl>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-brand-600 to-brand-800 text-white">
+          <p className="text-[12px] font-medium text-white/70">System role</p>
+          <p className="mt-1 font-display text-xl font-medium">
+            {employee.role ? employee.role.replace(/_/g, " ") : "—"}
+          </p>
+
+          <div className="mt-4 h-px bg-white/15" />
+
+          <p className="mt-4 text-[12px] font-medium text-white/70">
+            Designation level
+          </p>
+          <p className="mt-1 text-[14px]">
+            {employee.designationTitle ?? "—"} · Level{" "}
+            {employee.designationLevel ?? "—"}
+          </p>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Education */}
+        <Card>
+          <CardHeader title="Education" />
+          {!education.length ? (
+            <p className="text-[13px] text-ink-faint">
+              No education details added.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {education.map((item: any, index: number) => (
+                <div
+                  key={item.id ?? index}
+                  className="rounded-2xl border border-line/60 p-4"
+                >
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <Info
+                      label="Qualification"
+                      value={item.qualification ?? "—"}
+                    />
+                    <Info label="Institution" value={item.institution ?? "—"} />
+                    <Info
+                      label="Specialization"
+                      value={item.specialization ?? "—"}
+                    />
+                    <Info
+                      label="Start year"
+                      value={
+                        item.startYear !== null && item.startYear !== undefined
+                          ? String(item.startYear)
+                          : "—"
+                      }
+                    />
+                    <Info
+                      label="End year"
+                      value={
+                        item.endYear !== null && item.endYear !== undefined
+                          ? String(item.endYear)
+                          : "—"
+                      }
+                    />
+                    <Info label="Grade" value={item.grade ?? "—"} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Certifications */}
+        <Card>
+          <CardHeader title="Certifications" />
+          {!certifications.length ? (
+            <p className="text-[13px] text-ink-faint">
+              No certifications added.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {certifications.map((item: any, index: number) => (
+                <div
+                  key={item.id ?? index}
+                  className="rounded-2xl border border-line/60 p-4"
+                >
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <Info label="Certification" value={item.name ?? "—"} />
+                    <Info
+                      label="Issuing organization"
+                      value={item.issuingOrganization ?? "—"}
+                    />
+                    <Info
+                      label="Credential ID"
+                      value={item.credentialId ?? "—"}
+                    />
+                    <Info
+                      label="Issue date"
+                      value={item.issueDate ? formatDate(item.issueDate) : "—"}
+                    />
+                    <Info
+                      label="Expiry date"
+                      value={
+                        item.expiryDate ? formatDate(item.expiryDate) : "—"
+                      }
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Work history */}
+        <Card>
+          <CardHeader title="Work History" />
+          {!workHistory.length ? (
+            <p className="text-[13px] text-ink-faint">
+              No work experience added.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {workHistory.map((item: any, index: number) => (
+                <div
+                  key={item.id ?? index}
+                  className="rounded-2xl border border-line/60 p-4"
+                >
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <Info label="Company" value={item.companyName ?? "—"} />
+                    <Info label="Designation" value={item.designation ?? "—"} />
+                    <Info
+                      label="Start date"
+                      value={item.startDate ? formatDate(item.startDate) : "—"}
+                    />
+                    <Info
+                      label="End date"
+                      value={
+                        item.endDate ? formatDate(item.endDate) : "Present"
+                      }
+                    />
+                  </div>
+
+                  {item.responsibilities && (
+                    <div className="mt-4 border-t border-line/60 pt-3">
+                      <p className="text-[11.5px] text-ink-faint">
+                        Responsibilities
+                      </p>
+                      <p className="mt-1 text-[13.5px] font-medium text-ink">
+                        {item.responsibilities}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Skills */}
+        <Card>
+          <CardHeader title="Skills" />
+          {!skills.length ? (
+            <p className="text-[13px] text-ink-faint">No skills added.</p>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {skills.map((item: any, index: number) => (
+                <div
+                  key={item.id ?? index}
+                  className="rounded-xl border border-line/60 px-4 py-3"
+                >
+                  <p className="text-sm font-medium text-ink">
+                    {item.name ?? "—"}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-faint">
+                    {item.competencyLevel
+                      ? item.competencyLevel.replace(/_/g, " ")
+                      : "—"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-[11.5px] text-ink-faint">{label}</dt>
-      <dd className="mt-0.5 font-medium text-ink">{value}</dd>
+
+      <dd className="mt-0.5 min-w-0 [overflow-wrap:anywhere] font-medium text-ink">
+        {value}
+      </dd>
     </div>
   );
 }
@@ -698,6 +914,55 @@ function DocumentsTab({
 }
 
 // ----------------------------------------------------------------------------
+type EmployeeForm = {
+  firstName: string;
+  lastName: string;
+  gender: string;
+  maritalStatus: string;
+  dateOfBirth: string;
+  phone: string;
+  personalEmail: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  emergencyContactRelationship: string;
+  emergencyContactEmail: string;
+  employeeAadhaar: string;
+  employeePan: string;
+  signature: string;
+  avatarUrl: string;
+  education: {
+    qualification: string;
+    institution: string;
+    specialization: string;
+    startYear: number | null;
+    endYear: number | null;
+    grade: string;
+  }[];
+  certifications: {
+    name: string;
+    issuingOrganization: string;
+    issueDate: string;
+    expiryDate: string;
+    credentialId: string;
+  }[];
+  workHistory: {
+    companyName: string;
+    designation: string;
+    startDate: string;
+    endDate: string;
+    responsibilities: string;
+  }[];
+  skills: {
+    name: string;
+    competencyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "EXPERT";
+  }[];
+  status: string;
+};
+
 function EditEmployeeModal({
   open,
   onClose,
@@ -711,11 +976,13 @@ function EditEmployeeModal({
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const { register, handleSubmit } = useForm({
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const { register, handleSubmit, control } = useForm<EmployeeForm>({
     defaultValues: {
       firstName: employee.firstName ?? "",
       lastName: employee.lastName ?? "",
       gender: employee.gender ?? "",
+      maritalStatus: employee.maritalStatus ?? "",
       dateOfBirth: employee.dateOfBirth ?? "",
       phone: employee.phone ?? "",
       personalEmail: employee.personalEmail ?? "",
@@ -723,18 +990,86 @@ function EditEmployeeModal({
       city: employee.city ?? "",
       state: employee.state ?? "",
       country: employee.country ?? "India",
+
       emergencyContactName: employee.emergencyContactName ?? "",
       emergencyContactPhone: employee.emergencyContactPhone ?? "",
+      emergencyContactRelationship: employee.emergencyContactRelationship ?? "",
+      emergencyContactEmail: employee.emergencyContactEmail ?? "",
+
+      employeeAadhaar: employee.employeeAadhaar ?? "",
+      employeePan: employee.employeePan ?? "",
+      signature: employee.signature ?? "",
       avatarUrl: employee.avatarUrl ?? "",
+
+      education: employee.education ?? [],
+      certifications: employee.certifications ?? [],
+      workHistory: employee.workHistory ?? [],
+      skills: Array.isArray(employee.skills)
+        ? employee.skills.map((skill: any) => ({
+            name: skill.name ?? "",
+            competencyLevel: skill.competencyLevel ?? "BEGINNER",
+          }))
+        : [],
+
       status: employee.status,
     },
   });
 
+  const {
+    fields: educationFields,
+    append: appendEducation,
+    remove: removeEducation,
+  } = useFieldArray({
+    control,
+    name: "education",
+  });
+
+  const {
+    fields: certificationFields,
+    append: appendCertification,
+    remove: removeCertification,
+  } = useFieldArray({
+    control,
+    name: "certifications",
+  });
+
+  const {
+    fields: workHistoryFields,
+    append: appendWorkHistory,
+    remove: removeWorkHistory,
+  } = useFieldArray({
+    control,
+    name: "workHistory",
+  });
+
+  const {
+    fields: skillFields,
+    append: appendSkill,
+    remove: removeSkill,
+  } = useFieldArray({
+    control,
+    name: "skills",
+  });
+
   const mutation = useMutation({
-    mutationFn: (payload: any) =>
-      isAdmin
-        ? EmployeesApi.update(employee.id, payload)
-        : EmployeesApi.updateMe(payload),
+    mutationFn: async (payload: any) => {
+      let avatarUrl = payload.avatarUrl;
+
+      if (avatarFile) {
+        const result = await EmployeesApi.uploadAvatar(employee.id, avatarFile);
+
+        avatarUrl = result.avatarUrl;
+      }
+
+      const updatedPayload = {
+        ...payload,
+        avatarUrl,
+      };
+
+      return isAdmin
+        ? EmployeesApi.update(employee.id, updatedPayload)
+        : EmployeesApi.updateMe(updatedPayload);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employee", employee.id] });
       showToast("Profile updated.");
@@ -767,6 +1102,7 @@ function EditEmployeeModal({
         <TextField label="First name" {...register("firstName")} />
         <TextField label="Last name" {...register("lastName")} />
         <TextField label="Gender" {...register("gender")} />
+        <TextField label="Marital Status" {...register("maritalStatus")} />
         <TextField
           label="Date of birth"
           type="date"
@@ -795,10 +1131,329 @@ function EditEmployeeModal({
           {...register("emergencyContactPhone")}
         />
         <TextField
-          label="Profile image URL"
-          className="sm:col-span-2"
-          {...register("avatarUrl")}
+          label="Emergency Contact Relationship"
+          {...register("emergencyContactRelationship")}
         />
+        <TextField
+          label="Emergency Contact Email"
+          type="email"
+          {...register("emergencyContactEmail")}
+        />
+
+        <TextField label="Aadhaar" {...register("employeeAadhaar")} />
+        <TextField label="PAN" {...register("employeePan")} />
+        <TextField
+          label="Signature URL"
+          className="sm:col-span-2"
+          {...register("signature")}
+        />
+
+        <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
+          <div className="flex items-center justify-between border-b border-line pb-2">
+            <div>
+              <h3 className="text-sm font-medium text-ink">Education</h3>
+              <p className="text-xs text-ink-faint">
+                Add educational qualifications.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                appendEducation({
+                  qualification: "",
+                  institution: "",
+                  specialization: "",
+                  startYear: null,
+                  endYear: null,
+                  grade: "",
+                })
+              }
+            >
+              + Add Education
+            </Button>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            {educationFields.map((field, index) => (
+              <div
+                key={field.id}
+                className="rounded-2xl border border-line/60 p-4"
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Qualification"
+                    {...register(`education.${index}.qualification`)}
+                  />
+                  <TextField
+                    label="Institution"
+                    {...register(`education.${index}.institution`)}
+                  />
+                  <TextField
+                    label="Specialization"
+                    {...register(`education.${index}.specialization`)}
+                  />
+                  <TextField
+                    label="Grade"
+                    {...register(`education.${index}.grade`)}
+                  />
+                  <TextField
+                    label="Start year"
+                    type="number"
+                    {...register(`education.${index}.startYear`, {
+                      setValueAs: (value) =>
+                        value === "" ? null : Number(value),
+                    })}
+                  />
+                  <TextField
+                    label="End year"
+                    type="number"
+                    {...register(`education.${index}.endYear`, {
+                      setValueAs: (value) =>
+                        value === "" ? null : Number(value),
+                    })}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => removeEducation(index)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
+          <div className="flex items-center justify-between border-b border-line pb-2">
+            <div>
+              <h3 className="text-sm font-medium text-ink">Certifications</h3>
+              <p className="text-xs text-ink-faint">
+                Add professional certifications.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                appendCertification({
+                  name: "",
+                  issuingOrganization: "",
+                  issueDate: "",
+                  expiryDate: "",
+                  credentialId: "",
+                })
+              }
+            >
+              + Add Certification
+            </Button>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            {certificationFields.map((field, index) => (
+              <div
+                key={field.id}
+                className="rounded-2xl border border-line/60 p-4"
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Certification name"
+                    {...register(`certifications.${index}.name`)}
+                  />
+                  <TextField
+                    label="Issuing organization"
+                    {...register(`certifications.${index}.issuingOrganization`)}
+                  />
+                  <TextField
+                    label="Issue date"
+                    type="date"
+                    {...register(`certifications.${index}.issueDate`)}
+                  />
+                  <TextField
+                    label="Expiry date"
+                    type="date"
+                    {...register(`certifications.${index}.expiryDate`)}
+                  />
+                  <TextField
+                    label="Credential ID"
+                    {...register(`certifications.${index}.credentialId`)}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => removeCertification(index)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
+          <div className="flex items-center justify-between border-b border-line pb-2">
+            <div>
+              <h3 className="text-sm font-medium text-ink">Work History</h3>
+              <p className="text-xs text-ink-faint">
+                Add previous employment details.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                appendWorkHistory({
+                  companyName: "",
+                  designation: "",
+                  startDate: "",
+                  endDate: "",
+                  responsibilities: "",
+                })
+              }
+            >
+              + Add Work History
+            </Button>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            {workHistoryFields.map((field, index) => (
+              <div
+                key={field.id}
+                className="rounded-2xl border border-line/60 p-4"
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Company name"
+                    {...register(`workHistory.${index}.companyName`)}
+                  />
+                  <TextField
+                    label="Designation"
+                    {...register(`workHistory.${index}.designation`)}
+                  />
+                  <TextField
+                    label="Start date"
+                    type="date"
+                    {...register(`workHistory.${index}.startDate`)}
+                  />
+                  <TextField
+                    label="End date"
+                    type="date"
+                    {...register(`workHistory.${index}.endDate`)}
+                  />
+                  <TextField
+                    label="Responsibilities"
+                    className="sm:col-span-2"
+                    {...register(`workHistory.${index}.responsibilities`)}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => removeWorkHistory(index)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
+          <div className="flex items-center justify-between border-b border-line pb-2">
+            <div>
+              <h3 className="text-sm font-medium text-ink">Skills</h3>
+              <p className="text-xs text-ink-faint">
+                Add technical and professional skills.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                appendSkill({
+                  name: "",
+                  competencyLevel: "BEGINNER",
+                })
+              }
+            >
+              + Add Skill
+            </Button>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            {skillFields.map((field, index) => (
+              <div
+                key={field.id}
+                className="rounded-2xl border border-line/60 p-4"
+              >
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <TextField
+                    label="Skill"
+                    {...register(`skills.${index}.name`)}
+                  />
+                  <div>
+                    <label className="text-[13px] font-medium text-ink-soft">
+                      Competency level
+                    </label>
+                    <select
+                      {...register(`skills.${index}.competencyLevel`)}
+                      className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                    >
+                      <option value="BEGINNER">Beginner</option>
+                      <option value="INTERMEDIATE">Intermediate</option>
+                      <option value="ADVANCED">Advanced</option>
+                      <option value="EXPERT">Expert</option>
+                    </select>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => removeSkill(index)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="sm:col-span-2 space-y-3">
+          <TextField label="Profile image URL" {...register("avatarUrl")} />
+
+          <div>
+            <label className="text-[13px] font-medium text-ink-soft">
+              Or upload profile image
+            </label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
+              className="mt-1.5 block w-full text-[13px]"
+            />
+            {avatarFile && (
+              <p className="mt-1 text-[12px] text-ink-faint">
+                Selected: {avatarFile.name}
+              </p>
+            )}
+          </div>
+        </div>
+
         {isAdmin && (
           <div className="sm:col-span-2">
             <label className="text-[13px] font-medium text-ink-soft">
