@@ -262,7 +262,7 @@ const updateEmployeeSchema = z.object({
     ])
     .optional(),
   phone: z.string().optional(),
-  personalEmail: z.string().email().optional(),
+  personalEmail: z.string().email().or(z.literal("")).optional(),
   address: z.string().optional(),
   city: z.string().optional(),
   state: z.string().nullable().optional(),
