@@ -1101,8 +1101,37 @@ function EditEmployeeModal({
       <form className="grid gap-4 sm:grid-cols-2">
         <TextField label="First name" {...register("firstName")} />
         <TextField label="Last name" {...register("lastName")} />
-        <TextField label="Gender" {...register("gender")} />
-        <TextField label="Marital Status" {...register("maritalStatus")} />
+        <div>
+          <label className="text-[13px] font-medium text-ink-soft">
+            Gender
+          </label>
+
+          <select
+            {...register("gender")}
+            className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+          >
+            <option value="">Select gender</option>
+            <option value="MALE">MALE</option>
+            <option value="FEMALE">FEMALE</option>
+            <option value="NOT_MENTIONED">NOT MENTIONED</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[13px] font-medium text-ink-soft">
+            Marital Status
+          </label>
+
+          <select
+            {...register("maritalStatus")}
+            className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+          >
+            <option value="">Select marital status</option>
+            <option value="SINGLE">SINGLE</option>
+            <option value="MARRIED">MARRIED</option>
+            <option value="DIVORCED">DIVORCED</option>
+            <option value="WIDOWED">WIDOWED</option>
+          </select>
+        </div>
         <TextField
           label="Date of birth"
           type="date"
