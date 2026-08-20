@@ -26,6 +26,7 @@ import {
   PerformanceApi,
   PayrollApi,
   DocumentsApi,
+  OrganizationApi,
 } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -933,6 +934,11 @@ function DocumentsTab({
 type EmployeeForm = {
   firstName: string;
   lastName: string;
+
+  departmentId: string;
+  designationId: string;
+  managerId: string;
+
   gender: string;
   maritalStatus: string;
   dateOfBirth: string;
@@ -993,10 +999,58 @@ function EditEmployeeModal({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const { register, handleSubmit, control } = useForm<EmployeeForm>({
-    defaultValues: {
+  const { register, handleSubmit, control, watch, setValue, reset } =
+    useForm<EmployeeForm>({
+      defaultValues: {
+        firstName: employee.firstName ?? "",
+        lastName: employee.lastName ?? "",
+
+        departmentId: employee.departmentId ?? "",
+        designationId: employee.designationId ?? "",
+        managerId: employee.managerId ?? "",
+        gender: employee.gender ?? "",
+        maritalStatus: employee.maritalStatus ?? "",
+        dateOfBirth: employee.dateOfBirth ?? "",
+        phone: employee.phone ?? "",
+        personalEmail: employee.personalEmail ?? "",
+        address: employee.address ?? "",
+        city: employee.city ?? "",
+        state: employee.state ?? "",
+        country: employee.country ?? "India",
+
+        emergencyContactName: employee.emergencyContactName ?? "",
+        emergencyContactPhone: employee.emergencyContactPhone ?? "",
+        emergencyContactRelationship:
+          employee.emergencyContactRelationship ?? "",
+        emergencyContactEmail: employee.emergencyContactEmail ?? "",
+
+        employeeAadhaar: employee.employeeAadhaar ?? "",
+        employeePan: employee.employeePan ?? "",
+        signature: employee.signature ?? "",
+        avatarUrl: employee.avatarUrl ?? "",
+
+        education: employee.education ?? [],
+        certifications: employee.certifications ?? [],
+        workHistory: employee.workHistory ?? [],
+        skills: Array.isArray(employee.skills)
+          ? employee.skills.map((skill: any) => ({
+              name: skill.name ?? "",
+              competencyLevel: skill.competencyLevel ?? "BEGINNER",
+            }))
+          : [],
+
+        status: employee.status,
+      },
+    });
+  useEffect(() => {
+    reset({
       firstName: employee.firstName ?? "",
       lastName: employee.lastName ?? "",
+
+      departmentId: employee.departmentId ?? "",
+      designationId: employee.designationId ?? "",
+      managerId: employee.managerId ?? "",
+
       gender: employee.gender ?? "",
       maritalStatus: employee.maritalStatus ?? "",
       dateOfBirth: employee.dateOfBirth ?? "",
@@ -1020,6 +1074,7 @@ function EditEmployeeModal({
       education: employee.education ?? [],
       certifications: employee.certifications ?? [],
       workHistory: employee.workHistory ?? [],
+
       skills: Array.isArray(employee.skills)
         ? employee.skills.map((skill: any) => ({
             name: skill.name ?? "",
@@ -1028,7 +1083,27 @@ function EditEmployeeModal({
         : [],
 
       status: employee.status,
-    },
+    });
+  }, [employee, reset]);
+
+  const selectedDepartmentId = watch("departmentId");
+
+  const { data: departments } = useQuery({
+    queryKey: ["departments"],
+    queryFn: OrganizationApi.departments,
+    enabled: isAdmin,
+  });
+
+  const { data: designations } = useQuery({
+    queryKey: ["designations", selectedDepartmentId],
+    queryFn: () => OrganizationApi.designations(selectedDepartmentId),
+    enabled: isAdmin && !!selectedDepartmentId,
+  });
+
+  const { data: managers } = useQuery({
+    queryKey: ["employees", "managers"],
+    queryFn: EmployeesApi.managers,
+    enabled: isAdmin,
   });
 
   const {
@@ -1115,6 +1190,92 @@ function EditEmployeeModal({
       }
     >
       <form className="grid gap-4 sm:grid-cols-2">
+        {isAdmin && (
+          <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
+            <div className="border-b border-line pb-2">
+              <h3 className="text-sm font-medium text-ink">
+                Organizational Assignment
+              </h3>
+
+              <p className="text-xs text-ink-faint">
+                Assign department, designation and reporting manager.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {/* Department */}
+              <div>
+                <label className="text-[13px] font-medium text-ink-soft">
+                  Department
+                </label>
+
+                <select
+                  {...register("departmentId", {
+                    onChange: () => {
+                      setValue("designationId", "");
+                    },
+                  })}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                >
+                  <option value="">Select department</option>
+
+                  {departments?.map((department: any) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Designation */}
+              <div>
+                <label className="text-[13px] font-medium text-ink-soft">
+                  Designation
+                </label>
+
+                <select
+                  {...register("designationId")}
+                  disabled={!selectedDepartmentId}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm disabled:opacity-50"
+                >
+                  <option value="">
+                    {selectedDepartmentId
+                      ? "Select designation"
+                      : "Select department first"}
+                  </option>
+
+                  {designations?.map((designation: any) => (
+                    <option key={designation.id} value={designation.id}>
+                      {designation.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Reporting Manager */}
+              <div className="sm:col-span-2">
+                <label className="text-[13px] font-medium text-ink-soft">
+                  Reporting Manager
+                </label>
+
+                <select
+                  {...register("managerId")}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                >
+                  <option value="">Select reporting manager</option>
+
+                  {managers
+                    ?.filter((manager: any) => manager.id !== employee.id)
+                    .map((manager: any) => (
+                      <option key={manager.id} value={manager.id}>
+                        {manager.firstName} {manager.lastName}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
         <TextField label="First name" {...register("firstName")} />
         <TextField label="Last name" {...register("lastName")} />
         <div>

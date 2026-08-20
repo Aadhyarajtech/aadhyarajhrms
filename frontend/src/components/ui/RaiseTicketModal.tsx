@@ -7,10 +7,7 @@ interface Props {
   onClose: () => void;
 }
 
-export default function RaiseTicketModal({
-  open,
-  onClose,
-}: Props) {
+export default function RaiseTicketModal({ open, onClose }: Props) {
   const { showToast } = useToast();
   const [category, setCategory] = useState("HR");
   const [priority, setPriority] = useState("MEDIUM");
@@ -65,23 +62,19 @@ export default function RaiseTicketModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="mb-6 text-2xl font-semibold">
-          Raise Ticket
-        </h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto  bg-black/40 px-4">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <h2 className="mb-6 text-2xl font-semibold">Raise Ticket</h2>
 
         <div className="space-y-4">
           {/* Category */}
           <div>
-            <label className="mb-2 block text-sm font-medium">
-              Category
-            </label>
+            <label className="mb-2 block text-sm font-medium">Category</label>
 
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              className="w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2"
             >
               <option>HR</option>
               <option>Payroll</option>
@@ -96,9 +89,7 @@ export default function RaiseTicketModal({
 
           {/* Priority */}
           <div>
-            <label className="mb-2 block text-sm font-medium">
-              Priority
-            </label>
+            <label className="mb-2 block text-sm font-medium">Priority</label>
 
             <select
               value={priority}
@@ -113,9 +104,7 @@ export default function RaiseTicketModal({
 
           {/* Subject */}
           <div>
-            <label className="mb-2 block text-sm font-medium">
-              Subject
-            </label>
+            <label className="mb-2 block text-sm font-medium">Subject</label>
 
             <input
               type="text"
@@ -145,9 +134,7 @@ export default function RaiseTicketModal({
           <div>
             <label className="mb-2 block text-sm font-medium">
               Attachment{" "}
-              <span className="font-normal text-gray-500">
-                (Optional)
-              </span>
+              <span className="font-normal text-gray-500">(Optional)</span>
             </label>
 
             <input
@@ -175,13 +162,9 @@ export default function RaiseTicketModal({
 
             {attachment && (
               <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-sm">
-                <p className="font-medium text-gray-700">
-                  Selected file:
-                </p>
+                <p className="font-medium text-gray-700">Selected file:</p>
 
-                <p className="break-all text-gray-500">
-                  {attachment.name}
-                </p>
+                <p className="break-all text-gray-500">{attachment.name}</p>
               </div>
             )}
 
