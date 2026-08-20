@@ -1,35 +1,78 @@
-/* stylelint-disable at-rule-no-unknown */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  html {
-    -webkit-font-smoothing: antialiased;
-  }
+ html {
+  -webkit-font-smoothing: antialiased;
+  tab-size: 4;
+  font-feature-settings: normal;
+  font-variation-settings: normal;
+  -webkit-tap-highlight-color: transparent;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  line-height: 1.5;
+}
+
   body {
     @apply bg-canvas text-ink font-sans antialiased;
+    margin: 0;
+    line-height: inherit;
+    -moz-osx-font-smoothing: grayscale;
   }
+
   ::selection {
     background-color: theme("colors.brand.200");
   }
+
   :focus-visible {
     outline: 2px solid theme("colors.brand.500");
     outline-offset: 2px;
     border-radius: 4px;
   }
-  /* Use WebKit scrollbar styling for compatible browsers. */
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
   }
-  ::-webkit-scrollbar-thumb {
-    background-color: theme("colors.line");
-    border-radius: 8px;
-    border: 2px solid transparent;
+
+  button,
+  input,
+  optgroup,
+  select,
+  textarea {
+    font: inherit;
   }
-  ::-webkit-scrollbar-track {
-    background: transparent;
+
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  :disabled {
+    cursor: default;
+  }
+
+  img,
+  svg,
+  video,
+  canvas,
+  audio,
+  iframe,
+  embed,
+  object {
+    vertical-align: middle;
+    display: block;
+  }
+
+  img,
+  video {
+    max-width: 100%;
+    height: auto;
+  }
+
+  [hidden] {
+    display: none;
   }
 }
 
@@ -37,24 +80,37 @@
   .font-display {
     font-feature-settings: "ss01" 1;
   }
-  .glass {
-    background: rgba(255, 255, 255, 0.72);
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
-    backdrop-filter: blur(16px) saturate(160%);
-  }
+
   .skeleton {
-    background-image: linear-gradient(90deg, #f1f0ee 0px, #f8f7f5 40px, #f1f0ee 80px);
+    background-image: linear-gradient(
+      90deg,
+      #f1f0ee 0,
+      #f8f7f5 40px,
+      #f1f0ee 80px
+    );
     background-size: 600px;
-    @apply animate-shimmer rounded-lg;
+    border-radius: 0.5rem;
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -468px 0;
+    }
+
+    100% {
+      background-position: 468px 0;
+    }
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
   }
 }
-/* stylelint-enable at-rule-no-unknown */

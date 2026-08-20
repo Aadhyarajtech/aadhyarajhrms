@@ -21,6 +21,7 @@ import type {
   PayslipRequestPeriod,
   Notification,
   Announcement,
+  AnnouncementStatusEntry,
   Holiday,
   Asset,
 } from "@/types";
@@ -514,6 +515,57 @@ export const NotificationsApi = {
         announcement: Announcement;
       }>("/notifications/announcements", payload)
       .then((r) => r.data.announcement),
+};
+
+export const AnnouncementsApi = {
+  list: () =>
+    api
+      .get<{ announcements: Announcement[] }>(
+        "/announcements",
+      )
+      .then((r) => r.data.announcements),
+
+  get: (id: string) =>
+    api
+      .get<{ announcement: Announcement }>(
+        `/announcements/${id}`,
+      )
+      .then((r) => r.data.announcement),
+
+  create: (payload: FormData) =>
+    api
+      .post<{ announcement: Announcement }>(
+        "/announcements",
+        payload,
+      )
+      .then((r) => r.data.announcement),
+
+  update: (
+    id: string,
+    payload: FormData | Record<string, unknown>,
+  ) =>
+    api
+      .patch<{ announcement: Announcement }>(
+        `/announcements/${id}`,
+        payload,
+      )
+      .then((r) => r.data.announcement),
+
+  delete: (id: string) =>
+    api.delete(`/announcements/${id}`),
+
+  markRead: (id: string) =>
+    api.post(`/announcements/${id}/read`),
+
+  acknowledge: (id: string) =>
+    api.post(`/announcements/${id}/acknowledge`),
+
+  status: (id: string) =>
+    api
+      .get<{ status: AnnouncementStatusEntry[] }>(
+        `/announcements/${id}/status`,
+      )
+      .then((r) => r.data.status),
 };
 
 // --- Documents & Assets -------------------------------------------------------------

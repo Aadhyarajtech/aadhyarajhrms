@@ -1,9 +1,9 @@
 import { Suspense, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
-import { Loader2 } from "lucide-react";
 
 // =========================================================
 // PUBLIC PAGES
@@ -18,12 +18,24 @@ const Register = lazy(() => import("@/pages/Register"));
 // =========================================================
 
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
-const MyTickets = lazy(() => import("@/pages/MyTickets"));
-const Tickets = lazy(() => import("@/pages/Tickets"));
+
+const MyTickets = lazy(
+  () => import("@/pages/MyTickets"),
+);
+
+const Tickets = lazy(
+  () => import("@/pages/Tickets"),
+);
+
+// =========================================================
+// TICKET CONVERSATION
+// =========================================================
 
 // IMPORTANT:
 // TicketConversation is the chat/message page.
-const TicketConversation = lazy(() => import("@/pages/TicketConversation"));
+const TicketConversation = lazy(
+  () => import("@/pages/TicketConversation"),
+);
 
 // =========================================================
 // EMPLOYEES
@@ -33,41 +45,79 @@ const EmployeeDirectory = lazy(
   () => import("@/pages/employees/EmployeeDirectory"),
 );
 
-const EmployeeProfile = lazy(() => import("@/pages/employees/EmployeeProfile"));
+const EmployeeProfile = lazy(
+  () => import("@/pages/employees/EmployeeProfile"),
+);
 
 const MyTeam = lazy(() => import("@/pages/MyTeam"));
 
-const OrgChart = lazy(() => import("@/pages/employees/OrgChart"));
+const OrgChart = lazy(
+  () => import("@/pages/employees/OrgChart"),
+);
 
 // =========================================================
 // HR MODULES
 // =========================================================
 
-const Attendance = lazy(() => import("@/pages/Attendance"));
-const Leave = lazy(() => import("@/pages/Leave"));
+const Attendance = lazy(
+  () => import("@/pages/Attendance"),
+);
 
-const Recruitment = lazy(() => import("@/pages/recruitment/Recruitment"));
+const Leave = lazy(
+  () => import("@/pages/Leave"),
+);
 
-const JobDetail = lazy(() => import("@/pages/recruitment/JobDetail"));
+const Recruitment = lazy(
+  () => import("@/pages/recruitment/Recruitment"),
+);
 
-const Performance = lazy(() => import("@/pages/Performance"));
-const Payroll = lazy(() => import("@/pages/Payroll"));
-const Documents = lazy(() => import("@/pages/Documents"));
-const Announcements = lazy(() => import("@/pages/Announcements"));
+const JobDetail = lazy(
+  () => import("@/pages/recruitment/JobDetail"),
+);
+
+const Performance = lazy(
+  () => import("@/pages/Performance"),
+);
+
+const Payroll = lazy(
+  () => import("@/pages/Payroll"),
+);
+
+const Documents = lazy(
+  () => import("@/pages/Documents"),
+);
+
+const Announcements = lazy(
+  () => import("@/pages/Announcements"),
+);
+
+// =========================================================
+// CALENDAR
+// =========================================================
+
+const Calendar = lazy(
+  () => import("@/pages/Calendar"),
+);
 
 // =========================================================
 // SETTINGS
 // =========================================================
 
-const Settings = lazy(() => import("@/pages/settings/Settings"));
+const Settings = lazy(
+  () => import("@/pages/settings/Settings"),
+);
 
-const AccountSettings = lazy(() => import("@/pages/settings/AccountSettings"));
+const AccountSettings = lazy(
+  () => import("@/pages/settings/AccountSettings"),
+);
 
 // =========================================================
 // 404
 // =========================================================
 
-const NotFound = lazy(() => import("@/pages/NotFound"));
+const NotFound = lazy(
+  () => import("@/pages/NotFound"),
+);
 
 // =========================================================
 // LOADING
@@ -76,7 +126,9 @@ const NotFound = lazy(() => import("@/pages/NotFound"));
 function PageFallback() {
   return (
     <div className="flex min-h-[300px] items-center justify-center">
-      <Loader2 className="h-6 w-6 animate-spin text-brand-600" />
+      <Loader2
+        className="h-6 w-6 animate-spin text-brand-600"
+      />
     </div>
   );
 }
@@ -89,6 +141,7 @@ export default function App() {
   return (
     <Suspense fallback={<PageFallback />}>
       <Routes>
+
         {/* =====================================================
             PUBLIC ROUTES
         ===================================================== */}
@@ -112,25 +165,34 @@ export default function App() {
           }
         >
           {/* =================================================
-              DEFAULT
+              DEFAULT APP ROUTE
           ================================================= */}
 
-          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route
+            index
+            element={<Navigate to="dashboard" replace />}
+          />
 
           {/* =================================================
               DASHBOARD
           ================================================= */}
 
-          <Route path="dashboard" element={<Dashboard />} />
+          <Route
+            path="dashboard"
+            element={<Dashboard />}
+          />
 
           {/* =================================================
               MY TICKETS
           ================================================= */}
 
-          <Route path="my-tickets" element={<MyTickets />} />
+          <Route
+            path="my-tickets"
+            element={<MyTickets />}
+          />
 
           {/* =================================================
-              ADMIN / HR TICKETS
+              TICKETS
           ================================================= */}
 
           <Route
@@ -151,12 +213,7 @@ export default function App() {
           />
 
           {/* =================================================
-              IMPORTANT:
-
-              /app/tickets/:id
-
-              Clicking "Chat / Message" or "View" from
-              Ticket Management opens TicketConversation.
+              TICKET CONVERSATION
           ================================================= */}
 
           <Route
@@ -169,10 +226,7 @@ export default function App() {
           />
 
           {/* =================================================
-              OLD CHAT URL SUPPORT
-
-              This keeps the previous URL working too:
-              /app/ticket-conversation/:id
+              OLD TICKET CONVERSATION URL
           ================================================= */}
 
           <Route
@@ -191,13 +245,21 @@ export default function App() {
           <Route
             path="employees"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                ]}
+              >
                 <EmployeeDirectory />
               </ProtectedRoute>
             }
           />
 
-          <Route path="employees/:id" element={<EmployeeProfile />} />
+          <Route
+            path="employees/:id"
+            element={<EmployeeProfile />}
+          />
 
           {/* =================================================
               MY TEAM
@@ -219,7 +281,13 @@ export default function App() {
           <Route
             path="org-chart"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN", "MANAGER"]}>
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "MANAGER",
+                ]}
+              >
                 <OrgChart />
               </ProtectedRoute>
             }
@@ -229,13 +297,19 @@ export default function App() {
               ATTENDANCE
           ================================================= */}
 
-          <Route path="attendance" element={<Attendance />} />
+          <Route
+            path="attendance"
+            element={<Attendance />}
+          />
 
           {/* =================================================
               LEAVE
           ================================================= */}
 
-          <Route path="leave" element={<Leave />} />
+          <Route
+            path="leave"
+            element={<Leave />}
+          />
 
           {/* =================================================
               RECRUITMENT
@@ -245,18 +319,32 @@ export default function App() {
             path="recruitment"
             element={
               <ProtectedRoute
-                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "RECRUITER",
+                  "MANAGER",
+                ]}
               >
                 <Recruitment />
               </ProtectedRoute>
             }
           />
 
+          {/* =================================================
+              RECRUITMENT JOB DETAIL
+          ================================================= */}
+
           <Route
             path="recruitment/:jobId"
             element={
               <ProtectedRoute
-                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "RECRUITER",
+                  "MANAGER",
+                ]}
               >
                 <JobDetail />
               </ProtectedRoute>
@@ -267,19 +355,28 @@ export default function App() {
               PERFORMANCE
           ================================================= */}
 
-          <Route path="performance" element={<Performance />} />
+          <Route
+            path="performance"
+            element={<Performance />}
+          />
 
           {/* =================================================
               PAYROLL
           ================================================= */}
 
-          <Route path="payroll" element={<Payroll />} />
+          <Route
+            path="payroll"
+            element={<Payroll />}
+          />
 
           {/* =================================================
               DOCUMENTS
           ================================================= */}
 
-          <Route path="documents" element={<Documents />} />
+          <Route
+            path="documents"
+            element={<Documents />}
+          />
 
           {/* =================================================
               ANNOUNCEMENTS
@@ -288,17 +385,40 @@ export default function App() {
           <Route
             path="announcements"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
+              <ProtectedRoute>
                 <Announcements />
               </ProtectedRoute>
             }
           />
 
           {/* =================================================
-              SETTINGS
+              CALENDAR
+
+              URL:
+              /app/calendar
           ================================================= */}
 
-          <Route path="settings/account" element={<AccountSettings />} />
+          <Route
+            path="calendar"
+            element={
+              <ProtectedRoute>
+                <Calendar />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* =================================================
+              SETTINGS ACCOUNT
+          ================================================= */}
+
+          <Route
+            path="settings/account"
+            element={<AccountSettings />}
+          />
+
+          {/* =================================================
+              SETTINGS
+          ================================================= */}
 
           <Route
             path="settings"
@@ -321,14 +441,22 @@ export default function App() {
               UNKNOWN APP ROUTE
           ================================================= */}
 
-          <Route path="*" element={<NotFound />} />
+          <Route
+            path="*"
+            element={<NotFound />}
+          />
+
         </Route>
 
         {/* =====================================================
             UNKNOWN PUBLIC ROUTE
         ===================================================== */}
 
-        <Route path="*" element={<NotFound />} />
+        <Route
+          path="*"
+          element={<NotFound />}
+        />
+
       </Routes>
     </Suspense>
   );
