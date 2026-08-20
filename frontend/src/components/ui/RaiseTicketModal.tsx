@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, getErrorMessage } from "@/lib/api";
+import { useToast } from "@/context/ToastContext";
 
 interface Props {
   open: boolean;
@@ -10,6 +11,7 @@ export default function RaiseTicketModal({
   open,
   onClose,
 }: Props) {
+  const { showToast } = useToast();
   const [category, setCategory] = useState("HR");
   const [priority, setPriority] = useState("MEDIUM");
   const [subject, setSubject] = useState("");
@@ -21,12 +23,12 @@ export default function RaiseTicketModal({
 
   async function handleSubmit() {
     if (!subject.trim()) {
-      alert("Please enter subject");
+      showToast("Please enter a subject.", "error");
       return;
     }
 
     if (!description.trim()) {
-      alert("Please enter description");
+      showToast("Please enter a description.", "error");
       return;
     }
 
@@ -46,7 +48,7 @@ export default function RaiseTicketModal({
 
       await api.post("/tickets", formData);
 
-      alert("Ticket submitted successfully!");
+      showToast("Ticket submitted successfully.");
 
       setCategory("HR");
       setPriority("MEDIUM");
@@ -56,7 +58,7 @@ export default function RaiseTicketModal({
 
       onClose();
     } catch (err) {
-      alert(getErrorMessage(err));
+      showToast(getErrorMessage(err), "error");
     } finally {
       setLoading(false);
     }
@@ -160,7 +162,7 @@ export default function RaiseTicketModal({
                 }
 
                 if (file.size > 8 * 1024 * 1024) {
-                  alert("File size must be less than 8 MB.");
+                  showToast("File size must be less than 8 MB.", "error");
                   e.target.value = "";
                   setAttachment(null);
                   return;

@@ -23,9 +23,7 @@ const Tickets = lazy(() => import("@/pages/Tickets"));
 
 // IMPORTANT:
 // TicketConversation is the chat/message page.
-const TicketConversation = lazy(
-  () => import("@/pages/TicketConversation"),
-);
+const TicketConversation = lazy(() => import("@/pages/TicketConversation"));
 
 // =========================================================
 // EMPLOYEES
@@ -35,13 +33,11 @@ const EmployeeDirectory = lazy(
   () => import("@/pages/employees/EmployeeDirectory"),
 );
 
-const EmployeeProfile = lazy(
-  () => import("@/pages/employees/EmployeeProfile"),
-);
+const EmployeeProfile = lazy(() => import("@/pages/employees/EmployeeProfile"));
 
-const OrgChart = lazy(
-  () => import("@/pages/employees/OrgChart"),
-);
+const MyTeam = lazy(() => import("@/pages/MyTeam"));
+
+const OrgChart = lazy(() => import("@/pages/employees/OrgChart"));
 
 // =========================================================
 // HR MODULES
@@ -50,31 +46,22 @@ const OrgChart = lazy(
 const Attendance = lazy(() => import("@/pages/Attendance"));
 const Leave = lazy(() => import("@/pages/Leave"));
 
-const Recruitment = lazy(
-  () => import("@/pages/recruitment/Recruitment"),
-);
+const Recruitment = lazy(() => import("@/pages/recruitment/Recruitment"));
 
-const JobDetail = lazy(
-  () => import("@/pages/recruitment/JobDetail"),
-);
+const JobDetail = lazy(() => import("@/pages/recruitment/JobDetail"));
 
 const Performance = lazy(() => import("@/pages/Performance"));
 const Payroll = lazy(() => import("@/pages/Payroll"));
-const Announcements = lazy(
-  () => import("@/pages/Announcements"),
-);
+const Documents = lazy(() => import("@/pages/Documents"));
+const Announcements = lazy(() => import("@/pages/Announcements"));
 
 // =========================================================
 // SETTINGS
 // =========================================================
 
-const Settings = lazy(
-  () => import("@/pages/settings/Settings"),
-);
+const Settings = lazy(() => import("@/pages/settings/Settings"));
 
-const AccountSettings = lazy(
-  () => import("@/pages/settings/AccountSettings"),
-);
+const AccountSettings = lazy(() => import("@/pages/settings/AccountSettings"));
 
 // =========================================================
 // 404
@@ -102,25 +89,15 @@ export default function App() {
   return (
     <Suspense fallback={<PageFallback />}>
       <Routes>
-
         {/* =====================================================
             PUBLIC ROUTES
         ===================================================== */}
 
-        <Route
-          path="/"
-          element={<Landing />}
-        />
+        <Route path="/" element={<Landing />} />
 
-        <Route
-          path="/login"
-          element={<Login />}
-        />
+        <Route path="/login" element={<Login />} />
 
-        <Route
-          path="/register"
-          element={<Register />}
-        />
+        <Route path="/register" element={<Register />} />
 
         {/* =====================================================
             PROTECTED APPLICATION
@@ -134,38 +111,23 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-
           {/* =================================================
               DEFAULT
           ================================================= */}
 
-          <Route
-            index
-            element={
-              <Navigate
-                to="dashboard"
-                replace
-              />
-            }
-          />
+          <Route index element={<Navigate to="dashboard" replace />} />
 
           {/* =================================================
               DASHBOARD
           ================================================= */}
 
-          <Route
-            path="dashboard"
-            element={<Dashboard />}
-          />
+          <Route path="dashboard" element={<Dashboard />} />
 
           {/* =================================================
               MY TICKETS
           ================================================= */}
 
-          <Route
-            path="my-tickets"
-            element={<MyTickets />}
-          />
+          <Route path="my-tickets" element={<MyTickets />} />
 
           {/* =================================================
               ADMIN / HR TICKETS
@@ -229,20 +191,25 @@ export default function App() {
           <Route
             path="employees"
             element={
-              <ProtectedRoute
-                roles={[
-                  "SUPER_ADMIN",
-                  "HR_ADMIN",
-                ]}
-              >
+              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
                 <EmployeeDirectory />
               </ProtectedRoute>
             }
           />
 
+          <Route path="employees/:id" element={<EmployeeProfile />} />
+
+          {/* =================================================
+              MY TEAM
+          ================================================= */}
+
           <Route
-            path="employees/:id"
-            element={<EmployeeProfile />}
+            path="my-team"
+            element={
+              <ProtectedRoute roles={["MANAGER"]}>
+                <MyTeam />
+              </ProtectedRoute>
+            }
           />
 
           {/* =================================================
@@ -252,13 +219,7 @@ export default function App() {
           <Route
             path="org-chart"
             element={
-              <ProtectedRoute
-                roles={[
-                  "SUPER_ADMIN",
-                  "HR_ADMIN",
-                  "MANAGER",
-                ]}
-              >
+              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN", "MANAGER"]}>
                 <OrgChart />
               </ProtectedRoute>
             }
@@ -268,19 +229,13 @@ export default function App() {
               ATTENDANCE
           ================================================= */}
 
-          <Route
-            path="attendance"
-            element={<Attendance />}
-          />
+          <Route path="attendance" element={<Attendance />} />
 
           {/* =================================================
               LEAVE
           ================================================= */}
 
-          <Route
-            path="leave"
-            element={<Leave />}
-          />
+          <Route path="leave" element={<Leave />} />
 
           {/* =================================================
               RECRUITMENT
@@ -290,12 +245,7 @@ export default function App() {
             path="recruitment"
             element={
               <ProtectedRoute
-                roles={[
-                  "SUPER_ADMIN",
-                  "HR_ADMIN",
-                  "RECRUITER",
-                  "MANAGER",
-                ]}
+                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
               >
                 <Recruitment />
               </ProtectedRoute>
@@ -306,12 +256,7 @@ export default function App() {
             path="recruitment/:jobId"
             element={
               <ProtectedRoute
-                roles={[
-                  "SUPER_ADMIN",
-                  "HR_ADMIN",
-                  "RECRUITER",
-                  "MANAGER",
-                ]}
+                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
               >
                 <JobDetail />
               </ProtectedRoute>
@@ -322,33 +267,19 @@ export default function App() {
               PERFORMANCE
           ================================================= */}
 
-          <Route
-            path="performance"
-            element={<Performance />}
-          />
+          <Route path="performance" element={<Performance />} />
 
           {/* =================================================
               PAYROLL
           ================================================= */}
 
-          <Route
-            path="payroll"
-            element={<Payroll />}
-          />
+          <Route path="payroll" element={<Payroll />} />
 
           {/* =================================================
               DOCUMENTS
           ================================================= */}
 
-          <Route
-            path="documents"
-            element={
-              <Navigate
-                to="/app/dashboard"
-                replace
-              />
-            }
-          />
+          <Route path="documents" element={<Documents />} />
 
           {/* =================================================
               ANNOUNCEMENTS
@@ -357,12 +288,7 @@ export default function App() {
           <Route
             path="announcements"
             element={
-              <ProtectedRoute
-                roles={[
-                  "SUPER_ADMIN",
-                  "HR_ADMIN",
-                ]}
-              >
+              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
                 <Announcements />
               </ProtectedRoute>
             }
@@ -372,10 +298,7 @@ export default function App() {
               SETTINGS
           ================================================= */}
 
-          <Route
-            path="settings/account"
-            element={<AccountSettings />}
-          />
+          <Route path="settings/account" element={<AccountSettings />} />
 
           <Route
             path="settings"
@@ -398,22 +321,14 @@ export default function App() {
               UNKNOWN APP ROUTE
           ================================================= */}
 
-          <Route
-            path="*"
-            element={<NotFound />}
-          />
-
+          <Route path="*" element={<NotFound />} />
         </Route>
 
         {/* =====================================================
             UNKNOWN PUBLIC ROUTE
         ===================================================== */}
 
-        <Route
-          path="*"
-          element={<NotFound />}
-        />
-
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
   );

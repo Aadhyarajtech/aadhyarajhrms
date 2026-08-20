@@ -17,7 +17,8 @@ import {
   useState,
 } from "react";
 
-import { api, getErrorMessage } from "@/lib/api";
+import { api, getErrorMessage, resolveAssetUrl } from "@/lib/api";
+import { useToast } from "@/context/ToastContext";
 
 interface Ticket {
   _id: string;
@@ -190,11 +191,7 @@ function getAttachmentUrl(attachment?: string) {
     return attachment;
   }
 
-  if (attachment.startsWith("/")) {
-    return `http://localhost:4000${attachment}`;
-  }
-
-  return `http://localhost:4000/uploads/${attachment}`;
+  return resolveAssetUrl(attachment);
 }
 
 /* =========================================================
@@ -359,6 +356,7 @@ export default function TicketDetails() {
   const { id } = useParams<{ id: string }>();
 
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   const [messageText, setMessageText] =
     useState("");
@@ -518,7 +516,7 @@ export default function TicketDetails() {
     },
 
     onError: (error) => {
-      alert(getErrorMessage(error));
+      showToast(getErrorMessage(error), "error");
     },
   });
 
@@ -535,9 +533,7 @@ export default function TicketDetails() {
     }
 
     if (trimmedMessage.length > 5000) {
-      alert(
-        "Message cannot exceed 5000 characters.",
-      );
+      showToast("Message cannot exceed 5000 characters.", "error");
       return;
     }
 

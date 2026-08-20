@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { MessageCircle } from "lucide-react";
 
-import { api } from "@/lib/api";
+import { api, resolveAssetUrl } from "@/lib/api";
 
 interface Ticket {
   _id: string;
@@ -129,7 +129,7 @@ export default function MyTickets() {
                 <td className="p-3">
                   {ticket.attachment ? (
                     <a
-                      href={`http://localhost:4000${ticket.attachment}`}
+                      href={resolveAssetUrl(ticket.attachment) ?? "#"}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-medium text-brand-600 hover:underline"

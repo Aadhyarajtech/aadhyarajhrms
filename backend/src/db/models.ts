@@ -14,7 +14,13 @@ export interface UserDoc {
   _id: string;
   email: string;
   passwordHash: string;
-  role: "SUPER_ADMIN" | "HR_ADMIN" | "MANAGER" | "RECRUITER" | "FINANCE" | "EMPLOYEE";
+  role:
+    | "SUPER_ADMIN"
+    | "HR_ADMIN"
+    | "MANAGER"
+    | "RECRUITER"
+    | "FINANCE"
+    | "EMPLOYEE";
   isActive: boolean;
   mustResetPwd: boolean;
   lastLoginAt: string | null;
@@ -25,11 +31,24 @@ export interface UserDoc {
 const userSchema = new Schema<UserDoc>(
   {
     _id: idField("usr"),
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
     passwordHash: { type: String, required: true },
     role: {
       type: String,
-      enum: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER", "RECRUITER", "FINANCE", "EMPLOYEE"],
+      enum: [
+        "SUPER_ADMIN",
+        "HR_ADMIN",
+        "MANAGER",
+        "RECRUITER",
+        "FINANCE",
+        "EMPLOYEE",
+      ],
       default: "EMPLOYEE",
     },
     isActive: { type: Boolean, default: true },
@@ -38,7 +57,7 @@ const userSchema = new Schema<UserDoc>(
     createdAt: { type: String, required: true },
     updatedAt: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 export const User = model<UserDoc>("User", userSchema);
 
@@ -65,7 +84,7 @@ const departmentSchema = new Schema<DepartmentDoc>(
     headId: { type: String, default: null },
     createdAt: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 export const Department = model<DepartmentDoc>("Department", departmentSchema);
 
@@ -83,10 +102,13 @@ const designationSchema = new Schema<DesignationDoc>(
     level: { type: Number, required: true, default: 1 },
     departmentId: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 designationSchema.index({ title: 1, departmentId: 1 }, { unique: true });
-export const Designation = model<DesignationDoc>("Designation", designationSchema);
+export const Designation = model<DesignationDoc>(
+  "Designation",
+  designationSchema,
+);
 
 // ---------------------------------------------------------------------------
 // Employees
@@ -99,6 +121,7 @@ export interface EmployeeDoc {
   lastName: string;
   avatarUrl: string | null;
   gender: string | null;
+  maritalStatus: string | null;
   dateOfBirth: string | null;
   personalEmail: string | null;
   phone: string | null;
@@ -110,11 +133,68 @@ export interface EmployeeDoc {
   designationId: string;
   managerId: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
-  status: "ACTIVE" | "ON_LEAVE" | "NOTICE_PERIOD" | "TERMINATED" | "RESIGNED";
+  grade: string | null;
+  workLocation: string | null;
+  probationPeriodMonths: number | null;
+  probationStartDate: string | null;
+  probationEndDate: string | null;
+  probationReminderSentAt: string | null;
+  status:
+    | "ACTIVE"
+    | "ON_PROBATION"
+    | "ON_LEAVE"
+    | "NOTICE_PERIOD"
+    | "INACTIVE"
+    | "ON_HOLD";
   dateOfJoining: string;
   dateOfExit: string | null;
+  isArchived: boolean;
+  archivedAt: string | null;
+  offboardingChecklist: {
+    assetReturn: boolean;
+    accessRevoked: boolean;
+    exitInterview: boolean;
+    finalSettlement: boolean;
+    completedAt: string | null;
+  } | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  emergencyContactRelationship: string | null;
+  emergencyContactEmail: string | null;
+  employeeAadhaar: string | null;
+  employeePan: string | null;
+  signature: string | null;
+
+  education: {
+    qualification: string;
+    institution: string;
+    specialization: string | null;
+    startYear: number | null;
+    endYear: number | null;
+    grade: string | null;
+  }[];
+
+  certifications: {
+    name: string;
+    issuingOrganization: string | null;
+    issueDate: string | null;
+    expiryDate: string | null;
+    credentialId: string | null;
+  }[];
+
+  workHistory: {
+    companyName: string;
+    designation: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    responsibilities: string | null;
+  }[];
+
+  skills: {
+    name: string;
+    category: string | null;
+    competencyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "EXPERT";
+  }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -128,6 +208,11 @@ const employeeSchema = new Schema<EmployeeDoc>(
     lastName: { type: String, required: true },
     avatarUrl: { type: String, default: null },
     gender: { type: String, default: null },
+    maritalStatus: {
+      type: String,
+      enum: ["SINGLE", "MARRIED", "DIVORCED", "WIDOWED", "NOT_LISTED"],
+      default: null,
+    },
     dateOfBirth: { type: String, default: null },
     personalEmail: { type: String, default: null },
     phone: { type: String, default: null },
@@ -138,20 +223,159 @@ const employeeSchema = new Schema<EmployeeDoc>(
     departmentId: { type: String, required: true },
     designationId: { type: String, required: true },
     managerId: { type: String, default: null },
-    employmentType: { type: String, enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"], default: "FULL_TIME" },
+    employmentType: {
+      type: String,
+      enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"],
+      default: "FULL_TIME",
+    },
+    grade: {
+      type: String,
+      default: null,
+    },
+
+    workLocation: {
+      type: String,
+      default: null,
+    },
+
+    probationPeriodMonths: {
+      type: Number,
+      default: null,
+    },
+
+    probationStartDate: {
+      type: String,
+      default: null,
+    },
+
+    probationEndDate: {
+      type: String,
+      default: null,
+    },
+    probationReminderSentAt: {
+      type: String,
+      default: null,
+    },
     status: {
       type: String,
-      enum: ["ACTIVE", "ON_LEAVE", "NOTICE_PERIOD", "TERMINATED", "RESIGNED"],
+      enum: [
+        "ACTIVE",
+        "ON_PROBATION",
+        "ON_LEAVE",
+        "NOTICE_PERIOD",
+        "INACTIVE",
+        "ON_HOLD",
+      ],
       default: "ACTIVE",
     },
     dateOfJoining: { type: String, required: true },
     dateOfExit: { type: String, default: null },
+
+    isArchived: {
+      type: Boolean,
+      default: false,
+    },
+
+    archivedAt: {
+      type: String,
+      default: null,
+    },
+
+    offboardingChecklist: {
+      type: {
+        assetReturn: {
+          type: Boolean,
+          default: false,
+        },
+        accessRevoked: {
+          type: Boolean,
+          default: false,
+        },
+        exitInterview: {
+          type: Boolean,
+          default: false,
+        },
+        finalSettlement: {
+          type: Boolean,
+          default: false,
+        },
+        completedAt: {
+          type: String,
+          default: null,
+        },
+      },
+      default: null,
+    },
+
     emergencyContactName: { type: String, default: null },
     emergencyContactPhone: { type: String, default: null },
+    emergencyContactRelationship: { type: String, default: null },
+    emergencyContactEmail: { type: String, default: null },
+    employeeAadhaar: { type: String, default: null },
+    employeePan: { type: String, default: null },
     createdAt: { type: String, required: true },
+    signature: {
+      type: String,
+      default: null,
+    },
+
+    education: {
+      type: [
+        {
+          qualification: { type: String, required: true },
+          institution: { type: String, required: true },
+          specialization: { type: String, default: null },
+          startYear: { type: Number, default: null },
+          endYear: { type: Number, default: null },
+          grade: { type: String, default: null },
+        },
+      ],
+      default: [],
+    },
+
+    certifications: {
+      type: [
+        {
+          name: { type: String, required: true },
+          issuingOrganization: { type: String, default: null },
+          issueDate: { type: String, default: null },
+          expiryDate: { type: String, default: null },
+          credentialId: { type: String, default: null },
+        },
+      ],
+      default: [],
+    },
+
+    workHistory: {
+      type: [
+        {
+          companyName: { type: String, required: true },
+          designation: { type: String, default: null },
+          startDate: { type: String, default: null },
+          endDate: { type: String, default: null },
+          responsibilities: { type: String, default: null },
+        },
+      ],
+      default: [],
+    },
+
+    skills: {
+      type: [
+        {
+          name: { type: String, required: true },
+          category: { type: String, default: null },
+          competencyLevel: {
+            type: String,
+            enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"],
+            default: "BEGINNER",
+          },
+        },
+      ],
+      default: [],
+    },
     updatedAt: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 employeeSchema.index({ departmentId: 1 });
 employeeSchema.index({ managerId: 1 });
@@ -166,7 +390,14 @@ export interface AttendanceDoc {
   date: string;
   checkIn: string | null;
   checkOut: string | null;
-  status: "PRESENT" | "ABSENT" | "HALF_DAY" | "WORK_FROM_HOME" | "ON_LEAVE" | "HOLIDAY" | "WEEKEND";
+  status:
+    | "PRESENT"
+    | "ABSENT"
+    | "HALF_DAY"
+    | "WORK_FROM_HOME"
+    | "ON_LEAVE"
+    | "HOLIDAY"
+    | "WEEKEND";
   workHours: number | null;
   isRegularized: boolean;
   note: string | null;
@@ -182,7 +413,15 @@ const attendanceSchema = new Schema<AttendanceDoc>(
     checkOut: { type: String, default: null },
     status: {
       type: String,
-      enum: ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE", "HOLIDAY", "WEEKEND"],
+      enum: [
+        "PRESENT",
+        "ABSENT",
+        "HALF_DAY",
+        "WORK_FROM_HOME",
+        "ON_LEAVE",
+        "HOLIDAY",
+        "WEEKEND",
+      ],
       default: "PRESENT",
     },
     workHours: { type: Number, default: null },
@@ -190,7 +429,7 @@ const attendanceSchema = new Schema<AttendanceDoc>(
     note: { type: String, default: null },
     createdAt: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 attendanceSchema.index({ employeeId: 1, date: 1 }, { unique: true });
 attendanceSchema.index({ date: 1 });
@@ -210,7 +449,7 @@ const holidaySchema = new Schema<HolidayDoc>(
     date: { type: String, required: true, unique: true },
     isOptional: { type: Boolean, default: false },
   },
-  baseOptions
+  baseOptions,
 );
 export const Holiday = model<HolidayDoc>("Holiday", holidaySchema);
 
@@ -235,7 +474,7 @@ const leaveTypeSchema = new Schema<LeaveTypeDoc>(
     isPaid: { type: Boolean, default: true },
     requiresApproval: { type: Boolean, default: true },
   },
-  baseOptions
+  baseOptions,
 );
 export const LeaveType = model<LeaveTypeDoc>("LeaveType", leaveTypeSchema);
 
@@ -259,10 +498,16 @@ const leaveBalanceSchema = new Schema<LeaveBalanceDoc>(
     used: { type: Number, default: 0 },
     carriedOver: { type: Number, default: 0 },
   },
-  baseOptions
+  baseOptions,
 );
-leaveBalanceSchema.index({ employeeId: 1, leaveTypeId: 1, year: 1 }, { unique: true });
-export const LeaveBalance = model<LeaveBalanceDoc>("LeaveBalance", leaveBalanceSchema);
+leaveBalanceSchema.index(
+  { employeeId: 1, leaveTypeId: 1, year: 1 },
+  { unique: true },
+);
+export const LeaveBalance = model<LeaveBalanceDoc>(
+  "LeaveBalance",
+  leaveBalanceSchema,
+);
 
 export interface LeaveRequestDoc {
   _id: string;
@@ -288,17 +533,24 @@ const leaveRequestSchema = new Schema<LeaveRequestDoc>(
     endDate: { type: String, required: true },
     totalDays: { type: Number, required: true },
     reason: { type: String, required: true },
-    status: { type: String, enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"], default: "PENDING" },
+    status: {
+      type: String,
+      enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
+      default: "PENDING",
+    },
     approverId: { type: String, default: null },
     decisionNote: { type: String, default: null },
     appliedAt: { type: String, required: true },
     decidedAt: { type: String, default: null },
   },
-  baseOptions
+  baseOptions,
 );
 leaveRequestSchema.index({ employeeId: 1 });
 leaveRequestSchema.index({ status: 1 });
-export const LeaveRequest = model<LeaveRequestDoc>("LeaveRequest", leaveRequestSchema);
+export const LeaveRequest = model<LeaveRequestDoc>(
+  "LeaveRequest",
+  leaveRequestSchema,
+);
 
 // ---------------------------------------------------------------------------
 // Recruitment
@@ -325,15 +577,23 @@ const jobPostingSchema = new Schema<JobPostingDoc>(
     departmentId: { type: String, required: true },
     designationId: { type: String, required: true },
     location: { type: String, default: "Bengaluru, India" },
-    employmentType: { type: String, enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"], default: "FULL_TIME" },
+    employmentType: {
+      type: String,
+      enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"],
+      default: "FULL_TIME",
+    },
     experienceMin: { type: Number, default: 0 },
     experienceMax: { type: Number, default: 5 },
     description: { type: String, required: true },
-    status: { type: String, enum: ["OPEN", "ON_HOLD", "CLOSED"], default: "OPEN" },
+    status: {
+      type: String,
+      enum: ["OPEN", "ON_HOLD", "CLOSED"],
+      default: "OPEN",
+    },
     openings: { type: Number, default: 1 },
     postedAt: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 export const JobPosting = model<JobPostingDoc>("JobPosting", jobPostingSchema);
 
@@ -375,7 +635,7 @@ const candidateSchema = new Schema<CandidateDoc>(
     appliedAt: { type: String, required: true },
     notes: { type: String, default: null },
   },
-  baseOptions
+  baseOptions,
 );
 candidateSchema.index({ stage: 1 });
 export const Candidate = model<CandidateDoc>("Candidate", candidateSchema);
@@ -402,7 +662,7 @@ const interviewSchema = new Schema<InterviewDoc>(
     recommendation: { type: String, default: null },
     completed: { type: Boolean, default: false },
   },
-  baseOptions
+  baseOptions,
 );
 export const Interview = model<InterviewDoc>("Interview", interviewSchema);
 
@@ -425,9 +685,12 @@ const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
     endDate: { type: String, required: true },
     isActive: { type: Boolean, default: true },
   },
-  baseOptions
+  baseOptions,
 );
-export const PerformanceCycle = model<PerformanceCycleDoc>("PerformanceCycle", performanceCycleSchema);
+export const PerformanceCycle = model<PerformanceCycleDoc>(
+  "PerformanceCycle",
+  performanceCycleSchema,
+);
 
 export interface PerformanceReviewDoc {
   _id: string;
@@ -463,10 +726,13 @@ const performanceReviewSchema = new Schema<PerformanceReviewDoc>(
     managerComments: { type: String, default: null },
     submittedAt: { type: String, default: null },
   },
-  baseOptions
+  baseOptions,
 );
 performanceReviewSchema.index({ cycleId: 1, revieweeId: 1 }, { unique: true });
-export const PerformanceReview = model<PerformanceReviewDoc>("PerformanceReview", performanceReviewSchema);
+export const PerformanceReview = model<PerformanceReviewDoc>(
+  "PerformanceReview",
+  performanceReviewSchema,
+);
 
 export interface GoalDoc {
   _id: string;
@@ -486,11 +752,15 @@ const goalSchema = new Schema<GoalDoc>(
     title: { type: String, required: true },
     description: { type: String, default: null },
     progress: { type: Number, default: 0 },
-    status: { type: String, enum: ["NOT_STARTED", "IN_PROGRESS", "AT_RISK", "COMPLETED"], default: "NOT_STARTED" },
+    status: {
+      type: String,
+      enum: ["NOT_STARTED", "IN_PROGRESS", "AT_RISK", "COMPLETED"],
+      default: "NOT_STARTED",
+    },
     dueDate: { type: String, required: true },
     createdAt: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 export const Goal = model<GoalDoc>("Goal", goalSchema);
 
@@ -525,9 +795,12 @@ const salaryStructureSchema = new Schema<SalaryStructureDoc>(
     incomeTax: { type: Number, required: true },
     effectiveFrom: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
-export const SalaryStructure = model<SalaryStructureDoc>("SalaryStructure", salaryStructureSchema);
+export const SalaryStructure = model<SalaryStructureDoc>(
+  "SalaryStructure",
+  salaryStructureSchema,
+);
 
 export interface PayrollRunDoc {
   _id: string;
@@ -546,14 +819,18 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
     _id: idField("prun"),
     month: { type: Number, required: true },
     year: { type: Number, required: true },
-    status: { type: String, enum: ["DRAFT", "PROCESSED", "PAID"], default: "DRAFT" },
+    status: {
+      type: String,
+      enum: ["DRAFT", "PROCESSED", "PAID"],
+      default: "DRAFT",
+    },
     processedAt: { type: String, default: null },
     totalGross: { type: Number, default: 0 },
     totalDeductions: { type: Number, default: 0 },
     totalNet: { type: Number, default: 0 },
     headcount: { type: Number, default: 0 },
   },
-  baseOptions
+  baseOptions,
 );
 payrollRunSchema.index({ month: 1, year: 1 }, { unique: true });
 export const PayrollRun = model<PayrollRunDoc>("PayrollRun", payrollRunSchema);
@@ -598,10 +875,54 @@ const payslipSchema = new Schema<PayslipDoc>(
     daysPayable: { type: Number, required: true },
     daysInMonth: { type: Number, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 payslipSchema.index({ payrollRunId: 1, employeeId: 1 }, { unique: true });
 export const Payslip = model<PayslipDoc>("Payslip", payslipSchema);
+
+export type PayslipRequestPeriod = "3_MONTHS" | "6_MONTHS" | "12_MONTHS";
+export type PayslipRequestStatus = "PENDING" | "SENT" | "REJECTED";
+
+export interface PayslipRequestDoc {
+  _id: string;
+  employeeId: string;
+  requestedByUserId: string;
+  period: PayslipRequestPeriod;
+  status: PayslipRequestStatus;
+  payslipIds: string[];
+  processedByUserId: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+}
+
+const payslipRequestSchema = new Schema<PayslipRequestDoc>(
+  {
+    _id: idField("preq"),
+    employeeId: { type: String, required: true },
+    requestedByUserId: { type: String, required: true },
+    period: {
+      type: String,
+      enum: ["3_MONTHS", "6_MONTHS", "12_MONTHS"],
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["PENDING", "SENT", "REJECTED"],
+      default: "PENDING",
+    },
+    payslipIds: { type: [String], default: [] },
+    processedByUserId: { type: String, default: null },
+    requestedAt: { type: String, required: true },
+    completedAt: { type: String, default: null },
+  },
+  baseOptions,
+);
+payslipRequestSchema.index({ employeeId: 1, requestedAt: -1 });
+payslipRequestSchema.index({ status: 1 });
+export const PayslipRequest = model<PayslipRequestDoc>(
+  "PayslipRequest",
+  payslipRequestSchema,
+);
 
 // ---------------------------------------------------------------------------
 // Announcements & notifications
@@ -624,9 +945,12 @@ const announcementSchema = new Schema<AnnouncementDoc>(
     audience: { type: String, default: "ALL" },
     createdAt: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
-export const Announcement = model<AnnouncementDoc>("Announcement", announcementSchema);
+export const Announcement = model<AnnouncementDoc>(
+  "Announcement",
+  announcementSchema,
+);
 
 export type NotificationType =
   | "LEAVE_REQUEST"
@@ -636,7 +960,10 @@ export type NotificationType =
   | "PERFORMANCE"
   | "RECRUITMENT"
   | "TICKET_MESSAGE"
-  | "SYSTEM";
+  | "SYSTEM"
+  | "DOCUMENT_REQUESTED"
+  | "DOCUMENT_UPLOADED"
+  | "DOCUMENT_READY";
 
 export interface NotificationDoc {
   _id: string;
@@ -655,7 +982,19 @@ const notificationSchema = new Schema<NotificationDoc>(
     userId: { type: String, required: true },
     type: {
       type: String,
-      enum: ["LEAVE_REQUEST", "LEAVE_DECISION", "ANNOUNCEMENT", "PAYROLL", "PERFORMANCE", "RECRUITMENT", "TICKET_MESSAGE", "SYSTEM"],
+      enum: [
+        "LEAVE_REQUEST",
+        "LEAVE_DECISION",
+        "ANNOUNCEMENT",
+        "PAYROLL",
+        "PERFORMANCE",
+        "RECRUITMENT",
+        "TICKET_MESSAGE",
+        "SYSTEM",
+        "DOCUMENT_REQUESTED",
+        "DOCUMENT_UPLOADED",
+        "DOCUMENT_READY",
+      ],
       default: "SYSTEM",
     },
     title: { type: String, required: true },
@@ -664,21 +1003,52 @@ const notificationSchema = new Schema<NotificationDoc>(
     link: { type: String, default: null },
     createdAt: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 notificationSchema.index({ userId: 1, isRead: 1 });
-export const Notification = model<NotificationDoc>("Notification", notificationSchema);
+export const Notification = model<NotificationDoc>(
+  "Notification",
+  notificationSchema,
+);
 
 // ---------------------------------------------------------------------------
 // Documents & assets
 // ---------------------------------------------------------------------------
+export type DocumentStatus = "PENDING" | "VERIFIED" | "REJECTED";
+// Employee-provided document types (uploaded by/for an employee) plus
+// company-issued document types (uploaded by HR/Admin against an
+// employee-originated request). Kept as a single enum on DocumentRecord so
+// existing direct-upload behavior (e.g. OFFER_LETTER) remains unchanged.
+export type DocumentRecordType =
+  | "OFFER_LETTER"
+  | "ID_PROOF"
+  | "ADDRESS_PROOF"
+  | "EDUCATIONAL"
+  | "CONTRACT"
+  | "APPOINTMENT_LETTER"
+  | "EXPERIENCE_LETTER"
+  | "RELIEVING_LETTER"
+  | "SALARY_CERTIFICATE"
+  | "EMPLOYMENT_CERTIFICATE"
+  | "OTHER";
+
 export interface DocumentRecordDoc {
   _id: string;
   employeeId: string;
-  type: "OFFER_LETTER" | "ID_PROOF" | "ADDRESS_PROOF" | "EDUCATIONAL" | "CONTRACT" | "OTHER";
+  type: DocumentRecordType;
   fileName: string;
   fileUrl: string;
   uploadedAt: string;
+
+  status: DocumentStatus;
+  uploadedBy: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+
+  // Links this document back to the DocumentRequest it fulfils, if any.
+  // Null for documents uploaded directly (existing behavior).
+  requestId: string | null;
 }
 
 const documentSchema = new Schema<DocumentRecordDoc>(
@@ -687,16 +1057,139 @@ const documentSchema = new Schema<DocumentRecordDoc>(
     employeeId: { type: String, required: true },
     type: {
       type: String,
-      enum: ["OFFER_LETTER", "ID_PROOF", "ADDRESS_PROOF", "EDUCATIONAL", "CONTRACT", "OTHER"],
+      enum: [
+        "OFFER_LETTER",
+        "ID_PROOF",
+        "ADDRESS_PROOF",
+        "EDUCATIONAL",
+        "CONTRACT",
+        "APPOINTMENT_LETTER",
+        "EXPERIENCE_LETTER",
+        "RELIEVING_LETTER",
+        "SALARY_CERTIFICATE",
+        "EMPLOYMENT_CERTIFICATE",
+        "OTHER",
+      ],
       default: "OTHER",
     },
     fileName: { type: String, required: true },
     fileUrl: { type: String, required: true },
     uploadedAt: { type: String, required: true },
+    status: {
+      type: String,
+      enum: ["PENDING", "VERIFIED", "REJECTED"],
+      default: "PENDING",
+    },
+    uploadedBy: {
+      type: String,
+      default: null,
+    },
+    reviewedBy: {
+      type: String,
+      default: null,
+    },
+    reviewedAt: {
+      type: String,
+      default: null,
+    },
+    rejectionReason: {
+      type: String,
+      default: null,
+    },
+    requestId: {
+      type: String,
+      default: null,
+    },
   },
-  baseOptions
+
+  baseOptions,
 );
-export const DocumentRecord = model<DocumentRecordDoc>("DocumentRecord", documentSchema, "documents");
+documentSchema.index({ requestId: 1 });
+export const DocumentRecord = model<DocumentRecordDoc>(
+  "DocumentRecord",
+  documentSchema,
+  "documents",
+);
+
+// ---------------------------------------------------------------------------
+// Document requests (both directions)
+// ---------------------------------------------------------------------------
+// COMPANY_TO_EMPLOYEE: SUPER_ADMIN / HR_ADMIN / MANAGER asks an employee to
+// upload a document (e.g. ID proof). Fulfilled by the employee uploading
+// against the request; the original requester is notified.
+//
+// EMPLOYEE_TO_COMPANY: an employee asks the company for a company-issued
+// document (e.g. Experience Letter). Fulfilled by HR/company uploading
+// against the request; the employee is notified.
+export type DocumentRequestDirection =
+  | "COMPANY_TO_EMPLOYEE"
+  | "EMPLOYEE_TO_COMPANY";
+export type DocumentRequestStatus = "PENDING" | "UPLOADED" | "REJECTED";
+
+export interface DocumentRequestDoc {
+  _id: string;
+  employeeId: string;
+  direction: DocumentRequestDirection;
+  type: DocumentRecordType;
+  note: string | null;
+  status: DocumentRequestStatus;
+  // For COMPANY_TO_EMPLOYEE: the HR/Admin/Manager user who requested it.
+  // For EMPLOYEE_TO_COMPANY: the employee's own user id.
+  requestedByUserId: string;
+  // The user who fulfilled the request (uploaded the document), if any.
+  processedByUserId: string | null;
+  // Links to the DocumentRecord created when the request was fulfilled.
+  documentId: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+}
+
+const documentRequestSchema = new Schema<DocumentRequestDoc>(
+  {
+    _id: idField("dreq"),
+    employeeId: { type: String, required: true },
+    direction: {
+      type: String,
+      enum: ["COMPANY_TO_EMPLOYEE", "EMPLOYEE_TO_COMPANY"],
+      required: true,
+    },
+    type: {
+      type: String,
+      enum: [
+        "OFFER_LETTER",
+        "ID_PROOF",
+        "ADDRESS_PROOF",
+        "EDUCATIONAL",
+        "CONTRACT",
+        "APPOINTMENT_LETTER",
+        "EXPERIENCE_LETTER",
+        "RELIEVING_LETTER",
+        "SALARY_CERTIFICATE",
+        "EMPLOYMENT_CERTIFICATE",
+        "OTHER",
+      ],
+      required: true,
+    },
+    note: { type: String, default: null },
+    status: {
+      type: String,
+      enum: ["PENDING", "UPLOADED", "REJECTED"],
+      default: "PENDING",
+    },
+    requestedByUserId: { type: String, required: true },
+    processedByUserId: { type: String, default: null },
+    documentId: { type: String, default: null },
+    requestedAt: { type: String, required: true },
+    completedAt: { type: String, default: null },
+  },
+  baseOptions,
+);
+documentRequestSchema.index({ employeeId: 1, requestedAt: -1 });
+documentRequestSchema.index({ direction: 1, status: 1 });
+export const DocumentRequest = model<DocumentRequestDoc>(
+  "DocumentRequest",
+  documentRequestSchema,
+);
 
 export interface AssetDoc {
   _id: string;
@@ -718,9 +1211,13 @@ const assetSchema = new Schema<AssetDoc>(
     name: { type: String, required: true },
     assignedAt: { type: String, required: true },
     returnedAt: { type: String, default: null },
-    status: { type: String, enum: ["ASSIGNED", "RETURNED", "DAMAGED", "LOST"], default: "ASSIGNED" },
+    status: {
+      type: String,
+      enum: ["ASSIGNED", "RETURNED", "DAMAGED", "LOST"],
+      default: "ASSIGNED",
+    },
   },
-  baseOptions
+  baseOptions,
 );
 export const Asset = model<AssetDoc>("Asset", assetSchema);
 
@@ -749,7 +1246,7 @@ const auditLogSchema = new Schema<AuditLogDoc>(
     ipAddress: { type: String, default: null },
     createdAt: { type: String, required: true },
   },
-  baseOptions
+  baseOptions,
 );
 auditLogSchema.index({ entity: 1, entityId: 1 });
 export const AuditLog = model<AuditLogDoc>("AuditLog", auditLogSchema);
@@ -868,7 +1365,7 @@ const ticketSchema = new Schema<TicketDoc>(
       required: true,
     },
   },
-  baseOptions
+  baseOptions,
 );
 
 ticketSchema.index({ employeeId: 1 });

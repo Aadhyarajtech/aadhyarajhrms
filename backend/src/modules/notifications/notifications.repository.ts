@@ -9,7 +9,10 @@ export type NotificationType =
   | "PERFORMANCE"
   | "RECRUITMENT"
   | "TICKET_MESSAGE"
-  | "SYSTEM";
+  | "SYSTEM"
+  | "DOCUMENT_REQUESTED"
+  | "DOCUMENT_UPLOADED"
+  | "DOCUMENT_READY";
 
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
@@ -42,10 +45,7 @@ export async function notify(input: {
   return doc._id;
 }
 
-export async function listNotifications(
-  userId: string,
-  unreadOnly = false,
-) {
+export async function listNotifications(userId: string, unreadOnly = false) {
   const query: Record<string, any> = {
     userId,
   };
@@ -71,10 +71,7 @@ export async function unreadCount(userId: string) {
   });
 }
 
-export async function markRead(
-  id: string,
-  userId: string,
-) {
+export async function markRead(id: string, userId: string) {
   await Notification.updateOne(
     {
       _id: id,
@@ -126,7 +123,5 @@ export async function createAnnouncement(input: {
     createdAt: nowIso(),
   });
 
-  return toApiDoc(
-    (await Announcement.findById(doc._id).lean())!,
-  );
+  return toApiDoc((await Announcement.findById(doc._id).lean())!);
 }
