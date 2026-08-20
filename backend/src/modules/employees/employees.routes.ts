@@ -163,16 +163,12 @@ employeesRouter.get("/:id", async (req, res, next) => {
       return res.json({ employee });
     }
 
-    // Employee can only view their own profile.
-    if (requester.role === "EMPLOYEE") {
-      if (requester.employeeId !== req.params.id) {
-        throw AppError.forbidden();
-      }
-
+    // Any authenticated employee can view their own profile.
+    if (requester.employeeId === req.params.id) {
       return res.json({ employee });
     }
 
-    // Manager can only view their direct reports.
+    // Managers can only view their direct reports.
     if (requester.role === "MANAGER") {
       if (!requester.employeeId) {
         throw AppError.forbidden();
