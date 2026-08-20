@@ -260,8 +260,7 @@ export function Sidebar({
   ------------------------------------------------------- */
 
   const content = (
-    <div className="flex h-full flex-col">
-
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* ===================================================
           BRAND HEADER
       =================================================== */}
@@ -283,7 +282,7 @@ export function Sidebar({
           NAVIGATION
       =================================================== */}
 
-      <nav className="space-y-1">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
         {items.map((item) => {
           /* -------------------------------------------------
              RESOLVE DYNAMIC PATHS
@@ -330,7 +329,6 @@ export function Sidebar({
 
       <div className="mt-auto pt-6">
         <div className="rounded-xl bg-black/[0.03] p-3">
-
           <p className="text-xs font-medium text-ink">
             Need help?
           </p>
@@ -338,10 +336,8 @@ export function Sidebar({
           <p className="mt-1 text-xs text-ink-faint">
             Reach IT & Security for access or technical issues.
           </p>
-
         </div>
       </div>
-
     </div>
   );
 
@@ -355,7 +351,7 @@ export function Sidebar({
           DESKTOP
       ===================================================== */}
 
-      <aside className="hidden h-full w-64 shrink-0 border-r border-line bg-white p-5 lg:block">
+      <aside className="hidden h-screen w-64 shrink-0 overflow-hidden border-r border-line bg-white p-5 lg:block">
         {content}
       </aside>
 
@@ -365,7 +361,6 @@ export function Sidebar({
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-
           {/* BACKDROP */}
 
           <div
@@ -378,7 +373,6 @@ export function Sidebar({
           <aside className="relative h-full w-72 bg-white p-5 shadow-xl">
             {content}
           </aside>
-
         </div>
       )}
     </>
