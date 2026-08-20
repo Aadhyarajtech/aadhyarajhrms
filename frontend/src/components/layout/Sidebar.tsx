@@ -85,6 +85,13 @@ const NAV_ITEMS: NavItem[] = [
   },
 
   {
+    to: "/app/my-team/",
+    label: "My Team",
+    icon: Users,
+    roles: ["MANAGER"],
+  },
+
+  {
     to: "/app/settings",
     label: "Settings",
     icon: Settings,
