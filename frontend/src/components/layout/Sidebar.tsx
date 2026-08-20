@@ -149,7 +149,7 @@ export function Sidebar({
     role === "EMPLOYEE" ? "/app/settings/account" : "/app/settings";
 
   const content = (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="mb-6 flex items-center justify-between">
         <BrandWordmark />
 
@@ -162,7 +162,7 @@ export function Sidebar({
         </button>
       </div>
 
-      <nav className="space-y-1">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
         {items.map((item) => {
           const resolvedTo =
             item.to === "/app/employees/"
@@ -208,7 +208,7 @@ export function Sidebar({
 
   return (
     <>
-      <aside className="hidden h-full w-64 shrink-0 border-r border-line bg-white p-5 lg:block">
+      <aside className="hidden h-screen w-64 shrink-0 overflow-hidden border-r border-line bg-white p-5 lg:block">
         {content}
       </aside>
 
