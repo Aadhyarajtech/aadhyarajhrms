@@ -8,8 +8,9 @@ import {
   Loader2,
 } from "lucide-react";
 
-import { api } from "@/lib/api";
+import { api, resolveAssetUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 
 interface Ticket {
   _id: string;
@@ -57,6 +58,7 @@ export default function TicketConversation() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   const [message, setMessage] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -241,7 +243,7 @@ export default function TicketConversation() {
     const maxSize = 8 * 1024 * 1024;
 
     if (file.size > maxSize) {
-      alert("File size must be 8MB or less.");
+      showToast("File size must be 8MB or less.", "error");
 
       event.target.value = "";
       setSelectedFile(null);
@@ -259,8 +261,9 @@ export default function TicketConversation() {
     ];
 
     if (!allowedTypes.includes(file.type)) {
-      alert(
+      showToast(
         "Unsupported file type. Please upload a PDF, Word document, or image.",
+        "error",
       );
 
       event.target.value = "";
@@ -440,7 +443,7 @@ export default function TicketConversation() {
                     {item.attachment && (
                       <div className="mt-2">
                         <a
-                          href={`http://localhost:4000${item.attachment}`}
+                          href={resolveAssetUrl(item.attachment) ?? "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-2 rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700"

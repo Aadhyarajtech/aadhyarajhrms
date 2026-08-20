@@ -1,4 +1,11 @@
-export type Role = "SUPER_ADMIN" | "HR_ADMIN" | "MANAGER" | "RECRUITER" | "FINANCE" | "IT_SUPPORT" | "EMPLOYEE";
+export type Role =
+  | "SUPER_ADMIN"
+  | "HR_ADMIN"
+  | "MANAGER"
+  | "RECRUITER"
+  | "FINANCE"
+  | "IT_SUPPORT"
+  | "EMPLOYEE";
 
 export interface AuthEmployee {
   id: string;
@@ -124,7 +131,14 @@ export interface AttendanceRecord {
   date: string;
   checkIn: string | null;
   checkOut: string | null;
-  status: "PRESENT" | "ABSENT" | "HALF_DAY" | "WORK_FROM_HOME" | "ON_LEAVE" | "HOLIDAY" | "WEEKEND";
+  status:
+    | "PRESENT"
+    | "ABSENT"
+    | "HALF_DAY"
+    | "WORK_FROM_HOME"
+    | "ON_LEAVE"
+    | "HOLIDAY"
+    | "WEEKEND";
   workHours: number | null;
   isRegularized: boolean;
   note: string | null;
@@ -274,6 +288,25 @@ export interface Payslip {
   employeeCode?: string;
   departmentName?: string;
   designationTitle?: string;
+}
+
+export type PayslipRequestPeriod = "3_MONTHS" | "6_MONTHS" | "12_MONTHS";
+export type PayslipRequestStatus = "PENDING" | "SENT" | "REJECTED";
+
+export interface PayslipRequest {
+  id: string;
+  employeeId: string;
+  requestedByUserId: string;
+  period: PayslipRequestPeriod;
+  status: PayslipRequestStatus;
+  payslipIds: string[];
+  processedByUserId: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+  firstName?: string;
+  lastName?: string;
+  employeeCode?: string;
+  availablePayslips?: Payslip[];
 }
 
 export interface Notification {

@@ -47,7 +47,7 @@ export function Topbar({
   }, []);
 
   const { data: notifData } = useQuery({
-    queryKey: ["notifications"],
+    queryKey: ["notifications", user?.id],
     queryFn: () => NotificationsApi.list(),
     refetchInterval: 30000,
   });
@@ -93,7 +93,7 @@ export function Topbar({
           window.open(link, "_blank");
           return;
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
 
@@ -127,44 +127,42 @@ export function Topbar({
 
       <div className="flex items-center gap-2 sm:gap-3">
         {user?.employee && (
-  <div className="hidden items-center gap-2 sm:flex">
+          <div className="hidden items-center gap-2 sm:flex">
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<TicketPlus size={14} />}
+              onClick={onRaiseTicket}
+            >
+              Raise Ticket
+            </Button>
 
-    <Button
-      size="sm"
-      variant="secondary"
-       leftIcon={<TicketPlus size={14} />}
-  onClick={onRaiseTicket}
->
-  Raise Ticket
-</Button>
-
-    {todayAttendance?.checkIn && !todayAttendance?.checkOut ? (
-      <Button
-        size="sm"
-        variant="outline"
-        leftIcon={<Clock size={14} />}
-        onClick={() => checkOutMutation.mutate()}
-        isLoading={checkOutMutation.isPending}
-      >
-        Check out
-      </Button>
-    ) : todayAttendance?.checkOut ? (
-      <span className="inline-flex items-center gap-1.5 rounded-xl bg-success-50 px-3 py-2 text-[13px] font-medium text-success-700">
-        <Check size={14} /> Day complete
-      </span>
-    ) : (
-      <Button
-        size="sm"
-        leftIcon={<Clock size={14} />}
-        onClick={() => checkInMutation.mutate()}
-        isLoading={checkInMutation.isPending}
-      >
-        Check in
-      </Button>
-    )}
-
-  </div>
-)}
+            {todayAttendance?.checkIn && !todayAttendance?.checkOut ? (
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Clock size={14} />}
+                onClick={() => checkOutMutation.mutate()}
+                isLoading={checkOutMutation.isPending}
+              >
+                Check out
+              </Button>
+            ) : todayAttendance?.checkOut ? (
+              <span className="inline-flex items-center gap-1.5 rounded-xl bg-success-50 px-3 py-2 text-[13px] font-medium text-success-700">
+                <Check size={14} /> Day complete
+              </span>
+            ) : (
+              <Button
+                size="sm"
+                leftIcon={<Clock size={14} />}
+                onClick={() => checkInMutation.mutate()}
+                isLoading={checkInMutation.isPending}
+              >
+                Check in
+              </Button>
+            )}
+          </div>
+        )}
 
         <div className="relative" ref={notifRef}>
           <button
@@ -284,8 +282,6 @@ export function Topbar({
           )}
         </div>
       </div>
-     
     </header>
   );
 }
-
