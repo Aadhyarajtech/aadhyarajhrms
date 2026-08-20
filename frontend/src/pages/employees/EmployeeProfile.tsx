@@ -17,6 +17,7 @@ import {
   Wallet,
   Target,
   Clock,
+  AlertCircle,
 } from "lucide-react";
 import {
   EmployeesApi,
@@ -70,7 +71,12 @@ export default function EmployeeProfile() {
   const [docTypeOpen, setDocTypeOpen] = useState(false);
 
   const effectiveId = id ?? user?.employee?.id;
-  const { data: employee, isLoading } = useQuery({
+  const {
+    data: employee,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
     queryKey: ["employee", effectiveId],
     queryFn: () => EmployeesApi.get(effectiveId!),
     enabled: !!effectiveId,
@@ -88,6 +94,16 @@ export default function EmployeeProfile() {
   const isFinance = user?.role === "FINANCE";
   const canViewPayroll = isSelf || isAdmin || isFinance;
   const canEdit = isSelf || isAdmin;
+
+  if (isError) {
+    return (
+      <EmptyState
+        icon={AlertCircle}
+        title="Unable to load profile"
+        description={getErrorMessage(error)}
+      />
+    );
+  }
 
   if (isLoading || !employee) {
     return (
