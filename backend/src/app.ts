@@ -20,6 +20,7 @@ import { UPLOAD_DIR_ABSOLUTE } from "@/middleware/upload";
 // ROUTES
 // =========================================================
 
+import { announcementRouter } from "@/modules/announcements/announcement.routes";
 import { authRouter } from "@/modules/auth/auth.routes";
 import { employeesRouter } from "@/modules/employees/employees.routes";
 import { organizationRouter } from "@/modules/organization/organization.routes";
@@ -278,6 +279,11 @@ export function createApp() {
   app.use(
     "/api/dashboard",
     dashboardRouter,
+  );
+
+  app.use(
+    "/api/announcements",
+    announcementRouter,
   );
 
   // =======================================================

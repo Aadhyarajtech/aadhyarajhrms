@@ -927,6 +927,7 @@ export const PayslipRequest = model<PayslipRequestDoc>(
 // ---------------------------------------------------------------------------
 // Announcements & notifications
 // ---------------------------------------------------------------------------
+
 export interface AnnouncementDoc {
   _id: string;
   title: string;
@@ -947,10 +948,88 @@ const announcementSchema = new Schema<AnnouncementDoc>(
   },
   baseOptions,
 );
+
 export const Announcement = model<AnnouncementDoc>(
   "Announcement",
   announcementSchema,
 );
+
+// ---------------------------------------------------------------------------
+// Announcement receipts
+// ---------------------------------------------------------------------------
+
+export interface AnnouncementReceiptDoc {
+  _id: string;
+  announcementId: string;
+  userId: string;
+  isRead: boolean;
+  isAcknowledged: boolean;
+  readAt: string | null;
+  acknowledgedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const announcementReceiptSchema =
+  new Schema<AnnouncementReceiptDoc>(
+    {
+      _id: idField("anr"),
+
+      announcementId: {
+        type: String,
+        required: true,
+        index: true,
+      },
+
+      userId: {
+        type: String,
+        required: true,
+        index: true,
+      },
+
+      isRead: {
+        type: Boolean,
+        default: false,
+      },
+
+      isAcknowledged: {
+        type: Boolean,
+        default: false,
+      },
+
+      readAt: {
+        type: String,
+        default: null,
+      },
+
+      acknowledgedAt: {
+        type: String,
+        default: null,
+      },
+
+      createdAt: {
+        type: String,
+        required: true,
+      },
+
+      updatedAt: {
+        type: String,
+        required: true,
+      },
+    },
+    baseOptions,
+  );
+
+announcementReceiptSchema.index(
+  { announcementId: 1, userId: 1 },
+  { unique: true },
+);
+
+export const AnnouncementReceipt =
+  model<AnnouncementReceiptDoc>(
+    "AnnouncementReceipt",
+    announcementReceiptSchema,
+  );
 
 export type NotificationType =
   | "LEAVE_REQUEST"
@@ -979,7 +1058,12 @@ export interface NotificationDoc {
 const notificationSchema = new Schema<NotificationDoc>(
   {
     _id: idField("ntf"),
-    userId: { type: String, required: true },
+
+    userId: {
+      type: String,
+      required: true,
+    },
+
     type: {
       type: String,
       enum: [
@@ -997,20 +1081,44 @@ const notificationSchema = new Schema<NotificationDoc>(
       ],
       default: "SYSTEM",
     },
-    title: { type: String, required: true },
-    message: { type: String, required: true },
-    isRead: { type: Boolean, default: false },
-    link: { type: String, default: null },
-    createdAt: { type: String, required: true },
+
+    title: {
+      type: String,
+      required: true,
+    },
+
+    message: {
+      type: String,
+      required: true,
+    },
+
+    isRead: {
+      type: Boolean,
+      default: false,
+    },
+
+    link: {
+      type: String,
+      default: null,
+    },
+
+    createdAt: {
+      type: String,
+      required: true,
+    },
   },
   baseOptions,
 );
-notificationSchema.index({ userId: 1, isRead: 1 });
+
+notificationSchema.index({
+  userId: 1,
+  isRead: 1,
+});
+
 export const Notification = model<NotificationDoc>(
   "Notification",
   notificationSchema,
 );
-
 // ---------------------------------------------------------------------------
 // Documents & assets
 // ---------------------------------------------------------------------------
