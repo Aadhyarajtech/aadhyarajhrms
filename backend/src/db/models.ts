@@ -133,68 +133,15 @@ export interface EmployeeDoc {
   designationId: string;
   managerId: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
-  grade: string | null;
-  workLocation: string | null;
-  probationPeriodMonths: number | null;
-  probationStartDate: string | null;
-  probationEndDate: string | null;
-  probationReminderSentAt: string | null;
-  status:
-    | "ACTIVE"
-    | "ON_PROBATION"
-    | "ON_LEAVE"
-    | "NOTICE_PERIOD"
-    | "INACTIVE"
-    | "ON_HOLD";
+  status: "ACTIVE" | "ON_LEAVE" | "NOTICE_PERIOD" | "TERMINATED" | "RESIGNED";
   dateOfJoining: string;
   dateOfExit: string | null;
-  isArchived: boolean;
-  archivedAt: string | null;
-  offboardingChecklist: {
-    assetReturn: boolean;
-    accessRevoked: boolean;
-    exitInterview: boolean;
-    finalSettlement: boolean;
-    completedAt: string | null;
-  } | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   emergencyContactRelationship: string | null;
   emergencyContactEmail: string | null;
   employeeAadhaar: string | null;
   employeePan: string | null;
-  signature: string | null;
-
-  education: {
-    qualification: string;
-    institution: string;
-    specialization: string | null;
-    startYear: number | null;
-    endYear: number | null;
-    grade: string | null;
-  }[];
-
-  certifications: {
-    name: string;
-    issuingOrganization: string | null;
-    issueDate: string | null;
-    expiryDate: string | null;
-    credentialId: string | null;
-  }[];
-
-  workHistory: {
-    companyName: string;
-    designation: string | null;
-    startDate: string | null;
-    endDate: string | null;
-    responsibilities: string | null;
-  }[];
-
-  skills: {
-    name: string;
-    category: string | null;
-    competencyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "EXPERT";
-  }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -228,85 +175,13 @@ const employeeSchema = new Schema<EmployeeDoc>(
       enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"],
       default: "FULL_TIME",
     },
-    grade: {
-      type: String,
-      default: null,
-    },
-
-    workLocation: {
-      type: String,
-      default: null,
-    },
-
-    probationPeriodMonths: {
-      type: Number,
-      default: null,
-    },
-
-    probationStartDate: {
-      type: String,
-      default: null,
-    },
-
-    probationEndDate: {
-      type: String,
-      default: null,
-    },
-    probationReminderSentAt: {
-      type: String,
-      default: null,
-    },
     status: {
       type: String,
-      enum: [
-        "ACTIVE",
-        "ON_PROBATION",
-        "ON_LEAVE",
-        "NOTICE_PERIOD",
-        "INACTIVE",
-        "ON_HOLD",
-      ],
+      enum: ["ACTIVE", "ON_LEAVE", "NOTICE_PERIOD", "TERMINATED", "RESIGNED"],
       default: "ACTIVE",
     },
     dateOfJoining: { type: String, required: true },
     dateOfExit: { type: String, default: null },
-
-    isArchived: {
-      type: Boolean,
-      default: false,
-    },
-
-    archivedAt: {
-      type: String,
-      default: null,
-    },
-
-    offboardingChecklist: {
-      type: {
-        assetReturn: {
-          type: Boolean,
-          default: false,
-        },
-        accessRevoked: {
-          type: Boolean,
-          default: false,
-        },
-        exitInterview: {
-          type: Boolean,
-          default: false,
-        },
-        finalSettlement: {
-          type: Boolean,
-          default: false,
-        },
-        completedAt: {
-          type: String,
-          default: null,
-        },
-      },
-      default: null,
-    },
-
     emergencyContactName: { type: String, default: null },
     emergencyContactPhone: { type: String, default: null },
     emergencyContactRelationship: { type: String, default: null },
@@ -314,65 +189,6 @@ const employeeSchema = new Schema<EmployeeDoc>(
     employeeAadhaar: { type: String, default: null },
     employeePan: { type: String, default: null },
     createdAt: { type: String, required: true },
-    signature: {
-      type: String,
-      default: null,
-    },
-
-    education: {
-      type: [
-        {
-          qualification: { type: String, required: true },
-          institution: { type: String, required: true },
-          specialization: { type: String, default: null },
-          startYear: { type: Number, default: null },
-          endYear: { type: Number, default: null },
-          grade: { type: String, default: null },
-        },
-      ],
-      default: [],
-    },
-
-    certifications: {
-      type: [
-        {
-          name: { type: String, required: true },
-          issuingOrganization: { type: String, default: null },
-          issueDate: { type: String, default: null },
-          expiryDate: { type: String, default: null },
-          credentialId: { type: String, default: null },
-        },
-      ],
-      default: [],
-    },
-
-    workHistory: {
-      type: [
-        {
-          companyName: { type: String, required: true },
-          designation: { type: String, default: null },
-          startDate: { type: String, default: null },
-          endDate: { type: String, default: null },
-          responsibilities: { type: String, default: null },
-        },
-      ],
-      default: [],
-    },
-
-    skills: {
-      type: [
-        {
-          name: { type: String, required: true },
-          category: { type: String, default: null },
-          competencyLevel: {
-            type: String,
-            enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"],
-            default: "BEGINNER",
-          },
-        },
-      ],
-      default: [],
-    },
     updatedAt: { type: String, required: true },
   },
   baseOptions,
@@ -917,8 +733,10 @@ const payslipRequestSchema = new Schema<PayslipRequestDoc>(
   },
   baseOptions,
 );
+
 payslipRequestSchema.index({ employeeId: 1, requestedAt: -1 });
 payslipRequestSchema.index({ status: 1 });
+
 export const PayslipRequest = model<PayslipRequestDoc>(
   "PayslipRequest",
   payslipRequestSchema,
@@ -928,30 +746,96 @@ export const PayslipRequest = model<PayslipRequestDoc>(
 // Announcements & notifications
 // ---------------------------------------------------------------------------
 
+<<<<<<< HEAD
 export interface AnnouncementDoc {
+=======
+// Announcement data is now owned by:
+//   modules/announcements/announcement.model.ts
+//
+// AnnouncementReceipt remains here because it is part of the existing
+// notification/read-state infrastructure and is still used by the dedicated
+// announcements repository.
+
+// ---------------------------------------------------------------------------
+// Announcement receipts
+// ---------------------------------------------------------------------------
+
+export interface AnnouncementReceiptDoc {
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
   _id: string;
-  title: string;
-  body: string;
-  pinned: boolean;
-  audience: string;
+  announcementId: string;
+  userId: string;
+  isRead: boolean;
+  isAcknowledged: boolean;
+  readAt: string | null;
+  acknowledgedAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
-const announcementSchema = new Schema<AnnouncementDoc>(
+const announcementReceiptSchema = new Schema<AnnouncementReceiptDoc>(
   {
-    _id: idField("ann"),
-    title: { type: String, required: true },
-    body: { type: String, required: true },
-    pinned: { type: Boolean, default: false },
-    audience: { type: String, default: "ALL" },
-    createdAt: { type: String, required: true },
+    _id: idField("anr"),
+
+    announcementId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+
+    userId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+
+    isRead: {
+      type: Boolean,
+      default: false,
+    },
+
+    isAcknowledged: {
+      type: Boolean,
+      default: false,
+    },
+
+    readAt: {
+      type: String,
+      default: null,
+    },
+
+    acknowledgedAt: {
+      type: String,
+      default: null,
+    },
+
+    createdAt: {
+      type: String,
+      required: true,
+    },
+
+    updatedAt: {
+      type: String,
+      required: true,
+    },
   },
   baseOptions,
 );
 
+<<<<<<< HEAD
 export const Announcement = model<AnnouncementDoc>(
   "Announcement",
   announcementSchema,
+=======
+announcementReceiptSchema.index(
+  { announcementId: 1, userId: 1 },
+  { unique: true },
+);
+
+export const AnnouncementReceipt = model<AnnouncementReceiptDoc>(
+  "AnnouncementReceipt",
+  announcementReceiptSchema,
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 );
 
 // ---------------------------------------------------------------------------
@@ -1122,11 +1006,10 @@ export const Notification = model<NotificationDoc>(
 // ---------------------------------------------------------------------------
 // Documents & assets
 // ---------------------------------------------------------------------------
+
 export type DocumentStatus = "PENDING" | "VERIFIED" | "REJECTED";
-// Employee-provided document types (uploaded by/for an employee) plus
-// company-issued document types (uploaded by HR/Admin against an
-// employee-originated request). Kept as a single enum on DocumentRecord so
-// existing direct-upload behavior (e.g. OFFER_LETTER) remains unchanged.
+
+// Employee-provided document types plus company-issued document types.
 export type DocumentRecordType =
   | "OFFER_LETTER"
   | "ID_PROOF"
@@ -1147,15 +1030,11 @@ export interface DocumentRecordDoc {
   fileName: string;
   fileUrl: string;
   uploadedAt: string;
-
   status: DocumentStatus;
   uploadedBy: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
   rejectionReason: string | null;
-
-  // Links this document back to the DocumentRequest it fulfils, if any.
-  // Null for documents uploaded directly (existing behavior).
   requestId: string | null;
 }
 
@@ -1209,10 +1088,11 @@ const documentSchema = new Schema<DocumentRecordDoc>(
       default: null,
     },
   },
-
   baseOptions,
 );
+
 documentSchema.index({ requestId: 1 });
+
 export const DocumentRecord = model<DocumentRecordDoc>(
   "DocumentRecord",
   documentSchema,
@@ -1222,16 +1102,11 @@ export const DocumentRecord = model<DocumentRecordDoc>(
 // ---------------------------------------------------------------------------
 // Document requests (both directions)
 // ---------------------------------------------------------------------------
-// COMPANY_TO_EMPLOYEE: SUPER_ADMIN / HR_ADMIN / MANAGER asks an employee to
-// upload a document (e.g. ID proof). Fulfilled by the employee uploading
-// against the request; the original requester is notified.
-//
-// EMPLOYEE_TO_COMPANY: an employee asks the company for a company-issued
-// document (e.g. Experience Letter). Fulfilled by HR/company uploading
-// against the request; the employee is notified.
+
 export type DocumentRequestDirection =
   | "COMPANY_TO_EMPLOYEE"
   | "EMPLOYEE_TO_COMPANY";
+
 export type DocumentRequestStatus = "PENDING" | "UPLOADED" | "REJECTED";
 
 export interface DocumentRequestDoc {
@@ -1241,12 +1116,8 @@ export interface DocumentRequestDoc {
   type: DocumentRecordType;
   note: string | null;
   status: DocumentRequestStatus;
-  // For COMPANY_TO_EMPLOYEE: the HR/Admin/Manager user who requested it.
-  // For EMPLOYEE_TO_COMPANY: the employee's own user id.
   requestedByUserId: string;
-  // The user who fulfilled the request (uploaded the document), if any.
   processedByUserId: string | null;
-  // Links to the DocumentRecord created when the request was fulfilled.
   documentId: string | null;
   requestedAt: string;
   completedAt: string | null;
@@ -1255,7 +1126,10 @@ export interface DocumentRequestDoc {
 const documentRequestSchema = new Schema<DocumentRequestDoc>(
   {
     _id: idField("dreq"),
-    employeeId: { type: String, required: true },
+    employeeId: {
+      type: String,
+      required: true,
+    },
     direction: {
       type: String,
       enum: ["COMPANY_TO_EMPLOYEE", "EMPLOYEE_TO_COMPANY"],
@@ -1278,22 +1152,49 @@ const documentRequestSchema = new Schema<DocumentRequestDoc>(
       ],
       required: true,
     },
-    note: { type: String, default: null },
+    note: {
+      type: String,
+      default: null,
+    },
     status: {
       type: String,
       enum: ["PENDING", "UPLOADED", "REJECTED"],
       default: "PENDING",
     },
-    requestedByUserId: { type: String, required: true },
-    processedByUserId: { type: String, default: null },
-    documentId: { type: String, default: null },
-    requestedAt: { type: String, required: true },
-    completedAt: { type: String, default: null },
+    requestedByUserId: {
+      type: String,
+      required: true,
+    },
+    processedByUserId: {
+      type: String,
+      default: null,
+    },
+    documentId: {
+      type: String,
+      default: null,
+    },
+    requestedAt: {
+      type: String,
+      required: true,
+    },
+    completedAt: {
+      type: String,
+      default: null,
+    },
   },
   baseOptions,
 );
-documentRequestSchema.index({ employeeId: 1, requestedAt: -1 });
-documentRequestSchema.index({ direction: 1, status: 1 });
+
+documentRequestSchema.index({
+  employeeId: 1,
+  requestedAt: -1,
+});
+
+documentRequestSchema.index({
+  direction: 1,
+  status: 1,
+});
+
 export const DocumentRequest = model<DocumentRequestDoc>(
   "DocumentRequest",
   documentRequestSchema,
@@ -1313,12 +1214,31 @@ export interface AssetDoc {
 const assetSchema = new Schema<AssetDoc>(
   {
     _id: idField("ast"),
-    employeeId: { type: String, required: true },
-    assetTag: { type: String, required: true, unique: true },
-    category: { type: String, required: true },
-    name: { type: String, required: true },
-    assignedAt: { type: String, required: true },
-    returnedAt: { type: String, default: null },
+    employeeId: {
+      type: String,
+      required: true,
+    },
+    assetTag: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    category: {
+      type: String,
+      required: true,
+    },
+    name: {
+      type: String,
+      required: true,
+    },
+    assignedAt: {
+      type: String,
+      required: true,
+    },
+    returnedAt: {
+      type: String,
+      default: null,
+    },
     status: {
       type: String,
       enum: ["ASSIGNED", "RETURNED", "DAMAGED", "LOST"],
@@ -1327,6 +1247,7 @@ const assetSchema = new Schema<AssetDoc>(
   },
   baseOptions,
 );
+
 export const Asset = model<AssetDoc>("Asset", assetSchema);
 
 // ---------------------------------------------------------------------------

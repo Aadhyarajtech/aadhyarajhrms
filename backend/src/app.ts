@@ -9,10 +9,7 @@ import rateLimit from "express-rate-limit";
 
 import { env } from "@/config/env";
 
-import {
-  notFoundHandler,
-  errorHandler,
-} from "@/middleware/errorHandler";
+import { notFoundHandler, errorHandler } from "@/middleware/errorHandler";
 
 import { UPLOAD_DIR_ABSOLUTE } from "@/middleware/upload";
 
@@ -30,6 +27,7 @@ import { recruitmentRouter } from "@/modules/recruitment/recruitment.routes";
 import { performanceRouter } from "@/modules/performance/performance.routes";
 import { payrollRouter } from "@/modules/payroll/payroll.routes";
 import { notificationsRouter } from "@/modules/notifications/notifications.routes";
+import { announcementRouter } from "@/modules/announcements/announcement.routes";
 import { documentsRouter } from "@/modules/documents/documents.routes";
 import { dashboardRouter } from "@/modules/dashboard/dashboard.routes";
 
@@ -94,13 +92,7 @@ export function createApp() {
     }),
   );
 
-  app.use(
-    morgan(
-      env.isProd
-        ? "combined"
-        : "dev",
-    ),
-  );
+  app.use(morgan(env.isProd ? "combined" : "dev"));
 
   // =======================================================
   // API RATE LIMIT
@@ -126,132 +118,96 @@ export function createApp() {
     legacyHeaders: false,
   });
 
-  app.use(
-    "/api/auth/login",
-    authLimiter,
-  );
+  app.use("/api/auth/login", authLimiter);
 
   // =======================================================
   // UPLOADS
   // =======================================================
 
-  app.use(
-    "/uploads",
-    express.static(UPLOAD_DIR_ABSOLUTE),
-  );
+  app.use("/uploads", express.static(UPLOAD_DIR_ABSOLUTE));
 
   // =======================================================
   // HEALTH CHECK
   // =======================================================
 
-  app.get(
-    "/api/health",
-    (_req, res) => {
-      res.json({
-        status: "ok",
-        time: new Date().toISOString(),
-      });
-    },
-  );
+  app.get("/api/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      time: new Date().toISOString(),
+    });
+  });
 
   // =======================================================
   // AUTH
   // =======================================================
 
-  app.use(
-    "/api/auth",
-    authRouter,
-  );
+  app.use("/api/auth", authRouter);
 
   // =======================================================
   // EMPLOYEES
   // =======================================================
 
-  app.use(
-    "/api/employees",
-    employeesRouter,
-  );
+  app.use("/api/employees", employeesRouter);
 
   // =======================================================
   // ORGANIZATION
   // =======================================================
 
-  app.use(
-    "/api/organization",
-    organizationRouter,
-  );
+  app.use("/api/organization", organizationRouter);
 
   // =======================================================
   // ATTENDANCE
   // =======================================================
 
-  app.use(
-    "/api/attendance",
-    attendanceRouter,
-  );
+  app.use("/api/attendance", attendanceRouter);
 
   // =======================================================
   // LEAVE
   // =======================================================
 
-  app.use(
-    "/api/leave",
-    leaveRouter,
-  );
+  app.use("/api/leave", leaveRouter);
 
   // =======================================================
   // RECRUITMENT
   // =======================================================
 
-  app.use(
-    "/api/recruitment",
-    recruitmentRouter,
-  );
+  app.use("/api/recruitment", recruitmentRouter);
 
   // =======================================================
   // PERFORMANCE
   // =======================================================
 
-  app.use(
-    "/api/performance",
-    performanceRouter,
-  );
+  app.use("/api/performance", performanceRouter);
 
   // =======================================================
   // PAYROLL
   // =======================================================
 
-  app.use(
-    "/api/payroll",
-    payrollRouter,
-  );
+  app.use("/api/payroll", payrollRouter);
 
   // =======================================================
   // NOTIFICATIONS
   // =======================================================
 
-  app.use(
-    "/api/notifications",
-    notificationsRouter,
-  );
+  app.use("/api/notifications", notificationsRouter);
+
+  // =======================================================
+  // ANNOUNCEMENTS
+  // =======================================================
+
+  app.use("/api/announcements", announcementRouter);
 
   // =======================================================
   // DOCUMENTS
   // =======================================================
 
-  app.use(
-    "/api/documents",
-    documentsRouter,
-  );
+  app.use("/api/documents", documentsRouter);
 
   // =======================================================
   // TICKETS
   // =======================================================
 
-  app.use(
-    "/api/tickets",
-    ticketRouter,
-  );
+  app.use("/api/tickets", ticketRouter);
 
   // =======================================================
   // TICKET MESSAGES
@@ -267,19 +223,13 @@ export function createApp() {
   // HR Admin -> Employee messages
   // =======================================================
 
-  app.use(
-    "/api/tickets",
-    ticketMessageRouter,
-  );
+  app.use("/api/tickets", ticketMessageRouter);
 
   // =======================================================
   // DASHBOARD
   // =======================================================
 
-  app.use(
-    "/api/dashboard",
-    dashboardRouter,
-  );
+  app.use("/api/dashboard", dashboardRouter);
 
   app.use(
     "/api/announcements",
@@ -290,17 +240,13 @@ export function createApp() {
   // 404 HANDLER
   // =======================================================
 
-  app.use(
-    notFoundHandler,
-  );
+  app.use(notFoundHandler);
 
   // =======================================================
   // ERROR HANDLER
   // =======================================================
 
-  app.use(
-    errorHandler,
-  );
+  app.use(errorHandler);
 
   return app;
 }

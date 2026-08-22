@@ -494,7 +494,7 @@ export const PayrollApi = {
       .then((r) => r.data.request),
 };
 
-// --- Notifications & Announcements -------------------------------------------------
+// --- Notifications ---------------------------------------------------------------
 export const NotificationsApi = {
   list: (unreadOnly = false) =>
     api
@@ -503,12 +503,22 @@ export const NotificationsApi = {
         unreadCount: number;
       }>("/notifications", { params: { unreadOnly } })
       .then((r) => r.data),
+
   markRead: (id: string) => api.post(`/notifications/${id}/read`),
+
   markAllRead: () => api.post("/notifications/read-all"),
+
+  /*
+   * Backward-compatible announcement methods.
+   *
+   * Existing screens can continue using these while they are migrated
+   * to the dedicated AnnouncementsApi below.
+   */
   announcements: () =>
     api
       .get<{ announcements: Announcement[] }>("/notifications/announcements")
       .then((r) => r.data.announcements),
+
   createAnnouncement: (payload: Record<string, unknown>) =>
     api
       .post<{
@@ -517,16 +527,27 @@ export const NotificationsApi = {
       .then((r) => r.data.announcement),
 };
 
+<<<<<<< HEAD
 export const AnnouncementsApi = {
   list: () =>
     api
       .get<{ announcements: Announcement[] }>(
         "/announcements",
       )
+=======
+// --- Dedicated Announcements -------------------------------------------------------
+export const AnnouncementsApi = {
+  list: () =>
+    api
+      .get<{
+        announcements: Announcement[];
+      }>("/announcements")
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
       .then((r) => r.data.announcements),
 
   get: (id: string) =>
     api
+<<<<<<< HEAD
       .get<{ announcement: Announcement }>(
         `/announcements/${id}`,
       )
@@ -566,6 +587,44 @@ export const AnnouncementsApi = {
         `/announcements/${id}/status`,
       )
       .then((r) => r.data.status),
+=======
+      .get<{
+        announcement: Announcement;
+      }>(`/announcements/${id}`)
+      .then((r) => r.data.announcement),
+
+  create: (payload: Record<string, unknown>) =>
+    api
+      .post<{
+        announcement: Announcement;
+      }>("/announcements", payload)
+      .then((r) => r.data.announcement),
+
+  update: (id: string, payload: Record<string, unknown>) =>
+    api
+      .patch<{
+        announcement: Announcement;
+      }>(`/announcements/${id}`, payload)
+      .then((r) => r.data.announcement),
+
+  delete: (id: string) => api.delete(`/announcements/${id}`),
+
+  markRead: (id: string) => api.post(`/announcements/${id}/read`),
+
+  receipt: (id: string) =>
+    api
+      .get<{
+        receipt: {
+          isRead: boolean;
+          isAcknowledged: boolean;
+          readAt: string | null;
+          acknowledgedAt: string | null;
+        };
+      }>(`/announcements/${id}/receipt`)
+      .then((r) => r.data.receipt),
+
+  acknowledge: (id: string) => api.post(`/announcements/${id}/acknowledge`),
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 };
 
 // --- Documents & Assets -------------------------------------------------------------

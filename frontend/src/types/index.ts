@@ -320,12 +320,39 @@ export interface Notification {
   createdAt: string;
 }
 
+<<<<<<< HEAD
 export interface AnnouncementReceipt {
   isRead: boolean;
   isAcknowledged: boolean;
   readAt: string | null;
   acknowledgedAt: string | null;
 }
+=======
+export type AnnouncementType =
+  | "HOLIDAY_NOTICE"
+  | "COMPANY_EVENT"
+  | "POLICY_UPDATE"
+  | "EMPLOYEE_RECOGNITION"
+  | "MEETING_NOTICE"
+  | "BENEFITS_UPDATE"
+  | "TRAINING_LD"
+  | "GENERAL_NOTICE";
+
+export type AnnouncementAudience =
+  | "ALL"
+  | "HR_ADMIN"
+  | "FINANCE"
+  | "MANAGER"
+  | "RECRUITER"
+  | "IT_SUPPORT"
+  | "EMPLOYEE"
+  | "DEPARTMENT"
+  | "TARGETED_GROUP";
+
+export type AnnouncementChannel = "IN_APP" | "EMAIL" | "BANNER" | "CALENDAR";
+
+export type AnnouncementStatus = "DRAFT" | "SCHEDULED" | "PUBLISHED";
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export interface Announcement {
   id: string;
@@ -333,6 +360,7 @@ export interface Announcement {
   title: string;
   body: string;
 
+<<<<<<< HEAD
   type: string;
   audience: string;
 
@@ -408,6 +436,37 @@ export interface AnnouncementStatusEntry {
 
   createdAt: string;
   updatedAt: string;
+=======
+  type: AnnouncementType;
+  audience: AnnouncementAudience;
+
+  departments: string[];
+  locations: string[];
+  targetRoles: string[];
+
+  channels: AnnouncementChannel[];
+
+  pinned: boolean;
+  showBanner: boolean;
+  requiresAcknowledgement: boolean;
+
+  attachment: string;
+
+  createdBy: string;
+
+  status: AnnouncementStatus;
+
+  scheduledAt: string;
+  publishedAt: string;
+
+  calendarEnabled: boolean;
+  eventStartAt: string;
+  eventEndAt: string;
+  eventLocation: string;
+
+  createdAt: string;
+  updatedAt: string;
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 }
 
 export interface Holiday {

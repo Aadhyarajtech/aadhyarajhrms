@@ -17,8 +17,16 @@ export async function getLeaveType(id: string) {
   return toApiDoc(row);
 }
 
-export async function getOrCreateBalance(employeeId: string, leaveTypeId: string, year: number) {
-  let row = await LeaveBalance.findOne({ employeeId, leaveTypeId, year }).lean();
+export async function getOrCreateBalance(
+  employeeId: string,
+  leaveTypeId: string,
+  year: number,
+) {
+  let row = await LeaveBalance.findOne({
+    employeeId,
+    leaveTypeId,
+    year,
+  }).lean();
   if (!row) {
     const leaveType = await getLeaveType(leaveTypeId);
     await LeaveBalance.create({
@@ -34,7 +42,10 @@ export async function getOrCreateBalance(employeeId: string, leaveTypeId: string
   return toApiDoc(row);
 }
 
-export async function listBalancesForEmployee(employeeId: string, year: number) {
+export async function listBalancesForEmployee(
+  employeeId: string,
+  year: number,
+) {
   const types = (await listLeaveTypes()) as any[];
   const balances = [];
   for (const t of types) {
@@ -43,14 +54,20 @@ export async function listBalancesForEmployee(employeeId: string, year: number) 
   return balances;
 }
 
-export async function listRequests(filters: { employeeId?: string; status?: string; approverId?: string }) {
+export async function listRequests(filters: {
+  employeeId?: string;
+  status?: string;
+  approverId?: string;
+}) {
   const query: Record<string, any> = {};
   let employeeIdsForApprover: string[] | undefined;
 
   if (filters.employeeId) query.employeeId = filters.employeeId;
   if (filters.status) query.status = filters.status;
   if (filters.approverId) {
-    const reports = await Employee.find({ managerId: filters.approverId }).select("_id").lean();
+    const reports = await Employee.find({ managerId: filters.approverId })
+      .select("_id")
+      .lean();
     employeeIdsForApprover = reports.map((r) => r._id);
     query.employeeId = { $in: employeeIdsForApprover };
   }
@@ -116,20 +133,50 @@ export async function decideRequest(
   id: string,
   approverId: string,
   status: "APPROVED" | "REJECTED",
-  decisionNote?: string
+  decisionNote?: string,
 ) {
   const request = (await getRequest(id)) as any;
   if (!request) return undefined;
 
+  const employee = await Employee.findById(request.employeeId)
+    .select("managerId")
+    .lean();
+
+  if (!employee) {
+    throw new Error("Employee not found.");
+  }
+
+  if (employee.managerId !== approverId) {
+    throw new Error(
+      "You can only approve or reject leave requests from your direct reports.",
+    );
+  }
+
   await LeaveRequest.updateOne(
     { _id: id },
-    { $set: { status, approverId, decisionNote: decisionNote ?? null, decidedAt: nowIso() } }
+    {
+      $set: {
+        status,
+        approverId,
+        decisionNote: decisionNote ?? null,
+        decidedAt: nowIso(),
+      },
+    },
   );
 
   if (status === "APPROVED") {
     const year = new Date(request.startDate).getFullYear();
-    const balance = (await getOrCreateBalance(request.employeeId, request.leaveTypeId, year)) as any;
-    await LeaveBalance.updateOne({ _id: balance.id }, { $inc: { used: request.totalDays } });
+
+    const balance = (await getOrCreateBalance(
+      request.employeeId,
+      request.leaveTypeId,
+      year,
+    )) as any;
+
+    await LeaveBalance.updateOne(
+      { _id: balance.id },
+      { $inc: { used: request.totalDays } },
+    );
   }
 
   return getRequest(id);
@@ -138,7 +185,7 @@ export async function decideRequest(
 export async function cancelRequest(id: string, employeeId: string) {
   await LeaveRequest.updateOne(
     { _id: id, employeeId, status: "PENDING" },
-    { $set: { status: "CANCELLED", decidedAt: nowIso() } }
+    { $set: { status: "CANCELLED", decidedAt: nowIso() } },
   );
   return getRequest(id);
 }
@@ -147,7 +194,10 @@ export async function getLeaveCalendar(month: number, year: number) {
   const pattern = `${year}-${String(month).padStart(2, "0")}`;
   const rows = await LeaveRequest.find({
     status: "APPROVED",
-    $or: [{ startDate: { $regex: `^${pattern}` } }, { endDate: { $regex: `^${pattern}` } }],
+    $or: [
+      { startDate: { $regex: `^${pattern}` } },
+      { endDate: { $regex: `^${pattern}` } },
+    ],
   }).lean();
   if (rows.length === 0) return [];
 
@@ -179,5 +229,9 @@ export async function getLeaveCalendar(month: number, year: number) {
 
 export async function onLeaveToday() {
   const today = new Date().toISOString().slice(0, 10);
-  return LeaveRequest.countDocuments({ status: "APPROVED", startDate: { $lte: today }, endDate: { $gte: today } });
+  return LeaveRequest.countDocuments({
+    status: "APPROVED",
+    startDate: { $lte: today },
+    endDate: { $gte: today },
+  });
 }

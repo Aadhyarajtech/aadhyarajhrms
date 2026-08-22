@@ -2,13 +2,10 @@ import * as Models from "@/db/models";
 
 // Support different export styles from the models module
 const Ticket: any =
-  (Models as any).Ticket ||
-  (Models as any).default ||
-  (Models as any).ticket;
+  (Models as any).Ticket || (Models as any).default || (Models as any).ticket;
 
 const TicketMessage: any =
-  (Models as any).TicketMessage ||
-  (Models as any).ticketMessage;
+  (Models as any).TicketMessage || (Models as any).ticketMessage;
 
 // =========================================================
 // TICKET ID
@@ -17,10 +14,7 @@ const TicketMessage: any =
 function generateTicketId(category: string) {
   const prefix = category.substring(0, 2).toUpperCase();
 
-  const date = new Date()
-    .toISOString()
-    .slice(0, 10)
-    .replace(/-/g, "");
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   const random = Math.floor(100 + Math.random() * 900);
 
@@ -68,6 +62,7 @@ function assignDepartment(category: string) {
 
 export async function createTicket(data: {
   employeeId: string;
+  managerId?: string | null;
   category: string;
   priority: string;
   subject: string;
@@ -92,6 +87,9 @@ export async function createTicket(data: {
     attachment: data.attachment || "",
 
     assignedTo: assignDepartment(data.category),
+
+    assignedManagerId:
+      data.category === "Complaint" ? data.managerId || null : null,
 
     status: "OPEN",
 
@@ -127,10 +125,7 @@ export async function getTicket(id: string) {
 // UPDATE TICKET STATUS
 // =========================================================
 
-export async function updateTicketStatus(
-  id: string,
-  status: string,
-) {
+export async function updateTicketStatus(id: string, status: string) {
   return Ticket.findByIdAndUpdate(
     id,
     {
@@ -148,10 +143,7 @@ export async function updateTicketStatus(
 // =========================================================
 
 export async function getMyTickets(employeeId: string) {
-  console.log(
-    "[Tickets] Loading tickets for employee:",
-    employeeId,
-  );
+  console.log("[Tickets] Loading tickets for employee:", employeeId);
 
   const tickets = await Ticket.find({
     employeeId: employeeId,
@@ -172,9 +164,7 @@ export async function getMyTickets(employeeId: string) {
 // GET TICKETS BY ASSIGNED ROLE
 // =========================================================
 
-export async function getTicketsByAssignees(
-  assignees: string[],
-) {
+export async function getTicketsByAssignees(assignees: string[]) {
   return Ticket.find({
     assignedTo: {
       $in: assignees,
@@ -190,13 +180,9 @@ export async function getTicketsByAssignees(
 // GET TICKET MESSAGES
 // =========================================================
 
-export async function getTicketMessages(
-  ticketId: string,
-) {
+export async function getTicketMessages(ticketId: string) {
   if (!TicketMessage) {
-    throw new Error(
-      "TicketMessage model is not available",
-    );
+    throw new Error("TicketMessage model is not available");
   }
 
   return TicketMessage.find({
@@ -220,9 +206,7 @@ export async function createTicketMessage(data: {
   message: string;
 }) {
   if (!TicketMessage) {
-    throw new Error(
-      "TicketMessage model is not available",
-    );
+    throw new Error("TicketMessage model is not available");
   }
 
   const message = await TicketMessage.create({

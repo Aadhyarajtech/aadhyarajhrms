@@ -3,6 +3,7 @@ import { connectDB } from "@/db/connection";
 import { env } from "@/config/env";
 import { logger } from "@/utils/logger";
 import { startEmployeeLifecycleJobs } from "./jobs/employeeLifecycle.job";
+import { startAnnouncementScheduler } from "@/modules/announcements/announcement.scheduler";
 
 import {
   startAnnouncementScheduler,
@@ -20,6 +21,7 @@ async function start() {
   ------------------------------------------------------- */
 
   startEmployeeLifecycleJobs();
+  startAnnouncementScheduler();
 
   /* -------------------------------------------------------
      ANNOUNCEMENT SCHEDULER
