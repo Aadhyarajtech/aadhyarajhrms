@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import {
-  CalendarDays,
-  Mail,
   Megaphone,
   Plus,
   Pin,
@@ -12,7 +10,6 @@ import {
   Image as ImageIcon,
   Pencil,
   Trash2,
-  Smartphone,
   ChevronDown,
   X,
 } from "lucide-react";
@@ -30,7 +27,26 @@ import { Modal } from "@/components/ui/Modal";
 import { TextField, TextareaField } from "@/components/ui/Field";
 import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
 
-import type { Announcement } from "@/types";
+import type { Announcement as BaseAnnouncement } from "@/types";
+
+/* Backend announcement fields used by this page.
+   Keep these optional so this page remains compatible with the existing
+   shared frontend Announcement type while the backend exposes the newer fields. */
+type Announcement = BaseAnnouncement & {
+  status?: "DRAFT" | "SCHEDULED" | "PUBLISHED" | string;
+  channels?: string[];
+  showBanner?: boolean;
+  requiresAcknowledgement?: boolean;
+  scheduledAt?: string;
+  publishedAt?: string;
+  departments?: string[];
+  locations?: string[];
+  targetRoles?: string[];
+  calendarEnabled?: boolean;
+  eventStartAt?: string;
+  eventEndAt?: string;
+  eventLocation?: string;
+};
 
 import { formatDate, timeAgo } from "@/lib/format";
 
@@ -111,14 +127,6 @@ const AUDIENCE_OPTIONS = [
   {
     value: "EMPLOYEE",
     label: "Employees",
-  },
-  {
-    value: "DEPARTMENT",
-    label: "Department",
-  },
-  {
-    value: "TARGETED_GROUP",
-    label: "Targeted group",
   },
 ] as const;
 
@@ -244,6 +252,27 @@ const ROLE_OPTIONS = [
   "EMPLOYEE",
 ];
 
+const ANNOUNCEMENT_CHANNELS = [
+  "IN_APP",
+  "EMAIL",
+  "BANNER",
+  "CALENDAR",
+] as const;
+
+function normalizeChannels(values?: string[]) {
+  return Array.from(
+    new Set(
+      (values ?? [])
+        .map((value) => String(value).trim().toUpperCase())
+        .filter((value): value is (typeof ANNOUNCEMENT_CHANNELS)[number] =>
+          ANNOUNCEMENT_CHANNELS.includes(
+            value as (typeof ANNOUNCEMENT_CHANNELS)[number],
+          ),
+        ),
+    ),
+  );
+}
+
 function csvToArray(value?: string) {
   return String(value ?? "")
     .split(",")
@@ -282,7 +311,7 @@ function scheduledTimeMin(dateValue?: string) {
   return localTimeValue();
 }
 
-function formatEventRange(start?: string | null, end?: string | null) {
+function formatEventRange(start?: string, end?: string) {
   if (!start) return "";
 
   const startDate = new Date(start);
@@ -445,38 +474,6 @@ function MultiSelectCategory({
   );
 }
 
-function ChannelBadge({ channel }: { channel: string }) {
-  if (channel === "EMAIL") {
-    return (
-      <Badge>
-        <Mail size={11} /> Email
-      </Badge>
-    );
-  }
-
-  if (channel === "BANNER") {
-    return (
-      <Badge tone="gold">
-        <Megaphone size={11} /> Banner
-      </Badge>
-    );
-  }
-
-  if (channel === "CALENDAR") {
-    return (
-      <Badge>
-        <CalendarDays size={11} /> Calendar
-      </Badge>
-    );
-  }
-
-  return (
-    <Badge>
-      <Smartphone size={11} /> In-app
-    </Badge>
-  );
-}
-
 /* =========================================================
    PAGE
 ========================================================= */
@@ -514,16 +511,41 @@ export default function Announcements() {
   ======================================================= */
 
   const markReadMutation = useMutation({
-    mutationFn: AnnouncementsApi.markRead,
+  mutationFn: AnnouncementsApi.markRead,
 
-    onSuccess: () => {
-      void queryClient.refetchQueries({
-        queryKey: ["announcements"],
-        type: "active",
-      });
-    },
-  });
+  onSuccess: (_data, announcementId) => {
+    queryClient.setQueryData<Announcement[]>(
+      ["announcements"],
+      (current) => {
+        if (!current) {
+          return current;
+        }
 
+        return current.map((announcement) => {
+          if (announcement.id !== announcementId) {
+            return announcement;
+          }
+
+          return {
+            ...announcement,
+            receipt: {
+              isRead: true,
+              readAt: new Date().toISOString(),
+              isAcknowledged:
+                announcement.receipt?.isAcknowledged ?? false,
+              acknowledgedAt:
+                announcement.receipt?.acknowledgedAt ?? null,
+            },
+          };
+        });
+      },
+    );
+
+    void queryClient.invalidateQueries({
+      queryKey: ["announcements"],
+    });
+  },
+});
   /* =======================================================
      ACKNOWLEDGE
   ======================================================= */
@@ -692,10 +714,6 @@ export default function Announcements() {
                       <Badge>{getTypeLabel(announcement.type)}</Badge>
 
                       <Badge>{getAudienceLabel(announcement.audience)}</Badge>
-
-                      {(announcement.channels ?? []).map((channel) => (
-                        <ChannelBadge key={channel} channel={channel} />
-                      ))}
                     </div>
 
                     <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-soft">
@@ -1034,9 +1052,7 @@ function CreateModal({
 
     formData.append("pinned", String(values.pinned));
 
-    const channels = Array.from(
-      new Set((values.notificationMethods ?? []).filter(Boolean)),
-    );
+    const channels = normalizeChannels(values.notificationMethods);
 
     if (!channels.length) {
       showToast("Please select at least one notification method.", "error");
@@ -1047,6 +1063,8 @@ function CreateModal({
 
     formData.append("channels", JSON.stringify(channels));
 
+    // These are derived by the backend from channels as well.
+    // Sending them keeps compatibility with the current API.
     formData.append("showBanner", String(channels.includes("BANNER")));
 
     formData.append("calendarEnabled", String(channels.includes("CALENDAR")));
@@ -1060,7 +1078,16 @@ function CreateModal({
         return;
       }
 
+      if (!values.eventEndAt) {
+        showToast(
+          "Please provide a calendar event end date and time.",
+          "error",
+        );
+        return;
+      }
+
       const eventStart = new Date(values.eventStartAt);
+      const eventEnd = new Date(values.eventEndAt);
 
       if (Number.isNaN(eventStart.getTime())) {
         showToast(
@@ -1070,7 +1097,13 @@ function CreateModal({
         return;
       }
 
-      formData.append("eventStartAt", eventStart.toISOString());
+      if (Number.isNaN(eventEnd.getTime())) {
+        showToast(
+          "Please enter a valid calendar event end date and time.",
+          "error",
+        );
+        return;
+      }
 
       if (eventStart.getTime() < Date.now()) {
         showToast(
@@ -1080,35 +1113,17 @@ function CreateModal({
         return;
       }
 
-      if (!values.eventEndAt) {
+      if (eventEnd.getTime() < eventStart.getTime()) {
         showToast(
-          "Please provide a calendar event end date and time.",
+          "Calendar event end time must be after the start time.",
           "error",
         );
         return;
       }
 
-      if (values.eventEndAt) {
-        const eventEnd = new Date(values.eventEndAt);
+      formData.append("eventStartAt", eventStart.toISOString());
 
-        if (Number.isNaN(eventEnd.getTime())) {
-          showToast(
-            "Please enter a valid calendar event end date and time.",
-            "error",
-          );
-          return;
-        }
-
-        if (eventEnd.getTime() < eventStart.getTime()) {
-          showToast(
-            "Calendar event end time must be after the start time.",
-            "error",
-          );
-          return;
-        }
-
-        formData.append("eventEndAt", eventEnd.toISOString());
-      }
+      formData.append("eventEndAt", eventEnd.toISOString());
 
       if (values.eventLocation.trim()) {
         formData.append("eventLocation", values.eventLocation.trim());
@@ -1796,8 +1811,8 @@ function EditModal({
       locations: announcement.locations?.join(", ") ?? "",
       targetRoles: announcement.targetRoles?.join(", ") ?? "",
       pinned: Boolean(announcement.pinned),
-      notificationMethods: announcement.channels?.length
-        ? announcement.channels
+      notificationMethods: normalizeChannels(announcement.channels).length
+        ? normalizeChannels(announcement.channels)
         : ["IN_APP"],
       publishMode: announcement.status === "SCHEDULED" ? "SCHEDULED" : "NOW",
       scheduledDate: announcement.scheduledAt
@@ -1847,12 +1862,10 @@ function EditModal({
     formData.append("targetRoles", JSON.stringify(targetRoles));
     formData.append("pinned", String(data.pinned ?? false));
 
-    const channels = Array.from(
-      new Set((data.notificationMethods ?? []).filter(Boolean)),
-    );
+    const channels = normalizeChannels(data.notificationMethods);
 
     if (!channels.length) {
-      channels.push("IN_APP");
+      throw new Error("Please select at least one notification method.");
     }
 
     formData.append("notificationMethods", JSON.stringify(channels));
@@ -1891,38 +1904,49 @@ function EditModal({
       formData.append("publishMode", "NOW");
     }
 
-    if (data.eventStartAt) {
+    if (channels.includes("CALENDAR")) {
+      if (!data.eventStartAt) {
+        throw new Error("Please provide a calendar event start date and time.");
+      }
+
+      if (!data.eventEndAt) {
+        throw new Error("Please provide a calendar event end date and time.");
+      }
+
       const eventStart = new Date(data.eventStartAt);
+      const eventEnd = new Date(data.eventEndAt);
+
       if (Number.isNaN(eventStart.getTime())) {
         throw new Error(
           "Please enter a valid calendar event start date and time.",
         );
       }
+
+      if (Number.isNaN(eventEnd.getTime())) {
+        throw new Error(
+          "Please enter a valid calendar event end date and time.",
+        );
+      }
+
       if (eventStart.getTime() < Date.now()) {
         throw new Error(
           "Calendar event start must be today or a future date/time.",
         );
       }
+
+      if (eventEnd.getTime() < eventStart.getTime()) {
+        throw new Error(
+          "Calendar event end time must be after the start time.",
+        );
+      }
+
       formData.append("eventStartAt", eventStart.toISOString());
 
-      if (data.eventEndAt) {
-        const eventEnd = new Date(data.eventEndAt);
-        if (Number.isNaN(eventEnd.getTime())) {
-          throw new Error(
-            "Please enter a valid calendar event end date and time.",
-          );
-        }
-        if (eventEnd.getTime() < eventStart.getTime()) {
-          throw new Error(
-            "Calendar event end time must be after the start time.",
-          );
-        }
-        formData.append("eventEndAt", eventEnd.toISOString());
-      }
-    }
+      formData.append("eventEndAt", eventEnd.toISOString());
 
-    if (data.eventLocation?.trim()) {
-      formData.append("eventLocation", data.eventLocation.trim());
+      if (data.eventLocation?.trim()) {
+        formData.append("eventLocation", data.eventLocation.trim());
+      }
     }
 
     const files = data.attachment as FileList | undefined;
