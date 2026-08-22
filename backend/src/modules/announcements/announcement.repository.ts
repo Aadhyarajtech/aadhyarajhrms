@@ -1,10 +1,5 @@
-<<<<<<< HEAD
-import {
-  Announcement,
-  AnnouncementReceipt,
-  Employee,
-  Department,
-} from "@/db/models";
+import { Announcement } from "./announcement.model";
+import { AnnouncementReceipt, Employee, Department } from "@/db/models";
 
 /* =========================================================
    API DOCUMENT
@@ -14,42 +9,15 @@ function toApiDoc(doc: any) {
   if (!doc) {
     return undefined;
   }
-=======
-import crypto from "node:crypto";
-
-import {
-  Announcement,
-  type AnnouncementAudience,
-  type AnnouncementChannel,
-  type AnnouncementStatus,
-  type AnnouncementType,
-} from "./announcement.model";
-
-import { AnnouncementReceipt, Employee, Department } from "@/db/models";
-
-import { nowIso } from "@/db/connection";
-
-/**
- * Convert Mongo/Mongoose documents to the API shape used by the
- * existing HRMS frontend: `_id` becomes `id`.
- */
-function toApiDoc<T extends Record<string, any>>(doc: T | null | undefined) {
-  if (!doc) return undefined;
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 
   const { _id, ...rest } = doc;
 
   return {
-<<<<<<< HEAD
     id: String(_id),
-=======
-    id: _id,
->>>>>>> f8f0289 (Added feature to check performance of the employees)
     ...rest,
   };
 }
 
-<<<<<<< HEAD
 /* =========================================================
    NORMALIZATION HELPERS
 ========================================================= */
@@ -101,20 +69,17 @@ async function getEmployeeTargetingInfo(
    *
    * Fallback:
    *   Employee._id === authenticated user ID
-   *
-   * The fallback keeps compatibility with installations where
-   * the employee ID was historically passed directly.
    */
-  let employee =
-    await Employee.findOne({
-      userId,
-    }).lean();
+  let employee = await Employee.findOne({
+    userId,
+  }).lean();
 
   if (!employee) {
-    employee =
-      await Employee.findById(
-        userId,
-      ).lean();
+    try {
+      employee = await Employee.findById(userId).lean();
+    } catch {
+      employee = null;
+    }
   }
 
   if (!employee) {
@@ -130,95 +95,177 @@ async function getEmployeeTargetingInfo(
     };
   }
 
-  const departmentValues =
-    new Set<string>();
+  const departmentValues = new Set<string>();
 
   if (employee.departmentId) {
     departmentValues.add(
-      normalize(
-        employee.departmentId,
-      ),
+      normalize(employee.departmentId),
     );
 
-    const department =
-      await Department.findById(
-        employee.departmentId,
-      ).lean();
+    const department = await Department.findById(
+      employee.departmentId,
+    ).lean();
 
     if (department) {
       if (department.name) {
         departmentValues.add(
-          normalize(
-            department.name,
-          ),
+          normalize(department.name),
         );
       }
 
       if (department.code) {
         departmentValues.add(
-          normalize(
-            department.code,
-          ),
+          normalize(department.code),
         );
       }
     }
   }
 
-  const locationValues =
-    new Set<string>();
+  /*
+   * Support installations where departmentName is stored
+   * directly on Employee.
+   */
+  if ((employee as any).departmentName) {
+    departmentValues.add(
+      normalize((employee as any).departmentName),
+    );
+  }
+
+  const locationValues = new Set<string>();
 
   if (employee.city) {
-    locationValues.add(
-      normalize(employee.city),
-    );
+    locationValues.add(normalize(employee.city));
   }
 
   if (employee.state) {
-    locationValues.add(
-      normalize(employee.state),
-    );
+    locationValues.add(normalize(employee.state));
   }
 
   if (employee.country) {
+    locationValues.add(normalize(employee.country));
+  }
+
+  if ((employee as any).location) {
     locationValues.add(
-      normalize(employee.country),
+      normalize((employee as any).location),
     );
   }
 
-  const roleValues = [
-    normalize(role),
-  ].filter(Boolean);
+  /*
+   * Keep the authenticated role plus known role aliases.
+   *
+   * This is important for:
+   * - Recruiter
+   * - IT Support
+   * - HR Admin
+   * - Finance
+   * - Manager
+   * - Employee
+   * - Super Admin
+   */
+  const normalizedRole = normalize(role);
+
+  /*
+   * Canonical role aliases.
+   *
+   * IMPORTANT:
+   * The same canonicalization is used by:
+   *   1. announcement audience matching
+   *   2. target-role matching
+   *   3. read-receipt recipient calculation
+   *
+   * This prevents "manager" vs "managers", "it_support" vs
+   * "IT Support", and "recruiter" vs "talent_acquisition" from
+   * behaving differently in different parts of the system.
+   */
+  const roleAliases: Record<string, string[]> = {
+    super_admin: ["super_admin", "superadmin", "super admin"],
+    hr_admin: [
+      "hr_admin",
+      "hr",
+      "human_resources",
+      "human_resources_team",
+      "human resources",
+      "hr admin",
+    ],
+    finance: [
+      "finance",
+      "finance_payroll",
+      "finance_team",
+      "payroll",
+      "finance payroll",
+    ],
+    manager: [
+      "manager",
+      "managers",
+      "management",
+    ],
+    recruiter: [
+      "recruiter",
+      "recruiters",
+      "recruitment",
+      "recruitment_team",
+      "talent_acquisition",
+      "talent_acquisition_team",
+      "talent acquisition",
+    ],
+    it_support: [
+      "it_support",
+      "it_support_team",
+      "it support",
+      "itsupport",
+      "it",
+      "technical_support",
+      "technical_support_team",
+      "technical support",
+      "it support team",
+    ],
+    employee: [
+      "employee",
+      "employees",
+    ],
+  };
+
+  const canonicalRole = (value: unknown): string => {
+    const normalized = normalize(value);
+
+    if (!normalized) {
+      return "";
+    }
+
+    for (const [canonical, aliases] of Object.entries(roleAliases)) {
+      if (canonical === normalized || aliases.includes(normalized)) {
+        return canonical;
+      }
+    }
+
+    return normalized;
+  };
+
+  const canonicalCurrentRole = canonicalRole(normalizedRole);
+
+  const roleValues = Array.from(
+    new Set([
+      canonicalCurrentRole,
+      normalizedRole,
+      ...(roleAliases[canonicalCurrentRole] ?? []),
+    ]),
+  ).filter(Boolean);
 
   console.log(
     "[Announcements] Employee targeting resolved:",
     {
       userId,
-      employeeId: String(
-        employee._id,
-      ),
+      employeeId: String(employee._id),
       role: roleValues,
-      departments:
-        Array.from(
-          departmentValues,
-        ),
-      locations:
-        Array.from(
-          locationValues,
-        ),
+      departments: Array.from(departmentValues),
+      locations: Array.from(locationValues),
     },
   );
 
   return {
-    departmentValues:
-      Array.from(
-        departmentValues,
-      ),
-
-    locationValues:
-      Array.from(
-        locationValues,
-      ),
-
+    departmentValues: Array.from(departmentValues),
+    locationValues: Array.from(locationValues),
     roleValues,
   };
 }
@@ -236,24 +283,19 @@ function matchesTargeting(
   },
 ) {
   const announcementDepartments =
-    normalizeArray(
-      announcement.departments,
-    );
+    normalizeArray(announcement.departments);
 
   const announcementLocations =
-    normalizeArray(
-      announcement.locations,
-    );
+    normalizeArray(announcement.locations);
 
   const announcementRoles =
-    normalizeArray(
-      announcement.targetRoles,
-    );
+    normalizeArray(announcement.targetRoles);
 
   /*
    * Empty targeting field means "no restriction".
    *
    * Example:
+   *
    * departments = []
    * locations = ["hyderabad"]
    * targetRoles = []
@@ -264,29 +306,20 @@ function matchesTargeting(
 
   const departmentMatches =
     announcementDepartments.length === 0 ||
-    announcementDepartments.some(
-      (value) =>
-        targeting.departmentValues.includes(
-          value,
-        ),
+    announcementDepartments.some((value) =>
+      targeting.departmentValues.includes(value),
     );
 
   const locationMatches =
     announcementLocations.length === 0 ||
-    announcementLocations.some(
-      (value) =>
-        targeting.locationValues.includes(
-          value,
-        ),
+    announcementLocations.some((value) =>
+      targeting.locationValues.includes(value),
     );
 
   const roleMatches =
     announcementRoles.length === 0 ||
-    announcementRoles.some(
-      (value) =>
-        targeting.roleValues.includes(
-          value,
-        ),
+    announcementRoles.some((value) =>
+      targeting.roleValues.includes(value),
     );
 
   return (
@@ -304,13 +337,16 @@ function matchesAudience(
   announcementAudience: string,
   role?: string,
 ) {
-  const audience =
-    normalize(announcementAudience);
+  const audience = normalize(announcementAudience);
+  const currentRole = normalize(role);
 
-  const currentRole =
-    normalize(role);
-
-  if (audience === "all") {
+  /*
+   * ALL means every authenticated role can receive the announcement.
+   */
+  if (
+    audience === "all" ||
+    audience === "all_employees"
+  ) {
     return true;
   }
 
@@ -318,9 +354,78 @@ function matchesAudience(
     return false;
   }
 
-  return (
-    audience === currentRole
-  );
+  /*
+   * Keep audience matching canonical and symmetric.
+   * For example:
+   *   audience = "it_support"
+   *   role     = "IT Support"
+   * must both resolve to "it_support".
+   */
+  const roleAliases: Record<string, string[]> = {
+    super_admin: ["super_admin", "superadmin", "super admin"],
+    hr_admin: [
+      "hr_admin",
+      "hr",
+      "human_resources",
+      "human_resources_team",
+      "human resources",
+      "hr admin",
+    ],
+    finance: [
+      "finance",
+      "finance_payroll",
+      "finance_team",
+      "payroll",
+      "finance payroll",
+    ],
+    manager: [
+      "manager",
+      "managers",
+      "management",
+    ],
+    recruiter: [
+      "recruiter",
+      "recruiters",
+      "recruitment",
+      "recruitment_team",
+      "talent_acquisition",
+      "talent_acquisition_team",
+      "talent acquisition",
+    ],
+    it_support: [
+      "it_support",
+      "it_support_team",
+      "it support",
+      "itsupport",
+      "it",
+      "technical_support",
+      "technical_support_team",
+      "technical support",
+      "it support team",
+    ],
+    employee: [
+      "employee",
+      "employees",
+    ],
+  };
+
+  const canonicalRole = (value: unknown): string => {
+    const normalized = normalize(value);
+
+    if (!normalized) {
+      return "";
+    }
+
+    for (const [canonical, aliases] of Object.entries(roleAliases)) {
+      if (canonical === normalized || aliases.includes(normalized)) {
+        return canonical;
+      }
+    }
+
+    return normalized;
+  };
+
+  return canonicalRole(audience) === canonicalRole(currentRole);
 }
 
 /* =========================================================
@@ -339,179 +444,162 @@ export async function getAnnouncements(
     status: "PUBLISHED",
   };
 
-  const isAdmin =
-    role === "SUPER_ADMIN" ||
-    role === "HR_ADMIN";
-
   /*
-   * Admin users can see all published announcements.
+   * Audience and targeting apply to EVERY role,
+   * including SUPER_ADMIN and HR_ADMIN.
    *
-   * IMPORTANT:
-   * We intentionally do NOT return early for admins.
-   * Admins must also receive their own AnnouncementReceipt
-   * so "Mark as read" works for admin accounts too.
+   * ALL means no role restriction, but
+   * department/location/target-role restrictions
+   * still apply.
    */
-  if (!isAdmin) {
-    const audienceMap: Record<
-      string,
-      string[]
-    > = {
-      SUPER_ADMIN: [
-        "ALL",
-        "SUPER_ADMIN",
-        "HR_ADMIN",
-        "FINANCE",
-        "MANAGER",
-        "RECRUITER",
-        "IT_SUPPORT",
-        "EMPLOYEE",
-      ],
+  const announcements = await Announcement.find(query)
+    .sort({
+      pinned: -1,
+      createdAt: -1,
+    })
+    .lean();
 
-      HR_ADMIN: [
-        "ALL",
-        "HR_ADMIN",
-        "FINANCE",
-        "MANAGER",
-        "RECRUITER",
-        "IT_SUPPORT",
-        "EMPLOYEE",
-      ],
-
-      FINANCE: [
-        "ALL",
-        "FINANCE",
-      ],
-
-      MANAGER: [
-        "ALL",
-        "MANAGER",
-      ],
-
-      RECRUITER: [
-        "ALL",
-        "RECRUITER",
-      ],
-
-      IT_SUPPORT: [
-        "ALL",
-        "IT_SUPPORT",
-      ],
-
-      EMPLOYEE: [
-        "ALL",
-        "EMPLOYEE",
-      ],
-    };
-
-    query.audience = {
-      $in:
-        audienceMap[
-          String(role)
-        ] ?? ["ALL"],
-    };
-  }
-
-  const announcements =
-    await Announcement.find(query)
-      .sort({
-        pinned: -1,
-        createdAt: -1,
-      })
-      .lean();
-
-  if (
-    announcements.length === 0
-  ) {
+  if (announcements.length === 0) {
     return [];
   }
 
   /*
-   * Admins see every published announcement.
-   *
-   * Non-admin users additionally go through
-   * department/location/target-role filtering.
-   */
-  let visibleAnnouncements =
-    announcements;
-
-  if (
-    !isAdmin &&
-    userId
-  ) {
-    const targeting =
-      await getEmployeeTargetingInfo(
-        userId,
-        role,
-      );
-
-    visibleAnnouncements =
-      announcements.filter(
-        (announcement) =>
-          matchesAudience(
-            announcement.audience,
-            role,
-          ) &&
-          matchesTargeting(
-            announcement,
-            targeting,
-          ),
-      );
-  }
-
-  if (
-    visibleAnnouncements.length === 0
-  ) {
-    return [];
-  }
-
-  /*
-   * Without a user ID there is no receipt to attach.
+   * If no user ID exists, only apply audience filtering.
    */
   if (!userId) {
-    return visibleAnnouncements.map(
-      toApiDoc,
+    return announcements
+      .filter((announcement) =>
+        matchesAudience(
+          announcement.audience,
+          role,
+        ),
+      )
+      .map(toApiDoc);
+  }
+
+  const targeting =
+    await getEmployeeTargetingInfo(
+      userId,
+      role,
     );
+
+  /*
+   * One recipient rule for ALL channels:
+   *
+   * Audience
+   * AND Department
+   * AND Location
+   * AND Target Role
+   */
+  const visibleAnnouncements =
+    announcements.filter(
+      (announcement) =>
+        matchesAudience(
+          announcement.audience,
+          role,
+        ) &&
+        matchesTargeting(
+          announcement,
+          targeting,
+        ),
+    );
+
+  if (visibleAnnouncements.length === 0) {
+    return [];
   }
 
   /*
    * Load receipts for the CURRENT USER.
    *
-   * This is deliberately done for admins as well as
-   * normal employees. Previously admins returned before
-   * this query, which caused receipt to remain null and
-   * made "Mark as read" appear again after every refresh.
+   * This applies to:
+   * - Super Admin
+   * - HR Admin
+   * - Recruiter
+   * - Manager
+   * - Finance
+   * - IT Support
+   * - Employee
+   *
+   * A missing receipt means UNREAD.
    */
+  /*
+   * Read receipts are keyed by authenticated USER ID.
+   *
+   * The employee _id is intentionally NOT used for new writes.
+   * For old installations that accidentally stored employee._id,
+   * we also read that legacy key so existing read history is not lost.
+   */
+  let legacyEmployeeId: string | null = null;
+
+  try {
+    const employee = await Employee.findOne({
+      userId,
+    })
+      .select("_id")
+      .lean();
+
+    legacyEmployeeId = employee?._id
+      ? String(employee._id)
+      : null;
+  } catch {
+    legacyEmployeeId = null;
+  }
+
+  const receiptUserIds = Array.from(
+    new Set(
+      [
+        userId,
+        legacyEmployeeId,
+      ].filter(Boolean),
+    ),
+  );
+
   const receipts =
     (await AnnouncementReceipt.find({
       announcementId: {
-        $in:
-          visibleAnnouncements.map(
-            (announcement) =>
-              announcement._id,
-          ),
+        $in: visibleAnnouncements.map(
+          (announcement) =>
+            announcement._id,
+        ),
       },
-      userId,
+
+      userId: {
+        $in: receiptUserIds,
+      },
     }).lean()) as any[];
 
-  const receiptMap =
-    new Map(
-      receipts.map(
-        (receipt) => [
-          String(
-            receipt.announcementId,
-          ),
-          receipt,
-        ],
-      ),
+  const receiptMap = new Map<string, any>();
+
+  for (const receipt of receipts) {
+    const announcementKey = String(
+      receipt.announcementId,
     );
+
+    const existing = receiptMap.get(
+      announcementKey,
+    );
+
+    /*
+     * Prefer the receipt written with the authenticated USER ID.
+     * This prevents an old employee._id receipt from overriding
+     * the correct current-user receipt.
+     */
+    if (
+      !existing ||
+      String(receipt.userId) === userId
+    ) {
+      receiptMap.set(
+        announcementKey,
+        receipt,
+      );
+    }
+  }
 
   return visibleAnnouncements.map(
     (announcement) => {
       const receipt =
         receiptMap.get(
-          String(
-            announcement._id,
-          ),
+          String(announcement._id),
         );
 
       return toApiDoc({
@@ -519,19 +607,16 @@ export async function getAnnouncements(
 
         receipt: receipt
           ? {
-              isRead:
-                Boolean(
-                  receipt.isRead,
-                ),
+              isRead: Boolean(
+                receipt.isRead,
+              ),
 
-              isAcknowledged:
-                Boolean(
-                  receipt.isAcknowledged,
-                ),
+              isAcknowledged: Boolean(
+                receipt.isAcknowledged,
+              ),
 
               readAt:
-                receipt.readAt ??
-                null,
+                receipt.readAt ?? null,
 
               acknowledgedAt:
                 receipt.acknowledgedAt ??
@@ -552,38 +637,37 @@ export async function getAnnouncementWithReceipt(
   userId: string,
 ) {
   const announcement =
-    await Announcement.findById(
-      id,
-    ).lean();
+    await Announcement.findById(id).lean();
 
   if (!announcement) {
     return undefined;
   }
 
   const receipt =
-    (await AnnouncementReceipt.findOne(
-      {
-        announcementId: id,
-        userId,
-      },
-    ).lean()) as any;
+    (await AnnouncementReceipt.findOne({
+      announcementId: id,
+      userId,
+    }).lean()) as any;
 
   return toApiDoc({
     ...announcement,
 
     receipt: receipt
       ? {
-          isRead:
+          isRead: Boolean(
             receipt.isRead,
+          ),
 
-          isAcknowledged:
+          isAcknowledged: Boolean(
             receipt.isAcknowledged,
+          ),
 
           readAt:
-            receipt.readAt,
+            receipt.readAt ?? null,
 
           acknowledgedAt:
-            receipt.acknowledgedAt,
+            receipt.acknowledgedAt ??
+            null,
         }
       : null,
   });
@@ -597,6 +681,31 @@ export async function markAnnouncementRead(
   announcementId: string,
   userId: string,
 ) {
+  if (!announcementId?.trim()) {
+    throw new Error(
+      "Announcement ID is required.",
+    );
+  }
+
+  if (!userId?.trim()) {
+    throw new Error(
+      "Authenticated user ID is required.",
+    );
+  }
+
+  const announcement =
+    await Announcement.findById(
+      announcementId,
+    )
+      .select("_id")
+      .lean();
+
+  if (!announcement) {
+    throw new Error(
+      "Announcement not found.",
+    );
+  }
+
   const now =
     new Date().toISOString();
 
@@ -605,6 +714,7 @@ export async function markAnnouncementRead(
       announcementId,
       userId,
     },
+
     {
       $set: {
         isRead: true,
@@ -618,6 +728,7 @@ export async function markAnnouncementRead(
         createdAt: now,
       },
     },
+
     {
       upsert: true,
     },
@@ -632,6 +743,31 @@ export async function acknowledgePolicyAnnouncement(
   announcementId: string,
   userId: string,
 ) {
+  if (!announcementId?.trim()) {
+    throw new Error(
+      "Announcement ID is required.",
+    );
+  }
+
+  if (!userId?.trim()) {
+    throw new Error(
+      "Authenticated user ID is required.",
+    );
+  }
+
+  const announcement =
+    await Announcement.findById(
+      announcementId,
+    )
+      .select("_id type")
+      .lean();
+
+  if (!announcement) {
+    throw new Error(
+      "Announcement not found.",
+    );
+  }
+
   const now =
     new Date().toISOString();
 
@@ -640,6 +776,7 @@ export async function acknowledgePolicyAnnouncement(
       announcementId,
       userId,
     },
+
     {
       $set: {
         isRead: true,
@@ -657,6 +794,7 @@ export async function acknowledgePolicyAnnouncement(
         createdAt: now,
       },
     },
+
     {
       upsert: true,
     },
@@ -667,170 +805,466 @@ export async function acknowledgePolicyAnnouncement(
    LIST READ STATUS
 ========================================================= */
 
+/*
+ * IMPORTANT:
+ *
+ * The Read Receipts screen must show ALL eligible recipients,
+ * not just users who already have AnnouncementReceipt records.
+ *
+ * Therefore:
+ *
+ * Employee
+ *     LEFT JOIN
+ * AnnouncementReceipt
+ *
+ * No receipt = unread.
+ */
 export async function listAnnouncementReadStatus(
   announcementId: string,
 ) {
-  /*
-   * AnnouncementReceipt stores the authenticated USER ID, not the
-   * employee display information. Resolve that user ID back to the
-   * Employee record so the read-receipts screen can show the actual
-   * employee name, department and role instead of the generic
-   * "Employee" label.
-   *
-   * We deliberately keep the receipt query as the source of truth for
-   * who has a receipt. This does not create receipts for unread users;
-   * it only enriches the receipts that actually exist.
-   */
-  const receipts =
-    (await AnnouncementReceipt.find({
-      announcementId,
-    })
-      .sort({
-        updatedAt: -1,
-      })
-      .lean()) as any[];
+  /* -------------------------------------------------------
+     GET ANNOUNCEMENT
+  ------------------------------------------------------- */
 
-  if (receipts.length === 0) {
+  const announcement =
+    (await Announcement.findById(
+      announcementId,
+    ).lean()) as any;
+
+  if (!announcement) {
     return [];
   }
 
-  const enriched = await Promise.all(
-    receipts.map(async (receipt: any) => {
-      /*
-       * Normal case:
-       *   AnnouncementReceipt.userId -> Employee.userId
-       *
-       * Compatibility fallback:
-       *   older data may have stored Employee._id directly.
-       */
-      let employee =
-        await Employee.findOne({
-          userId: receipt.userId,
-        }).lean();
+  /* -------------------------------------------------------
+     GET ALL EMPLOYEES
+  ------------------------------------------------------- */
 
-      if (!employee) {
-        try {
-          employee =
-            await Employee.findById(
-              receipt.userId,
-            ).lean();
-        } catch {
-          employee = null;
+  const employees =
+    (await Employee.find({}).lean()) as any[];
+
+  if (employees.length === 0) {
+    return [];
+  }
+
+  /* -------------------------------------------------------
+     GET DEPARTMENTS ONCE
+  ------------------------------------------------------- */
+
+  const departments =
+    (await Department.find({}).lean()) as any[];
+
+  const departmentMap =
+    new Map<string, any>(
+      departments.map(
+        (department: any) => [
+          String(department._id),
+          department,
+        ],
+      ),
+    );
+
+  /* -------------------------------------------------------
+     GET EXISTING RECEIPTS
+  ------------------------------------------------------- */
+
+  const receipts =
+    (await AnnouncementReceipt.find({
+      announcementId,
+    }).lean()) as any[];
+
+  const receiptMap =
+    new Map<string, any>(
+      receipts.map(
+        (receipt: any) => [
+          String(receipt.userId),
+          receipt,
+        ],
+      ),
+    );
+
+  /* -------------------------------------------------------
+     BUILD RECIPIENT STATUS
+  ------------------------------------------------------- */
+
+  const status: any[] = [];
+
+  for (const employee of employees) {
+    /*
+     * AnnouncementReceipt.userId stores USER ID.
+     */
+    const userId = employee.userId
+      ? String(employee.userId)
+      : "";
+
+    /*
+     * Employees without an authenticated user account
+     * cannot mark an announcement as read.
+     */
+    if (!userId) {
+      continue;
+    }
+
+    /* -----------------------------------------------------
+       ROLE
+    ----------------------------------------------------- */
+
+    const role =
+      employee.role ??
+      employee.designation ??
+      employee.jobTitle ??
+      "";
+
+    /* -----------------------------------------------------
+       DEPARTMENT
+    ----------------------------------------------------- */
+
+    const departmentValues =
+      new Set<string>();
+
+    if (employee.departmentId) {
+      departmentValues.add(
+        normalize(
+          employee.departmentId,
+        ),
+      );
+
+      const department =
+        departmentMap.get(
+          String(
+            employee.departmentId,
+          ),
+        );
+
+      if (department) {
+        if (department.name) {
+          departmentValues.add(
+            normalize(
+              department.name,
+            ),
+          );
+        }
+
+        if (department.code) {
+          departmentValues.add(
+            normalize(
+              department.code,
+            ),
+          );
         }
       }
+    }
 
-      let department: any = null;
+    /*
+     * Support direct departmentName.
+     */
+    if (employee.departmentName) {
+      departmentValues.add(
+        normalize(
+          employee.departmentName,
+        ),
+      );
+    }
 
-      if (employee?.departmentId) {
-        try {
-          department =
-            await Department.findById(
-              employee.departmentId,
-            ).lean();
-        } catch {
-          department = null;
-        }
+    /* -----------------------------------------------------
+       LOCATION
+    ----------------------------------------------------- */
+
+    const locationValues =
+      new Set<string>();
+
+    if (employee.city) {
+      locationValues.add(
+        normalize(employee.city),
+      );
+    }
+
+    if (employee.state) {
+      locationValues.add(
+        normalize(employee.state),
+      );
+    }
+
+    if (employee.country) {
+      locationValues.add(
+        normalize(employee.country),
+      );
+    }
+
+    if (employee.location) {
+      locationValues.add(
+        normalize(employee.location),
+      );
+    }
+
+    /* -----------------------------------------------------
+       ROLE VALUES
+    ----------------------------------------------------- */
+
+    const normalizedRole =
+      normalize(role);
+
+    const roleAliases: Record<
+      string,
+      string[]
+    > = {
+      super_admin: [
+        "super_admin",
+        "superadmin",
+      ],
+
+      hr_admin: [
+        "hr_admin",
+        "hr",
+        "human_resources",
+        "human_resources_team",
+      ],
+
+      finance: [
+        "finance",
+        "finance_payroll",
+        "finance_team",
+        "payroll",
+      ],
+
+      manager: [
+        "manager",
+        "managers",
+        "management",
+      ],
+
+      recruiter: [
+        "recruiter",
+        "recruiters",
+        "recruitment",
+        "recruitment_team",
+        "talent_acquisition",
+        "talent_acquisition_team",
+      ],
+
+      it_support: [
+        "it_support",
+        "it_support_team",
+        "it support",
+        "itsupport",
+        "it",
+        "technical_support",
+        "technical_support_team",
+      ],
+
+      employee: [
+        "employee",
+        "employees",
+      ],
+    };
+
+    const roleValues =
+      Array.from(
+        new Set([
+          normalizedRole,
+          ...(roleAliases[
+            normalizedRole
+          ] ?? []),
+        ]),
+      ).filter(Boolean);
+
+    const targeting = {
+      departmentValues:
+        Array.from(
+          departmentValues,
+        ),
+
+      locationValues:
+        Array.from(
+          locationValues,
+        ),
+
+      roleValues,
+    };
+
+    /* -----------------------------------------------------
+       AUDIENCE MATCH
+    ----------------------------------------------------- */
+
+    const audienceMatches =
+      matchesAudience(
+        announcement.audience,
+        role,
+      );
+
+    if (!audienceMatches) {
+      continue;
+    }
+
+    /* -----------------------------------------------------
+       TARGETING MATCH
+    ----------------------------------------------------- */
+
+    const targetingMatches =
+      matchesTargeting(
+        announcement,
+        targeting,
+      );
+
+    if (!targetingMatches) {
+      continue;
+    }
+
+    /* -----------------------------------------------------
+       RECEIPT
+    ----------------------------------------------------- */
+
+    const receipt =
+      receiptMap.get(userId);
+
+    /* -----------------------------------------------------
+       EMPLOYEE NAME
+    ----------------------------------------------------- */
+
+    const firstName =
+      employee.firstName ??
+      employee.first_name ??
+      "";
+
+    const lastName =
+      employee.lastName ??
+      employee.last_name ??
+      "";
+
+    const composedName =
+      `${String(firstName).trim()} ${String(
+        lastName,
+      ).trim()}`.trim();
+
+    const employeeName =
+      employee.name ??
+      employee.fullName ??
+      employee.displayName ??
+      employee.employeeName ??
+      composedName ??
+      "";
+
+    /* -----------------------------------------------------
+       DEPARTMENT DISPLAY NAME
+    ----------------------------------------------------- */
+
+    let departmentName = "";
+
+    if (employee.departmentId) {
+      const department =
+        departmentMap.get(
+          String(
+            employee.departmentId,
+          ),
+        );
+
+      if (department?.name) {
+        departmentName =
+          String(
+            department.name,
+          );
       }
+    }
 
-      /*
-       * Support the common employee-name field variations used by the
-       * HRMS data model without changing the Employee schema.
-       */
-      const employeeRecord =
-        (employee ?? {}) as any;
+    if (
+      !departmentName &&
+      employee.departmentName
+    ) {
+      departmentName =
+        String(
+          employee.departmentName,
+        );
+    }
 
-      const firstName =
-        employeeRecord.firstName ??
-        employeeRecord.first_name ??
-        "";
+    /* -----------------------------------------------------
+       PUSH STATUS
+    ----------------------------------------------------- */
 
-      const lastName =
-        employeeRecord.lastName ??
-        employeeRecord.last_name ??
-        "";
+    status.push({
+      id: employee._id
+        ? String(employee._id)
+        : userId,
 
-      const composedName =
-        `${String(firstName).trim()} ${String(
-          lastName,
-        ).trim()}`.trim();
+      announcementId:
+        String(announcementId),
 
-      const employeeName =
-        employeeRecord.name ??
-        employeeRecord.fullName ??
-        employeeRecord.displayName ??
-        employeeRecord.employeeName ??
-        composedName ??
-        "";
+      userId,
 
-      const departmentName =
-        department?.name ??
-        employeeRecord.departmentName ??
-        "";
-
-      const role =
-        employeeRecord.role ??
-        employeeRecord.designation ??
-        employeeRecord.jobTitle ??
-        "";
-
-      return {
-        id: String(receipt._id),
-
-        announcementId:
-          String(receipt.announcementId),
-
-        /*
-         * Keep the original userId because the frontend/API may use it
-         * for identity or debugging.
-         */
-        userId:
-          receipt.userId,
-
-        /*
-         * Human-readable employee information for Read Receipts.
-         */
-        employeeId: employee?._id
+      employeeId:
+        employee._id
           ? String(employee._id)
           : null,
 
-        employeeName:
-          String(employeeName).trim() ||
-          "Employee",
+      employeeName:
+        String(employeeName).trim() ||
+        "Employee",
 
-        name:
-          String(employeeName).trim() ||
-          "Employee",
+      name:
+        String(employeeName).trim() ||
+        "Employee",
 
-        department:
-          String(departmentName).trim() ||
-          "—",
+      department:
+        String(departmentName).trim() ||
+        "—",
 
-        role:
-          String(role).trim() ||
-          "—",
+      role:
+        String(role).trim() ||
+        "—",
 
-        isRead:
-          Boolean(receipt.isRead),
+      /*
+       * NO RECEIPT = UNREAD
+       */
+      isRead: receipt
+        ? Boolean(receipt.isRead)
+        : false,
 
-        isAcknowledged:
-          Boolean(receipt.isAcknowledged),
+      isAcknowledged:
+        receipt
+          ? Boolean(
+              receipt.isAcknowledged,
+            )
+          : false,
 
-        readAt:
-          receipt.readAt ?? null,
+      readAt:
+        receipt?.readAt ?? null,
 
-        acknowledgedAt:
-          receipt.acknowledgedAt ?? null,
+      acknowledgedAt:
+        receipt?.acknowledgedAt ??
+        null,
 
-        createdAt:
-          receipt.createdAt,
+      createdAt:
+        receipt?.createdAt ?? null,
 
-        updatedAt:
-          receipt.updatedAt,
-      };
-    }),
+      updatedAt:
+        receipt?.updatedAt ?? null,
+    });
+  }
+
+  /* -------------------------------------------------------
+     SORT
+
+     Unread users first.
+     Then alphabetical by employee name.
+  ------------------------------------------------------- */
+
+  status.sort(
+    (a: any, b: any) => {
+      if (
+        a.isRead !== b.isRead
+      ) {
+        return a.isRead ? 1 : -1;
+      }
+
+      return String(
+        a.employeeName,
+      ).localeCompare(
+        String(
+          b.employeeName,
+        ),
+      );
+    },
   );
 
-  return enriched;
+  return status;
 }
 
 /* =========================================================
@@ -856,315 +1290,10 @@ export async function getAnnouncement(
 
 export async function createAnnouncement(
   data: {
-=======
-/**
- * Generate the string IDs used by the HRMS Announcement model.
- *
- * The dedicated announcement model intentionally uses a string `_id`
- * because the existing project uses string IDs for these records.
- */
-function createAnnouncementId() {
-  return `ann_${crypto.randomUUID()}`;
-}
-
-/**
- * Normalize and validate notification channels.
- *
- * `channels` is the single source of truth.
- */
-function normalizeChannels(channels?: string[]): AnnouncementChannel[] {
-  const normalized = Array.from(
-    new Set(
-      (channels ?? ["IN_APP"])
-        .map((channel) => String(channel).trim().toUpperCase())
-        .filter(Boolean),
-    ),
-  );
-
-  const allowed: AnnouncementChannel[] = [
-    "IN_APP",
-    "EMAIL",
-    "BANNER",
-    "CALENDAR",
-  ];
-
-  const invalid = normalized.filter(
-    (channel) => !allowed.includes(channel as AnnouncementChannel),
-  );
-
-  if (invalid.length > 0) {
-    throw new Error(`Invalid announcement channel(s): ${invalid.join(", ")}`);
-  }
-
-  if (normalized.length === 0) {
-    throw new Error("At least one notification channel is required.");
-  }
-
-  return normalized as AnnouncementChannel[];
-}
-
-/**
- * Validate calendar information whenever CALENDAR is selected.
- */
-function normalizeCalendarFields(input: {
-  channels: AnnouncementChannel[];
-  eventStartAt?: string;
-  eventEndAt?: string;
-  eventLocation?: string;
-}) {
-  const calendarEnabled = input.channels.includes("CALENDAR");
-
-  if (!calendarEnabled) {
-    return {
-      calendarEnabled: false,
-      eventStartAt: "",
-      eventEndAt: "",
-      eventLocation: "",
-    };
-  }
-
-  if (!input.eventStartAt || !input.eventEndAt) {
-    throw new Error(
-      "Event start and end date/time are required when Calendar is selected.",
-    );
-  }
-
-  const eventStart = new Date(input.eventStartAt);
-
-  const eventEnd = new Date(input.eventEndAt);
-
-  if (Number.isNaN(eventStart.getTime()) || Number.isNaN(eventEnd.getTime())) {
-    throw new Error("Invalid calendar event date/time.");
-  }
-
-  if (eventEnd.getTime() < eventStart.getTime()) {
-    throw new Error(
-      "Event end date/time cannot be before event start date/time.",
-    );
-  }
-
-  return {
-    calendarEnabled: true,
-    eventStartAt: input.eventStartAt,
-    eventEndAt: input.eventEndAt,
-    eventLocation: input.eventLocation?.trim() ?? "",
-  };
-}
-
-/**
- * Determine the persisted banner flag from channels.
- *
- * This prevents:
- *
- * channels = ["IN_APP"]
- * showBanner = true
- *
- * from being stored accidentally.
- */
-function getBannerEnabled(channels: AnnouncementChannel[]) {
-  return channels.includes("BANNER");
-}
-
-/**
- * Return published announcements.
- *
- * This repository deliberately does not apply employee targeting here
- * because the existing project exposes a general announcement listing
- * endpoint. Employee-specific filtering can be added at the route/service
- * layer without changing the database contract.
- */
-export async function listAnnouncements() {
-  const rows = await Announcement.find({
-    status: "PUBLISHED",
-  })
-    .sort({
-      pinned: -1,
-      publishedAt: -1,
-      createdAt: -1,
-    })
-    .lean();
-
-  return rows.map(toApiDoc);
-}
-
-/**
- * Create an announcement.
- */
-export async function createAnnouncement(input: {
-  title: string;
-  body: string;
-  type?: string;
-  audience?: string;
-  departments?: string[];
-  locations?: string[];
-  targetRoles?: string[];
-  channels?: string[];
-  showBanner?: boolean;
-  requiresAcknowledgement?: boolean;
-  pinned?: boolean;
-  attachment?: string;
-  createdBy: string;
-  status?: string;
-  scheduledAt?: string;
-  publishedAt?: string;
-  calendarEnabled?: boolean;
-  eventStartAt?: string;
-  eventEndAt?: string;
-  eventLocation?: string;
-}) {
-  const now = nowIso();
-
-  const channels = normalizeChannels(input.channels);
-
-  const showBanner = getBannerEnabled(channels);
-
-  const calendar = normalizeCalendarFields({
-    channels,
-    eventStartAt: input.eventStartAt,
-    eventEndAt: input.eventEndAt,
-    eventLocation: input.eventLocation,
-  });
-
-  const requestedStatus = String(
-    input.status ?? "DRAFT",
-  ).toUpperCase() as AnnouncementStatus;
-
-  const allowedStatuses: AnnouncementStatus[] = [
-    "DRAFT",
-    "SCHEDULED",
-    "PUBLISHED",
-  ];
-
-  if (!allowedStatuses.includes(requestedStatus)) {
-    throw new Error(`Invalid announcement status: ${requestedStatus}`);
-  }
-
-  if (requestedStatus === "SCHEDULED" && !input.scheduledAt) {
-    throw new Error("scheduledAt is required for a scheduled announcement.");
-  }
-
-  if (requestedStatus === "PUBLISHED") {
-    const publishedAt = input.publishedAt ?? now;
-
-    const doc = await Announcement.create({
-      _id: createAnnouncementId(),
-
-      title: input.title.trim(),
-      body: input.body,
-
-      type: (input.type ?? "GENERAL_NOTICE") as AnnouncementType,
-
-      audience: (input.audience ?? "ALL") as AnnouncementAudience,
-
-      departments: input.departments ?? [],
-
-      locations: input.locations ?? [],
-
-      targetRoles: input.targetRoles ?? [],
-
-      channels,
-
-      pinned: Boolean(input.pinned),
-
-      showBanner,
-
-      requiresAcknowledgement: Boolean(input.requiresAcknowledgement),
-
-      attachment: input.attachment ?? "",
-
-      createdBy: input.createdBy,
-
-      status: requestedStatus,
-
-      scheduledAt: input.scheduledAt ?? "",
-
-      publishedAt,
-
-      calendarEnabled: calendar.calendarEnabled,
-
-      eventStartAt: calendar.eventStartAt,
-
-      eventEndAt: calendar.eventEndAt,
-
-      eventLocation: calendar.eventLocation,
-
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    return toApiDoc((await Announcement.findById(doc._id).lean())!);
-  }
-
-  const doc = await Announcement.create({
-    _id: createAnnouncementId(),
-
-    title: input.title.trim(),
-    body: input.body,
-
-    type: (input.type ?? "GENERAL_NOTICE") as AnnouncementType,
-
-    audience: (input.audience ?? "ALL") as AnnouncementAudience,
-
-    departments: input.departments ?? [],
-
-    locations: input.locations ?? [],
-
-    targetRoles: input.targetRoles ?? [],
-
-    channels,
-
-    pinned: Boolean(input.pinned),
-
-    showBanner,
-
-    requiresAcknowledgement: Boolean(input.requiresAcknowledgement),
-
-    attachment: input.attachment ?? "",
-
-    createdBy: input.createdBy,
-
-    status: requestedStatus,
-
-    scheduledAt: input.scheduledAt ?? "",
-
-    publishedAt: input.publishedAt ?? "",
-
-    calendarEnabled: calendar.calendarEnabled,
-
-    eventStartAt: calendar.eventStartAt,
-
-    eventEndAt: calendar.eventEndAt,
-
-    eventLocation: calendar.eventLocation,
-
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  return toApiDoc((await Announcement.findById(doc._id).lean())!);
-}
-
-/**
- * Get one announcement by ID.
- */
-export async function getAnnouncement(id: string) {
-  const doc = await Announcement.findById(id).lean();
-
-  return toApiDoc(doc);
-}
-
-/**
- * Update an announcement.
- */
-export async function updateAnnouncement(
-  id: string,
-  input: Partial<{
->>>>>>> f8f0289 (Added feature to check performance of the employees)
     title: string;
     body: string;
     type: string;
     audience: string;
-<<<<<<< HEAD
 
     departments?: string[];
     locations?: string[];
@@ -1196,9 +1325,7 @@ export async function updateAnnouncement(
 
   const scheduledDate =
     data.scheduledAt
-      ? new Date(
-          data.scheduledAt,
-        )
+      ? new Date(data.scheduledAt)
       : null;
 
   if (
@@ -1217,6 +1344,83 @@ export async function updateAnnouncement(
     scheduledDate.getTime() <=
       Date.now();
 
+  const channels =
+    Array.from(
+      new Set(
+        (
+          data.channels ??
+          ["IN_APP"]
+        )
+          .map((channel) =>
+            String(channel)
+              .trim()
+              .toUpperCase(),
+          )
+          .filter(Boolean),
+      ),
+    );
+
+  if (
+    channels.length === 0
+  ) {
+    throw new Error(
+      "At least one notification channel is required.",
+    );
+  }
+
+  const showBanner =
+    channels.includes(
+      "BANNER",
+    );
+
+  const calendarEnabled =
+    channels.includes(
+      "CALENDAR",
+    );
+
+  if (calendarEnabled) {
+    if (
+      !data.eventStartAt ||
+      !data.eventEndAt
+    ) {
+      throw new Error(
+        "Event start and end date/time are required when Calendar is selected.",
+      );
+    }
+
+    const eventStart =
+      new Date(
+        data.eventStartAt,
+      );
+
+    const eventEnd =
+      new Date(
+        data.eventEndAt,
+      );
+
+    if (
+      Number.isNaN(
+        eventStart.getTime(),
+      ) ||
+      Number.isNaN(
+        eventEnd.getTime(),
+      )
+    ) {
+      throw new Error(
+        "Invalid calendar event date/time.",
+      );
+    }
+
+    if (
+      eventEnd.getTime() <
+      eventStart.getTime()
+    ) {
+      throw new Error(
+        "Event end date/time cannot be before event start date/time.",
+      );
+    }
+  }
+
   const requiresAcknowledgement =
     data.requiresAcknowledgement ??
     data.type ===
@@ -1224,17 +1428,13 @@ export async function updateAnnouncement(
 
   const announcement =
     await Announcement.create({
-      title:
-        data.title.trim(),
+      title: data.title.trim(),
 
-      body:
-        data.body.trim(),
+      body: data.body.trim(),
 
-      type:
-        data.type,
+      type: data.type,
 
-      audience:
-        data.audience,
+      audience: data.audience,
 
       departments:
         data.departments ?? [],
@@ -1245,34 +1445,33 @@ export async function updateAnnouncement(
       targetRoles:
         data.targetRoles ?? [],
 
-      channels:
-        data.channels ??
-        ["IN_APP"],
+      channels,
 
-      showBanner:
-        data.showBanner ??
-        false,
+      showBanner,
 
       requiresAcknowledgement,
 
-      calendarEnabled:
-        data.calendarEnabled ??
-        false,
+      calendarEnabled,
 
       eventStartAt:
-        data.eventStartAt ??
-        "",
+        calendarEnabled
+          ? (data.eventStartAt ??
+            "")
+          : "",
 
       eventEndAt:
-        data.eventEndAt ??
-        "",
+        calendarEnabled
+          ? (data.eventEndAt ??
+            "")
+          : "",
 
       eventLocation:
-        data.eventLocation ??
-        "",
+        calendarEnabled
+          ? (data.eventLocation ??
+            "")
+          : "",
 
-      pinned:
-        data.pinned,
+      pinned: data.pinned,
 
       attachment:
         data.attachment || "",
@@ -1286,19 +1485,16 @@ export async function updateAnnouncement(
           : "SCHEDULED",
 
       scheduledAt:
-        data.scheduledAt ??
-        "",
+        data.scheduledAt ?? "",
 
       publishedAt:
         publishNow
           ? now
           : "",
 
-      createdAt:
-        now,
+      createdAt: now,
 
-      updatedAt:
-        now,
+      updatedAt: now,
     });
 
   const saved =
@@ -1317,8 +1513,11 @@ export async function updateAnnouncement(
   id: string,
   data: {
     title?: string;
+
     body?: string;
+
     type?: string;
+
     audience?: string;
 
     pinned?: boolean;
@@ -1357,40 +1556,35 @@ export async function updateAnnouncement(
   };
 
   if (
-    data.title !==
-    undefined
+    data.title !== undefined
   ) {
     update.title =
       data.title.trim();
   }
 
   if (
-    data.body !==
-    undefined
+    data.body !== undefined
   ) {
     update.body =
       data.body.trim();
   }
 
   if (
-    data.type !==
-    undefined
+    data.type !== undefined
   ) {
     update.type =
       data.type;
   }
 
   if (
-    data.audience !==
-    undefined
+    data.audience !== undefined
   ) {
     update.audience =
       data.audience;
   }
 
   if (
-    data.pinned !==
-    undefined
+    data.pinned !== undefined
   ) {
     update.pinned =
       data.pinned;
@@ -1432,8 +1626,56 @@ export async function updateAnnouncement(
     data.channels !==
     undefined
   ) {
+    const channels =
+      Array.from(
+        new Set(
+          data.channels
+            .map((channel) =>
+              String(channel)
+                .trim()
+                .toUpperCase(),
+            )
+            .filter(Boolean),
+        ),
+      );
+
+    if (
+      channels.length === 0
+    ) {
+      throw new Error(
+        "At least one notification channel is required.",
+      );
+    }
+
+    const hasBanner =
+      channels.includes(
+        "BANNER",
+      );
+
+    const hasCalendar =
+      channels.includes(
+        "CALENDAR",
+      );
+
     update.channels =
-      data.channels;
+      channels;
+
+    update.showBanner =
+      hasBanner;
+
+    update.calendarEnabled =
+      hasCalendar;
+
+    if (!hasCalendar) {
+      update.eventStartAt =
+        "";
+
+      update.eventEndAt =
+        "";
+
+      update.eventLocation =
+        "";
+    }
   }
 
   if (
@@ -1456,33 +1698,59 @@ export async function updateAnnouncement(
     data.scheduledAt !==
     undefined
   ) {
+    const existing =
+      (await Announcement.findById(
+        id,
+      )
+        .select(
+          "status scheduledAt publishedAt",
+        )
+        .lean()) as any;
+
+    if (!existing) {
+      return undefined;
+    }
+
     update.scheduledAt =
       data.scheduledAt;
 
-    const scheduledDate =
-      data.scheduledAt
-        ? new Date(
-            data.scheduledAt,
-          )
-        : null;
+    const previousScheduledAt =
+      existing.scheduledAt ?? "";
 
-    const publishNow =
-      !scheduledDate ||
-      Number.isNaN(
-        scheduledDate.getTime(),
-      ) ||
-      scheduledDate.getTime() <=
-        Date.now();
+    const nextScheduledAt =
+      data.scheduledAt ?? "";
 
-    update.status =
-      publishNow
-        ? "PUBLISHED"
-        : "SCHEDULED";
+    const scheduleChanged =
+      previousScheduledAt !==
+      nextScheduledAt;
 
-    update.publishedAt =
-      publishNow
-        ? new Date().toISOString()
-        : "";
+    if (scheduleChanged) {
+      const scheduledDate =
+        nextScheduledAt
+          ? new Date(
+              nextScheduledAt,
+            )
+          : null;
+
+      const publishNow =
+        !scheduledDate ||
+        Number.isNaN(
+          scheduledDate.getTime(),
+        ) ||
+        scheduledDate.getTime() <=
+          Date.now();
+
+      update.status =
+        publishNow
+          ? "PUBLISHED"
+          : "SCHEDULED";
+
+      update.publishedAt =
+        publishNow
+          ? (existing.publishedAt ??
+            new Date().toISOString())
+          : "";
+    }
   }
 
   if (
@@ -1526,7 +1794,9 @@ export async function updateAnnouncement(
       },
     ).lean();
 
-  return toApiDoc(updated);
+  return toApiDoc(
+    updated,
+  );
 }
 
 /* =========================================================
@@ -1538,14 +1808,14 @@ export async function publishDueAnnouncements() {
     new Date().toISOString();
 
   const dueAnnouncements =
-    await Announcement.find({
+    (await Announcement.find({
       status: "SCHEDULED",
 
       scheduledAt: {
         $ne: "",
         $lte: now,
       },
-    }).lean();
+    }).lean()) as any[];
 
   if (
     dueAnnouncements.length ===
@@ -1554,25 +1824,26 @@ export async function publishDueAnnouncements() {
     return [];
   }
 
-  const published = [];
+  const published: any[] =
+    [];
 
   for (
     const announcement of dueAnnouncements
   ) {
     const updated =
-      await Announcement.findOneAndUpdate(
+      (await Announcement.findOneAndUpdate(
         {
           _id:
             announcement._id,
 
-          status:
-            "SCHEDULED",
+          status: "SCHEDULED",
 
           scheduledAt: {
             $ne: "",
             $lte: now,
           },
         },
+
         {
           $set: {
             status:
@@ -1585,10 +1856,11 @@ export async function publishDueAnnouncements() {
               now,
           },
         },
+
         {
           new: true,
         },
-      ).lean();
+      ).lean()) as any;
 
     if (updated) {
       published.push(
@@ -1617,360 +1889,8 @@ export async function deleteAnnouncement(
   }
 
   await Announcement.deleteOne({
-    _id:
-      announcement._id,
+    _id: announcement._id,
   });
 
   return announcement;
 }
-=======
-    departments: string[];
-    locations: string[];
-    targetRoles: string[];
-    channels: string[];
-    showBanner: boolean;
-    requiresAcknowledgement: boolean;
-    pinned: boolean;
-    attachment: string;
-    createdBy: string;
-    status: string;
-    scheduledAt: string;
-    publishedAt: string;
-    calendarEnabled: boolean;
-    eventStartAt: string;
-    eventEndAt: string;
-    eventLocation: string;
-  }>,
-) {
-  const existing = await Announcement.findById(id).lean();
-
-  if (!existing) {
-    return undefined;
-  }
-
-  const update: Record<string, any> = {};
-
-  if (input.title !== undefined) {
-    update.title = input.title.trim();
-  }
-
-  if (input.body !== undefined) {
-    update.body = input.body;
-  }
-
-  if (input.type !== undefined) {
-    update.type = input.type;
-  }
-
-  if (input.audience !== undefined) {
-    update.audience = input.audience;
-  }
-
-  if (input.departments !== undefined) {
-    update.departments = input.departments;
-  }
-
-  if (input.locations !== undefined) {
-    update.locations = input.locations;
-  }
-
-  if (input.targetRoles !== undefined) {
-    update.targetRoles = input.targetRoles;
-  }
-
-  if (input.channels !== undefined) {
-    const channels = normalizeChannels(input.channels);
-
-    const calendar = normalizeCalendarFields({
-      channels,
-      eventStartAt: input.eventStartAt ?? existing.eventStartAt,
-      eventEndAt: input.eventEndAt ?? existing.eventEndAt,
-      eventLocation: input.eventLocation ?? existing.eventLocation,
-    });
-
-    update.channels = channels;
-
-    update.showBanner = getBannerEnabled(channels);
-
-    update.calendarEnabled = calendar.calendarEnabled;
-
-    update.eventStartAt = calendar.eventStartAt;
-
-    update.eventEndAt = calendar.eventEndAt;
-
-    update.eventLocation = calendar.eventLocation;
-  } else if (
-    input.eventStartAt !== undefined ||
-    input.eventEndAt !== undefined ||
-    input.eventLocation !== undefined
-  ) {
-    const channels = normalizeChannels(existing.channels);
-
-    const calendar = normalizeCalendarFields({
-      channels,
-      eventStartAt: input.eventStartAt ?? existing.eventStartAt,
-      eventEndAt: input.eventEndAt ?? existing.eventEndAt,
-      eventLocation: input.eventLocation ?? existing.eventLocation,
-    });
-
-    update.calendarEnabled = calendar.calendarEnabled;
-
-    update.eventStartAt = calendar.eventStartAt;
-
-    update.eventEndAt = calendar.eventEndAt;
-
-    update.eventLocation = calendar.eventLocation;
-  }
-
-  if (input.requiresAcknowledgement !== undefined) {
-    update.requiresAcknowledgement = Boolean(input.requiresAcknowledgement);
-  }
-
-  if (input.pinned !== undefined) {
-    update.pinned = Boolean(input.pinned);
-  }
-
-  if (input.attachment !== undefined) {
-    update.attachment = input.attachment;
-  }
-
-  if (input.createdBy !== undefined) {
-    update.createdBy = input.createdBy;
-  }
-
-  if (input.status !== undefined) {
-    const status = String(input.status).trim().toUpperCase();
-
-    if (!["DRAFT", "SCHEDULED", "PUBLISHED"].includes(status)) {
-      throw new Error(`Invalid announcement status: ${status}`);
-    }
-
-    if (
-      status === "SCHEDULED" &&
-      !(input.scheduledAt ?? existing.scheduledAt)
-    ) {
-      throw new Error("scheduledAt is required for a scheduled announcement.");
-    }
-
-    update.status = status;
-
-    if (status === "PUBLISHED") {
-      update.publishedAt =
-        input.publishedAt ?? existing.publishedAt ?? nowIso();
-
-      update.scheduledAt = input.scheduledAt ?? existing.scheduledAt ?? "";
-    }
-  }
-
-  if (input.scheduledAt !== undefined) {
-    update.scheduledAt = input.scheduledAt;
-  }
-
-  if (input.publishedAt !== undefined) {
-    update.publishedAt = input.publishedAt;
-  }
-
-  /*
-   * Keep banner state synchronized even when an update doesn't explicitly
-   * send `channels`.
-   */
-  if (input.channels === undefined && existing.channels) {
-    update.showBanner = existing.channels.includes("BANNER");
-  }
-
-  update.updatedAt = nowIso();
-
-  const doc = await Announcement.findByIdAndUpdate(
-    id,
-    {
-      $set: update,
-    },
-    {
-      new: true,
-      runValidators: true,
-    },
-  ).lean();
-
-  return toApiDoc(doc);
-}
-
-/**
- * Delete an announcement.
- */
-export async function deleteAnnouncement(id: string) {
-  /*
-   * Remove announcement receipts first so that read/acknowledgement
-   * records don't remain orphaned.
-   */
-  await AnnouncementReceipt.deleteMany({
-    announcementId: id,
-  });
-
-  const result = await Announcement.deleteOne({
-    _id: id,
-  });
-
-  return result.deletedCount === 1;
-}
-
-/**
- * Mark an announcement as read for a user.
- *
- * This uses userId, matching the existing Notification repository
- * convention.
- */
-export async function markAnnouncementRead(
-  announcementId: string,
-  userId: string,
-) {
-  const now = nowIso();
-
-  await AnnouncementReceipt.updateOne(
-    {
-      announcementId,
-      userId,
-    },
-    {
-      $set: {
-        isRead: true,
-        readAt: now,
-        updatedAt: now,
-      },
-      $setOnInsert: {
-        announcementId,
-        userId,
-        isAcknowledged: false,
-        acknowledgedAt: null,
-        createdAt: now,
-      },
-    },
-    {
-      upsert: true,
-    },
-  );
-}
-
-/**
- * Acknowledge an announcement.
- */
-export async function acknowledgeAnnouncement(
-  announcementId: string,
-  userId: string,
-) {
-  const announcement = await Announcement.findById(announcementId).lean();
-
-  if (!announcement) {
-    throw new Error("Announcement not found.");
-  }
-
-  if (!announcement.requiresAcknowledgement) {
-    throw new Error("This announcement does not require acknowledgement.");
-  }
-
-  const now = nowIso();
-
-  await AnnouncementReceipt.updateOne(
-    {
-      announcementId,
-      userId,
-    },
-    {
-      $set: {
-        isAcknowledged: true,
-        acknowledgedAt: now,
-        updatedAt: now,
-      },
-      $setOnInsert: {
-        announcementId,
-        userId,
-        isRead: true,
-        readAt: now,
-        createdAt: now,
-      },
-    },
-    {
-      upsert: true,
-    },
-  );
-}
-
-/**
- * Return the current user's read/acknowledgement status for an announcement.
- */
-export async function getAnnouncementReceipt(
-  announcementId: string,
-  userId: string,
-) {
-  const receipt = await AnnouncementReceipt.findOne({
-    announcementId,
-    userId,
-  }).lean();
-
-  if (!receipt) {
-    return {
-      isRead: false,
-      isAcknowledged: false,
-      readAt: null,
-      acknowledgedAt: null,
-    };
-  }
-
-  return {
-    isRead: Boolean(receipt.isRead),
-    isAcknowledged: Boolean(receipt.isAcknowledged),
-    readAt: receipt.readAt ?? null,
-    acknowledgedAt: receipt.acknowledgedAt ?? null,
-  };
-}
-
-/**
- * Publish scheduled announcements whose scheduled time has arrived.
- *
- * Notification/email delivery is intentionally handled by the scheduler/
- * notification layer, not directly inside the repository.
- */
-export async function publishDueAnnouncements() {
-  const now = nowIso();
-
-  const due = await Announcement.find({
-    status: "SCHEDULED",
-    scheduledAt: {
-      $ne: "",
-      $lte: now,
-    },
-  }).lean();
-
-  if (due.length === 0) {
-    return [];
-  }
-
-  const ids = due.map((announcement) => announcement._id);
-
-  await Announcement.updateMany(
-    {
-      _id: {
-        $in: ids,
-      },
-      status: "SCHEDULED",
-    },
-    {
-      $set: {
-        status: "PUBLISHED",
-        publishedAt: now,
-        updatedAt: now,
-      },
-    },
-  );
-
-  return Announcement.find({
-    _id: {
-      $in: ids,
-    },
-  })
-    .sort({
-      publishedAt: -1,
-    })
-    .lean()
-    .then((rows) => rows.map(toApiDoc));
-}
->>>>>>> f8f0289 (Added feature to check performance of the employees)
