@@ -30,26 +30,7 @@ import { Modal } from "@/components/ui/Modal";
 import { TextField, TextareaField } from "@/components/ui/Field";
 import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
 
-import type { Announcement as BaseAnnouncement } from "@/types";
-
-/* Backend announcement fields used by this page.
-   Keep these optional so this page remains compatible with the existing
-   shared frontend Announcement type while the backend exposes the newer fields. */
-type Announcement = BaseAnnouncement & {
-  status?: "DRAFT" | "SCHEDULED" | "PUBLISHED" | string;
-  channels?: string[];
-  showBanner?: boolean;
-  requiresAcknowledgement?: boolean;
-  scheduledAt?: string;
-  publishedAt?: string;
-  departments?: string[];
-  locations?: string[];
-  targetRoles?: string[];
-  calendarEnabled?: boolean;
-  eventStartAt?: string;
-  eventEndAt?: string;
-  eventLocation?: string;
-};
+import type { Announcement } from "@/types";
 
 import { formatDate, timeAgo } from "@/lib/format";
 
@@ -301,7 +282,7 @@ function scheduledTimeMin(dateValue?: string) {
   return localTimeValue();
 }
 
-function formatEventRange(start?: string, end?: string) {
+function formatEventRange(start?: string | null, end?: string | null) {
   if (!start) return "";
 
   const startDate = new Date(start);
