@@ -57,13 +57,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/tickets",
     label: "Tickets",
     icon: ClipboardList,
-    roles: [
-      "SUPER_ADMIN",
-      "HR_ADMIN",
-      "MANAGER",
-      "FINANCE",
-      "IT_SUPPORT",
-    ],
+    roles: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER", "FINANCE", "IT_SUPPORT"],
   },
 
   /* -------------------------------------------------------
@@ -165,10 +159,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/employees",
     label: "Employees",
     icon: Users,
-    roles: [
-      "SUPER_ADMIN",
-      "HR_ADMIN",
-    ],
+    roles: ["SUPER_ADMIN", "HR_ADMIN"],
   },
 
   /* -------------------------------------------------------
@@ -179,11 +170,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/org-chart",
     label: "Org Chart",
     icon: Network,
-    roles: [
-      "SUPER_ADMIN",
-      "HR_ADMIN",
-      "MANAGER",
-    ],
+    roles: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"],
   },
 
   /* -------------------------------------------------------
@@ -194,12 +181,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/recruitment",
     label: "Recruitment",
     icon: Briefcase,
-    roles: [
-      "SUPER_ADMIN",
-      "HR_ADMIN",
-      "RECRUITER",
-      "MANAGER",
-    ],
+    roles: ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"],
   },
 
   /* -------------------------------------------------------
@@ -233,9 +215,7 @@ export function Sidebar({
   ------------------------------------------------------- */
 
   const items = NAV_ITEMS.filter(
-    (item) =>
-      !item.roles ||
-      (role && item.roles.includes(role)),
+    (item) => !item.roles || (role && item.roles.includes(role)),
   );
 
   /* -------------------------------------------------------
@@ -251,9 +231,7 @@ export function Sidebar({
   ------------------------------------------------------- */
 
   const settingsPath =
-    role === "EMPLOYEE"
-      ? "/app/settings/account"
-      : "/app/settings";
+    role === "EMPLOYEE" ? "/app/settings/account" : "/app/settings";
 
   /* -------------------------------------------------------
      NAVIGATION CONTENT
@@ -310,14 +288,9 @@ export function Sidebar({
                 )
               }
             >
-              <item.icon
-                size={18}
-                strokeWidth={2}
-              />
+              <item.icon size={18} strokeWidth={2} />
 
-              <span>
-                {item.label}
-              </span>
+              <span>{item.label}</span>
             </NavLink>
           );
         })}
@@ -327,7 +300,7 @@ export function Sidebar({
           HELP
       =================================================== */}
 
-      <div className="mt-auto pt-6">
+      {/* <div className="mt-auto pt-6">
         <div className="rounded-xl bg-black/[0.03] p-3">
           <p className="text-xs font-medium text-ink">
             Need help?
@@ -337,7 +310,7 @@ export function Sidebar({
             Reach IT & Security for access or technical issues.
           </p>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 
