@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import mongoose, {
   Schema,
   type Document,
@@ -7,6 +8,9 @@ import mongoose, {
 /* =========================================================
    ANNOUNCEMENT TYPES
 ========================================================= */
+=======
+import mongoose, { Document, Model, Schema } from "mongoose";
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export const ANNOUNCEMENT_TYPES = [
   "HOLIDAY_NOTICE",
@@ -19,6 +23,7 @@ export const ANNOUNCEMENT_TYPES = [
   "GENERAL_NOTICE",
 ] as const;
 
+<<<<<<< HEAD
 export type AnnouncementType =
   (typeof ANNOUNCEMENT_TYPES)[number];
 
@@ -35,6 +40,9 @@ export type AnnouncementType =
    DEPARTMENT    -> Specific departments
    TARGETED_GROUP -> Specific roles / groups
 ========================================================= */
+=======
+export type AnnouncementType = (typeof ANNOUNCEMENT_TYPES)[number];
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export const ANNOUNCEMENT_AUDIENCES = [
   "ALL",
@@ -48,12 +56,16 @@ export const ANNOUNCEMENT_AUDIENCES = [
   "TARGETED_GROUP",
 ] as const;
 
+<<<<<<< HEAD
 export type AnnouncementAudience =
   (typeof ANNOUNCEMENT_AUDIENCES)[number];
 
 /* =========================================================
    DELIVERY CHANNELS
 ========================================================= */
+=======
+export type AnnouncementAudience = (typeof ANNOUNCEMENT_AUDIENCES)[number];
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export const ANNOUNCEMENT_CHANNELS = [
   "IN_APP",
@@ -62,12 +74,16 @@ export const ANNOUNCEMENT_CHANNELS = [
   "CALENDAR",
 ] as const;
 
+<<<<<<< HEAD
 export type AnnouncementChannel =
   (typeof ANNOUNCEMENT_CHANNELS)[number];
 
 /* =========================================================
    PUBLISH STATUS
 ========================================================= */
+=======
+export type AnnouncementChannel = (typeof ANNOUNCEMENT_CHANNELS)[number];
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export const ANNOUNCEMENT_STATUSES = [
   "DRAFT",
@@ -75,6 +91,7 @@ export const ANNOUNCEMENT_STATUSES = [
   "PUBLISHED",
 ] as const;
 
+<<<<<<< HEAD
 export type AnnouncementStatus =
   (typeof ANNOUNCEMENT_STATUSES)[number];
 
@@ -351,6 +368,181 @@ const announcementSchema =
 /* =========================================================
    INDEXES
 ========================================================= */
+=======
+export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
+
+export interface IAnnouncement extends Document {
+  _id: string;
+
+  title: string;
+  body: string;
+
+  type: AnnouncementType;
+  audience: AnnouncementAudience;
+
+  departments: string[];
+  locations: string[];
+  targetRoles: string[];
+
+  channels: AnnouncementChannel[];
+
+  pinned: boolean;
+  showBanner: boolean;
+  requiresAcknowledgement: boolean;
+
+  attachment: string;
+
+  createdBy: string;
+
+  status: AnnouncementStatus;
+
+  scheduledAt: string;
+  publishedAt: string;
+
+  calendarEnabled: boolean;
+  eventStartAt: string;
+  eventEndAt: string;
+  eventLocation: string;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+const announcementSchema = new Schema<IAnnouncement>(
+  {
+    _id: {
+      type: String,
+      required: true,
+    },
+
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    body: {
+      type: String,
+      required: true,
+    },
+
+    type: {
+      type: String,
+      enum: ANNOUNCEMENT_TYPES,
+      default: "GENERAL_NOTICE",
+      required: true,
+    },
+
+    audience: {
+      type: String,
+      enum: ANNOUNCEMENT_AUDIENCES,
+      default: "ALL",
+      required: true,
+    },
+
+    departments: {
+      type: [String],
+      default: [],
+    },
+
+    locations: {
+      type: [String],
+      default: [],
+    },
+
+    targetRoles: {
+      type: [String],
+      default: [],
+    },
+
+    channels: {
+      type: [String],
+      enum: ANNOUNCEMENT_CHANNELS,
+      default: ["IN_APP"],
+      validate: {
+        validator: (value: AnnouncementChannel[]) => value.length > 0,
+        message: "At least one notification channel is required",
+      },
+    },
+
+    pinned: {
+      type: Boolean,
+      default: false,
+    },
+
+    showBanner: {
+      type: Boolean,
+      default: false,
+    },
+
+    requiresAcknowledgement: {
+      type: Boolean,
+      default: false,
+    },
+
+    attachment: {
+      type: String,
+      default: "",
+    },
+
+    createdBy: {
+      type: String,
+      required: true,
+    },
+
+    status: {
+      type: String,
+      enum: ANNOUNCEMENT_STATUSES,
+      default: "DRAFT",
+      required: true,
+    },
+
+    scheduledAt: {
+      type: String,
+      default: "",
+    },
+
+    publishedAt: {
+      type: String,
+      default: "",
+    },
+
+    calendarEnabled: {
+      type: Boolean,
+      default: false,
+    },
+
+    eventStartAt: {
+      type: String,
+      default: "",
+    },
+
+    eventEndAt: {
+      type: String,
+      default: "",
+    },
+
+    eventLocation: {
+      type: String,
+      default: "",
+    },
+
+    createdAt: {
+      type: String,
+      required: true,
+    },
+
+    updatedAt: {
+      type: String,
+      required: true,
+    },
+  },
+  {
+    versionKey: false,
+    timestamps: false,
+  },
+);
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 announcementSchema.index({
   status: 1,
@@ -377,6 +569,7 @@ announcementSchema.index({
   targetRoles: 1,
 });
 
+<<<<<<< HEAD
 /* =========================================================
    MODEL
 ========================================================= */
@@ -389,3 +582,10 @@ export const Announcement: Model<IAnnouncement> =
   );
 
 export default Announcement;
+=======
+export const Announcement: Model<IAnnouncement> =
+  (mongoose.models.Announcement as Model<IAnnouncement>) ||
+  mongoose.model<IAnnouncement>("Announcement", announcementSchema);
+
+export default Announcement;
+>>>>>>> f8f0289 (Added feature to check performance of the employees)

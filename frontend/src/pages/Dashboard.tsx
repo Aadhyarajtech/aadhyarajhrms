@@ -26,16 +26,23 @@ import {
   PartyPopper,
   ArrowRight,
   Megaphone,
+<<<<<<< HEAD
   ExternalLink,
+=======
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 } from "lucide-react";
 
 import { Link } from "react-router-dom";
+<<<<<<< HEAD
 
 import {
   DashboardApi,
   AnnouncementsApi,
 } from "@/lib/endpoints";
 
+=======
+import { DashboardApi, AnnouncementsApi } from "@/lib/endpoints";
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 import { useAuth } from "@/context/AuthContext";
 
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -75,6 +82,7 @@ export default function Dashboard() {
     queryFn: DashboardApi.overview,
   });
 
+<<<<<<< HEAD
   /* =========================================================
      ANNOUNCEMENTS
   ========================================================= */
@@ -123,6 +131,13 @@ export default function Dashboard() {
   /* =========================================================
      LOADING
   ========================================================= */
+=======
+  const { data: announcements = [], isLoading: announcementsLoading } =
+    useQuery({
+      queryKey: ["dashboard", "announcements"],
+      queryFn: AnnouncementsApi.list,
+    });
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
   if (isLoading || !data) {
     return (
@@ -188,6 +203,7 @@ export default function Dashboard() {
         }
       />
 
+<<<<<<< HEAD
       {/* =====================================================
           DASHBOARD ANNOUNCEMENT BANNER
       ===================================================== */}
@@ -260,6 +276,74 @@ export default function Dashboard() {
       {/* =====================================================
           KPI CARDS
       ===================================================== */}
+=======
+      {!announcementsLoading &&
+        announcements.some(
+          (announcement) =>
+            announcement.showBanner && announcement.status === "PUBLISHED",
+        ) && (
+          <div className="mb-6 space-y-3">
+            {announcements
+              .filter(
+                (announcement) =>
+                  announcement.showBanner &&
+                  announcement.status === "PUBLISHED",
+              )
+              .sort((a, b) => {
+                if (a.pinned !== b.pinned) {
+                  return a.pinned ? -1 : 1;
+                }
+
+                return (
+                  new Date(b.publishedAt || b.createdAt).getTime() -
+                  new Date(a.publishedAt || a.createdAt).getTime()
+                );
+              })
+              .map((announcement) => (
+                <Card
+                  key={announcement.id}
+                  className="border-brand-200 bg-gradient-to-r from-brand-50 to-gold-50"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                      <Megaphone size={18} />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="font-display text-[15px] font-medium text-ink">
+                          {announcement.title}
+                        </h2>
+
+                        {announcement.pinned && (
+                          <Badge tone="gold">Pinned</Badge>
+                        )}
+                      </div>
+
+                      <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
+                        {announcement.body}
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-faint">
+                        {announcement.publishedAt && (
+                          <span>
+                            Published {timeAgo(announcement.publishedAt)}
+                          </span>
+                        )}
+
+                        {announcement.requiresAcknowledgement && (
+                          <span className="font-medium text-brand-700">
+                            Acknowledgement required
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+          </div>
+        )}
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import {
   Notification,
   Announcement,
@@ -6,7 +7,11 @@ import {
   Department,
 } from "@/db/models";
 
+=======
+import { Notification } from "@/db/models";
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 import { nowIso } from "@/db/connection";
+import * as announcementRepository from "@/modules/announcements/announcement.repository";
 
 import {
   sendAnnouncementEmail,
@@ -24,6 +29,7 @@ export type NotificationType =
   | "PERFORMANCE"
   | "RECRUITMENT"
   | "TICKET_MESSAGE"
+<<<<<<< HEAD
   | "SYSTEM"
   | "DOCUMENT_REQUESTED"
   | "DOCUMENT_UPLOADED"
@@ -32,6 +38,9 @@ export type NotificationType =
 /* =========================================================
    API DOCUMENT
 ========================================================= */
+=======
+  | "SYSTEM";
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
@@ -159,21 +168,25 @@ export async function markAllRead(
   );
 }
 
+<<<<<<< HEAD
 /* =========================================================
    LIST ANNOUNCEMENTS
 ========================================================= */
 
+=======
+/**
+ * Announcement compatibility wrappers.
+ *
+ * Announcement data is now owned by the dedicated announcements module.
+ * These wrappers keep the existing notification routes working while
+ * avoiding a second Announcement implementation.
+ */
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 export async function listAnnouncements() {
-  const rows = await Announcement.find({})
-    .sort({
-      pinned: -1,
-      createdAt: -1,
-    })
-    .lean();
-
-  return rows.map(toApiDoc);
+  return announcementRepository.listAnnouncements();
 }
 
+<<<<<<< HEAD
 /* =========================================================
    ANNOUNCEMENT RECIPIENT RESOLUTION
 ========================================================= */
@@ -724,6 +737,67 @@ async function resolveAnnouncementUsers(
   );
 
   return users;
+=======
+export async function createAnnouncement(input: {
+  title: string;
+  body: string;
+  type?: string;
+  audience?: string;
+  departments?: string[];
+  locations?: string[];
+  targetRoles?: string[];
+  channels?: string[];
+  showBanner?: boolean;
+  requiresAcknowledgement?: boolean;
+  pinned?: boolean;
+  attachment?: string;
+  createdBy: string;
+  status?: string;
+  scheduledAt?: string;
+  publishedAt?: string;
+  calendarEnabled?: boolean;
+  eventStartAt?: string;
+  eventEndAt?: string;
+  eventLocation?: string;
+}) {
+  return announcementRepository.createAnnouncement(input);
+}
+
+export async function getAnnouncement(id: string) {
+  return announcementRepository.getAnnouncement(id);
+}
+
+export async function updateAnnouncement(
+  id: string,
+  input: Partial<{
+    title: string;
+    body: string;
+    type: string;
+    audience: string;
+    departments: string[];
+    locations: string[];
+    targetRoles: string[];
+    channels: string[];
+    showBanner: boolean;
+    requiresAcknowledgement: boolean;
+    pinned: boolean;
+    attachment: string;
+    createdBy: string;
+    status: string;
+    scheduledAt: string;
+    publishedAt: string;
+    calendarEnabled: boolean;
+    eventStartAt: string;
+    eventEndAt: string;
+    eventLocation: string;
+  }>,
+) {
+  return announcementRepository.updateAnnouncement(id, input);
+}
+
+export async function deleteAnnouncement(id: string) {
+  return announcementRepository.deleteAnnouncement(id);
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 }
 
 /* =========================================================

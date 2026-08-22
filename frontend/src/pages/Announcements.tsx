@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { useEffect, useState } from "react";
 import {
   useMutation,
@@ -15,6 +16,19 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+=======
+import { useState } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import {
+  CalendarDays,
+  Mail,
+  Megaphone,
+  Pin,
+  Plus,
+  Smartphone,
+} from "lucide-react";
+import { useForm } from "react-hook-form";
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 import { AnnouncementsApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
@@ -35,6 +49,7 @@ import {
   Skeleton,
 } from "@/components/ui/EmptyState";
 
+<<<<<<< HEAD
 import type { Announcement as BaseAnnouncement } from "@/types";
 
 /* Backend announcement fields used by this page.
@@ -166,6 +181,34 @@ interface AnnouncementStatusEntryLocal {
 }
 
 interface AnnouncementForm {
+=======
+const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"] as const;
+
+const TYPE_OPTIONS = [
+  ["GENERAL_NOTICE", "General notice"],
+  ["HOLIDAY_NOTICE", "Holiday notice"],
+  ["COMPANY_EVENT", "Company event"],
+  ["POLICY_UPDATE", "Policy update"],
+  ["EMPLOYEE_RECOGNITION", "Employee recognition"],
+  ["MEETING_NOTICE", "Meeting notice"],
+  ["BENEFITS_UPDATE", "Benefits update"],
+  ["TRAINING_LD", "Training / L&D"],
+] as const;
+
+const AUDIENCE_OPTIONS = [
+  ["ALL", "Everyone"],
+  ["HR_ADMIN", "HR Admin"],
+  ["FINANCE", "Finance"],
+  ["MANAGER", "Managers"],
+  ["RECRUITER", "Recruiters"],
+  ["IT_SUPPORT", "IT Support"],
+  ["EMPLOYEE", "Employees"],
+  ["DEPARTMENT", "Department"],
+  ["TARGETED_GROUP", "Targeted group"],
+] as const;
+
+type FormValues = {
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
   title: string;
   body: string;
   type: string;
@@ -174,6 +217,7 @@ interface AnnouncementForm {
   locations: string;
   targetRoles: string;
   pinned: boolean;
+<<<<<<< HEAD
   notificationMethods: string[];
   publishMode: "NOW" | "SCHEDULED";
   scheduledDate: string;
@@ -236,11 +280,63 @@ function isImageAttachment(attachment?: string) {
 /* =========================================================
    PAGE
 ========================================================= */
+=======
+  requiresAcknowledgement: boolean;
+  inApp: boolean;
+  email: boolean;
+  banner: boolean;
+  calendar: boolean;
+  scheduledAt: string;
+  eventStartAt: string;
+  eventEndAt: string;
+  eventLocation: string;
+};
+
+function splitList(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function ChannelBadge({ channel }: { channel: string }) {
+  if (channel === "EMAIL") {
+    return (
+      <Badge>
+        <Mail size={11} /> Email
+      </Badge>
+    );
+  }
+
+  if (channel === "BANNER") {
+    return (
+      <Badge tone="gold">
+        <Megaphone size={11} /> Banner
+      </Badge>
+    );
+  }
+
+  if (channel === "CALENDAR") {
+    return (
+      <Badge>
+        <CalendarDays size={11} /> Calendar
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge>
+      <Smartphone size={11} /> In-app
+    </Badge>
+  );
+}
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export default function Announcements() {
   const { user } = useAuth();
 
   const isAdmin =
+<<<<<<< HEAD
     !!user &&
     ADMIN_ROLES.includes(
       user.role as (typeof ADMIN_ROLES)[number],
@@ -397,6 +493,16 @@ export default function Announcements() {
 
     deleteMutation.mutate(announcement.id);
   };
+=======
+    !!user && ADMIN_ROLES.includes(user.role as (typeof ADMIN_ROLES)[number]);
+
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["announcements"],
+    queryFn: AnnouncementsApi.list,
+  });
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
   return (
     <div className="w-full">
@@ -404,6 +510,7 @@ export default function Announcements() {
         title="Announcements"
         subtitle="Company-wide news and updates."
         action={
+<<<<<<< HEAD
           isAdmin ? (
             <Button
               leftIcon={<Plus size={16} />}
@@ -414,6 +521,16 @@ export default function Announcements() {
               New announcement
             </Button>
           ) : undefined
+=======
+          isAdmin && (
+            <Button
+              leftIcon={<Plus size={16} />}
+              onClick={() => setCreateOpen(true)}
+            >
+              New announcement
+            </Button>
+          )
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
         }
       />
 
@@ -423,6 +540,7 @@ export default function Announcements() {
 
       {isLoading ? (
         <div className="space-y-4">
+<<<<<<< HEAD
           {Array.from({ length: 3 }).map(
             (_, index) => (
               <Skeleton
@@ -438,6 +556,14 @@ export default function Announcements() {
             Failed to load announcements.
           </div>
         </Card>
+=======
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-3xl" />
+          ))}
+        </div>
+      ) : isError ? (
+        <EmptyState icon={Megaphone} title="Unable to load announcements" />
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
       ) : !data?.length ? (
         <EmptyState
           icon={Megaphone}
@@ -449,6 +575,7 @@ export default function Announcements() {
             <Card
               key={announcement.id}
               className={
+<<<<<<< HEAD
                 announcement.pinned
                   ? "border-gold-300 bg-gold-50/40"
                   : ""
@@ -465,6 +592,18 @@ export default function Announcements() {
                   {/* CONTENT */}
 
                   <div className="min-w-0 flex-1">
+=======
+                announcement.pinned ? "border-gold-300 bg-gold-50/40" : ""
+              }
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                    <Megaphone size={16} />
+                  </div>
+
+                  <div className="min-w-0">
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-display text-[15px] font-medium text-ink">
                         {announcement.title}
@@ -472,6 +611,7 @@ export default function Announcements() {
 
                       {announcement.pinned && (
                         <Badge tone="gold">
+<<<<<<< HEAD
                           <Pin size={11} />
                           Pinned
                         </Badge>
@@ -682,6 +822,35 @@ export default function Announcements() {
                       {timeAgo(
                         announcement.createdAt,
                       )}
+=======
+                          <Pin size={11} /> Pinned
+                        </Badge>
+                      )}
+
+                      {announcement.channels.map((channel) => (
+                        <ChannelBadge key={channel} channel={channel} />
+                      ))}
+                    </div>
+
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">
+                      {announcement.body}
+                    </p>
+
+                    {announcement.calendarEnabled &&
+                      announcement.eventStartAt && (
+                        <div className="mt-2 text-[12px] text-ink-soft">
+                          <CalendarDays size={13} className="mr-1 inline" />
+                          {formatDate(announcement.eventStartAt)}
+                          {announcement.eventLocation
+                            ? ` · ${announcement.eventLocation}`
+                            : ""}
+                        </div>
+                      )}
+
+                    <p className="mt-2 text-[12px] text-ink-faint">
+                      {formatDate(announcement.createdAt)} ·{" "}
+                      {timeAgo(announcement.createdAt)}
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
                     </p>
                   </div>
                 </div>
@@ -748,10 +917,13 @@ export default function Announcements() {
   );
 }
 
+<<<<<<< HEAD
 /* =========================================================
    CREATE MODAL
 ========================================================= */
 
+=======
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 function CreateModal({
   open,
   onClose,
@@ -769,7 +941,11 @@ function CreateModal({
     reset,
     watch,
     formState: { errors },
+<<<<<<< HEAD
   } = useForm<AnnouncementForm>({
+=======
+  } = useForm<FormValues>({
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
     defaultValues: {
       title: "",
       body: "",
@@ -779,35 +955,62 @@ function CreateModal({
       locations: "",
       targetRoles: "",
       pinned: false,
+<<<<<<< HEAD
       notificationMethods: ["IN_APP", "EMAIL"],
       publishMode: "NOW",
       scheduledDate: "",
       scheduledTime: "",
       requiresAcknowledgement: false,
       calendarEnabled: false,
+=======
+      requiresAcknowledgement: false,
+      inApp: true,
+      email: false,
+      banner: false,
+      calendar: false,
+      scheduledAt: "",
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
       eventStartAt: "",
       eventEndAt: "",
       eventLocation: "",
     },
   });
+<<<<<<< HEAD
 
   const mutation = useMutation({
     mutationFn:
       AnnouncementsApi.create,
+=======
+
+  const calendarEnabled = watch("calendar");
+
+  const mutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      AnnouncementsApi.create(payload),
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["announcements"],
       });
 
+<<<<<<< HEAD
       showToast(
         "Announcement published successfully.",
       );
+=======
+      queryClient.invalidateQueries({
+        queryKey: ["dashboard"],
+      });
+
+      showToast("Announcement published.");
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
       reset();
       onClose();
     },
 
+<<<<<<< HEAD
     onError: (error) => {
       showToast(
         getErrorMessage(error),
@@ -1034,11 +1237,87 @@ function CreateModal({
     }
 
     mutation.mutate(formData as any);
+=======
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const submit = (values: FormValues) => {
+    const channels: string[] = [];
+
+    if (values.inApp) {
+      channels.push("IN_APP");
+    }
+
+    if (values.email) {
+      channels.push("EMAIL");
+    }
+
+    if (values.banner) {
+      channels.push("BANNER");
+    }
+
+    if (values.calendar) {
+      channels.push("CALENDAR");
+    }
+
+    if (channels.length === 0) {
+      showToast("Select at least one delivery channel.", "error");
+      return;
+    }
+
+    const scheduled = Boolean(values.scheduledAt);
+
+    if (scheduled && new Date(values.scheduledAt).getTime() <= Date.now()) {
+      showToast("Scheduled time must be in the future.", "error");
+      return;
+    }
+
+    if (values.calendar && (!values.eventStartAt || !values.eventEndAt)) {
+      showToast("Event start and end are required for Calendar.", "error");
+      return;
+    }
+
+    mutation.mutate({
+      title: values.title.trim(),
+      body: values.body,
+      type: values.type,
+      audience: values.audience,
+
+      departments: splitList(values.departments),
+
+      locations: splitList(values.locations),
+
+      targetRoles: splitList(values.targetRoles),
+
+      channels,
+
+      pinned: values.pinned,
+
+      requiresAcknowledgement: values.requiresAcknowledgement,
+
+      /*
+       * The backend derives showBanner from
+       * the BANNER channel.
+       */
+      showBanner: values.banner,
+
+      status: scheduled ? "SCHEDULED" : "PUBLISHED",
+
+      scheduledAt: values.scheduledAt || "",
+
+      eventStartAt: values.calendar ? values.eventStartAt : "",
+
+      eventEndAt: values.calendar ? values.eventEndAt : "",
+
+      eventLocation: values.calendar ? values.eventLocation : "",
+    });
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
   };
 
   return (
     <Modal
       open={open}
+<<<<<<< HEAD
       onClose={() => {
         if (!mutation.isPending) {
           reset();
@@ -1066,10 +1345,23 @@ function CreateModal({
             isLoading={mutation.isPending}
           >
             Publish
+=======
+      onClose={onClose}
+      title="New announcement"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+
+          <Button onClick={handleSubmit(submit)} isLoading={mutation.isPending}>
+            {watch("scheduledAt") ? "Schedule" : "Publish"}
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
           </Button>
         </>
       }
     >
+<<<<<<< HEAD
       <form
         onSubmit={handleSubmit(onSubmit)}
         className="space-y-5"
@@ -1187,16 +1479,78 @@ function CreateModal({
           <TextField
             label="Departments"
             placeholder="e.g. Engineering, HR, Finance"
+=======
+      <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
+        <TextField
+          label="Title"
+          required
+          error={errors.title?.message}
+          {...register("title", {
+            required: "Title is required",
+          })}
+        />
+
+        <TextareaField
+          label="Message"
+          required
+          error={errors.body?.message}
+          {...register("body", {
+            required: "Message is required",
+          })}
+        />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-[13px] text-ink-soft">
+            <span className="mb-1.5 block font-medium">Announcement type</span>
+
+            <select
+              {...register("type")}
+              className="w-full rounded-xl border border-ink/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-400"
+            >
+              {TYPE_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block text-[13px] text-ink-soft">
+            <span className="mb-1.5 block font-medium">Audience</span>
+
+            <select
+              {...register("audience")}
+              className="w-full rounded-xl border border-ink/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-400"
+            >
+              {AUDIENCE_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <TextField
+            label="Departments"
+            placeholder="HR, Finance"
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
             {...register("departments")}
           />
 
           <TextField
             label="Locations"
+<<<<<<< HEAD
             placeholder="e.g. Hyderabad, Bengaluru, Pune"
+=======
+            placeholder="Hyderabad, Pune"
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
             {...register("locations")}
           />
 
           <TextField
+<<<<<<< HEAD
             label="Target Roles"
             placeholder="e.g. MANAGER, RECRUITER, EMPLOYEE"
             {...register("targetRoles")}
@@ -1263,23 +1617,130 @@ function CreateModal({
               <TextField
                 label="Event Start"
                 type="datetime-local"
+=======
+            label="Target roles"
+            placeholder="MANAGER, EMPLOYEE"
+            {...register("targetRoles")}
+          />
+        </div>
+
+        <div>
+          <p className="mb-2 text-[13px] font-medium text-ink-soft">
+            Delivery channels
+          </p>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-center gap-2 rounded-xl border border-ink/10 p-3 text-[13px] text-ink-soft">
+              <input
+                type="checkbox"
+                {...register("inApp")}
+                className="rounded accent-brand-500"
+              />
+              <Smartphone size={15} />
+              In-app notification
+            </label>
+
+            <label className="flex items-center gap-2 rounded-xl border border-ink/10 p-3 text-[13px] text-ink-soft">
+              <input
+                type="checkbox"
+                {...register("email")}
+                className="rounded accent-brand-500"
+              />
+              <Mail size={15} />
+              Email
+            </label>
+
+            <label className="flex items-center gap-2 rounded-xl border border-ink/10 p-3 text-[13px] text-ink-soft">
+              <input
+                type="checkbox"
+                {...register("banner")}
+                className="rounded accent-brand-500"
+              />
+              <Megaphone size={15} />
+              Dashboard banner
+            </label>
+
+            <label className="flex items-center gap-2 rounded-xl border border-ink/10 p-3 text-[13px] text-ink-soft">
+              <input
+                type="checkbox"
+                {...register("calendar")}
+                className="rounded accent-brand-500"
+              />
+              <CalendarDays size={15} />
+              Calendar event
+            </label>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-[13px] text-ink-soft">
+            <input
+              type="checkbox"
+              {...register("pinned")}
+              className="rounded accent-brand-500"
+            />
+            <Pin size={14} />
+            Pin to top
+          </label>
+
+          <label className="flex items-center gap-2 text-[13px] text-ink-soft">
+            <input
+              type="checkbox"
+              {...register("requiresAcknowledgement")}
+              className="rounded accent-brand-500"
+            />
+            Require acknowledgement
+          </label>
+        </div>
+
+        <TextField
+          label="Schedule for later"
+          type="datetime-local"
+          {...register("scheduledAt")}
+        />
+
+        {calendarEnabled && (
+          <div className="space-y-4 rounded-2xl border border-ink/10 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-ink">
+              <CalendarDays size={16} />
+              Calendar event details
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField
+                label="Event starts"
+                type="datetime-local"
+                required
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
                 {...register("eventStartAt")}
               />
 
               <TextField
+<<<<<<< HEAD
                 label="Event End"
                 type="datetime-local"
+=======
+                label="Event ends"
+                type="datetime-local"
+                required
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
                 {...register("eventEndAt")}
               />
             </div>
 
             <TextField
+<<<<<<< HEAD
               label="Event Location"
               placeholder="Conference room, office, or meeting link"
+=======
+              label="Event location"
+              placeholder="Meeting room / online"
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
               {...register("eventLocation")}
             />
           </div>
         )}
+<<<<<<< HEAD
 
         {watch("type") === "POLICY_UPDATE" && (
           <div>
@@ -1385,6 +1846,9 @@ function CreateModal({
           </span>
         </label>
       </form>
+=======
+      </div>
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
     </Modal>
   );
 }

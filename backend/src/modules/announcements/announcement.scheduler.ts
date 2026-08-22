@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // path: src/modules/announcements/announcement.scheduler.ts
 
 import * as announcementRepo from "./announcement.repository";
@@ -40,10 +41,215 @@ export async function processScheduledAnnouncements() {
       await announcementRepo.publishDueAnnouncements();
 
     if (!published.length) {
+=======
+import { publishDueAnnouncements } from "./announcement.repository";
+
+import { notify } from "@/modules/notifications/notifications.repository";
+
+import { Employee } from "@/db/models";
+
+const SCHEDULER_INTERVAL_MS = 10_000;
+
+let schedulerTimer: NodeJS.Timeout | undefined;
+
+let isRunning = false;
+
+/**
+ * Return employees who should receive an announcement.
+ *
+ * This currently uses the employee fields available through the
+ * existing HRMS Employee model. The detailed targeting rules will
+ * be finalized when the existing notification layer is connected
+ * to this dedicated announcement module.
+ */
+async function getTargetUserIds(announcement: any): Promise<string[]> {
+  const query: Record<string, any> = {};
+
+  /*
+   * ALL means every employee.
+   */
+  if (!announcement.audience || announcement.audience === "ALL") {
+    const employees = await Employee.find({})
+      .select({
+        _id: 1,
+        userId: 1,
+      })
+      .lean();
+
+    return employees
+      .map((employee: any) => employee.userId ?? employee._id)
+      .filter(Boolean)
+      .map(String);
+  }
+
+  /*
+   * For role-based audiences, use the role field where available.
+   */
+  if (
+    announcement.audience === "EMPLOYEE" ||
+    announcement.audience === "MANAGER" ||
+    announcement.audience === "HR_ADMIN" ||
+    announcement.audience === "FINANCE" ||
+    announcement.audience === "RECRUITER" ||
+    announcement.audience === "IT_SUPPORT"
+  ) {
+    query.role = announcement.audience;
+
+    const employees = await Employee.find(query)
+      .select({
+        _id: 1,
+        userId: 1,
+      })
+      .lean();
+
+    return employees
+      .map((employee: any) => employee.userId ?? employee._id)
+      .filter(Boolean)
+      .map(String);
+  }
+
+  /*
+   * If explicit target roles are supplied, use them.
+   */
+  if (
+    Array.isArray(announcement.targetRoles) &&
+    announcement.targetRoles.length > 0
+  ) {
+    query.role = {
+      $in: announcement.targetRoles,
+    };
+  }
+
+  /*
+   * Department targeting.
+   */
+  if (
+    Array.isArray(announcement.departments) &&
+    announcement.departments.length > 0
+  ) {
+    query.department = {
+      $in: announcement.departments,
+    };
+  }
+
+  /*
+   * Location targeting.
+   */
+  if (
+    Array.isArray(announcement.locations) &&
+    announcement.locations.length > 0
+  ) {
+    query.location = {
+      $in: announcement.locations,
+    };
+  }
+
+  const employees = await Employee.find(query)
+    .select({
+      _id: 1,
+      userId: 1,
+    })
+    .lean();
+
+  return employees
+    .map((employee: any) => employee.userId ?? employee._id)
+    .filter(Boolean)
+    .map(String);
+}
+
+/**
+ * Process one published announcement.
+ *
+ * At this stage, IN_APP is connected to the existing notification
+ * repository. EMAIL will be connected when the existing notification
+ * email layer is updated.
+ *
+ * BANNER and CALENDAR are persisted announcement properties and are
+ * consumed by the corresponding frontend views.
+ */
+async function processAnnouncement(announcement: any) {
+  const channels = Array.isArray(announcement.channels)
+    ? announcement.channels
+    : [];
+
+  /*
+   * Only published announcements should
+   * generate delivery actions.
+   */
+  if (announcement.status !== "PUBLISHED") {
+    return;
+  }
+
+  const userIds = channels.includes("IN_APP")
+    ? await getTargetUserIds(announcement)
+    : [];
+
+  /*
+   * In-app notification.
+   *
+   * `notify()` follows the existing project's
+   * userId-based Notification model.
+   */
+  if (channels.includes("IN_APP") && userIds.length > 0) {
+    await Promise.all(
+      userIds.map((userId) =>
+        notify({
+          userId,
+          type: "ANNOUNCEMENT",
+          title: announcement.title,
+          message: announcement.body,
+          link: "/app/announcements",
+        }),
+      ),
+    );
+  }
+
+  /*
+   * EMAIL:
+   *
+   * Do not send email here yet because the currently existing
+   * notifications repository does not expose an email broadcast
+   * function. This will be connected in the existing notification
+   * layer without changing the announcement schema.
+   */
+
+  /*
+   * BANNER:
+   *
+   * The Dashboard reads the persisted `showBanner` value.
+   * No separate database operation is required here.
+   */
+
+  /*
+   * CALENDAR:
+   *
+   * The Calendar reads the persisted `calendarEnabled`,
+   * eventStartAt, eventEndAt and eventLocation values.
+   * No separate database operation is required here.
+   */
+}
+
+/**
+ * Publish and process all announcements whose scheduled time
+ * has arrived.
+ */
+export async function runAnnouncementScheduler() {
+  if (isRunning) {
+    return;
+  }
+
+  isRunning = true;
+
+  try {
+    const published = await publishDueAnnouncements();
+
+    if (published.length === 0) {
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
       return;
     }
 
     for (const announcement of published) {
+<<<<<<< HEAD
       try {
         console.log(
           `[Announcement Scheduler] Published: ${announcement.title}`,
@@ -139,12 +345,24 @@ export async function processScheduledAnnouncements() {
       } catch (error) {
         console.error(
           `[Announcement Scheduler] Delivery failed for "${announcement.title}":`,
+=======
+      if (!announcement) {
+        continue;
+      }
+
+      try {
+        await processAnnouncement(announcement);
+      } catch (error) {
+        console.error(
+          `[AnnouncementScheduler] Failed to process announcement ${announcement.id}:`,
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
           error,
         );
       }
     }
   } catch (error) {
     console.error(
+<<<<<<< HEAD
       "[Announcement Scheduler] Failed:",
       error,
     );
@@ -174,3 +392,53 @@ export function startAnnouncementScheduler() {
     void processScheduledAnnouncements();
   }, 60 * 1000);
 }
+=======
+      "[AnnouncementScheduler] Failed to publish scheduled announcements:",
+      error,
+    );
+  } finally {
+    isRunning = false;
+  }
+}
+
+/**
+ * Start the scheduler.
+ *
+ * The scheduler checks every 10 seconds, matching the short polling
+ * interval commonly used by the current HRMS backend.
+ */
+export function startAnnouncementScheduler() {
+  if (schedulerTimer) {
+    return schedulerTimer;
+  }
+
+  void runAnnouncementScheduler();
+
+  schedulerTimer = setInterval(() => {
+    void runAnnouncementScheduler();
+  }, SCHEDULER_INTERVAL_MS);
+
+  console.log("[AnnouncementScheduler] Started.");
+
+  return schedulerTimer;
+}
+
+/**
+ * Stop the scheduler.
+ *
+ * Useful for tests and graceful shutdown.
+ */
+export function stopAnnouncementScheduler() {
+  if (!schedulerTimer) {
+    return;
+  }
+
+  clearInterval(schedulerTimer);
+
+  schedulerTimer = undefined;
+
+  console.log("[AnnouncementScheduler] Stopped.");
+}
+
+export default startAnnouncementScheduler;
+>>>>>>> f8f0289 (Added feature to check performance of the employees)

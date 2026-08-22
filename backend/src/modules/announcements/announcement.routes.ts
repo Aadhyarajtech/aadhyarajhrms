@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import {
   Router,
   type Request,
@@ -549,6 +550,159 @@ announcementRouter.post(
       }
 
       return res.status(201).json({
+=======
+import { Router } from "express";
+import { z } from "zod";
+
+import { authenticate } from "@/middleware/auth";
+import { isAdmin } from "@/middleware/rbac";
+import { validate } from "@/middleware/validate";
+
+import {
+  ANNOUNCEMENT_TYPES,
+  ANNOUNCEMENT_AUDIENCES,
+  ANNOUNCEMENT_CHANNELS,
+  ANNOUNCEMENT_STATUSES,
+} from "./announcement.model";
+
+import * as repo from "./announcement.repository";
+
+export const announcementRouter = Router();
+
+/*
+ * Every announcement endpoint requires authentication.
+ */
+announcementRouter.use(authenticate);
+
+/*
+ * Shared validation schema.
+ *
+ * `channels` is the canonical notification-channel field.
+ */
+const announcementSchema = z.object({
+  title: z.string().min(2).max(200),
+
+  body: z.string().min(2),
+
+  type: z.enum(ANNOUNCEMENT_TYPES).optional(),
+
+  audience: z.enum(ANNOUNCEMENT_AUDIENCES).optional(),
+
+  departments: z.array(z.string()).optional(),
+
+  locations: z.array(z.string()).optional(),
+
+  targetRoles: z.array(z.string()).optional(),
+
+  channels: z
+    .array(z.enum(ANNOUNCEMENT_CHANNELS))
+    .min(1, "At least one notification channel is required.")
+    .optional(),
+
+  /*
+   * These fields are accepted for compatibility
+   * with the existing frontend.
+   *
+   * The repository derives the final value from
+   * `channels`.
+   */
+  showBanner: z.boolean().optional(),
+
+  requiresAcknowledgement: z.boolean().optional(),
+
+  pinned: z.boolean().optional(),
+
+  attachment: z.string().optional(),
+
+  createdBy: z.string().optional(),
+
+  status: z.enum(ANNOUNCEMENT_STATUSES).optional(),
+
+  scheduledAt: z.string().optional(),
+
+  publishedAt: z.string().optional(),
+
+  /*
+   * Calendar fields.
+   *
+   * `calendarEnabled` is derived from
+   * channels by the repository.
+   */
+  calendarEnabled: z.boolean().optional(),
+
+  eventStartAt: z.string().optional(),
+
+  eventEndAt: z.string().optional(),
+
+  eventLocation: z.string().optional(),
+});
+
+/*
+ * GET /api/announcements
+ *
+ * Returns published announcements.
+ *
+ * The current repository performs the published-status
+ * filtering.
+ */
+announcementRouter.get("/", async (_req, res, next) => {
+  try {
+    const announcements = await repo.listAnnouncements();
+
+    res.json({
+      announcements,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/*
+ * GET /api/announcements/:id
+ *
+ * Get one announcement.
+ */
+announcementRouter.get("/:id", async (req, res, next) => {
+  try {
+    const announcement = await repo.getAnnouncement(req.params.id);
+
+    if (!announcement) {
+      return res.status(404).json({
+        message: "Announcement not found.",
+      });
+    }
+
+    res.json({
+      announcement,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/*
+ * POST /api/announcements
+ *
+ * Admin-only announcement creation.
+ */
+announcementRouter.post(
+  "/",
+  isAdmin,
+  validate(announcementSchema),
+  async (req, res, next) => {
+    try {
+      const announcement = await repo.createAnnouncement({
+        ...req.body,
+
+        /*
+         * Always use the authenticated user
+         * as the creator.
+         */
+        createdBy: req.user!.userId,
+      });
+
+      res.status(201).json({
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
         announcement,
       });
     } catch (err) {
@@ -557,6 +711,7 @@ announcementRouter.post(
   },
 );
 
+<<<<<<< HEAD
 /* =========================================================
    GET ALL ANNOUNCEMENTS
 ========================================================= */
@@ -1163,6 +1318,31 @@ if (
       }
 
       return res.json({
+=======
+/*
+ * PATCH /api/announcements/:id
+ *
+ * Admin-only announcement update.
+ */
+announcementRouter.patch(
+  "/:id",
+  isAdmin,
+  validate(announcementSchema.partial()),
+  async (req, res, next) => {
+    try {
+      const announcement = await repo.updateAnnouncement(
+        req.params.id,
+        req.body,
+      );
+
+      if (!announcement) {
+        return res.status(404).json({
+          message: "Announcement not found.",
+        });
+      }
+
+      res.json({
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
         announcement,
       });
     } catch (err) {
@@ -1171,6 +1351,7 @@ if (
   },
 );
 
+<<<<<<< HEAD
 /* =========================================================
    DELETE ANNOUNCEMENT
 ========================================================= */
@@ -1229,3 +1410,86 @@ announcementRouter.delete(
     }
   },
 );
+=======
+/*
+ * DELETE /api/announcements/:id
+ *
+ * Admin-only announcement deletion.
+ */
+announcementRouter.delete("/:id", isAdmin, async (req, res, next) => {
+  try {
+    const deleted = await repo.deleteAnnouncement(req.params.id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        message: "Announcement not found.",
+      });
+    }
+
+    res.json({
+      message: "Announcement deleted.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/*
+ * POST /api/announcements/:id/read
+ *
+ * Mark an announcement as read for
+ * the authenticated user.
+ */
+announcementRouter.post("/:id/read", async (req, res, next) => {
+  try {
+    await repo.markAnnouncementRead(req.params.id, req.user!.userId);
+
+    res.json({
+      message: "Announcement marked as read.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/*
+ * GET /api/announcements/:id/receipt
+ *
+ * Get the authenticated user's
+ * read/acknowledgement state.
+ */
+announcementRouter.get("/:id/receipt", async (req, res, next) => {
+  try {
+    const receipt = await repo.getAnnouncementReceipt(
+      req.params.id,
+      req.user!.userId,
+    );
+
+    res.json({
+      receipt,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/*
+ * POST /api/announcements/:id/acknowledge
+ *
+ * Acknowledge an announcement that
+ * requires acknowledgement.
+ */
+announcementRouter.post("/:id/acknowledge", async (req, res, next) => {
+  try {
+    await repo.acknowledgeAnnouncement(req.params.id, req.user!.userId);
+
+    res.json({
+      message: "Announcement acknowledged.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default announcementRouter;
+>>>>>>> f8f0289 (Added feature to check performance of the employees)

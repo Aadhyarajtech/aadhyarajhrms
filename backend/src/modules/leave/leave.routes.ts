@@ -24,6 +24,7 @@ leaveRouter.use(authenticate);
  * ============================================================
  */
 
+<<<<<<< HEAD
 /**
  * GET /types
  *
@@ -40,9 +41,53 @@ leaveRouter.get(
     } catch (err) {
       next(err);
     }
+=======
+leaveRouter.get("/balances", async (req, res, next) => {
+  try {
+    const employeeId =
+      (req.query.employeeId as string) || req.user!.employeeId!;
+    const year = req.query.year
+      ? Number(req.query.year)
+      : new Date().getFullYear();
+    res.json({
+      balances: await repo.listBalancesForEmployee(employeeId, year),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+leaveRouter.get("/requests", async (req, res, next) => {
+  try {
+    const { role, employeeId } = req.user!;
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+    const filters: any = {
+      status: req.query.status as string | undefined,
+    };
+
+    if (req.query.scope === "team") {
+      // Only managers can access their team leave requests
+      if (role !== "MANAGER" || !employeeId) {
+        throw AppError.forbidden("Only managers can view team leave requests.");
+      }
+
+      filters.approverId = employeeId;
+    } else if (!isPrivileged) {
+      filters.employeeId = employeeId;
+    } else if (req.query.employeeId) {
+      filters.employeeId = req.query.employeeId;
+    }
+
+    res.json({
+      requests: await repo.listRequests(filters),
+    });
+  } catch (err) {
+    next(err);
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
   }
 );
 
+<<<<<<< HEAD
 /**
  * ============================================================
  * LEAVE BALANCES
@@ -67,6 +112,20 @@ leaveRouter.get(
   async (req, res, next) => {
     try {
       const requester = req.user!;
+=======
+leaveRouter.get("/calendar", async (req, res, next) => {
+  try {
+    const now = new Date();
+    const month = req.query.month
+      ? Number(req.query.month)
+      : now.getMonth() + 1;
+    const year = req.query.year ? Number(req.query.year) : now.getFullYear();
+    res.json({ entries: await repo.getLeaveCalendar(month, year) });
+  } catch (err) {
+    next(err);
+  }
+});
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 
       const requestedEmployeeId =
         typeof req.query.employeeId === "string"
@@ -292,17 +351,21 @@ const createRequestSchema = z.object({
     ),
 });
 
+<<<<<<< HEAD
 /**
  * POST /requests
  *
  * Any authenticated employee with an employee
  * profile can apply for leave.
  */
+=======
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 leaveRouter.post(
   "/requests",
   validate(createRequestSchema),
   async (req, res, next) => {
     try {
+<<<<<<< HEAD
       if (!req.user!.employeeId) {
         throw AppError.forbidden(
           "Only employees can apply for leave."
@@ -343,11 +406,38 @@ leaveRouter.post(
         }
       }
 
+=======
+      if (!req.user!.employeeId)
+        throw AppError.forbidden("Only employees can apply for leave.");
+      const request = await repo.createRequest({
+        employeeId: req.user!.employeeId,
+        ...req.body,
+      });
+
+      const employee = (await getEmployeeById(req.user!.employeeId)) as any;
+      if (employee?.managerId) {
+        const manager = (await getEmployeeById(employee.managerId)) as any;
+        if (manager) {
+          await notify({
+            userId: manager.userId,
+            type: "LEAVE_REQUEST",
+            title: "New leave request to review",
+            message: `${employee.firstName} ${employee.lastName} requested ${request.totalDays} day(s) of leave.`,
+            link: "/leave?tab=team",
+          });
+        }
+      }
+
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
       res.status(201).json({ request });
     } catch (err) {
       next(err);
     }
+<<<<<<< HEAD
   }
+=======
+  },
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
 );
 
 /**
@@ -371,6 +461,7 @@ leaveRouter.post(
   validate(decisionSchema),
   async (req, res, next) => {
     try {
+<<<<<<< HEAD
       if (!req.user!.employeeId) {
         throw AppError.forbidden(
           "Employee profile is required."
@@ -399,16 +490,36 @@ leaveRouter.post(
           (request as any).employeeId
         )) as any;
 
+=======
+      const request = await repo.decideRequest(
+        req.params.id,
+        req.user!.employeeId!,
+        req.body.status,
+        req.body.decisionNote,
+      );
+      if (!request) throw AppError.notFound("Leave request not found.");
+
+      const employee = (await getEmployeeById(
+        (request as any).employeeId,
+      )) as any;
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
       if (employee) {
         await notify({
           userId: employee.userId,
           type: "LEAVE_DECISION",
+<<<<<<< HEAD
           title:
             `Your leave request was ${req.body.status.toLowerCase()}`,
           message:
             req.body.decisionNote ||
             `Your request for ${(request as any).totalDays} day(s) ` +
             `was ${req.body.status.toLowerCase()}.`,
+=======
+          title: `Your leave request was ${req.body.status.toLowerCase()}`,
+          message:
+            req.body.decisionNote ||
+            `Your request for ${(request as any).totalDays} day(s) was ${req.body.status.toLowerCase()}.`,
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
           link: "/leave",
         });
       }
@@ -417,6 +528,7 @@ leaveRouter.post(
     } catch (err) {
       next(err);
     }
+<<<<<<< HEAD
   }
 );
 
@@ -451,5 +563,19 @@ leaveRouter.post(
     } catch (err) {
       next(err);
     }
+=======
+  },
+);
+
+leaveRouter.post("/requests/:id/cancel", async (req, res, next) => {
+  try {
+    const request = await repo.cancelRequest(
+      req.params.id,
+      req.user!.employeeId!,
+    );
+    res.json({ request });
+  } catch (err) {
+    next(err);
+>>>>>>> f8f0289 (Added feature to check performance of the employees)
   }
 );
