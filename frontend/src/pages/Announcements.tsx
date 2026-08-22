@@ -1,12 +1,9 @@
-<<<<<<< HEAD
 import { useEffect, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import {
+  CalendarDays,
+  Mail,
   Megaphone,
   Plus,
   Pin,
@@ -15,20 +12,10 @@ import {
   Image as ImageIcon,
   Pencil,
   Trash2,
-} from "lucide-react";
-=======
-import { useState } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import {
-  CalendarDays,
-  Mail,
-  Megaphone,
-  Pin,
-  Plus,
   Smartphone,
+  ChevronDown,
+  X,
 } from "lucide-react";
-import { useForm } from "react-hook-form";
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 import { AnnouncementsApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
@@ -40,16 +27,9 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
-import {
-  TextField,
-  TextareaField,
-} from "@/components/ui/Field";
-import {
-  EmptyState,
-  Skeleton,
-} from "@/components/ui/EmptyState";
+import { TextField, TextareaField } from "@/components/ui/Field";
+import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
 
-<<<<<<< HEAD
 import type { Announcement as BaseAnnouncement } from "@/types";
 
 /* Backend announcement fields used by this page.
@@ -71,19 +51,13 @@ type Announcement = BaseAnnouncement & {
   eventLocation?: string;
 };
 
-import {
-  formatDate,
-  timeAgo,
-} from "@/lib/format";
+import { formatDate, timeAgo } from "@/lib/format";
 
 /* =========================================================
    ADMIN ROLES
 ========================================================= */
 
-const ADMIN_ROLES = [
-  "SUPER_ADMIN",
-  "HR_ADMIN",
-] as const;
+const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"] as const;
 
 /* =========================================================
    ANNOUNCEMENT TYPES
@@ -157,6 +131,14 @@ const AUDIENCE_OPTIONS = [
     value: "EMPLOYEE",
     label: "Employees",
   },
+  {
+    value: "DEPARTMENT",
+    label: "Department",
+  },
+  {
+    value: "TARGETED_GROUP",
+    label: "Targeted group",
+  },
 ] as const;
 
 /* =========================================================
@@ -173,7 +155,6 @@ interface AnnouncementStatusEntryLocal {
   department?: string;
   role?: string;
   employeeRole?: string;
-  userRole?: string;
   isRead?: boolean;
   read?: boolean;
   hasRead?: boolean;
@@ -181,34 +162,6 @@ interface AnnouncementStatusEntryLocal {
 }
 
 interface AnnouncementForm {
-=======
-const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"] as const;
-
-const TYPE_OPTIONS = [
-  ["GENERAL_NOTICE", "General notice"],
-  ["HOLIDAY_NOTICE", "Holiday notice"],
-  ["COMPANY_EVENT", "Company event"],
-  ["POLICY_UPDATE", "Policy update"],
-  ["EMPLOYEE_RECOGNITION", "Employee recognition"],
-  ["MEETING_NOTICE", "Meeting notice"],
-  ["BENEFITS_UPDATE", "Benefits update"],
-  ["TRAINING_LD", "Training / L&D"],
-] as const;
-
-const AUDIENCE_OPTIONS = [
-  ["ALL", "Everyone"],
-  ["HR_ADMIN", "HR Admin"],
-  ["FINANCE", "Finance"],
-  ["MANAGER", "Managers"],
-  ["RECRUITER", "Recruiters"],
-  ["IT_SUPPORT", "IT Support"],
-  ["EMPLOYEE", "Employees"],
-  ["DEPARTMENT", "Department"],
-  ["TARGETED_GROUP", "Targeted group"],
-] as const;
-
-type FormValues = {
->>>>>>> f8f0289 (Added feature to check performance of the employees)
   title: string;
   body: string;
   type: string;
@@ -217,7 +170,6 @@ type FormValues = {
   locations: string;
   targetRoles: string;
   pinned: boolean;
-<<<<<<< HEAD
   notificationMethods: string[];
   publishMode: "NOW" | "SCHEDULED";
   scheduledDate: string;
@@ -235,9 +187,7 @@ type FormValues = {
 ========================================================= */
 
 function getAudienceLabel(audience: string) {
-  const found = AUDIENCE_OPTIONS.find(
-    (option) => option.value === audience,
-  );
+  const found = AUDIENCE_OPTIONS.find((option) => option.value === audience);
 
   return found?.label || audience;
 }
@@ -255,10 +205,7 @@ function getAttachmentUrl(attachment?: string) {
     return "";
   }
 
-  if (
-    attachment.startsWith("http://") ||
-    attachment.startsWith("https://")
-  ) {
+  if (attachment.startsWith("http://") || attachment.startsWith("https://")) {
     return attachment;
   }
 
@@ -278,25 +225,243 @@ function isImageAttachment(attachment?: string) {
 }
 
 /* =========================================================
-   PAGE
+   TARGETING OPTIONS
 ========================================================= */
-=======
-  requiresAcknowledgement: boolean;
-  inApp: boolean;
-  email: boolean;
-  banner: boolean;
-  calendar: boolean;
-  scheduledAt: string;
-  eventStartAt: string;
-  eventEndAt: string;
-  eventLocation: string;
-};
 
-function splitList(value: string) {
-  return value
+const DEPARTMENT_OPTIONS = [
+  "Engineering",
+  "Sales",
+  "Product",
+  "Design",
+  "Marketing",
+  "Customer Success",
+  "IT & Security",
+  "Finance",
+  "Human Resources",
+  "Operations",
+];
+
+const LOCATION_OPTIONS = [
+  "Hyderabad",
+  "Bengaluru",
+  "Chennai",
+  "Mumbai",
+  "Pune",
+  "Delhi",
+  "Kolkata",
+  "Ahmedabad",
+  "Noida",
+];
+
+const ROLE_OPTIONS = [
+  "SUPER_ADMIN",
+  "HR_ADMIN",
+  "FINANCE",
+  "MANAGER",
+  "RECRUITER",
+  "IT_SUPPORT",
+  "EMPLOYEE",
+];
+
+function csvToArray(value?: string) {
+  return String(value ?? "")
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function arrayToCsv(value?: string[]) {
+  return (value ?? []).join(", ");
+}
+
+function todayLocalDate() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset();
+  const local = new Date(now.getTime() - offset * 60 * 1000);
+  return local.toISOString().slice(0, 10);
+}
+
+function localDateTimeValue(date = new Date()) {
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60 * 1000);
+  return local.toISOString().slice(0, 16);
+}
+
+function localTimeValue(date = new Date()) {
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60 * 1000);
+  return local.toISOString().slice(11, 16);
+}
+
+function scheduledTimeMin(dateValue?: string) {
+  if (!dateValue || dateValue !== todayLocalDate()) {
+    return undefined;
+  }
+
+  return localTimeValue();
+}
+
+function formatEventRange(start?: string, end?: string) {
+  if (!start) return "";
+
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.getTime())) return "";
+
+  const endDate = end ? new Date(end) : null;
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  };
+  const timeOptions: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    minute: "2-digit",
+  };
+
+  const startDateText = startDate.toLocaleDateString(undefined, dateOptions);
+  const startTimeText = startDate.toLocaleTimeString(undefined, timeOptions);
+
+  if (!endDate || Number.isNaN(endDate.getTime())) {
+    return `${startDateText} · ${startTimeText}`;
+  }
+
+  const endDateText = endDate.toLocaleDateString(undefined, dateOptions);
+  const endTimeText = endDate.toLocaleTimeString(undefined, timeOptions);
+
+  if (startDateText === endDateText) {
+    return `${startDateText} · ${startTimeText} – ${endTimeText}`;
+  }
+
+  return `${startDateText} ${startTimeText} – ${endDateText} ${endTimeText}`;
+}
+
+function MultiSelectCategory({
+  label,
+  placeholder,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  options: string[];
+  value: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const toggle = (option: string) => {
+    if (value.includes(option)) {
+      onChange(value.filter((item) => item !== option));
+    } else {
+      onChange([...value, option]);
+    }
+    // Close after every selection so the form stays compact.
+    setOpen(false);
+  };
+
+  const clear = () => {
+    onChange([]);
+    setOpen(false);
+  };
+
+  const selectAll = () => {
+    onChange(Array.from(new Set(options)));
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <label className="mb-1.5 block text-[13px] font-medium text-ink">
+        {label}
+        <span className="ml-1 text-xs font-normal text-ink-faint">
+          (optional)
+        </span>
+      </label>
+
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex min-h-10 w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-ink outline-none transition hover:border-gray-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+        aria-expanded={open}
+      >
+        <span className={value.length ? "text-ink" : "text-ink-faint"}>
+          {value.length
+            ? value.length === 1
+              ? value[0]
+              : `${value.length} selected`
+            : placeholder}
+        </span>
+        <ChevronDown
+          size={16}
+          className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {value.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {value.map((item) => (
+            <span
+              key={item}
+              className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700"
+            >
+              {item}
+              <button
+                type="button"
+                onClick={() => toggle(item)}
+                className="rounded-full hover:bg-brand-100"
+                aria-label={`Remove ${item}`}
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-[min(18rem,45vh)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lifted">
+          <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2.5 text-[11px] font-medium">
+            <button
+              type="button"
+              onClick={selectAll}
+              className="text-brand-600 hover:text-brand-700"
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              onClick={clear}
+              className="text-red-500 hover:text-red-600"
+            >
+              Clear All
+            </button>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto p-1.5">
+            {options.map((option) => (
+              <label
+                key={option}
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-ink-soft hover:bg-gray-50"
+              >
+                <input
+                  type="checkbox"
+                  checked={value.includes(option)}
+                  onChange={() => toggle(option)}
+                  className="rounded accent-brand-500"
+                />
+                <span>{option}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="border-t border-gray-100 px-3 py-2 text-[11px] text-ink-faint">
+            {value.length} selected
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ChannelBadge({ channel }: { channel: string }) {
@@ -330,23 +495,20 @@ function ChannelBadge({ channel }: { channel: string }) {
     </Badge>
   );
 }
->>>>>>> f8f0289 (Added feature to check performance of the employees)
+
+/* =========================================================
+   PAGE
+========================================================= */
 
 export default function Announcements() {
   const { user } = useAuth();
 
   const isAdmin =
-<<<<<<< HEAD
-    !!user &&
-    ADMIN_ROLES.includes(
-      user.role as (typeof ADMIN_ROLES)[number],
-    );
+    !!user && ADMIN_ROLES.includes(user.role as (typeof ADMIN_ROLES)[number]);
 
-  const [createOpen, setCreateOpen] =
-    useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
-  const [editOpen, setEditOpen] =
-    useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const [selectedAnnouncement, setSelectedAnnouncement] =
     useState<Announcement | null>(null);
@@ -357,13 +519,12 @@ export default function Announcements() {
 
   const queryClient = useQueryClient();
 
-  const {
-    data: announcementStatus,
-    isLoading: isStatusLoading,
-  } = useQuery<AnnouncementStatusEntryLocal[], Error>({
+  const { data: announcementStatus, isLoading: isStatusLoading } = useQuery<
+    AnnouncementStatusEntryLocal[],
+    Error
+  >({
     queryKey: ["announcement-status", statusAnnouncement?.id],
-    queryFn: () =>
-      AnnouncementsApi.status(statusAnnouncement!.id),
+    queryFn: () => AnnouncementsApi.status(statusAnnouncement!.id),
     enabled: isAdmin && statusOpen && !!statusAnnouncement,
   });
 
@@ -375,8 +536,9 @@ export default function Announcements() {
     mutationFn: AnnouncementsApi.markRead,
 
     onSuccess: () => {
-      queryClient.invalidateQueries({
+      void queryClient.refetchQueries({
         queryKey: ["announcements"],
+        type: "active",
       });
     },
   });
@@ -389,8 +551,9 @@ export default function Announcements() {
     mutationFn: AnnouncementsApi.acknowledge,
 
     onSuccess: () => {
-      queryClient.invalidateQueries({
+      void queryClient.refetchQueries({
         queryKey: ["announcements"],
+        type: "active",
       });
     },
   });
@@ -400,30 +563,24 @@ export default function Announcements() {
   ======================================================= */
 
   const updateMutation = useMutation({
-  mutationFn: ({
-    id,
-    data,
-  }: {
-    id: string;
-    data: FormData;
-  }) => AnnouncementsApi.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: FormData }) =>
+      AnnouncementsApi.update(id, data),
 
-  onSuccess: () => {
-    queryClient.invalidateQueries({
-      queryKey: ["announcements"],
-    });
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["announcements"],
+      });
 
-    setEditOpen(false);
-    setSelectedAnnouncement(null);
+      setEditOpen(false);
+      setSelectedAnnouncement(null);
 
-    window.dispatchEvent(
-      new CustomEvent("announcement-toast", {
-        detail:
-          "Announcement updated successfully.",
-      }),
-    );
-  },
-});
+      window.dispatchEvent(
+        new CustomEvent("announcement-toast", {
+          detail: "Announcement updated successfully.",
+        }),
+      );
+    },
+  });
 
   /* =======================================================
      DELETE
@@ -433,8 +590,9 @@ export default function Announcements() {
     mutationFn: AnnouncementsApi.delete,
 
     onSuccess: () => {
-      queryClient.invalidateQueries({
+      void queryClient.refetchQueries({
         queryKey: ["announcements"],
+        type: "active",
       });
     },
   });
@@ -443,15 +601,10 @@ export default function Announcements() {
      GET ANNOUNCEMENTS
   ======================================================= */
 
-  const {
-    data,
-    isLoading,
-    isError,
-  } = useQuery<Announcement[], Error>({
+  const { data, isLoading, isError } = useQuery<Announcement[], Error>({
     queryKey: ["announcements"],
 
-    queryFn: () =>
-      AnnouncementsApi.list(),
+    queryFn: () => AnnouncementsApi.list(),
   });
 
   /* =======================================================
@@ -466,23 +619,17 @@ export default function Announcements() {
     acknowledgeMutation.mutate(id);
   };
 
-  const handleViewStatus = (
-    announcement: Announcement,
-  ) => {
+  const handleViewStatus = (announcement: Announcement) => {
     setStatusAnnouncement(announcement);
     setStatusOpen(true);
   };
 
-  const handleEdit = (
-    announcement: Announcement,
-  ) => {
+  const handleEdit = (announcement: Announcement) => {
     setSelectedAnnouncement(announcement);
     setEditOpen(true);
   };
 
-  const handleDelete = (
-    announcement: Announcement,
-  ) => {
+  const handleDelete = (announcement: Announcement) => {
     const confirmed = window.confirm(
       `Are you sure you want to delete "${announcement.title}"?`,
     );
@@ -493,16 +640,6 @@ export default function Announcements() {
 
     deleteMutation.mutate(announcement.id);
   };
-=======
-    !!user && ADMIN_ROLES.includes(user.role as (typeof ADMIN_ROLES)[number]);
-
-  const [createOpen, setCreateOpen] = useState(false);
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["announcements"],
-    queryFn: AnnouncementsApi.list,
-  });
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 
   return (
     <div className="w-full">
@@ -510,27 +647,14 @@ export default function Announcements() {
         title="Announcements"
         subtitle="Company-wide news and updates."
         action={
-<<<<<<< HEAD
           isAdmin ? (
-            <Button
-              leftIcon={<Plus size={16} />}
-              onClick={() =>
-                setCreateOpen(true)
-              }
-            >
-              New announcement
-            </Button>
-          ) : undefined
-=======
-          isAdmin && (
             <Button
               leftIcon={<Plus size={16} />}
               onClick={() => setCreateOpen(true)}
             >
               New announcement
             </Button>
-          )
->>>>>>> f8f0289 (Added feature to check performance of the employees)
+          ) : undefined
         }
       />
 
@@ -540,15 +664,9 @@ export default function Announcements() {
 
       {isLoading ? (
         <div className="space-y-4">
-<<<<<<< HEAD
-          {Array.from({ length: 3 }).map(
-            (_, index) => (
-              <Skeleton
-                key={index}
-                className="h-32 rounded-3xl"
-              />
-            ),
-          )}
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-32 rounded-3xl" />
+          ))}
         </div>
       ) : isError ? (
         <Card>
@@ -556,29 +674,15 @@ export default function Announcements() {
             Failed to load announcements.
           </div>
         </Card>
-=======
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 rounded-3xl" />
-          ))}
-        </div>
-      ) : isError ? (
-        <EmptyState icon={Megaphone} title="Unable to load announcements" />
->>>>>>> f8f0289 (Added feature to check performance of the employees)
       ) : !data?.length ? (
-        <EmptyState
-          icon={Megaphone}
-          title="No announcements yet"
-        />
+        <EmptyState icon={Megaphone} title="No announcements yet" />
       ) : (
         <div className="space-y-4">
           {data.map((announcement) => (
             <Card
               key={announcement.id}
               className={
-<<<<<<< HEAD
-                announcement.pinned
-                  ? "border-gold-300 bg-gold-50/40"
-                  : ""
+                announcement.pinned ? "border-gold-300 bg-gold-50/40" : ""
               }
             >
               <div className="flex items-start justify-between gap-4">
@@ -592,18 +696,6 @@ export default function Announcements() {
                   {/* CONTENT */}
 
                   <div className="min-w-0 flex-1">
-=======
-                announcement.pinned ? "border-gold-300 bg-gold-50/40" : ""
-              }
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-                    <Megaphone size={16} />
-                  </div>
-
-                  <div className="min-w-0">
->>>>>>> f8f0289 (Added feature to check performance of the employees)
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-display text-[15px] font-medium text-ink">
                         {announcement.title}
@@ -611,49 +703,70 @@ export default function Announcements() {
 
                       {announcement.pinned && (
                         <Badge tone="gold">
-<<<<<<< HEAD
                           <Pin size={11} />
                           Pinned
                         </Badge>
                       )}
 
-                      <Badge>
-                        {getTypeLabel(
-                          announcement.type,
-                        )}
-                      </Badge>
+                      <Badge>{getTypeLabel(announcement.type)}</Badge>
 
-                      <Badge>
-                        {getAudienceLabel(
-                          announcement.audience,
-                        )}
-                      </Badge>
+                      <Badge>{getAudienceLabel(announcement.audience)}</Badge>
+
+                      {(announcement.channels ?? []).map((channel) => (
+                        <ChannelBadge key={channel} channel={channel} />
+                      ))}
                     </div>
 
                     <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-soft">
                       {announcement.body}
                     </p>
 
+                    {announcement.eventStartAt && (
+                      <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2.5">
+                        <p className="text-[12px] font-medium text-brand-700">
+                          Calendar event
+                        </p>
+                        <p className="mt-0.5 text-[12px] text-ink-soft">
+                          {formatEventRange(
+                            announcement.eventStartAt,
+                            announcement.eventEndAt,
+                          )}
+                        </p>
+                        {announcement.eventLocation && (
+                          <p className="mt-0.5 text-[12px] text-ink-faint">
+                            {announcement.eventLocation}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {announcement.status === "SCHEDULED" &&
+                      announcement.scheduledAt && (
+                        <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2.5">
+                          <p className="text-[12px] font-medium text-amber-700">
+                            Scheduled publish
+                          </p>
+                          <p className="mt-0.5 text-[12px] text-ink-soft">
+                            {formatEventRange(announcement.scheduledAt)}
+                          </p>
+                        </div>
+                      )}
+
                     {/* ATTACHMENT */}
 
                     {announcement.attachment && (
                       <div className="mt-4">
                         <a
-                          href={getAttachmentUrl(
-                            announcement.attachment,
-                          )}
+                          href={getAttachmentUrl(announcement.attachment)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-50"
                         >
-                          {isImageAttachment(
-                            announcement.attachment,
-                          ) ? (
+                          {isImageAttachment(announcement.attachment) ? (
                             <ImageIcon size={16} />
                           ) : (
                             <FileText size={16} />
                           )}
-
                           View Attachment
                         </a>
                       </div>
@@ -663,16 +776,12 @@ export default function Announcements() {
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <Badge>
-                        {announcement.receipt?.isRead
-                          ? "Read"
-                          : "Unread"}
+                        {announcement.receipt?.isRead ? "Read" : "Unread"}
                       </Badge>
 
-                      {announcement.type ===
-                        "POLICY_UPDATE" && (
+                      {announcement.type === "POLICY_UPDATE" && (
                         <Badge>
-                          {announcement.receipt
-                            ?.isAcknowledged
+                          {announcement.receipt?.isAcknowledged
                             ? "Acknowledged"
                             : "Requires acknowledgement"}
                         </Badge>
@@ -683,60 +792,38 @@ export default function Announcements() {
 
                     {announcement.receipt?.readAt && (
                       <p className="mt-2 text-[12px] text-ink-faint">
-                        Read{" "}
-                        {timeAgo(
-                          announcement.receipt.readAt,
-                        )}
+                        Read {timeAgo(announcement.receipt.readAt)}
                       </p>
                     )}
 
                     {/* ACKNOWLEDGED TIME */}
 
-                    {announcement.receipt
-                      ?.acknowledgedAt && (
+                    {announcement.receipt?.acknowledgedAt && (
                       <p className="mt-1 text-[12px] text-ink-faint">
                         Acknowledged{" "}
-                        {timeAgo(
-                          announcement.receipt
-                            .acknowledgedAt,
-                        )}
+                        {timeAgo(announcement.receipt.acknowledgedAt)}
                       </p>
                     )}
 
                     {/* ACTIONS */}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {!announcement.receipt
-                        ?.isRead && (
+                      {!announcement.receipt?.isRead && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() =>
-                            handleMarkRead(
-                              announcement.id,
-                            )
-                          }
-                          isLoading={
-                            markReadMutation.isPending
-                          }
+                          onClick={() => handleMarkRead(announcement.id)}
+                          isLoading={markReadMutation.isPending}
                         >
                           Mark as read
                         </Button>
                       )}
 
-                      {announcement.type ===
-                        "POLICY_UPDATE" &&
-                        !announcement.receipt
-                          ?.isAcknowledged && (
+                      {announcement.type === "POLICY_UPDATE" &&
+                        !announcement.receipt?.isAcknowledged && (
                           <Button
-                            onClick={() =>
-                              handleAcknowledge(
-                                announcement.id,
-                              )
-                            }
-                            isLoading={
-                              acknowledgeMutation.isPending
-                            }
+                            onClick={() => handleAcknowledge(announcement.id)}
+                            isLoading={acknowledgeMutation.isPending}
                           >
                             Acknowledge
                           </Button>
@@ -749,28 +836,24 @@ export default function Announcements() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() =>
-                              handleViewStatus(
-                                announcement,
-                              )
-                            }
+                            onClick={() => handleViewStatus(announcement)}
                           >
                             View read receipts
                           </Button>
 
                           {announcement.type === "POLICY_UPDATE" &&
                             Boolean(
-                              (announcement as unknown as Record<string, unknown>)
-                                .requiresAcknowledgement,
+                              (
+                                announcement as unknown as Record<
+                                  string,
+                                  unknown
+                                >
+                              ).requiresAcknowledgement,
                             ) && (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() =>
-                                  handleViewStatus(
-                                    announcement,
-                                  )
-                                }
+                                onClick={() => handleViewStatus(announcement)}
                               >
                                 View acknowledgements
                               </Button>
@@ -779,14 +862,8 @@ export default function Announcements() {
                           <Button
                             variant="outline"
                             size="sm"
-                            leftIcon={
-                              <Pencil size={14} />
-                            }
-                            onClick={() =>
-                              handleEdit(
-                                announcement,
-                              )
-                            }
+                            leftIcon={<Pencil size={14} />}
+                            onClick={() => handleEdit(announcement)}
                           >
                             Edit
                           </Button>
@@ -794,17 +871,9 @@ export default function Announcements() {
                           <Button
                             variant="outline"
                             size="sm"
-                            leftIcon={
-                              <Trash2 size={14} />
-                            }
-                            onClick={() =>
-                              handleDelete(
-                                announcement,
-                              )
-                            }
-                            isLoading={
-                              deleteMutation.isPending
-                            }
+                            leftIcon={<Trash2 size={14} />}
+                            onClick={() => handleDelete(announcement)}
+                            isLoading={deleteMutation.isPending}
                           >
                             Delete
                           </Button>
@@ -815,42 +884,8 @@ export default function Announcements() {
                     {/* DATE */}
 
                     <p className="mt-3 text-[12px] text-ink-faint">
-                      {formatDate(
-                        announcement.createdAt,
-                      )}{" "}
-                      ·{" "}
-                      {timeAgo(
-                        announcement.createdAt,
-                      )}
-=======
-                          <Pin size={11} /> Pinned
-                        </Badge>
-                      )}
-
-                      {announcement.channels.map((channel) => (
-                        <ChannelBadge key={channel} channel={channel} />
-                      ))}
-                    </div>
-
-                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">
-                      {announcement.body}
-                    </p>
-
-                    {announcement.calendarEnabled &&
-                      announcement.eventStartAt && (
-                        <div className="mt-2 text-[12px] text-ink-soft">
-                          <CalendarDays size={13} className="mr-1 inline" />
-                          {formatDate(announcement.eventStartAt)}
-                          {announcement.eventLocation
-                            ? ` · ${announcement.eventLocation}`
-                            : ""}
-                        </div>
-                      )}
-
-                    <p className="mt-2 text-[12px] text-ink-faint">
                       {formatDate(announcement.createdAt)} ·{" "}
                       {timeAgo(announcement.createdAt)}
->>>>>>> f8f0289 (Added feature to check performance of the employees)
                     </p>
                   </div>
                 </div>
@@ -865,12 +900,7 @@ export default function Announcements() {
       =================================================== */}
 
       {isAdmin && (
-        <CreateModal
-          open={createOpen}
-          onClose={() =>
-            setCreateOpen(false)
-          }
-        />
+        <CreateModal open={createOpen} onClose={() => setCreateOpen(false)} />
       )}
 
       {/* ===================================================
@@ -895,35 +925,32 @@ export default function Announcements() {
       =================================================== */}
 
       {isAdmin && selectedAnnouncement && (
-  <EditModal
-    open={editOpen}
-    announcement={selectedAnnouncement}
-    isLoading={updateMutation.isPending}
-    onClose={() => {
-      if (!updateMutation.isPending) {
-        setEditOpen(false);
-        setSelectedAnnouncement(null);
-      }
-    }}
+        <EditModal
+          open={editOpen}
+          announcement={selectedAnnouncement}
+          isLoading={updateMutation.isPending}
+          onClose={() => {
+            if (!updateMutation.isPending) {
+              setEditOpen(false);
+              setSelectedAnnouncement(null);
+            }
+          }}
           onSubmit={(formData: FormData) => {
-  updateMutation.mutate({
-    id: selectedAnnouncement.id,
-    data: formData,
-  });
-}}
+            updateMutation.mutate({
+              id: selectedAnnouncement.id,
+              data: formData,
+            });
+          }}
         />
       )}
     </div>
   );
 }
 
-<<<<<<< HEAD
 /* =========================================================
    CREATE MODAL
 ========================================================= */
 
-=======
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 function CreateModal({
   open,
   onClose,
@@ -940,12 +967,9 @@ function CreateModal({
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors },
-<<<<<<< HEAD
   } = useForm<AnnouncementForm>({
-=======
-  } = useForm<FormValues>({
->>>>>>> f8f0289 (Added feature to check performance of the employees)
     defaultValues: {
       title: "",
       body: "",
@@ -955,89 +979,49 @@ function CreateModal({
       locations: "",
       targetRoles: "",
       pinned: false,
-<<<<<<< HEAD
       notificationMethods: ["IN_APP", "EMAIL"],
       publishMode: "NOW",
       scheduledDate: "",
       scheduledTime: "",
       requiresAcknowledgement: false,
       calendarEnabled: false,
-=======
-      requiresAcknowledgement: false,
-      inApp: true,
-      email: false,
-      banner: false,
-      calendar: false,
-      scheduledAt: "",
->>>>>>> f8f0289 (Added feature to check performance of the employees)
       eventStartAt: "",
       eventEndAt: "",
       eventLocation: "",
     },
   });
-<<<<<<< HEAD
 
   const mutation = useMutation({
-    mutationFn:
-      AnnouncementsApi.create,
-=======
-
-  const calendarEnabled = watch("calendar");
-
-  const mutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      AnnouncementsApi.create(payload),
->>>>>>> f8f0289 (Added feature to check performance of the employees)
+    mutationFn: AnnouncementsApi.create,
 
     onSuccess: () => {
-      queryClient.invalidateQueries({
+      void queryClient.refetchQueries({
         queryKey: ["announcements"],
+        type: "active",
       });
 
-<<<<<<< HEAD
-      showToast(
-        "Announcement published successfully.",
-      );
-=======
-      queryClient.invalidateQueries({
-        queryKey: ["dashboard"],
-      });
-
-      showToast("Announcement published.");
->>>>>>> f8f0289 (Added feature to check performance of the employees)
+      showToast("Announcement published successfully.");
 
       reset();
       onClose();
     },
 
-<<<<<<< HEAD
     onError: (error) => {
-      showToast(
-        getErrorMessage(error),
-        "error",
-      );
+      showToast(getErrorMessage(error), "error");
     },
   });
 
-  const onSubmit = (
-    values: AnnouncementForm,
-  ) => {
+  const onSubmit = (values: AnnouncementForm) => {
     const title = values.title.trim();
     const body = values.body.trim();
 
     if (title.length < 3) {
-      showToast(
-        "Title must contain at least 3 characters.",
-        "error",
-      );
+      showToast("Title must contain at least 3 characters.", "error");
       return;
     }
 
     if (body.length < 5) {
-      showToast(
-        "Message must contain at least 5 characters.",
-        "error",
-      );
+      showToast("Message must contain at least 5 characters.", "error");
       return;
     }
 
@@ -1046,10 +1030,7 @@ function CreateModal({
     formData.append("title", title);
     formData.append("body", body);
     formData.append("type", values.type);
-    formData.append(
-      "audience",
-      values.audience,
-    );
+    formData.append("audience", values.audience);
 
     const departments = values.departments
       .split(",")
@@ -1070,44 +1051,24 @@ function CreateModal({
     formData.append("locations", JSON.stringify(locations));
     formData.append("targetRoles", JSON.stringify(targetRoles));
 
-    formData.append(
-      "pinned",
-      String(values.pinned),
-    );
+    formData.append("pinned", String(values.pinned));
 
     const channels = Array.from(
-      new Set(
-        (values.notificationMethods ?? []).filter(Boolean),
-      ),
+      new Set((values.notificationMethods ?? []).filter(Boolean)),
     );
 
     if (!channels.length) {
-      showToast(
-        "Please select at least one notification method.",
-        "error",
-      );
+      showToast("Please select at least one notification method.", "error");
       return;
     }
 
-    formData.append(
-      "notificationMethods",
-      JSON.stringify(channels),
-    );
+    formData.append("notificationMethods", JSON.stringify(channels));
 
-    formData.append(
-      "channels",
-      JSON.stringify(channels),
-    );
+    formData.append("channels", JSON.stringify(channels));
 
-    formData.append(
-      "showBanner",
-      String(channels.includes("BANNER")),
-    );
+    formData.append("showBanner", String(channels.includes("BANNER")));
 
-    formData.append(
-      "calendarEnabled",
-      String(channels.includes("CALENDAR")),
-    );
+    formData.append("calendarEnabled", String(channels.includes("CALENDAR")));
 
     if (channels.includes("CALENDAR")) {
       if (!values.eventStartAt) {
@@ -1128,10 +1089,23 @@ function CreateModal({
         return;
       }
 
-      formData.append(
-        "eventStartAt",
-        eventStart.toISOString(),
-      );
+      formData.append("eventStartAt", eventStart.toISOString());
+
+      if (eventStart.getTime() < Date.now()) {
+        showToast(
+          "Calendar event start must be today or a future date/time.",
+          "error",
+        );
+        return;
+      }
+
+      if (!values.eventEndAt) {
+        showToast(
+          "Please provide a calendar event end date and time.",
+          "error",
+        );
+        return;
+      }
 
       if (values.eventEndAt) {
         const eventEnd = new Date(values.eventEndAt);
@@ -1152,24 +1126,15 @@ function CreateModal({
           return;
         }
 
-        formData.append(
-          "eventEndAt",
-          eventEnd.toISOString(),
-        );
+        formData.append("eventEndAt", eventEnd.toISOString());
       }
 
       if (values.eventLocation.trim()) {
-        formData.append(
-          "eventLocation",
-          values.eventLocation.trim(),
-        );
+        formData.append("eventLocation", values.eventLocation.trim());
       }
     }
 
-    formData.append(
-      "publishMode",
-      values.publishMode,
-    );
+    formData.append("publishMode", values.publishMode);
 
     formData.append(
       "requiresAcknowledgement",
@@ -1182,10 +1147,7 @@ function CreateModal({
 
     if (values.publishMode === "SCHEDULED") {
       if (!values.scheduledDate || !values.scheduledTime) {
-        showToast(
-          "Please select a publish date and time.",
-          "error",
-        );
+        showToast("Please select a publish date and time.", "error");
         return;
       }
 
@@ -1194,130 +1156,37 @@ function CreateModal({
       );
 
       if (Number.isNaN(scheduledAt.getTime())) {
-        showToast(
-          "Please enter a valid scheduled date and time.",
-          "error",
-        );
+        showToast("Please enter a valid scheduled date and time.", "error");
         return;
       }
 
       if (scheduledAt.getTime() <= Date.now()) {
-        showToast(
-          "Scheduled publish time must be in the future.",
-          "error",
-        );
+        showToast("Scheduled publish time must be in the future.", "error");
         return;
       }
 
-      formData.append(
-        "scheduledAt",
-        scheduledAt.toISOString(),
-      );
+      formData.append("scheduledAt", scheduledAt.toISOString());
     }
 
-    const file =
-      values.attachment?.[0];
+    const file = values.attachment?.[0];
 
     if (file) {
-      const maxSize =
-        8 * 1024 * 1024;
+      const maxSize = 8 * 1024 * 1024;
 
       if (file.size > maxSize) {
-        showToast(
-          "Attachment must be smaller than 8MB.",
-          "error",
-        );
+        showToast("Attachment must be smaller than 8MB.", "error");
         return;
       }
 
-      formData.append(
-        "attachment",
-        file,
-      );
+      formData.append("attachment", file);
     }
 
     mutation.mutate(formData as any);
-=======
-    onError: (err) => showToast(getErrorMessage(err), "error"),
-  });
-
-  const submit = (values: FormValues) => {
-    const channels: string[] = [];
-
-    if (values.inApp) {
-      channels.push("IN_APP");
-    }
-
-    if (values.email) {
-      channels.push("EMAIL");
-    }
-
-    if (values.banner) {
-      channels.push("BANNER");
-    }
-
-    if (values.calendar) {
-      channels.push("CALENDAR");
-    }
-
-    if (channels.length === 0) {
-      showToast("Select at least one delivery channel.", "error");
-      return;
-    }
-
-    const scheduled = Boolean(values.scheduledAt);
-
-    if (scheduled && new Date(values.scheduledAt).getTime() <= Date.now()) {
-      showToast("Scheduled time must be in the future.", "error");
-      return;
-    }
-
-    if (values.calendar && (!values.eventStartAt || !values.eventEndAt)) {
-      showToast("Event start and end are required for Calendar.", "error");
-      return;
-    }
-
-    mutation.mutate({
-      title: values.title.trim(),
-      body: values.body,
-      type: values.type,
-      audience: values.audience,
-
-      departments: splitList(values.departments),
-
-      locations: splitList(values.locations),
-
-      targetRoles: splitList(values.targetRoles),
-
-      channels,
-
-      pinned: values.pinned,
-
-      requiresAcknowledgement: values.requiresAcknowledgement,
-
-      /*
-       * The backend derives showBanner from
-       * the BANNER channel.
-       */
-      showBanner: values.banner,
-
-      status: scheduled ? "SCHEDULED" : "PUBLISHED",
-
-      scheduledAt: values.scheduledAt || "",
-
-      eventStartAt: values.calendar ? values.eventStartAt : "",
-
-      eventEndAt: values.calendar ? values.eventEndAt : "",
-
-      eventLocation: values.calendar ? values.eventLocation : "",
-    });
->>>>>>> f8f0289 (Added feature to check performance of the employees)
   };
 
   return (
     <Modal
       open={open}
-<<<<<<< HEAD
       onClose={() => {
         if (!mutation.isPending) {
           reset();
@@ -1326,7 +1195,7 @@ function CreateModal({
       }}
       title="New announcement"
       subtitle="Broadcast company updates to employees."
-      size="md"
+      size="lg"
       footer={
         <>
           <Button
@@ -1345,26 +1214,13 @@ function CreateModal({
             isLoading={mutation.isPending}
           >
             Publish
-=======
-      onClose={onClose}
-      title="New announcement"
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-
-          <Button onClick={handleSubmit(submit)} isLoading={mutation.isPending}>
-            {watch("scheduledAt") ? "Schedule" : "Publish"}
->>>>>>> f8f0289 (Added feature to check performance of the employees)
           </Button>
         </>
       }
     >
-<<<<<<< HEAD
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="space-y-5"
+        className="max-h-[calc(100vh-220px)] space-y-5 overflow-y-auto pr-1 sm:pr-2"
       >
         <TextField
           label="Title"
@@ -1375,13 +1231,11 @@ function CreateModal({
             required: "Title is required",
             minLength: {
               value: 3,
-              message:
-                "Title must contain at least 3 characters",
+              message: "Title must contain at least 3 characters",
             },
             maxLength: {
               value: 200,
-              message:
-                "Title cannot exceed 200 characters",
+              message: "Title cannot exceed 200 characters",
             },
           })}
         />
@@ -1389,28 +1243,20 @@ function CreateModal({
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-ink">
             Announcement Type
-            <span className="ml-1 text-red-500">
-              *
-            </span>
+            <span className="ml-1 text-red-500">*</span>
           </label>
 
           <select
             {...register("type", {
-              required:
-                "Announcement type is required",
+              required: "Announcement type is required",
             })}
             className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           >
-            {ANNOUNCEMENT_TYPE_OPTIONS.map(
-              (option) => (
-                <option
-                  key={option.value}
-                  value={option.value}
-                >
-                  {option.label}
-                </option>
-              ),
-            )}
+            {ANNOUNCEMENT_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -1423,13 +1269,11 @@ function CreateModal({
             required: "Message is required",
             minLength: {
               value: 5,
-              message:
-                "Message must contain at least 5 characters",
+              message: "Message must contain at least 5 characters",
             },
             maxLength: {
               value: 10000,
-              message:
-                "Message cannot exceed 10000 characters",
+              message: "Message cannot exceed 10000 characters",
             },
           })}
         />
@@ -1437,28 +1281,20 @@ function CreateModal({
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-ink">
             Audience
-            <span className="ml-1 text-red-500">
-              *
-            </span>
+            <span className="ml-1 text-red-500">*</span>
           </label>
 
           <select
             {...register("audience", {
-              required:
-                "Audience is required",
+              required: "Audience is required",
             })}
             className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           >
-            {AUDIENCE_OPTIONS.map(
-              (option) => (
-                <option
-                  key={option.value}
-                  value={option.value}
-                >
-                  {option.label}
-                </option>
-              ),
-            )}
+            {AUDIENCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
 
           <p className="mt-1 text-xs text-ink-faint">
@@ -1468,97 +1304,50 @@ function CreateModal({
 
         <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
           <div>
-            <p className="text-[13px] font-medium text-ink">
-              Targeting
-            </p>
+            <p className="text-[13px] font-medium text-ink">Targeting</p>
             <p className="mt-0.5 text-xs text-ink-faint">
-              Optionally target specific departments, locations, or roles. Leave blank to use the selected audience.
+              Optionally target specific departments, locations, or roles. Leave
+              blank to use the selected audience.
             </p>
           </div>
 
-          <TextField
-            label="Departments"
-            placeholder="e.g. Engineering, HR, Finance"
-=======
-      <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
-        <TextField
-          label="Title"
-          required
-          error={errors.title?.message}
-          {...register("title", {
-            required: "Title is required",
-          })}
-        />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <MultiSelectCategory
+              label="Departments"
+              placeholder="Select departments"
+              options={DEPARTMENT_OPTIONS}
+              value={csvToArray(watch("departments"))}
+              onChange={(values) =>
+                setValue("departments", arrayToCsv(values), {
+                  shouldDirty: true,
+                })
+              }
+            />
 
-        <TextareaField
-          label="Message"
-          required
-          error={errors.body?.message}
-          {...register("body", {
-            required: "Message is required",
-          })}
-        />
+            <MultiSelectCategory
+              label="Locations"
+              placeholder="Select locations"
+              options={LOCATION_OPTIONS}
+              value={csvToArray(watch("locations"))}
+              onChange={(values) =>
+                setValue("locations", arrayToCsv(values), {
+                  shouldDirty: true,
+                })
+              }
+            />
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block text-[13px] text-ink-soft">
-            <span className="mb-1.5 block font-medium">Announcement type</span>
-
-            <select
-              {...register("type")}
-              className="w-full rounded-xl border border-ink/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-400"
-            >
-              {TYPE_OPTIONS.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block text-[13px] text-ink-soft">
-            <span className="mb-1.5 block font-medium">Audience</span>
-
-            <select
-              {...register("audience")}
-              className="w-full rounded-xl border border-ink/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-400"
-            >
-              {AUDIENCE_OPTIONS.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-3">
-          <TextField
-            label="Departments"
-            placeholder="HR, Finance"
->>>>>>> f8f0289 (Added feature to check performance of the employees)
-            {...register("departments")}
-          />
-
-          <TextField
-            label="Locations"
-<<<<<<< HEAD
-            placeholder="e.g. Hyderabad, Bengaluru, Pune"
-=======
-            placeholder="Hyderabad, Pune"
->>>>>>> f8f0289 (Added feature to check performance of the employees)
-            {...register("locations")}
-          />
-
-          <TextField
-<<<<<<< HEAD
-            label="Target Roles"
-            placeholder="e.g. MANAGER, RECRUITER, EMPLOYEE"
-            {...register("targetRoles")}
-          />
-
-          <p className="text-xs text-ink-faint">
-            Separate multiple values with commas.
-          </p>
+            <MultiSelectCategory
+              label="Target Roles"
+              placeholder="Select roles"
+              options={ROLE_OPTIONS}
+              value={csvToArray(watch("targetRoles"))}
+              onChange={(values) =>
+                setValue("targetRoles", arrayToCsv(values), {
+                  shouldDirty: true,
+                })
+              }
+            />
+          </div>
         </div>
 
         <div>
@@ -1568,10 +1357,26 @@ function CreateModal({
 
           <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-3">
             {[
-              ["IN_APP", "In-App Notification", "Instant alert inside the HRMS."],
-              ["EMAIL", "Email Broadcast", "Send to employee registered email."],
-              ["BANNER", "Dashboard Banner", "Show prominently on the employee dashboard."],
-              ["CALENDAR", "Calendar", "Add meeting/event details to the employee calendar."],
+              [
+                "IN_APP",
+                "In-App Notification",
+                "Instant alert inside the HRMS.",
+              ],
+              [
+                "EMAIL",
+                "Email Broadcast",
+                "Send to employee registered email.",
+              ],
+              [
+                "BANNER",
+                "Dashboard Banner",
+                "Show prominently on the employee dashboard.",
+              ],
+              [
+                "CALENDAR",
+                "Calendar",
+                "Add meeting/event details to the employee calendar.",
+              ],
             ].map(([value, label, description]) => (
               <label
                 key={value}
@@ -1585,13 +1390,9 @@ function CreateModal({
                 />
 
                 <span>
-                  <span className="font-medium text-ink">
-                    {label}
-                  </span>
+                  <span className="font-medium text-ink">{label}</span>
 
-                  <span className="ml-1 text-ink-faint">
-                    {description}
-                  </span>
+                  <span className="ml-1 text-ink-faint">{description}</span>
                 </span>
               </label>
             ))}
@@ -1605,9 +1406,7 @@ function CreateModal({
         {watch("notificationMethods")?.includes("CALENDAR") && (
           <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
             <div>
-              <p className="text-[13px] font-medium text-ink">
-                Calendar event
-              </p>
+              <p className="text-[13px] font-medium text-ink">Calendar event</p>
               <p className="mt-0.5 text-xs text-ink-faint">
                 Add meeting or company-event details to the employee calendar.
               </p>
@@ -1617,130 +1416,25 @@ function CreateModal({
               <TextField
                 label="Event Start"
                 type="datetime-local"
-=======
-            label="Target roles"
-            placeholder="MANAGER, EMPLOYEE"
-            {...register("targetRoles")}
-          />
-        </div>
-
-        <div>
-          <p className="mb-2 text-[13px] font-medium text-ink-soft">
-            Delivery channels
-          </p>
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="flex items-center gap-2 rounded-xl border border-ink/10 p-3 text-[13px] text-ink-soft">
-              <input
-                type="checkbox"
-                {...register("inApp")}
-                className="rounded accent-brand-500"
-              />
-              <Smartphone size={15} />
-              In-app notification
-            </label>
-
-            <label className="flex items-center gap-2 rounded-xl border border-ink/10 p-3 text-[13px] text-ink-soft">
-              <input
-                type="checkbox"
-                {...register("email")}
-                className="rounded accent-brand-500"
-              />
-              <Mail size={15} />
-              Email
-            </label>
-
-            <label className="flex items-center gap-2 rounded-xl border border-ink/10 p-3 text-[13px] text-ink-soft">
-              <input
-                type="checkbox"
-                {...register("banner")}
-                className="rounded accent-brand-500"
-              />
-              <Megaphone size={15} />
-              Dashboard banner
-            </label>
-
-            <label className="flex items-center gap-2 rounded-xl border border-ink/10 p-3 text-[13px] text-ink-soft">
-              <input
-                type="checkbox"
-                {...register("calendar")}
-                className="rounded accent-brand-500"
-              />
-              <CalendarDays size={15} />
-              Calendar event
-            </label>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-[13px] text-ink-soft">
-            <input
-              type="checkbox"
-              {...register("pinned")}
-              className="rounded accent-brand-500"
-            />
-            <Pin size={14} />
-            Pin to top
-          </label>
-
-          <label className="flex items-center gap-2 text-[13px] text-ink-soft">
-            <input
-              type="checkbox"
-              {...register("requiresAcknowledgement")}
-              className="rounded accent-brand-500"
-            />
-            Require acknowledgement
-          </label>
-        </div>
-
-        <TextField
-          label="Schedule for later"
-          type="datetime-local"
-          {...register("scheduledAt")}
-        />
-
-        {calendarEnabled && (
-          <div className="space-y-4 rounded-2xl border border-ink/10 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-ink">
-              <CalendarDays size={16} />
-              Calendar event details
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                label="Event starts"
-                type="datetime-local"
-                required
->>>>>>> f8f0289 (Added feature to check performance of the employees)
+                min={localDateTimeValue()}
                 {...register("eventStartAt")}
               />
 
               <TextField
-<<<<<<< HEAD
                 label="Event End"
                 type="datetime-local"
-=======
-                label="Event ends"
-                type="datetime-local"
-                required
->>>>>>> f8f0289 (Added feature to check performance of the employees)
+                min={watch("eventStartAt") || localDateTimeValue()}
                 {...register("eventEndAt")}
               />
             </div>
 
             <TextField
-<<<<<<< HEAD
               label="Event Location"
               placeholder="Conference room, office, or meeting link"
-=======
-              label="Event location"
-              placeholder="Meeting room / online"
->>>>>>> f8f0289 (Added feature to check performance of the employees)
               {...register("eventLocation")}
             />
           </div>
         )}
-<<<<<<< HEAD
 
         {watch("type") === "POLICY_UPDATE" && (
           <div>
@@ -1779,9 +1473,7 @@ function CreateModal({
               />
 
               <span>
-                <span className="font-medium text-ink">
-                  Publish Now
-                </span>
+                <span className="font-medium text-ink">Publish Now</span>
 
                 <span className="ml-1 text-ink-faint">
                   Publish the announcement immediately.
@@ -1798,9 +1490,7 @@ function CreateModal({
               />
 
               <span>
-                <span className="font-medium text-ink">
-                  Schedule for Later
-                </span>
+                <span className="font-medium text-ink">Schedule for Later</span>
 
                 <span className="ml-1 text-ink-faint">
                   Publish automatically at the selected time.
@@ -1810,23 +1500,30 @@ function CreateModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <TextField
-            label="Publish Date"
-            type="date"
-            {...register("scheduledDate")}
-          />
+        {watch("publishMode") === "SCHEDULED" && (
+          <div className="grid grid-cols-1 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 sm:grid-cols-2">
+            <TextField
+              label="Publish Date"
+              type="date"
+              min={todayLocalDate()}
+              {...register("scheduledDate")}
+            />
 
-          <TextField
-            label="Publish Time"
-            type="time"
-            {...register("scheduledTime")}
-          />
-        </div>
+            <TextField
+              label="Publish Time"
+              type="time"
+              min={scheduledTimeMin(watch("scheduledDate"))}
+              {...register("scheduledTime")}
+            />
 
-        <AttachmentField
-          register={register}
-        />
+            <p className="sm:col-span-2 text-xs text-ink-faint">
+              Past dates are disabled. Scheduled publishing must be in the
+              future.
+            </p>
+          </div>
+        )}
+
+        <AttachmentField register={register} />
 
         <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-[13px] text-ink-soft">
           <input
@@ -1836,9 +1533,7 @@ function CreateModal({
           />
 
           <span>
-            <span className="font-medium text-ink">
-              Pin to top
-            </span>
+            <span className="font-medium text-ink">Pin to top</span>
 
             <span className="ml-1 text-ink-faint">
               Keep this announcement highlighted.
@@ -1846,44 +1541,7 @@ function CreateModal({
           </span>
         </label>
       </form>
-=======
-      </div>
->>>>>>> f8f0289 (Added feature to check performance of the employees)
     </Modal>
-  );
-}
-
-function formatRoleLabel(value: unknown) {
-  if (value === undefined || value === null || value === "") {
-    return "—";
-  }
-
-  const normalized = String(value)
-    .trim()
-    .toUpperCase();
-
-  const labels: Record<string, string> = {
-    SUPER_ADMIN: "Super Admin",
-    SUPERADMIN: "Super Admin",
-    HR_ADMIN: "HR Admin",
-    HR: "HR Admin",
-    FINANCE: "Finance",
-    MANAGER: "Manager",
-    RECRUITER: "Recruiter",
-    IT_SUPPORT: "IT Support",
-    IT: "IT Support",
-    EMPLOYEE: "Employee",
-  };
-
-  return (
-    labels[normalized] ??
-    String(value)
-      .trim()
-      .replace(/_/g, " ")
-      .replace(/\s+/g, " ")
-      .replace(/\b\w/g, (character) =>
-        character.toUpperCase(),
-      )
   );
 }
 
@@ -1904,10 +1562,7 @@ function ReadReceiptsModal({
   isLoading: boolean;
   onClose: () => void;
 }) {
-  const getValue = (
-    entry: AnnouncementStatusEntryLocal,
-    keys: string[],
-  ) => {
+  const getValue = (entry: AnnouncementStatusEntryLocal, keys: string[]) => {
     const record = entry as unknown as Record<string, unknown>;
 
     for (const key of keys) {
@@ -1922,20 +1577,14 @@ function ReadReceiptsModal({
   };
 
   const readCount = status.filter((entry) => {
-    const value = getValue(entry, [
-      "isRead",
-      "read",
-      "hasRead",
-    ]);
+    const value = getValue(entry, ["isRead", "read", "hasRead"]);
 
     return value === true || value === "true";
   }).length;
 
   const totalCount = status.length;
   const readPercentage =
-    totalCount > 0
-      ? Math.round((readCount / totalCount) * 100)
-      : 0;
+    totalCount > 0 ? Math.round((readCount / totalCount) * 100) : 0;
 
   const acknowledgementCount = status.filter((entry) => {
     const record = entry as unknown as Record<string, unknown>;
@@ -1960,10 +1609,7 @@ function ReadReceiptsModal({
       subtitle={`Track who has read "${announcement.title}".`}
       size="lg"
       footer={
-        <Button
-          variant="outline"
-          onClick={onClose}
-        >
+        <Button variant="outline" onClick={onClose}>
           Close
         </Button>
       }
@@ -1974,33 +1620,27 @@ function ReadReceiptsModal({
         </div>
       ) : (
         <div className="space-y-5">
-          <div className={
-            requiresAcknowledgement
-              ? "grid grid-cols-2 gap-3 sm:grid-cols-4"
-              : "grid grid-cols-3 gap-3"
-          }>
+          <div
+            className={
+              requiresAcknowledgement
+                ? "grid grid-cols-2 gap-3 sm:grid-cols-4"
+                : "grid grid-cols-3 gap-3"
+            }
+          >
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-              <p className="text-xs text-ink-faint">
-                Total recipients
-              </p>
+              <p className="text-xs text-ink-faint">Total recipients</p>
               <p className="mt-1 text-xl font-semibold text-ink">
                 {totalCount}
               </p>
             </div>
 
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-              <p className="text-xs text-ink-faint">
-                Read
-              </p>
-              <p className="mt-1 text-xl font-semibold text-ink">
-                {readCount}
-              </p>
+              <p className="text-xs text-ink-faint">Read</p>
+              <p className="mt-1 text-xl font-semibold text-ink">{readCount}</p>
             </div>
 
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-              <p className="text-xs text-ink-faint">
-                Read rate
-              </p>
+              <p className="text-xs text-ink-faint">Read rate</p>
               <p className="mt-1 text-xl font-semibold text-ink">
                 {readPercentage}%
               </p>
@@ -2008,9 +1648,7 @@ function ReadReceiptsModal({
 
             {requiresAcknowledgement && (
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                <p className="text-xs text-ink-faint">
-                  Acknowledged
-                </p>
+                <p className="text-xs text-ink-faint">Acknowledged</p>
                 <p className="mt-1 text-xl font-semibold text-ink">
                   {acknowledgementCount}
                 </p>
@@ -2027,25 +1665,13 @@ function ReadReceiptsModal({
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead className="bg-gray-50 text-xs text-ink-faint">
                   <tr>
-                    <th className="px-4 py-3 font-medium">
-                      Employee
-                    </th>
-                    <th className="px-4 py-3 font-medium">
-                      Department
-                    </th>
-                    <th className="px-4 py-3 font-medium">
-                      Role
-                    </th>
-                    <th className="px-4 py-3 font-medium">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 font-medium">
-                      Read At
-                    </th>
+                    <th className="px-4 py-3 font-medium">Employee</th>
+                    <th className="px-4 py-3 font-medium">Department</th>
+                    <th className="px-4 py-3 font-medium">Role</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Read At</th>
                     {requiresAcknowledgement && (
-                      <th className="px-4 py-3 font-medium">
-                        Acknowledgement
-                      </th>
+                      <th className="px-4 py-3 font-medium">Acknowledgement</th>
                     )}
                   </tr>
                 </thead>
@@ -2058,21 +1684,14 @@ function ReadReceiptsModal({
                       "employeeFullName",
                     ]);
 
-                    const email = getValue(entry, [
-                      "employeeEmail",
-                      "email",
-                    ]);
+                    const email = getValue(entry, ["employeeEmail", "email"]);
 
                     const department = getValue(entry, [
                       "departmentName",
                       "department",
                     ]);
 
-                    const role = getValue(entry, [
-                      "role",
-                      "employeeRole",
-                      "userRole",
-                    ]);
+                    const role = getValue(entry, ["role", "employeeRole"]);
 
                     const isReadValue = getValue(entry, [
                       "isRead",
@@ -2081,20 +1700,15 @@ function ReadReceiptsModal({
                     ]);
 
                     const isRead =
-                      isReadValue === true ||
-                      isReadValue === "true";
+                      isReadValue === true || isReadValue === "true";
 
-                    const readAt = getValue(entry, [
-                      "readAt",
-                      "read_at",
+                    const readAt = getValue(entry, ["readAt", "read_at"]);
+
+                    const acknowledgementValue = getValue(entry, [
+                      "acknowledged",
+                      "isAcknowledged",
+                      "hasAcknowledged",
                     ]);
-
-                    const acknowledgementValue =
-                      getValue(entry, [
-                        "acknowledged",
-                        "isAcknowledged",
-                        "hasAcknowledged",
-                      ]);
 
                     const isAcknowledged =
                       acknowledgementValue === true ||
@@ -2104,9 +1718,7 @@ function ReadReceiptsModal({
                       <tr key={`${String(name ?? email ?? "entry")}-${index}`}>
                         <td className="px-4 py-3">
                           <div className="font-medium text-ink">
-                            {String(
-                              name ?? "Employee",
-                            )}
+                            {String(name ?? "Employee")}
                           </div>
 
                           {email && (
@@ -2117,35 +1729,25 @@ function ReadReceiptsModal({
                         </td>
 
                         <td className="px-4 py-3 text-ink-soft">
-                          {String(
-                            department ?? "—",
-                          )}
+                          {String(department ?? "—")}
                         </td>
 
                         <td className="px-4 py-3 text-ink-soft">
-                          {formatRoleLabel(role)}
+                          {String(role ?? "—")}
                         </td>
 
                         <td className="px-4 py-3">
                           <Badge
                             className={
-                              isRead
-                                ? "text-emerald-600"
-                                : "text-ink-faint"
+                              isRead ? "text-emerald-600" : "text-ink-faint"
                             }
                           >
-                            {isRead
-                              ? "Read"
-                              : "Unread"}
+                            {isRead ? "Read" : "Unread"}
                           </Badge>
                         </td>
 
                         <td className="px-4 py-3 text-ink-faint">
-                          {readAt
-                            ? formatDate(
-                                String(readAt),
-                              )
-                            : "—"}
+                          {readAt ? formatDate(String(readAt)) : "—"}
                         </td>
 
                         {requiresAcknowledgement && (
@@ -2157,9 +1759,7 @@ function ReadReceiptsModal({
                                   : "text-ink-faint"
                               }
                             >
-                              {isAcknowledged
-                                ? "Acknowledged"
-                                : "Pending"}
+                              {isAcknowledged ? "Acknowledged" : "Pending"}
                             </Badge>
                           </td>
                         )}
@@ -2196,6 +1796,8 @@ function EditModal({
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<AnnouncementForm>();
 
@@ -2213,14 +1815,10 @@ function EditModal({
       locations: announcement.locations?.join(", ") ?? "",
       targetRoles: announcement.targetRoles?.join(", ") ?? "",
       pinned: Boolean(announcement.pinned),
-      notificationMethods:
-        announcement.channels?.length
-          ? announcement.channels
-          : ["IN_APP"],
-      publishMode:
-        announcement.status === "SCHEDULED"
-          ? "SCHEDULED"
-          : "NOW",
+      notificationMethods: announcement.channels?.length
+        ? announcement.channels
+        : ["IN_APP"],
+      publishMode: announcement.status === "SCHEDULED" ? "SCHEDULED" : "NOW",
       scheduledDate: announcement.scheduledAt
         ? new Date(announcement.scheduledAt).toISOString().slice(0, 10)
         : "",
@@ -2266,10 +1864,7 @@ function EditModal({
     formData.append("departments", JSON.stringify(departments));
     formData.append("locations", JSON.stringify(locations));
     formData.append("targetRoles", JSON.stringify(targetRoles));
-    formData.append(
-      "pinned",
-      String(data.pinned ?? false),
-    );
+    formData.append("pinned", String(data.pinned ?? false));
 
     const channels = Array.from(
       new Set((data.notificationMethods ?? []).filter(Boolean)),
@@ -2302,7 +1897,10 @@ function EditModal({
         `${data.scheduledDate}T${data.scheduledTime}`,
       );
 
-      if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
+      if (
+        Number.isNaN(scheduledAt.getTime()) ||
+        scheduledAt.getTime() <= Date.now()
+      ) {
         throw new Error("Scheduled publish time must be in the future.");
       }
 
@@ -2313,26 +1911,40 @@ function EditModal({
     }
 
     if (data.eventStartAt) {
-      formData.append(
-        "eventStartAt",
-        new Date(data.eventStartAt).toISOString(),
-      );
-    }
+      const eventStart = new Date(data.eventStartAt);
+      if (Number.isNaN(eventStart.getTime())) {
+        throw new Error(
+          "Please enter a valid calendar event start date and time.",
+        );
+      }
+      if (eventStart.getTime() < Date.now()) {
+        throw new Error(
+          "Calendar event start must be today or a future date/time.",
+        );
+      }
+      formData.append("eventStartAt", eventStart.toISOString());
 
-    if (data.eventEndAt) {
-      formData.append(
-        "eventEndAt",
-        new Date(data.eventEndAt).toISOString(),
-      );
+      if (data.eventEndAt) {
+        const eventEnd = new Date(data.eventEndAt);
+        if (Number.isNaN(eventEnd.getTime())) {
+          throw new Error(
+            "Please enter a valid calendar event end date and time.",
+          );
+        }
+        if (eventEnd.getTime() < eventStart.getTime()) {
+          throw new Error(
+            "Calendar event end time must be after the start time.",
+          );
+        }
+        formData.append("eventEndAt", eventEnd.toISOString());
+      }
     }
 
     if (data.eventLocation?.trim()) {
       formData.append("eventLocation", data.eventLocation.trim());
     }
 
-    const files = data.attachment as
-      | FileList
-      | undefined;
+    const files = data.attachment as FileList | undefined;
 
     if (files && files.length > 0) {
       formData.append("attachment", files[0]);
@@ -2347,7 +1959,7 @@ function EditModal({
       onClose={onClose}
       title="Edit announcement"
       subtitle="Update the announcement details."
-      size="md"
+      size="lg"
       footer={
         <>
           <Button
@@ -2371,7 +1983,7 @@ function EditModal({
     >
       <form
         id="edit-announcement-form"
-        className="space-y-5"
+        className="max-h-[calc(100vh-220px)] space-y-5 overflow-y-auto pr-1 sm:pr-2"
         onSubmit={handleSubmit(submit)}
       >
         <TextField
@@ -2383,13 +1995,11 @@ function EditModal({
             required: "Title is required",
             minLength: {
               value: 3,
-              message:
-                "Title must contain at least 3 characters",
+              message: "Title must contain at least 3 characters",
             },
             maxLength: {
               value: 200,
-              message:
-                "Title cannot exceed 200 characters",
+              message: "Title cannot exceed 200 characters",
             },
           })}
         />
@@ -2397,34 +2007,24 @@ function EditModal({
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-ink">
             Announcement Type
-            <span className="ml-1 text-red-500">
-              *
-            </span>
+            <span className="ml-1 text-red-500">*</span>
           </label>
 
           <select
             {...register("type", {
-              required:
-                "Announcement type is required",
+              required: "Announcement type is required",
             })}
             className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           >
-            {ANNOUNCEMENT_TYPE_OPTIONS.map(
-              (option) => (
-                <option
-                  key={option.value}
-                  value={option.value}
-                >
-                  {option.label}
-                </option>
-              ),
-            )}
+            {ANNOUNCEMENT_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
 
           {errors.type?.message && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.type.message}
-            </p>
+            <p className="mt-1 text-xs text-red-500">{errors.type.message}</p>
           )}
         </div>
 
@@ -2437,13 +2037,11 @@ function EditModal({
             required: "Message is required",
             minLength: {
               value: 5,
-              message:
-                "Message must contain at least 5 characters",
+              message: "Message must contain at least 5 characters",
             },
             maxLength: {
               value: 10000,
-              message:
-                "Message cannot exceed 10000 characters",
+              message: "Message cannot exceed 10000 characters",
             },
           })}
         />
@@ -2451,28 +2049,20 @@ function EditModal({
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-ink">
             Audience
-            <span className="ml-1 text-red-500">
-              *
-            </span>
+            <span className="ml-1 text-red-500">*</span>
           </label>
 
           <select
             {...register("audience", {
-              required:
-                "Audience is required",
+              required: "Audience is required",
             })}
             className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           >
-            {AUDIENCE_OPTIONS.map(
-              (option) => (
-                <option
-                  key={option.value}
-                  value={option.value}
-                >
-                  {option.label}
-                </option>
-              ),
-            )}
+            {AUDIENCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
 
           {errors.audience?.message && (
@@ -2482,32 +2072,164 @@ function EditModal({
           )}
         </div>
 
-        <AttachmentField
-          register={register}
-        />
+        <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
+          <div>
+            <p className="text-[13px] font-medium text-ink">Targeting</p>
+            <p className="mt-0.5 text-xs text-ink-faint">
+              Select optional categories to restrict recipients. Leave all three
+              blank to use the selected audience only.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <MultiSelectCategory
+              label="Departments"
+              placeholder="Select departments"
+              options={DEPARTMENT_OPTIONS}
+              value={csvToArray(watch("departments"))}
+              onChange={(values) =>
+                setValue("departments", arrayToCsv(values), {
+                  shouldDirty: true,
+                })
+              }
+            />
+
+            <MultiSelectCategory
+              label="Locations"
+              placeholder="Select locations"
+              options={LOCATION_OPTIONS}
+              value={csvToArray(watch("locations"))}
+              onChange={(values) =>
+                setValue("locations", arrayToCsv(values), {
+                  shouldDirty: true,
+                })
+              }
+            />
+
+            <MultiSelectCategory
+              label="Target Roles"
+              placeholder="Select roles"
+              options={ROLE_OPTIONS}
+              value={csvToArray(watch("targetRoles"))}
+              onChange={(values) =>
+                setValue("targetRoles", arrayToCsv(values), {
+                  shouldDirty: true,
+                })
+              }
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-ink">
+            Notification Method
+          </label>
+          <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-3">
+            {[
+              [
+                "IN_APP",
+                "In-App Notification",
+                "Instant alert inside the HRMS.",
+              ],
+              [
+                "EMAIL",
+                "Email Broadcast",
+                "Send to employee registered email.",
+              ],
+              [
+                "BANNER",
+                "Dashboard Banner",
+                "Show prominently on the employee dashboard.",
+              ],
+              [
+                "CALENDAR",
+                "Calendar",
+                "Add meeting/event details to the employee calendar.",
+              ],
+            ].map(([value, label, description]) => (
+              <label
+                key={value}
+                className="flex cursor-pointer items-center gap-3 text-[13px] text-ink-soft"
+              >
+                <input
+                  type="checkbox"
+                  value={value}
+                  {...register("notificationMethods")}
+                  className="rounded accent-brand-500"
+                />
+                <span>
+                  <span className="font-medium text-ink">{label}</span>
+                  <span className="ml-1 text-ink-faint">{description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {watch("notificationMethods")?.includes("CALENDAR") && (
+          <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
+            <div>
+              <p className="text-[13px] font-medium text-ink">Calendar event</p>
+              <p className="mt-0.5 text-xs text-ink-faint">
+                Event date and time will be shown on the announcement.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextField
+                label="Event Start"
+                type="datetime-local"
+                min={localDateTimeValue()}
+                {...register("eventStartAt")}
+              />
+              <TextField
+                label="Event End"
+                type="datetime-local"
+                min={watch("eventStartAt") || localDateTimeValue()}
+                {...register("eventEndAt")}
+              />
+            </div>
+            <TextField
+              label="Event Location"
+              placeholder="Conference room, office, or meeting link"
+              {...register("eventLocation")}
+            />
+          </div>
+        )}
+
+        {watch("publishMode") === "SCHEDULED" && (
+          <div className="grid grid-cols-1 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 sm:grid-cols-2">
+            <TextField
+              label="Publish Date"
+              type="date"
+              min={todayLocalDate()}
+              {...register("scheduledDate")}
+            />
+            <TextField
+              label="Publish Time"
+              type="time"
+              min={scheduledTimeMin(watch("scheduledDate"))}
+              {...register("scheduledTime")}
+            />
+          </div>
+        )}
+
+        <AttachmentField register={register} />
 
         {announcement.attachment && (
           <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-            <p className="text-xs text-ink-faint">
-              Current attachment
-            </p>
+            <p className="text-xs text-ink-faint">Current attachment</p>
 
             <a
-              href={getAttachmentUrl(
-                announcement.attachment,
-              )}
+              href={getAttachmentUrl(announcement.attachment)}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-1 inline-flex items-center gap-2 text-sm font-medium text-brand-600 hover:underline"
             >
-              {isImageAttachment(
-                announcement.attachment,
-              ) ? (
+              {isImageAttachment(announcement.attachment) ? (
                 <ImageIcon size={15} />
               ) : (
                 <FileText size={15} />
               )}
-
               View current attachment
             </a>
           </div>
@@ -2521,9 +2243,7 @@ function EditModal({
           />
 
           <span>
-            <span className="font-medium text-ink">
-              Pin to top
-            </span>
+            <span className="font-medium text-ink">Pin to top</span>
 
             <span className="ml-1 text-ink-faint">
               Keep this announcement highlighted.
@@ -2542,25 +2262,19 @@ function EditModal({
 function AttachmentField({
   register,
 }: {
-  register: ReturnType<
-    typeof useForm<AnnouncementForm>
-  >["register"];
+  register: ReturnType<typeof useForm<AnnouncementForm>>["register"];
 }) {
   return (
     <div>
       <label className="mb-1.5 block text-[13px] font-medium text-ink">
         Attachment{" "}
-        <span className="font-normal text-ink-faint">
-          (Optional)
-        </span>
+        <span className="font-normal text-ink-faint">(Optional)</span>
       </label>
 
       <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-ink-soft transition hover:border-brand-400 hover:bg-brand-50">
         <Paperclip size={16} />
 
-        <span>
-          Choose PDF, Word document, or image
-        </span>
+        <span>Choose PDF, Word document, or image</span>
 
         <input
           type="file"

@@ -508,12 +508,7 @@ export const NotificationsApi = {
 
   markAllRead: () => api.post("/notifications/read-all"),
 
-  /*
-   * Backward-compatible announcement methods.
-   *
-   * Existing screens can continue using these while they are migrated
-   * to the dedicated AnnouncementsApi below.
-   */
+  // Backward-compatible announcement methods.
   announcements: () =>
     api
       .get<{ announcements: Announcement[] }>("/notifications/announcements")
@@ -527,89 +522,40 @@ export const NotificationsApi = {
       .then((r) => r.data.announcement),
 };
 
-<<<<<<< HEAD
-export const AnnouncementsApi = {
-  list: () =>
-    api
-      .get<{ announcements: Announcement[] }>(
-        "/announcements",
-      )
-=======
 // --- Dedicated Announcements -------------------------------------------------------
 export const AnnouncementsApi = {
   list: () =>
     api
-      .get<{
-        announcements: Announcement[];
-      }>("/announcements")
->>>>>>> f8f0289 (Added feature to check performance of the employees)
+      .get<{ announcements: Announcement[] }>("/announcements")
       .then((r) => r.data.announcements),
 
   get: (id: string) =>
     api
-<<<<<<< HEAD
-      .get<{ announcement: Announcement }>(
-        `/announcements/${id}`,
-      )
+      .get<{ announcement: Announcement }>(`/announcements/${id}`)
       .then((r) => r.data.announcement),
 
-  create: (payload: FormData) =>
+  create: (payload: FormData | Record<string, unknown>) =>
     api
-      .post<{ announcement: Announcement }>(
-        "/announcements",
-        payload,
-      )
+      .post<{ announcement: Announcement }>("/announcements", payload)
       .then((r) => r.data.announcement),
 
-  update: (
-    id: string,
-    payload: FormData | Record<string, unknown>,
-  ) =>
+  update: (id: string, payload: FormData | Record<string, unknown>) =>
     api
-      .patch<{ announcement: Announcement }>(
-        `/announcements/${id}`,
-        payload,
-      )
-      .then((r) => r.data.announcement),
-
-  delete: (id: string) =>
-    api.delete(`/announcements/${id}`),
-
-  markRead: (id: string) =>
-    api.post(`/announcements/${id}/read`),
-
-  acknowledge: (id: string) =>
-    api.post(`/announcements/${id}/acknowledge`),
-
-  status: (id: string) =>
-    api
-      .get<{ status: AnnouncementStatusEntry[] }>(
-        `/announcements/${id}/status`,
-      )
-      .then((r) => r.data.status),
-=======
-      .get<{
-        announcement: Announcement;
-      }>(`/announcements/${id}`)
-      .then((r) => r.data.announcement),
-
-  create: (payload: Record<string, unknown>) =>
-    api
-      .post<{
-        announcement: Announcement;
-      }>("/announcements", payload)
-      .then((r) => r.data.announcement),
-
-  update: (id: string, payload: Record<string, unknown>) =>
-    api
-      .patch<{
-        announcement: Announcement;
-      }>(`/announcements/${id}`, payload)
+      .patch<{ announcement: Announcement }>(`/announcements/${id}`, payload)
       .then((r) => r.data.announcement),
 
   delete: (id: string) => api.delete(`/announcements/${id}`),
 
   markRead: (id: string) => api.post(`/announcements/${id}/read`),
+
+  acknowledge: (id: string) => api.post(`/announcements/${id}/acknowledge`),
+
+  status: (id: string) =>
+    api
+      .get<{
+        status: AnnouncementStatusEntry[];
+      }>(`/announcements/${id}/status`)
+      .then((r) => r.data.status),
 
   receipt: (id: string) =>
     api
@@ -622,9 +568,6 @@ export const AnnouncementsApi = {
         };
       }>(`/announcements/${id}/receipt`)
       .then((r) => r.data.receipt),
-
-  acknowledge: (id: string) => api.post(`/announcements/${id}/acknowledge`),
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 };
 
 // --- Documents & Assets -------------------------------------------------------------
