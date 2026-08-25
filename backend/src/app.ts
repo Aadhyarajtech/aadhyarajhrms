@@ -27,7 +27,7 @@ import { recruitmentRouter } from "@/modules/recruitment/recruitment.routes";
 import { performanceRouter } from "@/modules/performance/performance.routes";
 import { payrollRouter } from "@/modules/payroll/payroll.routes";
 import { notificationsRouter } from "@/modules/notifications/notifications.routes";
-import { announcementRouter } from "@/modules/announcements/announcement.routes";
+
 import { documentsRouter } from "@/modules/documents/documents.routes";
 import { dashboardRouter } from "@/modules/dashboard/dashboard.routes";
 
@@ -230,11 +230,6 @@ export function createApp() {
   // =======================================================
 
   app.use("/api/dashboard", dashboardRouter);
-
-  app.use(
-    "/api/announcements",
-    announcementRouter,
-  );
 
   // =======================================================
   // 404 HANDLER

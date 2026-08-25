@@ -354,7 +354,7 @@ export interface UpdateEmployeeInput {
 }
 
 export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
-  const current = await Employee.findById(id).lean();
+  const current = await Employee.findById(id).lean<any>();
   if (!current) return undefined;
 
   const merged = { ...current, ...input };

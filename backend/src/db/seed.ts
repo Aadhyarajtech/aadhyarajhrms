@@ -24,12 +24,13 @@ import {
   SalaryStructure,
   PayrollRun,
   Payslip,
-  Announcement,
   Notification,
   DocumentRecord,
   Asset,
   AuditLog,
 } from "./models";
+
+import { Announcement } from "../modules/announcements/announcement.model";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -703,9 +704,34 @@ export async function runSeed() {
     { title: "Festival Holiday Schedule Published", body: "The festival holiday calendar for this year has been published. Check the Holidays section under Organization for the full list.", pinned: false },
   ];
   for (const a of announcements) {
+    const createdAt = addDays(
+      today,
+      -randomInt(1, 20),
+    ).toISOString();
+
     await Announcement.create({
-      _id: genId("ann"), title: a.title, body: a.body, pinned: a.pinned, audience: "ALL",
-      createdAt: addDays(today, -randomInt(1, 20)).toISOString(),
+      title: a.title,
+      body: a.body,
+      type: "GENERAL_NOTICE",
+      audience: "ALL",
+      departments: [],
+      locations: [],
+      targetRoles: [],
+      channels: ["IN_APP"],
+      showBanner: false,
+      requiresAcknowledgement: false,
+      pinned: a.pinned,
+      attachment: "",
+      createdBy: itVp.userId,
+      status: "PUBLISHED",
+      scheduledAt: "",
+      publishedAt: createdAt,
+      calendarEnabled: false,
+      eventStartAt: "",
+      eventEndAt: "",
+      eventLocation: "",
+      createdAt,
+      updatedAt: now,
     });
   }
 
@@ -768,4 +794,3 @@ runSeed().catch((err) => {
   console.error("Seed failed:", err);
   process.exit(1);
 });
-
