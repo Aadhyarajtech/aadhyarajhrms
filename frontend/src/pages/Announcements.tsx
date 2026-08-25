@@ -311,7 +311,7 @@ function scheduledTimeMin(dateValue?: string) {
   return localTimeValue();
 }
 
-function formatEventRange(start?: string, end?: string) {
+function formatEventRange(start?: string | null, end?: string | null) {
   if (!start) return "";
 
   const startDate = new Date(start);
