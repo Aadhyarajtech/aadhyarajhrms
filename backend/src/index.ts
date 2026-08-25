@@ -5,10 +5,6 @@ import { logger } from "@/utils/logger";
 import { startEmployeeLifecycleJobs } from "./jobs/employeeLifecycle.job";
 import { startAnnouncementScheduler } from "@/modules/announcements/announcement.scheduler";
 
-import {
-  startAnnouncementScheduler,
-} from "@/modules/announcements/announcement.scheduler";
-
 async function start() {
   /* -------------------------------------------------------
      DATABASE
@@ -21,12 +17,6 @@ async function start() {
   ------------------------------------------------------- */
 
   startEmployeeLifecycleJobs();
-  startAnnouncementScheduler();
-
-  /* -------------------------------------------------------
-     ANNOUNCEMENT SCHEDULER
-  ------------------------------------------------------- */
-
   startAnnouncementScheduler();
 
   /* -------------------------------------------------------
@@ -50,15 +40,9 @@ async function start() {
 }
 
 start().catch((err) => {
-  logger.error(
-    "Failed to start server",
-    {
-      message:
-        err instanceof Error
-          ? err.message
-          : String(err),
-    },
-  );
+  logger.error("Failed to start server", {
+    message: err instanceof Error ? err.message : String(err),
+  });
 
   process.exit(1);
 });

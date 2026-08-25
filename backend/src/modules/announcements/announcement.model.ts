@@ -1,16 +1,8 @@
-<<<<<<< HEAD
-import mongoose, {
-  Schema,
-  type Document,
-  type Model,
-} from "mongoose";
+import mongoose, { Schema, type Document, type Model } from "mongoose";
 
 /* =========================================================
    ANNOUNCEMENT TYPES
 ========================================================= */
-=======
-import mongoose, { Document, Model, Schema } from "mongoose";
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export const ANNOUNCEMENT_TYPES = [
   "HOLIDAY_NOTICE",
@@ -23,9 +15,7 @@ export const ANNOUNCEMENT_TYPES = [
   "GENERAL_NOTICE",
 ] as const;
 
-<<<<<<< HEAD
-export type AnnouncementType =
-  (typeof ANNOUNCEMENT_TYPES)[number];
+export type AnnouncementType = (typeof ANNOUNCEMENT_TYPES)[number];
 
 /* =========================================================
    AUDIENCE TYPES
@@ -40,9 +30,6 @@ export type AnnouncementType =
    DEPARTMENT    -> Specific departments
    TARGETED_GROUP -> Specific roles / groups
 ========================================================= */
-=======
-export type AnnouncementType = (typeof ANNOUNCEMENT_TYPES)[number];
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export const ANNOUNCEMENT_AUDIENCES = [
   "ALL",
@@ -56,16 +43,11 @@ export const ANNOUNCEMENT_AUDIENCES = [
   "TARGETED_GROUP",
 ] as const;
 
-<<<<<<< HEAD
-export type AnnouncementAudience =
-  (typeof ANNOUNCEMENT_AUDIENCES)[number];
+export type AnnouncementAudience = (typeof ANNOUNCEMENT_AUDIENCES)[number];
 
 /* =========================================================
    DELIVERY CHANNELS
 ========================================================= */
-=======
-export type AnnouncementAudience = (typeof ANNOUNCEMENT_AUDIENCES)[number];
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export const ANNOUNCEMENT_CHANNELS = [
   "IN_APP",
@@ -74,16 +56,11 @@ export const ANNOUNCEMENT_CHANNELS = [
   "CALENDAR",
 ] as const;
 
-<<<<<<< HEAD
-export type AnnouncementChannel =
-  (typeof ANNOUNCEMENT_CHANNELS)[number];
+export type AnnouncementChannel = (typeof ANNOUNCEMENT_CHANNELS)[number];
 
 /* =========================================================
    PUBLISH STATUS
 ========================================================= */
-=======
-export type AnnouncementChannel = (typeof ANNOUNCEMENT_CHANNELS)[number];
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 export const ANNOUNCEMENT_STATUSES = [
   "DRAFT",
@@ -91,9 +68,7 @@ export const ANNOUNCEMENT_STATUSES = [
   "PUBLISHED",
 ] as const;
 
-<<<<<<< HEAD
-export type AnnouncementStatus =
-  (typeof ANNOUNCEMENT_STATUSES)[number];
+export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
 
 /* =========================================================
    DOCUMENT
@@ -163,81 +138,80 @@ export interface IAnnouncement extends Document {
    SCHEMA
 ========================================================= */
 
-const announcementSchema =
-  new Schema<IAnnouncement>(
-    {
-      /* ---------------------------------------------------
+const announcementSchema = new Schema<IAnnouncement>(
+  {
+    /* ---------------------------------------------------
          BASIC INFORMATION
       --------------------------------------------------- */
 
-      title: {
-        type: String,
-        required: true,
-        trim: true,
-        maxlength: 200,
-      },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 200,
+    },
 
-      body: {
-        type: String,
-        required: true,
-        trim: true,
-        maxlength: 10000,
-      },
+    body: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 10000,
+    },
 
-      /* ---------------------------------------------------
+    /* ---------------------------------------------------
          ANNOUNCEMENT TYPE
       --------------------------------------------------- */
 
-      type: {
-        type: String,
-        required: true,
-        enum: ANNOUNCEMENT_TYPES,
-        index: true,
-      },
+    type: {
+      type: String,
+      required: true,
+      enum: ANNOUNCEMENT_TYPES,
+      index: true,
+    },
 
-      /* ---------------------------------------------------
+    /* ---------------------------------------------------
          AUDIENCE
       --------------------------------------------------- */
 
-      audience: {
-        type: String,
-        required: true,
-        enum: ANNOUNCEMENT_AUDIENCES,
-        default: "ALL",
-        index: true,
-      },
+    audience: {
+      type: String,
+      required: true,
+      enum: ANNOUNCEMENT_AUDIENCES,
+      default: "ALL",
+      index: true,
+    },
 
-      /* ---------------------------------------------------
+    /* ---------------------------------------------------
          DEPARTMENT TARGETING
       --------------------------------------------------- */
 
-      departments: {
-        type: [String],
-        default: [],
-        index: true,
-      },
+    departments: {
+      type: [String],
+      default: [],
+      index: true,
+    },
 
-      /* ---------------------------------------------------
+    /* ---------------------------------------------------
          LOCATION TARGETING
       --------------------------------------------------- */
 
-      locations: {
-        type: [String],
-        default: [],
-        index: true,
-      },
+    locations: {
+      type: [String],
+      default: [],
+      index: true,
+    },
 
-      /* ---------------------------------------------------
+    /* ---------------------------------------------------
          TARGETED GROUP / ROLE
       --------------------------------------------------- */
 
-      targetRoles: {
-        type: [String],
-        default: [],
-        index: true,
-      },
+    targetRoles: {
+      type: [String],
+      default: [],
+      index: true,
+    },
 
-      /* ---------------------------------------------------
+    /* ---------------------------------------------------
          MULTI-CHANNEL DELIVERY
 
          IN_APP
@@ -246,255 +220,68 @@ const announcementSchema =
          CALENDAR
       --------------------------------------------------- */
 
-      channels: {
-        type: [String],
-        enum: ANNOUNCEMENT_CHANNELS,
-        default: ["IN_APP"],
-      },
-
-      /* ---------------------------------------------------
-         DASHBOARD BANNER
-      --------------------------------------------------- */
-
-      showBanner: {
-        type: Boolean,
-        default: false,
-      },
-
-      /* ---------------------------------------------------
-         READ RECEIPT / ACKNOWLEDGEMENT
-      --------------------------------------------------- */
-
-      requiresAcknowledgement: {
-        type: Boolean,
-        default: false,
-      },
-
-      /* ---------------------------------------------------
-         PIN
-      --------------------------------------------------- */
-
-      pinned: {
-        type: Boolean,
-        default: false,
-      },
-
-      /* ---------------------------------------------------
-         ATTACHMENT
-      --------------------------------------------------- */
-
-      attachment: {
-        type: String,
-        default: "",
-      },
-
-      /* ---------------------------------------------------
-         CREATED BY
-      --------------------------------------------------- */
-
-      createdBy: {
-        type: String,
-        required: true,
-        index: true,
-      },
-
-      /* ---------------------------------------------------
-         PUBLISHING
-      --------------------------------------------------- */
-
-      status: {
-        type: String,
-        required: true,
-        enum: ANNOUNCEMENT_STATUSES,
-        default: "DRAFT",
-        index: true,
-      },
-
-      scheduledAt: {
-        type: String,
-        default: "",
-      },
-
-      publishedAt: {
-        type: String,
-        default: "",
-      },
-
-      /* ---------------------------------------------------
-         CALENDAR / MEETING SUPPORT
-      --------------------------------------------------- */
-
-      calendarEnabled: {
-        type: Boolean,
-        default: false,
-      },
-
-      eventStartAt: {
-        type: String,
-        default: "",
-      },
-
-      eventEndAt: {
-        type: String,
-        default: "",
-      },
-
-      eventLocation: {
-        type: String,
-        default: "",
-        maxlength: 500,
-      },
-
-      /* ---------------------------------------------------
-         TIMESTAMPS
-      --------------------------------------------------- */
-
-      createdAt: {
-        type: String,
-        required: true,
-        index: true,
-      },
-
-      updatedAt: {
-        type: String,
-        required: true,
-      },
-    },
-    {
-      versionKey: false,
-    },
-  );
-
-/* =========================================================
-   INDEXES
-========================================================= */
-=======
-export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
-
-export interface IAnnouncement extends Document {
-  _id: string;
-
-  title: string;
-  body: string;
-
-  type: AnnouncementType;
-  audience: AnnouncementAudience;
-
-  departments: string[];
-  locations: string[];
-  targetRoles: string[];
-
-  channels: AnnouncementChannel[];
-
-  pinned: boolean;
-  showBanner: boolean;
-  requiresAcknowledgement: boolean;
-
-  attachment: string;
-
-  createdBy: string;
-
-  status: AnnouncementStatus;
-
-  scheduledAt: string;
-  publishedAt: string;
-
-  calendarEnabled: boolean;
-  eventStartAt: string;
-  eventEndAt: string;
-  eventLocation: string;
-
-  createdAt: string;
-  updatedAt: string;
-}
-
-const announcementSchema = new Schema<IAnnouncement>(
-  {
-    _id: {
-      type: String,
-      required: true,
-    },
-
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    body: {
-      type: String,
-      required: true,
-    },
-
-    type: {
-      type: String,
-      enum: ANNOUNCEMENT_TYPES,
-      default: "GENERAL_NOTICE",
-      required: true,
-    },
-
-    audience: {
-      type: String,
-      enum: ANNOUNCEMENT_AUDIENCES,
-      default: "ALL",
-      required: true,
-    },
-
-    departments: {
-      type: [String],
-      default: [],
-    },
-
-    locations: {
-      type: [String],
-      default: [],
-    },
-
-    targetRoles: {
-      type: [String],
-      default: [],
-    },
-
     channels: {
       type: [String],
       enum: ANNOUNCEMENT_CHANNELS,
       default: ["IN_APP"],
-      validate: {
-        validator: (value: AnnouncementChannel[]) => value.length > 0,
-        message: "At least one notification channel is required",
-      },
     },
 
-    pinned: {
-      type: Boolean,
-      default: false,
-    },
+    /* ---------------------------------------------------
+         DASHBOARD BANNER
+      --------------------------------------------------- */
 
     showBanner: {
       type: Boolean,
       default: false,
     },
 
+    /* ---------------------------------------------------
+         READ RECEIPT / ACKNOWLEDGEMENT
+      --------------------------------------------------- */
+
     requiresAcknowledgement: {
       type: Boolean,
       default: false,
     },
+
+    /* ---------------------------------------------------
+         PIN
+      --------------------------------------------------- */
+
+    pinned: {
+      type: Boolean,
+      default: false,
+    },
+
+    /* ---------------------------------------------------
+         ATTACHMENT
+      --------------------------------------------------- */
 
     attachment: {
       type: String,
       default: "",
     },
 
+    /* ---------------------------------------------------
+         CREATED BY
+      --------------------------------------------------- */
+
     createdBy: {
       type: String,
       required: true,
+      index: true,
     },
+
+    /* ---------------------------------------------------
+         PUBLISHING
+      --------------------------------------------------- */
 
     status: {
       type: String,
+      required: true,
       enum: ANNOUNCEMENT_STATUSES,
       default: "DRAFT",
-      required: true,
+      index: true,
     },
 
     scheduledAt: {
@@ -506,6 +293,10 @@ const announcementSchema = new Schema<IAnnouncement>(
       type: String,
       default: "",
     },
+
+    /* ---------------------------------------------------
+         CALENDAR / MEETING SUPPORT
+      --------------------------------------------------- */
 
     calendarEnabled: {
       type: Boolean,
@@ -525,11 +316,17 @@ const announcementSchema = new Schema<IAnnouncement>(
     eventLocation: {
       type: String,
       default: "",
+      maxlength: 500,
     },
+
+    /* ---------------------------------------------------
+         TIMESTAMPS
+      --------------------------------------------------- */
 
     createdAt: {
       type: String,
       required: true,
+      index: true,
     },
 
     updatedAt: {
@@ -539,10 +336,12 @@ const announcementSchema = new Schema<IAnnouncement>(
   },
   {
     versionKey: false,
-    timestamps: false,
   },
 );
->>>>>>> f8f0289 (Added feature to check performance of the employees)
+
+/* =========================================================
+   INDEXES
+========================================================= */
 
 announcementSchema.index({
   status: 1,
@@ -569,23 +368,12 @@ announcementSchema.index({
   targetRoles: 1,
 });
 
-<<<<<<< HEAD
 /* =========================================================
    MODEL
 ========================================================= */
 
 export const Announcement: Model<IAnnouncement> =
   mongoose.models.Announcement ||
-  mongoose.model<IAnnouncement>(
-    "Announcement",
-    announcementSchema,
-  );
-
-export default Announcement;
-=======
-export const Announcement: Model<IAnnouncement> =
-  (mongoose.models.Announcement as Model<IAnnouncement>) ||
   mongoose.model<IAnnouncement>("Announcement", announcementSchema);
 
 export default Announcement;
->>>>>>> f8f0289 (Added feature to check performance of the employees)

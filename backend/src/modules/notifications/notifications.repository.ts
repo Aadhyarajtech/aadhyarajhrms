@@ -1,21 +1,9 @@
-<<<<<<< HEAD
-import {
-  Notification,
-  Announcement,
-  User,
-  Employee,
-  Department,
-} from "@/db/models";
+import { Notification, User, Employee, Department } from "@/db/models";
 
-=======
-import { Notification } from "@/db/models";
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 import { nowIso } from "@/db/connection";
 import * as announcementRepository from "@/modules/announcements/announcement.repository";
 
-import {
-  sendAnnouncementEmail,
-} from "@/services/email.service";
+import { sendAnnouncementEmail } from "@/services/email.service";
 
 /* =========================================================
    NOTIFICATION TYPES
@@ -29,18 +17,14 @@ export type NotificationType =
   | "PERFORMANCE"
   | "RECRUITMENT"
   | "TICKET_MESSAGE"
-<<<<<<< HEAD
   | "SYSTEM"
   | "DOCUMENT_REQUESTED"
   | "DOCUMENT_UPLOADED"
   | "DOCUMENT_READY";
-  
+
 /* =========================================================
    API DOCUMENT
 ========================================================= */
-=======
-  | "SYSTEM";
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
@@ -81,10 +65,7 @@ export async function notify(input: {
    LIST NOTIFICATIONS
 ========================================================= */
 
-export async function listNotifications(
-  userId: string,
-  unreadOnly = false,
-) {
+export async function listNotifications(userId: string, unreadOnly = false) {
   const query: Record<string, any> = {
     userId,
   };
@@ -107,9 +88,7 @@ export async function listNotifications(
    UNREAD COUNT
 ========================================================= */
 
-export async function unreadCount(
-  userId: string,
-) {
+export async function unreadCount(userId: string) {
   return Notification.countDocuments({
     userId,
     isRead: false,
@@ -120,10 +99,7 @@ export async function unreadCount(
    MARK READ
 ========================================================= */
 
-export async function markRead(
-  id: string,
-  userId: string,
-) {
+export async function markRead(id: string, userId: string) {
   const result = await Notification.updateOne(
     {
       _id: id,
@@ -153,9 +129,7 @@ export async function markRead(
    MARK ALL READ
 ========================================================= */
 
-export async function markAllRead(
-  userId: string,
-) {
+export async function markAllRead(userId: string) {
   await Notification.updateMany(
     {
       userId,
@@ -168,25 +142,14 @@ export async function markAllRead(
   );
 }
 
-<<<<<<< HEAD
 /* =========================================================
    LIST ANNOUNCEMENTS
 ========================================================= */
 
-=======
-/**
- * Announcement compatibility wrappers.
- *
- * Announcement data is now owned by the dedicated announcements module.
- * These wrappers keep the existing notification routes working while
- * avoiding a second Announcement implementation.
- */
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 export async function listAnnouncements() {
-  return announcementRepository.listAnnouncements();
+  return announcementRepository.getAnnouncements();
 }
 
-<<<<<<< HEAD
 /* =========================================================
    ANNOUNCEMENT RECIPIENT RESOLUTION
 ========================================================= */
@@ -240,8 +203,7 @@ function normalizeUpper(value: unknown): string {
 }
 
 function canonicalRole(value: unknown): string {
-  const normalized = normalizeUpper(value)
-    .replace(/[-\s]+/g, "_");
+  const normalized = normalizeUpper(value).replace(/[-\s]+/g, "_");
 
   const aliases: Record<string, string> = {
     SUPERADMIN: "SUPER_ADMIN",
@@ -286,39 +248,25 @@ function getRoleAliases(role: string): string[] {
   return aliases[canonical] ?? [canonical];
 }
 
-function normalizeStringArray(
-  values?: string[],
-): string[] {
+function normalizeStringArray(values?: string[]): string[] {
   if (!Array.isArray(values)) {
     return [];
   }
 
   return Array.from(
-    new Set(
-      values
-        .map((value) =>
-          String(value ?? "").trim(),
-        )
-        .filter(Boolean),
-    ),
+    new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)),
   );
 }
 
 function escapeRegExp(value: string) {
-  return value.replace(
-    /[.*+?^${}()|[\]\\]/g,
-    "\\$&",
-  );
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /* =========================================================
    AUDIENCE ROLE MAP
 ========================================================= */
 
-const AUDIENCE_ROLE_MAP: Record<
-  string,
-  string[]
-> = {
+const AUDIENCE_ROLE_MAP: Record<string, string[]> = {
   ALL: [
     "SUPER_ADMIN",
     "HR_ADMIN",
@@ -329,70 +277,54 @@ const AUDIENCE_ROLE_MAP: Record<
     "EMPLOYEE",
   ],
 
-  HR_ADMIN: [
-    "HR_ADMIN",
-  ],
+  HR_ADMIN: ["HR_ADMIN"],
 
-  FINANCE: [
-    "FINANCE",
-  ],
+  FINANCE: ["FINANCE"],
 
-  MANAGER: [
-    "MANAGER",
-  ],
+  MANAGER: ["MANAGER"],
 
-  RECRUITER: [
-    "RECRUITER",
-  ],
+  RECRUITER: ["RECRUITER"],
 
-  IT_SUPPORT: [
-    "IT_SUPPORT",
-  ],
+  IT_SUPPORT: ["IT_SUPPORT"],
 
-  EMPLOYEE: [
-    "EMPLOYEE",
-  ],
+  EMPLOYEE: ["EMPLOYEE"],
 };
 
 /* =========================================================
    RESOLVE DEPARTMENTS
 ========================================================= */
 
-async function resolveDepartmentIds(
-  departments: string[],
-): Promise<string[]> {
+async function resolveDepartmentIds(departments: string[]): Promise<string[]> {
   if (!departments.length) {
     return [];
   }
 
-  const normalizedTargets =
-    departments.map(normalize);
+  const normalizedTargets = departments.map(normalize);
 
   /*
    * First try normal Mongo queries.
    */
-  const departmentDocs =
-    await Department.find({
-      $or: [
-        {
-          name: {
-            $in: departments,
-          },
+  const departmentDocs = await Department.find({
+    $or: [
+      {
+        name: {
+          $in: departments,
         },
-        {
-          code: {
-            $in: departments,
-          },
+      },
+      {
+        code: {
+          $in: departments,
         },
-        {
-          _id: {
-            $in: departments,
-          },
+      },
+      {
+        _id: {
+          $in: departments,
         },
-      ],
-    })
-      .select("_id name code")
-      .lean();
+      },
+    ],
+  })
+    .select("_id name code")
+    .lean();
 
   /*
    * If exact matching did not find everything,
@@ -409,14 +341,10 @@ async function resolveDepartmentIds(
    */
   let allDepartmentDocs: any[] = departmentDocs;
 
-  if (
-    departmentDocs.length <
-    departments.length
-  ) {
-    allDepartmentDocs =
-      await Department.find({})
-        .select("_id name code")
-        .lean();
+  if (departmentDocs.length < departments.length) {
+    allDepartmentDocs = await Department.find({})
+      .select("_id name code")
+      .lean();
   }
 
   const matchedIds = new Set<string>();
@@ -432,9 +360,7 @@ async function resolveDepartmentIds(
       normalizedTargets.includes(code);
 
     if (matched) {
-      matchedIds.add(
-        String(department._id),
-      );
+      matchedIds.add(String(department._id));
     }
   }
 
@@ -442,9 +368,7 @@ async function resolveDepartmentIds(
    * Also preserve exact query results.
    */
   for (const department of departmentDocs) {
-    matchedIds.add(
-      String(department._id),
-    );
+    matchedIds.add(String(department._id));
   }
 
   return Array.from(matchedIds);
@@ -454,14 +378,12 @@ async function resolveDepartmentIds(
    RESOLVE ANNOUNCEMENT USERS
 ========================================================= */
 
-async function resolveAnnouncementUsers(
-  input: {
-    audience?: string;
-    departments?: string[];
-    locations?: string[];
-    targetRoles?: string[];
-  },
-) {
+async function resolveAnnouncementUsers(input: {
+  audience?: string;
+  departments?: string[];
+  locations?: string[];
+  targetRoles?: string[];
+}) {
   const audience = normalizeUpper(input.audience ?? "ALL");
 
   const departments = normalizeStringArray(input.departments);
@@ -486,9 +408,7 @@ async function resolveAnnouncementUsers(
    *
    * Once a target role is explicitly selected, the role becomes a restriction.
    */
-  const audienceRoles =
-    AUDIENCE_ROLE_MAP[audienceKey] ??
-    AUDIENCE_ROLE_MAP.ALL;
+  const audienceRoles = AUDIENCE_ROLE_MAP[audienceKey] ?? AUDIENCE_ROLE_MAP.ALL;
 
   /*
    * Target roles further restrict the selected audience.
@@ -498,15 +418,12 @@ async function resolveAnnouncementUsers(
    * "HR", "HR_ADMIN", "Manager", "SUPERADMIN", etc. all map
    * consistently to the database role.
    */
-  const normalizedTargetRoles =
-    targetRoles.map(canonicalRole);
+  const normalizedTargetRoles = targetRoles.map(canonicalRole);
 
   const effectiveRoles =
     normalizedTargetRoles.length > 0
       ? audienceRoles.filter((role) =>
-          normalizedTargetRoles.includes(
-            canonicalRole(role),
-          ),
+          normalizedTargetRoles.includes(canonicalRole(role)),
         )
       : audienceRoles;
 
@@ -529,9 +446,7 @@ async function resolveAnnouncementUsers(
    * alternate spelling.
    */
   const roleAliases = Array.from(
-    new Set(
-      effectiveRoles.flatMap(getRoleAliases),
-    ),
+    new Set(effectiveRoles.flatMap(getRoleAliases)),
   );
 
   /*
@@ -545,8 +460,7 @@ async function resolveAnnouncementUsers(
    */
   if (!departments.length && !locations.length) {
     const hasExplicitRoleRestriction =
-      normalizedTargetRoles.length > 0 ||
-      audienceKey !== "ALL";
+      normalizedTargetRoles.length > 0 || audienceKey !== "ALL";
 
     const userQuery: Record<string, any> = {
       isActive: true,
@@ -558,9 +472,7 @@ async function resolveAnnouncementUsers(
       };
     }
 
-    const users = await User.find(userQuery)
-      .select("_id email role")
-      .lean();
+    const users = await User.find(userQuery).select("_id email role").lean();
 
     console.log(
       `[Announcements] Base audience users: ${users.length} | audience=${audienceKey} | roleFilter=${hasExplicitRoleRestriction ? roleAliases.join(",") : "ALL_ACTIVE_USERS"}`,
@@ -573,9 +485,7 @@ async function resolveAnnouncementUsers(
    * Resolve department names/codes to IDs.
    */
   const departmentIds =
-    departments.length > 0
-      ? await resolveDepartmentIds(departments)
-      : [];
+    departments.length > 0 ? await resolveDepartmentIds(departments) : [];
 
   if (departments.length > 0) {
     console.log("[Announcements] Department resolution:", {
@@ -610,29 +520,19 @@ async function resolveAnnouncementUsers(
    * while still supporting OR within each individual dimension.
    */
   const employees = await Employee.find({})
-    .select(
-      "userId departmentId city state country",
-    )
+    .select("userId departmentId city state country")
     .lean();
 
-  const normalizedDepartmentIds = new Set(
-    departmentIds.map(normalize),
-  );
+  const normalizedDepartmentIds = new Set(departmentIds.map(normalize));
 
-  const normalizedDepartmentValues = new Set(
-    departments.map(normalize),
-  );
+  const normalizedDepartmentValues = new Set(departments.map(normalize));
 
-  const normalizedLocations = new Set(
-    locations.map(normalize),
-  );
+  const normalizedLocations = new Set(locations.map(normalize));
 
   const matchesDepartment = (employee: any) => {
     if (!departments.length) return true;
 
-    const departmentValue = normalize(
-      employee.departmentId,
-    );
+    const departmentValue = normalize(employee.departmentId);
 
     return (
       normalizedDepartmentIds.has(departmentValue) ||
@@ -643,26 +543,18 @@ async function resolveAnnouncementUsers(
   const matchesLocation = (employee: any) => {
     if (!locations.length) return true;
 
-    const employeeLocations = [
-      employee.city,
-      employee.state,
-      employee.country,
-    ]
+    const employeeLocations = [employee.city, employee.state, employee.country]
       .map(normalize)
       .filter(Boolean);
 
-    return employeeLocations.some((value) =>
-      normalizedLocations.has(value),
-    );
+    return employeeLocations.some((value) => normalizedLocations.has(value));
   };
 
   /*
    * First filter employees by department/location.
    */
   const matchingEmployees = employees.filter(
-    (employee: any) =>
-      matchesDepartment(employee) &&
-      matchesLocation(employee),
+    (employee: any) => matchesDepartment(employee) && matchesLocation(employee),
   );
 
   console.log(
@@ -676,17 +568,13 @@ async function resolveAnnouncementUsers(
   const employeeUserIds = Array.from(
     new Set(
       matchingEmployees
-        .map((employee: any) =>
-          String(employee.userId ?? ""),
-        )
+        .map((employee: any) => String(employee.userId ?? ""))
         .filter(Boolean),
     ),
   );
 
   if (!employeeUserIds.length) {
-    console.log(
-      "[Announcements] Employees matched but no userIds found.",
-    );
+    console.log("[Announcements] Employees matched but no userIds found.");
     return [];
   }
 
@@ -697,8 +585,7 @@ async function resolveAnnouncementUsers(
    *   2. employee department/location match
    */
   const hasExplicitRoleRestriction =
-    normalizedTargetRoles.length > 0 ||
-    audienceKey !== "ALL";
+    normalizedTargetRoles.length > 0 || audienceKey !== "ALL";
 
   const userQuery: Record<string, any> = {
     _id: { $in: employeeUserIds },
@@ -711,9 +598,7 @@ async function resolveAnnouncementUsers(
     };
   }
 
-  const users = await User.find(userQuery)
-    .select("_id email role")
-    .lean();
+  const users = await User.find(userQuery).select("_id email role").lean();
 
   console.log(
     "[Announcements] Final recipients:",
@@ -724,37 +609,33 @@ async function resolveAnnouncementUsers(
     })),
   );
 
-  console.log(
-    "[Announcements] Recipient rule:",
-    {
-      audience: audienceKey,
-      targetRoles: normalizedTargetRoles,
-      departments,
-      locations,
-      roleRestricted: hasExplicitRoleRestriction,
-      total: users.length,
-    },
-  );
+  console.log("[Announcements] Recipient rule:", {
+    audience: audienceKey,
+    targetRoles: normalizedTargetRoles,
+    departments,
+    locations,
+    roleRestricted: hasExplicitRoleRestriction,
+    total: users.length,
+  });
 
   return users;
-=======
+}
+
 export async function createAnnouncement(input: {
   title: string;
   body: string;
-  type?: string;
-  audience?: string;
+  type: string;
+  audience: string;
   departments?: string[];
   locations?: string[];
   targetRoles?: string[];
   channels?: string[];
   showBanner?: boolean;
   requiresAcknowledgement?: boolean;
-  pinned?: boolean;
-  attachment?: string;
+  pinned: boolean;
+  attachment: string;
   createdBy: string;
-  status?: string;
   scheduledAt?: string;
-  publishedAt?: string;
   calendarEnabled?: boolean;
   eventStartAt?: string;
   eventEndAt?: string;
@@ -797,42 +678,32 @@ export async function updateAnnouncement(
 
 export async function deleteAnnouncement(id: string) {
   return announcementRepository.deleteAnnouncement(id);
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 }
 
 /* =========================================================
    IN-APP ANNOUNCEMENT NOTIFICATION
 ========================================================= */
 
-export async function broadcastAnnouncementNotification(
-  announcement: {
-    title: string;
-    body: string;
-    audience: string;
-    departments?: string[];
-    locations?: string[];
-    targetRoles?: string[];
-  },
-) {
-  const users =
-    await resolveAnnouncementUsers({
-      audience:
-        announcement.audience,
+export async function broadcastAnnouncementNotification(announcement: {
+  title: string;
+  body: string;
+  audience: string;
+  departments?: string[];
+  locations?: string[];
+  targetRoles?: string[];
+}) {
+  const users = await resolveAnnouncementUsers({
+    audience: announcement.audience,
 
-      departments:
-        announcement.departments,
+    departments: announcement.departments,
 
-      locations:
-        announcement.locations,
+    locations: announcement.locations,
 
-      targetRoles:
-        announcement.targetRoles,
-    });
+    targetRoles: announcement.targetRoles,
+  });
 
   if (!users.length) {
-    console.log(
-      "[Announcements] No matching users for in-app broadcast.",
-    );
+    console.log("[Announcements] No matching users for in-app broadcast.");
 
     return {
       total: 0,
@@ -841,36 +712,25 @@ export async function broadcastAnnouncementNotification(
     };
   }
 
-  const createdAt =
-    nowIso();
+  const createdAt = nowIso();
 
-  const notifications =
-    users.map((user) => ({
-      userId: user._id,
+  const notifications = users.map((user) => ({
+    userId: user._id,
 
-      type:
-        "ANNOUNCEMENT" as const,
+    type: "ANNOUNCEMENT" as const,
 
-      title:
-        announcement.title,
+    title: announcement.title,
 
-      message:
-        announcement.body.slice(
-          0,
-          250,
-        ),
+    message: announcement.body.slice(0, 250),
 
-      link:
-        "/app/announcements",
+    link: "/app/announcements",
 
-      isRead: false,
+    isRead: false,
 
-      createdAt,
-    }));
+    createdAt,
+  }));
 
-  await Notification.insertMany(
-    notifications,
-  );
+  await Notification.insertMany(notifications);
 
   console.log(
     `[Announcements] In-app broadcast completed. Total recipients: ${users.length}, Sent: ${notifications.length}`,
@@ -887,35 +747,26 @@ export async function broadcastAnnouncementNotification(
    EMAIL ANNOUNCEMENT BROADCAST
 ========================================================= */
 
-export async function broadcastAnnouncementEmail(
-  announcement: {
-    title: string;
-    body: string;
-    audience: string;
-    departments?: string[];
-    locations?: string[];
-    targetRoles?: string[];
-  },
-) {
-  const users =
-    await resolveAnnouncementUsers({
-      audience:
-        announcement.audience,
+export async function broadcastAnnouncementEmail(announcement: {
+  title: string;
+  body: string;
+  audience: string;
+  departments?: string[];
+  locations?: string[];
+  targetRoles?: string[];
+}) {
+  const users = await resolveAnnouncementUsers({
+    audience: announcement.audience,
 
-      departments:
-        announcement.departments,
+    departments: announcement.departments,
 
-      locations:
-        announcement.locations,
+    locations: announcement.locations,
 
-      targetRoles:
-        announcement.targetRoles,
-    });
+    targetRoles: announcement.targetRoles,
+  });
 
   if (!users.length) {
-    console.log(
-      "[Announcements] No matching users for email broadcast.",
-    );
+    console.log("[Announcements] No matching users for email broadcast.");
 
     return {
       total: 0,
@@ -947,13 +798,10 @@ export async function broadcastAnnouncementEmail(
    */
 
   const emailUsers = users.filter(
-    (user) =>
-      !!user.email &&
-      !!user.email.trim(),
+    (user) => !!user.email && !!user.email.trim(),
   );
 
-  const skipped =
-    users.length - emailUsers.length;
+  const skipped = users.length - emailUsers.length;
 
   console.log(
     `[Announcements] Email broadcast queued in background. Total: ${users.length}, Queued: ${emailUsers.length}, Skipped: ${skipped}`,
@@ -975,43 +823,28 @@ export async function broadcastAnnouncementEmail(
 
     const CONCURRENCY = 10;
 
-    for (
-      let start = 0;
-      start < emailUsers.length;
-      start += CONCURRENCY
-    ) {
-      const batch =
-        emailUsers.slice(
-          start,
-          start + CONCURRENCY,
-        );
+    for (let start = 0; start < emailUsers.length; start += CONCURRENCY) {
+      const batch = emailUsers.slice(start, start + CONCURRENCY);
 
-      const results =
-        await Promise.allSettled(
-          batch.map(async (user) => {
-            const result =
-              await sendAnnouncementEmail({
-                to: user.email,
+      const results = await Promise.allSettled(
+        batch.map(async (user) => {
+          const result = await sendAnnouncementEmail({
+            to: user.email,
 
-                title:
-                  announcement.title,
+            title: announcement.title,
 
-                body:
-                  announcement.body,
-              });
+            body: announcement.body,
+          });
 
-            return {
-              email: user.email,
-              result,
-            };
-          }),
-        );
+          return {
+            email: user.email,
+            result,
+          };
+        }),
+      );
 
       for (const outcome of results) {
-        if (
-          outcome.status ===
-          "fulfilled"
-        ) {
+        if (outcome.status === "fulfilled") {
           if (outcome.value.result.sent) {
             sent++;
           }
@@ -1035,10 +868,7 @@ export async function broadcastAnnouncementEmail(
      * become unhandled promise rejections or affect the
      * announcement/in-app delivery path.
      */
-    console.error(
-      "[Announcements] Background email worker failed:",
-      error,
-    );
+    console.error("[Announcements] Background email worker failed:", error);
   });
 
   /*
@@ -1051,45 +881,4 @@ export async function broadcastAnnouncementEmail(
     skipped,
     queued: emailUsers.length,
   };
-}
-
-/* =========================================================
-   CREATE ANNOUNCEMENT
-========================================================= */
-
-export async function createAnnouncement(
-  input: {
-    title: string;
-    body: string;
-    pinned?: boolean;
-    audience?: string;
-  },
-) {
-  const doc =
-    await Announcement.create({
-      title: input.title,
-
-      body: input.body,
-
-      pinned:
-        !!input.pinned,
-
-      audience:
-        input.audience ??
-        "ALL",
-
-      createdAt:
-        nowIso(),
-
-      updatedAt:
-        nowIso(),
-    });
-
-  return toApiDoc(
-    (
-      await Announcement.findById(
-        doc._id,
-      ).lean()
-    )!,
-  );
 }

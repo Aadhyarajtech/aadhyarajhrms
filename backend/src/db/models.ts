@@ -746,22 +746,18 @@ export const PayslipRequest = model<PayslipRequestDoc>(
 // Announcements & notifications
 // ---------------------------------------------------------------------------
 
-<<<<<<< HEAD
-export interface AnnouncementDoc {
-=======
-// Announcement data is now owned by:
+// Announcement data is owned by:
 //   modules/announcements/announcement.model.ts
 //
 // AnnouncementReceipt remains here because it is part of the existing
-// notification/read-state infrastructure and is still used by the dedicated
-// announcements repository.
+// notification/read-state infrastructure and is used by the announcements
+// repository for read/acknowledgement tracking.
 
 // ---------------------------------------------------------------------------
 // Announcement receipts
 // ---------------------------------------------------------------------------
 
 export interface AnnouncementReceiptDoc {
->>>>>>> f8f0289 (Added feature to check performance of the employees)
   _id: string;
   announcementId: string;
   userId: string;
@@ -822,11 +818,6 @@ const announcementReceiptSchema = new Schema<AnnouncementReceiptDoc>(
   baseOptions,
 );
 
-<<<<<<< HEAD
-export const Announcement = model<AnnouncementDoc>(
-  "Announcement",
-  announcementSchema,
-=======
 announcementReceiptSchema.index(
   { announcementId: 1, userId: 1 },
   { unique: true },
@@ -835,85 +826,7 @@ announcementReceiptSchema.index(
 export const AnnouncementReceipt = model<AnnouncementReceiptDoc>(
   "AnnouncementReceipt",
   announcementReceiptSchema,
->>>>>>> f8f0289 (Added feature to check performance of the employees)
 );
-
-// ---------------------------------------------------------------------------
-// Announcement receipts
-// ---------------------------------------------------------------------------
-
-export interface AnnouncementReceiptDoc {
-  _id: string;
-  announcementId: string;
-  userId: string;
-  isRead: boolean;
-  isAcknowledged: boolean;
-  readAt: string | null;
-  acknowledgedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-const announcementReceiptSchema =
-  new Schema<AnnouncementReceiptDoc>(
-    {
-      _id: idField("anr"),
-
-      announcementId: {
-        type: String,
-        required: true,
-        index: true,
-      },
-
-      userId: {
-        type: String,
-        required: true,
-        index: true,
-      },
-
-      isRead: {
-        type: Boolean,
-        default: false,
-      },
-
-      isAcknowledged: {
-        type: Boolean,
-        default: false,
-      },
-
-      readAt: {
-        type: String,
-        default: null,
-      },
-
-      acknowledgedAt: {
-        type: String,
-        default: null,
-      },
-
-      createdAt: {
-        type: String,
-        required: true,
-      },
-
-      updatedAt: {
-        type: String,
-        required: true,
-      },
-    },
-    baseOptions,
-  );
-
-announcementReceiptSchema.index(
-  { announcementId: 1, userId: 1 },
-  { unique: true },
-);
-
-export const AnnouncementReceipt =
-  model<AnnouncementReceiptDoc>(
-    "AnnouncementReceipt",
-    announcementReceiptSchema,
-  );
 
 export type NotificationType =
   | "LEAVE_REQUEST"
