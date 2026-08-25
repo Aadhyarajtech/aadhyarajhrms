@@ -37,8 +37,8 @@ type Announcement = BaseAnnouncement & {
   channels?: string[];
   showBanner?: boolean;
   requiresAcknowledgement?: boolean;
-  scheduledAt?: string;
-  publishedAt?: string;
+  scheduledAt?: string | null;
+  publishedAt?: string | null;
   departments?: string[];
   locations?: string[];
   targetRoles?: string[];
@@ -511,12 +511,10 @@ export default function Announcements() {
   ======================================================= */
 
   const markReadMutation = useMutation({
-  mutationFn: AnnouncementsApi.markRead,
+    mutationFn: AnnouncementsApi.markRead,
 
-  onSuccess: (_data, announcementId) => {
-    queryClient.setQueryData<Announcement[]>(
-      ["announcements"],
-      (current) => {
+    onSuccess: (_data, announcementId) => {
+      queryClient.setQueryData<Announcement[]>(["announcements"], (current) => {
         if (!current) {
           return current;
         }
@@ -531,21 +529,18 @@ export default function Announcements() {
             receipt: {
               isRead: true,
               readAt: new Date().toISOString(),
-              isAcknowledged:
-                announcement.receipt?.isAcknowledged ?? false,
-              acknowledgedAt:
-                announcement.receipt?.acknowledgedAt ?? null,
+              isAcknowledged: announcement.receipt?.isAcknowledged ?? false,
+              acknowledgedAt: announcement.receipt?.acknowledgedAt ?? null,
             },
           };
         });
-      },
-    );
+      });
 
-    void queryClient.invalidateQueries({
-      queryKey: ["announcements"],
-    });
-  },
-});
+      void queryClient.invalidateQueries({
+        queryKey: ["announcements"],
+      });
+    },
+  });
   /* =======================================================
      ACKNOWLEDGE
   ======================================================= */
