@@ -43,9 +43,9 @@ type Announcement = BaseAnnouncement & {
   locations?: string[];
   targetRoles?: string[];
   calendarEnabled?: boolean;
-  eventStartAt?: string;
-  eventEndAt?: string;
-  eventLocation?: string;
+  eventStartAt?: string | null;
+  eventEndAt?: string | null;
+  eventLocation?: string | null;
 };
 
 import { formatDate, timeAgo } from "@/lib/format";
