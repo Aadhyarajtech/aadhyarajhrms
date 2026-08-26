@@ -177,6 +177,45 @@ export async function getTicketsByAssignees(assignees: string[]) {
 }
 
 // =========================================================
+// GET MANAGER'S TEAM GRIEVANCE TICKETS
+// =========================================================
+//
+// Manager grievance access is scoped by the actual manager
+// employee id stored in assignedManagerId. This prevents one
+// manager from seeing complaints belonging to another manager.
+// =========================================================
+
+export async function getTeamGrievanceTickets(managerId: string) {
+  return Ticket.find({
+    category: "Complaint",
+    assignedManagerId: managerId,
+  })
+    .sort({
+      createdAt: -1,
+    })
+    .lean();
+}
+
+// =========================================================
+// GET SINGLE TEAM GRIEVANCE TICKET
+// =========================================================
+//
+// Used by manager-only routes before returning a ticket or
+// allowing a manager to act on it.
+// =========================================================
+
+export async function getTeamGrievanceTicket(
+  ticketId: string,
+  managerId: string,
+) {
+  return Ticket.findOne({
+    _id: ticketId,
+    category: "Complaint",
+    assignedManagerId: managerId,
+  }).lean();
+}
+
+// =========================================================
 // GET TICKET MESSAGES
 // =========================================================
 

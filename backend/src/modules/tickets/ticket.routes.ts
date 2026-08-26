@@ -7,10 +7,7 @@ import {
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import {
-  upload,
-  UPLOADS_PUBLIC_PATH,
-} from "@/middleware/upload";
+import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 import { validate } from "@/middleware/validate";
 
 import * as repo from "./ticket.repository";
@@ -46,11 +43,7 @@ const createTicketSchema = z.object({
     "Complaint",
   ]),
 
-  priority: z.enum([
-    "LOW",
-    "MEDIUM",
-    "HIGH",
-  ]),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH"]),
 
   subject: z.string().min(3),
 
@@ -62,11 +55,7 @@ const createTicketSchema = z.object({
 ticketRouter.post(
   "/",
   upload.single("attachment"),
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user?.employeeId) {
         return res.status(401).json({
@@ -76,9 +65,7 @@ ticketRouter.post(
         });
       }
 
-      const parsed = createTicketSchema.safeParse(
-        req.body,
-      );
+      const parsed = createTicketSchema.safeParse(req.body);
 
       if (!parsed.success) {
         return res.status(400).json({
@@ -95,8 +82,14 @@ ticketRouter.post(
         ? `${UPLOADS_PUBLIC_PATH}/${uploadedFile.filename}`
         : "";
 
+      // Complaints belong to the employee's direct manager.
+      // Resolve the manager from the employee record so the repository
+      // can store assignedManagerId for manager-scoped grievance access.
+      const employee = await Employee.findById(req.user.employeeId).lean();
+
       const ticket = await repo.createTicket({
         employeeId: req.user.employeeId,
+        managerId: employee?.managerId ?? null,
         category: parsed.data.category,
         priority: parsed.data.priority,
         subject: parsed.data.subject,
@@ -106,7 +99,10 @@ ticketRouter.post(
 
       // Notify role owners (e.g., HR_ADMIN, FINANCE, MANAGER, IT_SUPPORT)
       try {
-        const recipients = await User.find({ role: ticket.assignedTo, isActive: true }).lean();
+        const recipients = await User.find({
+          role: ticket.assignedTo,
+          isActive: true,
+        }).lean();
         for (const r of recipients) {
           if (r._id === req.user.userId) continue;
           await notify({
@@ -119,6 +115,30 @@ ticketRouter.post(
         }
       } catch (err) {
         console.error("Failed to send ticket notifications", err);
+      }
+
+      // A Complaint is also routed to the employee's direct manager.
+      if (ticket.category === "Complaint" && ticket.assignedManagerId) {
+        try {
+          const manager = await Employee.findById(
+            ticket.assignedManagerId,
+          ).lean();
+
+          if (manager?.userId && manager.userId !== req.user.userId) {
+            await notify({
+              userId: manager.userId,
+              type: "TICKET_MESSAGE",
+              title: `${req.user.name || "Employee"} raised a grievance`,
+              message: `${ticket.ticketId} — ${ticket.subject}`,
+              link: `/app/tickets/${ticket._id}`,
+            });
+          }
+        } catch (err) {
+          console.error(
+            "Failed to notify employee's manager about grievance",
+            err,
+          );
+        }
       }
 
       return res.status(201).json({
@@ -137,17 +157,13 @@ ticketRouter.post(
    SUPER_ADMIN → ALL
    HR_ADMIN    → HR assigned tickets
    FINANCE     → Payroll assigned tickets
-   MANAGER     → Recruitment assigned tickets
+   MANAGER     → Team grievance tickets assigned to that manager
    IT_SUPPORT  → IT assigned tickets
 ========================================================= */
 
 ticketRouter.get(
   "/",
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -172,10 +188,7 @@ ticketRouter.get(
       /* HR ADMIN → HR TICKETS */
 
       if (role === "HR_ADMIN") {
-        const tickets =
-          await repo.getTicketsByAssignees([
-            "HR_ADMIN",
-          ]);
+        const tickets = await repo.getTicketsByAssignees(["HR_ADMIN"]);
 
         return res.json({
           tickets,
@@ -185,23 +198,25 @@ ticketRouter.get(
       /* FINANCE → PAYROLL TICKETS */
 
       if (role === "FINANCE") {
-        const tickets =
-          await repo.getTicketsByAssignees([
-            "FINANCE",
-          ]);
+        const tickets = await repo.getTicketsByAssignees(["FINANCE"]);
 
         return res.json({
           tickets,
         });
       }
 
-      /* MANAGER → RECRUITMENT TICKETS */
+      /* MANAGER → TEAM GRIEVANCE TICKETS */
 
       if (role === "MANAGER") {
-        const tickets =
-          await repo.getTicketsByAssignees([
-            "MANAGER",
-          ]);
+        if (!req.user.employeeId) {
+          return res.status(401).json({
+            error: {
+              message: "Manager employee profile not found",
+            },
+          });
+        }
+
+        const tickets = await repo.getTeamGrievanceTickets(req.user.employeeId);
 
         return res.json({
           tickets,
@@ -211,10 +226,7 @@ ticketRouter.get(
       /* IT SUPPORT → IT TICKETS */
 
       if (role === "IT_SUPPORT") {
-        const tickets =
-          await repo.getTicketsByAssignees([
-            "IT_SUPPORT",
-          ]);
+        const tickets = await repo.getTicketsByAssignees(["IT_SUPPORT"]);
 
         return res.json({
           tickets,
@@ -223,8 +235,7 @@ ticketRouter.get(
 
       return res.status(403).json({
         error: {
-          message:
-            "You are not authorized to access tickets",
+          message: "You are not authorized to access tickets",
         },
       });
     } catch (err) {
@@ -248,11 +259,7 @@ ticketRouter.get(
 
 ticketRouter.get(
   "/my",
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user?.employeeId) {
         return res.status(401).json({
@@ -262,18 +269,11 @@ ticketRouter.get(
         });
       }
 
-      console.log(
-        "[Tickets] My Tickets employeeId:",
-        req.user.employeeId,
-      );
+      console.log("[Tickets] My Tickets employeeId:", req.user.employeeId);
 
-      const tickets = await repo.getMyTickets(
-        req.user.employeeId,
-      );
+      const tickets = await repo.getMyTickets(req.user.employeeId);
 
-      console.log(
-        `[Tickets] Found ${tickets.length} ticket(s)`,
-      );
+      console.log(`[Tickets] Found ${tickets.length} ticket(s)`);
 
       return res.json({
         tickets,
@@ -303,11 +303,7 @@ const updateSchema = z.object({
 ticketRouter.patch(
   "/:id",
   validate(updateSchema),
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -317,8 +313,34 @@ ticketRouter.patch(
         });
       }
 
-      // Fetch existing ticket so we can detect status changes
+      // Fetch existing ticket so we can detect status changes.
       const existingTicket = await repo.getTicket(req.params.id);
+
+      // Managers may update only Complaint tickets assigned to themselves.
+      // This prevents one manager from modifying another manager's team
+      // grievance while leaving the existing staff/employee behavior intact.
+      if (String(req.user.role) === "MANAGER") {
+        if (!req.user.employeeId) {
+          return res.status(401).json({
+            error: {
+              message: "Manager employee profile not found",
+            },
+          });
+        }
+
+        const managerTicket = await repo.getTeamGrievanceTicket(
+          req.params.id,
+          req.user.employeeId,
+        );
+
+        if (!managerTicket) {
+          return res.status(403).json({
+            error: {
+              message: "You are not authorized to update this team grievance",
+            },
+          });
+        }
+      }
 
       const ticket = await repo.updateTicketStatus(
         req.params.id,
@@ -343,7 +365,10 @@ ticketRouter.patch(
 
           // If the change is made by the employee (ticket owner), notify assignees
           if (String(req.user.role) === "EMPLOYEE") {
-            const recipients = await User.find({ role: ticket.assignedTo, isActive: true }).lean();
+            const recipients = await User.find({
+              role: ticket.assignedTo,
+              isActive: true,
+            }).lean();
             for (const r of recipients) {
               if (r._id === senderUserId) continue;
               await notify({
@@ -356,8 +381,14 @@ ticketRouter.patch(
             }
           } else {
             // Change is made by admin/staff — notify the ticket owner
-            const ticketOwnerEmp = await Employee.findById(ticket.employeeId).lean();
-            if (ticketOwnerEmp && ticketOwnerEmp.userId && ticketOwnerEmp.userId !== senderUserId) {
+            const ticketOwnerEmp = await Employee.findById(
+              ticket.employeeId,
+            ).lean();
+            if (
+              ticketOwnerEmp &&
+              ticketOwnerEmp.userId &&
+              ticketOwnerEmp.userId !== senderUserId
+            ) {
               await notify({
                 userId: ticketOwnerEmp.userId,
                 type: "TICKET_MESSAGE",
@@ -401,11 +432,7 @@ ticketRouter.patch(
 
 ticketRouter.get(
   "/:id",
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -415,9 +442,7 @@ ticketRouter.get(
         });
       }
 
-      const ticket = await repo.getTicket(
-        req.params.id,
-      );
+      const ticket = await repo.getTicket(req.params.id);
 
       if (!ticket) {
         return res.status(404).json({
@@ -444,10 +469,7 @@ ticketRouter.get(
          Employee can view their own ticket.
       ===================================================== */
 
-      if (
-        req.user.employeeId &&
-        ticket.employeeId === req.user.employeeId
-      ) {
+      if (req.user.employeeId && ticket.employeeId === req.user.employeeId) {
         return res.json({
           ticket,
         });
@@ -457,24 +479,43 @@ ticketRouter.get(
          ROLE-BASED ACCESS
       ===================================================== */
 
-      const allowedAssignees: Record<
-        string,
-        string[]
-      > = {
+      // MANAGER → only Complaint tickets assigned to this manager.
+      if (role === "MANAGER") {
+        if (!req.user.employeeId) {
+          return res.status(401).json({
+            error: {
+              message: "Manager employee profile not found",
+            },
+          });
+        }
+
+        const managerTicket = await repo.getTeamGrievanceTicket(
+          req.params.id,
+          req.user.employeeId,
+        );
+
+        if (managerTicket) {
+          return res.json({
+            ticket: managerTicket,
+          });
+        }
+
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to view this team grievance",
+          },
+        });
+      }
+
+      const allowedAssignees: Record<string, string[]> = {
         HR_ADMIN: ["HR_ADMIN"],
         FINANCE: ["FINANCE"],
-        MANAGER: ["MANAGER"],
         IT_SUPPORT: ["IT_SUPPORT"],
       };
 
-      const allowed =
-        allowedAssignees[role];
+      const allowed = allowedAssignees[role];
 
-      if (
-        allowed &&
-        ticket.assignedTo &&
-        allowed.includes(ticket.assignedTo)
-      ) {
+      if (allowed && ticket.assignedTo && allowed.includes(ticket.assignedTo)) {
         return res.json({
           ticket,
         });
@@ -482,8 +523,7 @@ ticketRouter.get(
 
       return res.status(403).json({
         error: {
-          message:
-            "You are not authorized to view this ticket",
+          message: "You are not authorized to view this ticket",
         },
       });
     } catch (err) {
