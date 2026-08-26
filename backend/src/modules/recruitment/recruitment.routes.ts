@@ -20,16 +20,32 @@ recruitmentRouter.use(authenticate);
 
 /**
  * ============================================================
- * JOBS
+ * JOB REQUISITIONS / JOBS
  * ============================================================
  *
- * View:
+ * Lifecycle:
+ *
+ * DRAFT
+ *   ↓
+ * PENDING_APPROVAL
+ *   ↓
+ * APPROVED
+ *   ↓
+ * OPEN
+ *
+ * OR
+ *
+ * PENDING_APPROVAL
+ *   ↓
+ * REJECTED
+ *
+ * Read:
  * - SUPER_ADMIN
  * - HR_ADMIN
  * - RECRUITER
  * - MANAGER
  *
- * Create/update:
+ * Create / update / approve / reject:
  * - SUPER_ADMIN
  * - HR_ADMIN
  * - RECRUITER
@@ -38,7 +54,10 @@ recruitmentRouter.use(authenticate);
 /**
  * GET /jobs
  *
- * Recruitment read access.
+ * Supports:
+ *
+ * ?status=OPEN
+ * ?requisitionStatus=PENDING_APPROVAL
  */
 recruitmentRouter.get(
   "/jobs",
@@ -50,7 +69,15 @@ recruitmentRouter.get(
           ? req.query.status
           : undefined;
 
-      const jobs = await repo.listJobPostings(status);
+      const requisitionStatus =
+        typeof req.query.requisitionStatus === "string"
+          ? req.query.requisitionStatus
+          : undefined;
+
+      const jobs = await repo.listJobPostings(
+        status,
+        requisitionStatus
+      );
 
       res.json({ jobs });
     } catch (err) {
@@ -61,8 +88,6 @@ recruitmentRouter.get(
 
 /**
  * GET /jobs/:id
- *
- * Recruitment read access.
  */
 recruitmentRouter.get(
   "/jobs/:id",
@@ -83,13 +108,20 @@ recruitmentRouter.get(
 );
 
 /**
- * Job creation schema.
+ * ============================================================
+ * JOB REQUISITION CREATION
+ * ============================================================
  */
+
 const jobSchema = z.object({
-  title: z.string().min(2),
-  departmentId: z.string(),
-  designationId: z.string(),
+  title: z.string().min(2, "Job title is required."),
+
+  departmentId: z.string().min(1),
+
+  designationId: z.string().min(1),
+
   location: z.string().optional(),
+
   employmentType: z
     .enum([
       "FULL_TIME",
@@ -98,16 +130,95 @@ const jobSchema = z.object({
       "INTERN",
     ])
     .optional(),
-  experienceMin: z.number().int().min(0).optional(),
-  experienceMax: z.number().int().min(0).optional(),
-  description: z.string().min(10, "Add a fuller job description."),
-  openings: z.number().int().min(1).optional(),
+
+  experienceMin: z
+    .number()
+    .int()
+    .min(0)
+    .optional(),
+
+  experienceMax: z
+    .number()
+    .int()
+    .min(0)
+    .optional(),
+
+  description: z
+    .string()
+    .min(10, "Add a fuller job description."),
+
+  /**
+   * Legacy compatibility.
+   * `headcount` is the preferred field.
+   */
+  openings: z
+    .number()
+    .int()
+    .min(1)
+    .optional(),
+
+  /**
+   * Number of employees required.
+   */
+  headcount: z
+    .number()
+    .int()
+    .min(1)
+    .optional(),
+
+  /**
+   * Maximum approved CTC / budget per employee.
+   */
+  budgetCtc: z
+    .number()
+    .min(0)
+    .optional(),
+
+  /**
+   * Number of approval levels required.
+   */
+  approvalLevelRequired: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .optional(),
+
+  /**
+   * Where the job should be published after approval.
+   */
+  postingChannels: z
+    .array(z.string())
+    .optional(),
+
+  /**
+   * Candidate screening questions.
+   */
+  screeningQuestions: z
+    .array(z.string())
+    .optional(),
+
+  hiringMode: z
+    .enum([
+      "STANDARD",
+      "WALK_IN",
+      "CAMPUS",
+    ])
+    .optional(),
+
+  skills: z
+    .array(z.string())
+    .optional(),
 });
 
 /**
  * POST /jobs
  *
- * Only Admin + Recruiter can create jobs.
+ * Creates a new job requisition.
+ *
+ * IMPORTANT:
+ * requestedById comes from the authenticated user.
+ * The frontend does NOT need to send requestedById.
  */
 recruitmentRouter.post(
   "/jobs",
@@ -115,9 +226,23 @@ recruitmentRouter.post(
   validate(jobSchema),
   async (req, res, next) => {
     try {
-      const job = await repo.createJobPosting(req.body);
+      if (!req.user) {
+        throw AppError.unauthorized("Unauthorized.");
+      }
 
-      res.status(201).json({ job });
+      const job = await repo.createJobPosting({
+        ...req.body,
+
+        /**
+         * Never trust requestedById from frontend.
+         */
+        requestedById: req.user.userId,
+      });
+
+      res.status(201).json({
+        message: "Job requisition created successfully.",
+        job,
+      });
     } catch (err) {
       next(err);
     }
@@ -125,8 +250,126 @@ recruitmentRouter.post(
 );
 
 /**
- * Job status update schema.
+ * ============================================================
+ * JOB REQUISITION APPROVAL
+ * ============================================================
  */
+
+/**
+ * Approval schema.
+ */
+const approvalSchema = z.object({
+  comment: z
+    .string()
+    .max(1000)
+    .optional(),
+});
+
+/**
+ * POST /jobs/:id/approve
+ *
+ * Approves the current approval step.
+ *
+ * When all required approval steps are approved:
+ *
+ * requisitionStatus = APPROVED
+ * status = OPEN
+ * approvedById = current approver
+ * approvedAt = current timestamp
+ */
+recruitmentRouter.patch(
+  "/jobs/:id/approve",
+
+  isAdminOrRecruiter,
+  validate(approvalSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw AppError.unauthorized("Unauthorized.");
+      }
+
+      const job = await repo.approveJob(
+        req.params.id,
+        req.user.userId,
+        req.body.comment
+      );
+
+      if (!job) {
+        throw AppError.notFound(
+          "Job requisition not found."
+        );
+      }
+
+      res.json({
+        message: "Job requisition approved successfully.",
+        job,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * ============================================================
+ * JOB REQUISITION REJECTION
+ * ============================================================
+ */
+
+const rejectionSchema = z.object({
+  reason: z
+    .string()
+    .min(2, "Rejection reason is required.")
+    .max(1000),
+});
+
+/**
+ * POST /jobs/:id/reject
+ *
+ * Rejects the current approval step.
+ *
+ * requisitionStatus = REJECTED
+ * status = CLOSED
+ * rejectionReason = supplied reason
+ */
+recruitmentRouter.patch(
+  "/jobs/:id/reject",
+  isAdminOrRecruiter,
+  validate(rejectionSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw AppError.unauthorized("Unauthorized.");
+      }
+
+      const job = await repo.rejectJob(
+        req.params.id,
+        req.user.userId,
+        req.body.reason
+      );
+
+      if (!job) {
+        throw AppError.notFound(
+          "Job requisition not found."
+        );
+      }
+
+      res.json({
+        message: "Job requisition rejected.",
+        job,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * ============================================================
+ * JOB STATUS
+ * ============================================================
+ */
+
 const statusSchema = z.object({
   status: z.enum([
     "OPEN",
@@ -151,6 +394,12 @@ recruitmentRouter.patch(
         req.body.status
       );
 
+      if (!job) {
+        throw AppError.notFound(
+          "Job posting not found."
+        );
+      }
+
       res.json({ job });
     } catch (err) {
       next(err);
@@ -162,17 +411,6 @@ recruitmentRouter.patch(
  * ============================================================
  * CANDIDATES
  * ============================================================
- *
- * View:
- * - SUPER_ADMIN
- * - HR_ADMIN
- * - RECRUITER
- * - MANAGER
- *
- * Create/update:
- * - SUPER_ADMIN
- * - HR_ADMIN
- * - RECRUITER
  */
 
 /**
@@ -210,7 +448,9 @@ recruitmentRouter.get(
         await repo.getCandidate(req.params.id);
 
       if (!candidate) {
-        throw AppError.notFound("Candidate not found.");
+        throw AppError.notFound(
+          "Candidate not found."
+        );
       }
 
       res.json({ candidate });
@@ -224,14 +464,28 @@ recruitmentRouter.get(
  * Candidate creation schema.
  */
 const candidateSchema = z.object({
-  jobPostingId: z.string(),
+  jobPostingId: z.string().min(1),
+
   firstName: z.string().min(1),
+
   lastName: z.string().min(1),
+
   email: z.string().email(),
+
   phone: z.string().optional(),
-  expectedCtc: z.number().optional(),
+
+  expectedCtc: z
+    .number()
+    .min(0)
+    .optional(),
+
   source: z.string().optional(),
+
+  referredById: z.string().optional(),
+
   notes: z.string().optional(),
+
+  resumeText: z.string().optional(),
 });
 
 /**
@@ -246,7 +500,9 @@ recruitmentRouter.post(
       const candidate =
         await repo.createCandidate(req.body);
 
-      res.status(201).json({ candidate });
+      res.status(201).json({
+        candidate,
+      });
     } catch (err) {
       next(err);
     }
@@ -282,6 +538,12 @@ recruitmentRouter.patch(
           req.body.stage
         );
 
+      if (!candidate) {
+        throw AppError.notFound(
+          "Candidate not found."
+        );
+      }
+
       res.json({ candidate });
     } catch (err) {
       next(err);
@@ -293,7 +555,11 @@ recruitmentRouter.patch(
  * Candidate rating schema.
  */
 const ratingSchema = z.object({
-  rating: z.number().int().min(1).max(5),
+  rating: z
+    .number()
+    .int()
+    .min(1)
+    .max(5),
 });
 
 /**
@@ -311,6 +577,12 @@ recruitmentRouter.patch(
           req.body.rating
         );
 
+      if (!candidate) {
+        throw AppError.notFound(
+          "Candidate not found."
+        );
+      }
+
       res.json({ candidate });
     } catch (err) {
       next(err);
@@ -322,17 +594,6 @@ recruitmentRouter.patch(
  * ============================================================
  * INTERVIEWS
  * ============================================================
- *
- * View:
- * - SUPER_ADMIN
- * - HR_ADMIN
- * - RECRUITER
- * - MANAGER
- *
- * Create/feedback:
- * - SUPER_ADMIN
- * - HR_ADMIN
- * - RECRUITER
  */
 
 /**
@@ -362,10 +623,21 @@ recruitmentRouter.get(
  * Interview scheduling schema.
  */
 const scheduleSchema = z.object({
-  candidateId: z.string(),
-  interviewerId: z.string(),
-  scheduledAt: z.string(),
+  candidateId: z.string().min(1),
+
+  interviewerId: z.string().min(1),
+
+  scheduledAt: z.string().min(1),
+
   round: z.string().optional(),
+
+  mode: z
+    .enum([
+      "VIDEO",
+      "IN_PERSON",
+      "PHONE",
+    ])
+    .optional(),
 });
 
 /**
@@ -380,7 +652,9 @@ recruitmentRouter.post(
       const interview =
         await repo.scheduleInterview(req.body);
 
-      res.status(201).json({ interview });
+      res.status(201).json({
+        interview,
+      });
     } catch (err) {
       next(err);
     }
@@ -392,12 +666,23 @@ recruitmentRouter.post(
  */
 const feedbackSchema = z.object({
   feedback: z.string().min(2),
+
   recommendation: z.enum([
     "STRONG_YES",
     "YES",
     "NO",
     "STRONG_NO",
   ]),
+
+  scorecard: z
+    .array(
+      z.object({
+        criterion: z.string().min(1),
+        score: z.number().int().min(1).max(5),
+        comment: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 /**
@@ -413,10 +698,19 @@ recruitmentRouter.post(
         await repo.submitInterviewFeedback(
           req.params.id,
           req.body.feedback,
-          req.body.recommendation
+          req.body.recommendation,
+          req.body.scorecard ?? []
         );
 
-      res.json({ interview });
+      if (!interview) {
+        throw AppError.notFound(
+          "Interview not found."
+        );
+      }
+
+      res.json({
+        interview,
+      });
     } catch (err) {
       next(err);
     }
@@ -427,9 +721,6 @@ recruitmentRouter.post(
  * ============================================================
  * RECRUITMENT ANALYTICS
  * ============================================================
- *
- * Managers can view recruitment analytics,
- * but cannot modify recruitment data.
  */
 
 /**
@@ -466,4 +757,270 @@ recruitmentRouter.get(
       next(err);
     }
   }
+);
+
+/**
+ * GET /analytics/metrics
+ */
+recruitmentRouter.get(
+  "/analytics/metrics",
+  isAdminOrRecruiterOrManager,
+  async (_req, res, next) => {
+    try {
+      const data =
+        await repo.getRecruitmentMetrics();
+
+      res.json({ data });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+export default recruitmentRouter;
+
+// ============================================================================
+// OFFER MANAGEMENT
+// ============================================================================
+
+const offerSchema = z.object({
+  annualCtc: z.number().min(0),
+  joiningDate: z.string().min(1),
+  basic: z.number().min(0).optional(),
+  hra: z.number().min(0).optional(),
+  specialAllowance: z.number().min(0).optional(),
+});
+
+/**
+ * POST /candidates/:id/offer
+ *
+ * Generate and send an offer letter.
+ */
+recruitmentRouter.post(
+  "/candidates/:id/offer",
+  isAdminOrRecruiter,
+  validate(offerSchema),
+  async (req, res, next) => {
+    try {
+      const candidate = await repo.generateOffer(
+        req.params.id,
+        req.body,
+      );
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      res.status(201).json({
+        message: "Offer generated successfully.",
+        candidate,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * PATCH /candidates/:id/offer/response
+ *
+ * Candidate offer response.
+ */
+const offerResponseSchema = z.object({
+  status: z.enum(["ACCEPTED", "DECLINED"]),
+});
+
+recruitmentRouter.patch(
+  "/candidates/:id/offer/response",
+  isAdminOrRecruiter,
+  validate(offerResponseSchema),
+  async (req, res, next) => {
+    try {
+      const candidate = await repo.respondToOffer(
+        req.params.id,
+        req.body.status,
+      );
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      res.json({
+        message: `Offer ${req.body.status.toLowerCase()}.`,
+        candidate,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
+// BACKGROUND VERIFICATION
+// ============================================================================
+
+const backgroundVerificationSchema = z.object({
+  status: z.enum([
+    "NOT_STARTED",
+    "IN_PROGRESS",
+    "VERIFIED",
+    "FAILED",
+  ]),
+  provider: z.string().optional(),
+  reference: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+/**
+ * PATCH /candidates/:id/background-verification
+ */
+recruitmentRouter.patch(
+  "/candidates/:id/background-verification",
+  isAdminOrRecruiter,
+  validate(backgroundVerificationSchema),
+  async (req, res, next) => {
+    try {
+      const candidate =
+        await repo.updateBackgroundVerification(
+          req.params.id,
+          req.body,
+        );
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      res.json({
+        message: "Background verification updated successfully.",
+        candidate,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
+// PRE-BOARDING
+// ============================================================================
+
+const preboardingDocumentSchema = z.object({
+  type: z.string().min(1),
+  url: z.string().min(1),
+});
+
+/**
+ * POST /candidates/:id/preboarding/documents
+ */
+recruitmentRouter.post(
+  "/candidates/:id/preboarding/documents",
+  isAdminOrRecruiter,
+  validate(preboardingDocumentSchema),
+  async (req, res, next) => {
+    try {
+      const candidate =
+        await repo.addPreboardingDocument(
+          req.params.id,
+          req.body.type,
+          req.body.url,
+        );
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      res.status(201).json({
+        message: "Pre-boarding document added successfully.",
+        candidate,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * PATCH /candidates/:id/preboarding/documents/:index/verify
+ */
+recruitmentRouter.patch(
+  "/candidates/:id/preboarding/documents/:index/verify",
+  isAdminOrRecruiter,
+  async (req, res, next) => {
+    try {
+      const index = Number(req.params.index);
+
+      if (!Number.isInteger(index) || index < 0) {
+        throw AppError.badRequest("Invalid document index.");
+      }
+
+      const candidate =
+        await repo.verifyPreboardingDocument(
+          req.params.id,
+          index,
+        );
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      res.json({
+        message: "Pre-boarding document verified successfully.",
+        candidate,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
+// HIRING / EMPLOYEE HANDOFF
+// ============================================================================
+
+const hireCandidateSchema = z.object({
+  role: z
+    .enum([
+      "EMPLOYEE",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+      "HR_ADMIN",
+    ])
+    .optional(),
+});
+
+/**
+ * POST /candidates/:id/hire
+ *
+ * Converts the candidate into an employee/user.
+ *
+ * Required before hiring:
+ * 1. Offer accepted
+ * 2. Background verification verified
+ * 3. Pre-boarding completed
+ */
+recruitmentRouter.post(
+  "/candidates/:id/hire",
+  isAdminOrRecruiter,
+  validate(hireCandidateSchema),
+  async (req, res, next) => {
+    try {
+      const candidate = await repo.hireCandidate(
+        req.params.id,
+        req.body.role ?? "EMPLOYEE",
+      );
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      res.json({
+        message: "Candidate hired successfully and employee account created.",
+        candidate,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
 );

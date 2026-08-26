@@ -282,71 +282,210 @@ export const LeaveApi = {
 export const RecruitmentApi = {
   jobs: (status?: string) =>
     api
-      .get<{ jobs: JobPosting[] }>("/recruitment/jobs", { params: { status } })
+      .get<{ jobs: JobPosting[] }>("/recruitment/jobs", {
+        params: { status },
+      })
       .then((r) => r.data.jobs),
+
   job: (id: string) =>
     api
       .get<{ job: JobPosting }>(`/recruitment/jobs/${id}`)
       .then((r) => r.data.job),
+
   createJob: (payload: Record<string, unknown>) =>
     api
       .post<{ job: JobPosting }>("/recruitment/jobs", payload)
       .then((r) => r.data.job),
+
   updateJobStatus: (id: string, status: string) =>
     api
-      .patch<{ job: JobPosting }>(`/recruitment/jobs/${id}/status`, { status })
+      .patch<{ job: JobPosting }>(
+        `/recruitment/jobs/${id}/status`,
+        { status },
+      )
       .then((r) => r.data.job),
+
   candidates: (jobPostingId?: string) =>
     api
-      .get<{
-        candidates: Candidate[];
-      }>("/recruitment/candidates", { params: { jobPostingId } })
+      .get<{ candidates: Candidate[] }>(
+        "/recruitment/candidates",
+        {
+          params: { jobPostingId },
+        },
+      )
       .then((r) => r.data.candidates),
+
   candidate: (id: string) =>
     api
-      .get<{ candidate: Candidate }>(`/recruitment/candidates/${id}`)
+      .get<{ candidate: Candidate }>(
+        `/recruitment/candidates/${id}`,
+      )
       .then((r) => r.data.candidate),
+
   createCandidate: (payload: Record<string, unknown>) =>
     api
-      .post<{ candidate: Candidate }>("/recruitment/candidates", payload)
+      .post<{ candidate: Candidate }>(
+        "/recruitment/candidates",
+        payload,
+      )
       .then((r) => r.data.candidate),
+
   moveStage: (id: string, stage: string) =>
     api
-      .patch<{
-        candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/stage`, { stage })
+      .patch<{ candidate: Candidate }>(
+        `/recruitment/candidates/${id}/stage`,
+        { stage },
+      )
       .then((r) => r.data.candidate),
+
   rate: (id: string, rating: number) =>
     api
-      .patch<{
-        candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/rating`, { rating })
+      .patch<{ candidate: Candidate }>(
+        `/recruitment/candidates/${id}/rating`,
+        { rating },
+      )
       .then((r) => r.data.candidate),
+
   interviews: (candidateId?: string) =>
     api
-      .get<{
-        interviews: Interview[];
-      }>("/recruitment/interviews", { params: { candidateId } })
+      .get<{ interviews: Interview[] }>(
+        "/recruitment/interviews",
+        {
+          params: { candidateId },
+        },
+      )
       .then((r) => r.data.interviews),
+
   scheduleInterview: (payload: Record<string, unknown>) =>
     api
-      .post<{ interview: Interview }>("/recruitment/interviews", payload)
+      .post<{ interview: Interview }>(
+        "/recruitment/interviews",
+        payload,
+      )
       .then((r) => r.data.interview),
-  submitFeedback: (id: string, feedback: string, recommendation: string) =>
+
+  submitFeedback: (
+    id: string,
+    feedback: string,
+    recommendation: string,
+    scorecard: Array<{
+      criterion: string;
+      score: number;
+      comment?: string;
+    }> = [],
+  ) =>
     api
-      .post<{
-        interview: Interview;
-      }>(`/recruitment/interviews/${id}/feedback`, { feedback, recommendation })
+      .post<{ interview: Interview }>(
+        `/recruitment/interviews/${id}/feedback`,
+        {
+          feedback,
+          recommendation,
+          scorecard,
+        },
+      )
       .then((r) => r.data.interview),
+
+  generateOffer: (
+    id: string,
+    payload: {
+      annualCtc: number;
+      joiningDate: string;
+      basic?: number;
+      hra?: number;
+      specialAllowance?: number;
+    },
+  ) =>
+    api
+      .post<{ candidate: Candidate }>(
+        `/recruitment/candidates/${id}/offer`,
+        payload,
+      )
+      .then((r) => r.data.candidate),
+
+  respondToOffer: (
+    id: string,
+    status: "ACCEPTED" | "DECLINED",
+  ) =>
+    api
+      .patch<{ candidate: Candidate }>(
+        `/recruitment/candidates/${id}/offer/response`,
+        { status },
+      )
+      .then((r) => r.data.candidate),
+
+  updateBackgroundVerification: (
+    id: string,
+    payload: {
+      status:
+        | "NOT_STARTED"
+        | "IN_PROGRESS"
+        | "VERIFIED"
+        | "FAILED";
+      provider?: string;
+      reference?: string;
+      notes?: string;
+    },
+  ) =>
+    api
+      .patch<{ candidate: Candidate }>(
+        `/recruitment/candidates/${id}/background-verification`,
+        payload,
+      )
+      .then((r) => r.data.candidate),
+
+  addPreboardingDocument: (
+    id: string,
+    payload: {
+      type: string;
+      url: string;
+    },
+  ) =>
+    api
+      .post<{ candidate: Candidate }>(
+        `/recruitment/candidates/${id}/preboarding/documents`,
+        payload,
+      )
+      .then((r) => r.data.candidate),
+
+  verifyPreboardingDocument: (
+    id: string,
+    index: number,
+  ) =>
+    api
+      .patch<{ candidate: Candidate }>(
+        `/recruitment/candidates/${id}/preboarding/documents/${index}/verify`,
+      )
+      .then((r) => r.data.candidate),
+
+  hireCandidate: (
+    id: string,
+    role:
+      | "EMPLOYEE"
+      | "MANAGER"
+      | "RECRUITER"
+      | "FINANCE"
+      | "IT_SUPPORT"
+      | "HR_ADMIN" = "EMPLOYEE",
+  ) =>
+    api
+      .post<{ candidate: Candidate }>(
+        `/recruitment/candidates/${id}/hire`,
+        { role },
+      )
+      .then((r) => r.data.candidate),
+
   pipelineSummary: () =>
     api
       .get<{
         data: { stage: string; count: number }[];
       }>("/recruitment/analytics/pipeline")
       .then((r) => r.data.data),
+
   openRoles: () =>
     api
-      .get<{ count: number }>("/recruitment/analytics/open-roles")
+      .get<{ count: number }>(
+        "/recruitment/analytics/open-roles",
+      )
       .then((r) => r.data.count),
 };
 
@@ -706,6 +845,7 @@ export interface DashboardOverview {
   upcomingHolidays: Holiday[];
   recentActivity: any[];
 }
+
 export const DashboardApi = {
   overview: () =>
     api.get<DashboardOverview>("/dashboard/overview").then((r) => r.data),
