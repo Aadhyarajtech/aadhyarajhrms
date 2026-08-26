@@ -52,8 +52,17 @@ export interface Employee {
   managerId: string | null;
   managerFirstName: string | null;
   managerLastName: string | null;
-  employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
-  status: "ACTIVE" | "ON_LEAVE" | "NOTICE_PERIOD" | "TERMINATED" | "RESIGNED";
+  employmentType:
+    | "FULL_TIME"
+    | "PART_TIME"
+    | "CONTRACT"
+    | "INTERN";
+  status:
+    | "ACTIVE"
+    | "ON_LEAVE"
+    | "NOTICE_PERIOD"
+    | "TERMINATED"
+    | "RESIGNED";
   dateOfJoining: string;
   dateOfExit: string | null;
   email: string;
@@ -114,7 +123,11 @@ export interface LeaveRequest {
   endDate: string;
   totalDays: number;
   reason: string;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  status:
+    | "PENDING"
+    | "APPROVED"
+    | "REJECTED"
+    | "CANCELLED";
   approverId: string | null;
   decisionNote: string | null;
   appliedAt: string;
@@ -144,55 +157,264 @@ export interface AttendanceRecord {
   note: string | null;
 }
 
+/* =========================================================
+   RECRUITMENT
+========================================================= */
+
+export type RequisitionStatus =
+  | "DRAFT"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "REJECTED";
+
+export type HiringMode =
+  | "STANDARD"
+  | "WALK_IN"
+  | "CAMPUS";
+
+export type ApprovalStepStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED";
+
+export type RecruitmentEmploymentType =
+  | "FULL_TIME"
+  | "PART_TIME"
+  | "CONTRACT"
+  | "INTERN";
+
+export type JobStatus =
+  | "OPEN"
+  | "ON_HOLD"
+  | "CLOSED";
+
+export type PostingChannel =
+  | "CAREERS"
+  | "LINKEDIN"
+  | "NAUKRI"
+  | "INDEED"
+  | "REFERRALS";
+
+export interface ApprovalStep {
+  approverId: string;
+  level: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  actedAt: string | null;
+  comment: string | null;
+}
+
+
 export interface JobPosting {
   id: string;
+
   title: string;
+
   departmentId: string;
   departmentName: string;
+
   designationId: string;
   designationTitle: string;
+
   location: string;
-  employmentType: string;
+
+  employmentType:
+    | "FULL_TIME"
+    | "PART_TIME"
+    | "CONTRACT"
+    | "INTERN"
+    | string;
+
   experienceMin: number;
   experienceMax: number;
+
   description: string;
-  status: "OPEN" | "ON_HOLD" | "CLOSED";
+
+  status:
+    | "OPEN"
+    | "ON_HOLD"
+    | "CLOSED";
+
   openings: number;
+
   postedAt: string;
+  requestedAt?: string;
+  requestedById?: string;
+
+  /* Requisition workflow */
+  requisitionStatus?: RequisitionStatus;
+
+  headcount?: number;
+
+  budgetCtc?: number | null;
+
+  approvalLevelRequired?: number;
+
+  approvalSteps?: ApprovalStep[];
+
+  approvedById?: string | null;
+
+  approvedAt?: string | null;
+
+  rejectionReason?: string | null;
+
+  /* Posting configuration */
+  postingChannels?: string[];
+
+  screeningQuestions?: string[];
+
+  hiringMode?: HiringMode;
+
+  skills?: string[];
+
   candidateCount: number;
 }
 
+export interface CandidateOffer {
+  status:
+    | "NOT_GENERATED"
+    | "SENT"
+    | "ACCEPTED"
+    | "DECLINED";
+
+  offerUrl: string | null;
+  annualCtc: number;
+  basic: number;
+  hra: number;
+  specialAllowance: number;
+  joiningDate: string;
+  generatedAt: string | null;
+  respondedAt: string | null;
+}
+
+export interface BackgroundVerification {
+  status:
+    | "NOT_STARTED"
+    | "IN_PROGRESS"
+    | "VERIFIED"
+    | "FAILED";
+  provider: string | null;
+  reference: string | null;
+  notes: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface PreboardingDocument {
+  type: string;
+  url: string;
+  uploadedAt: string;
+  verified: boolean;
+}
+
+export interface Preboarding {
+  status:
+    | "NOT_STARTED"
+    | "IN_PROGRESS"
+    | "COMPLETED";
+  documents: PreboardingDocument[];
+  completedAt: string | null;
+}
+
+export type CandidateStage =
+  | "APPLIED"
+  | "SCREENING"
+  | "INTERVIEW"
+  | "OFFER"
+  | "HIRED"
+  | "REJECTED";
+
+export type ReferralBonusStatus =
+  | "NOT_APPLICABLE"
+  | "PENDING"
+  | "APPROVED"
+  | "PAID";
+
 export interface Candidate {
   id: string;
+
   jobPostingId: string;
   jobTitle: string;
+
   firstName: string;
   lastName: string;
+
   email: string;
   phone: string | null;
+
+  /* Resume / AI screening */
   resumeUrl: string | null;
-  stage: "APPLIED" | "SCREENING" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED";
+  resumeText?: string | null;
+  extractedSkills?: string[];
+  jobFitScore?: number | null;
+  screeningSummary?: string | null;
+
+  /* Pipeline */
+  stage: CandidateStage;
+
+  /* Evaluation */
   rating: number | null;
   expectedCtc: number | null;
+
+  /* Source / referral */
   source: string;
+  referredById?: string | null;
+  referralBonusStatus?: ReferralBonusStatus;
+
+  /* Application */
   appliedAt: string;
   notes: string | null;
+
+  /* Offer */
+  offer?: CandidateOffer;
+
+  /* Background verification */
+  backgroundVerification?: BackgroundVerification;
+
+  /* Preboarding */
+  preboarding?: Preboarding;
+
+  /* Employee conversion */
+  hiredEmployeeId?: string | null;
+}
+
+export interface InterviewScorecard {
+  criterion: string;
+  score: number;
+  comment: string | null;
 }
 
 export interface Interview {
   id: string;
+
   candidateId: string;
+
   interviewerId: string;
   interviewerFirstName: string;
   interviewerLastName: string;
+
   candidateFirstName?: string;
   candidateLastName?: string;
+
   scheduledAt: string;
+
   round: string;
+
+  mode?: "VIDEO" | "IN_PERSON" | "PHONE";
+
+  meetingLink?: string | null;
+
   feedback: string | null;
+
   recommendation: string | null;
+
+  scorecard?: InterviewScorecard[];
+
   completed: boolean;
 }
+
+/* =========================================================
+   PERFORMANCE
+========================================================= */
 
 export interface PerformanceCycle {
   id: string;
@@ -208,7 +430,11 @@ export interface PerformanceReview {
   cycleName: string;
   revieweeId: string;
   reviewerId: string;
-  status: "NOT_STARTED" | "SELF_REVIEW" | "MANAGER_REVIEW" | "COMPLETED";
+  status:
+    | "NOT_STARTED"
+    | "SELF_REVIEW"
+    | "MANAGER_REVIEW"
+    | "COMPLETED";
   selfRating: number | null;
   managerRating: number | null;
   finalRating: number | null;
@@ -231,10 +457,18 @@ export interface Goal {
   title: string;
   description: string | null;
   progress: number;
-  status: "NOT_STARTED" | "IN_PROGRESS" | "AT_RISK" | "COMPLETED";
+  status:
+    | "NOT_STARTED"
+    | "IN_PROGRESS"
+    | "AT_RISK"
+    | "COMPLETED";
   dueDate: string;
   createdAt: string;
 }
+
+/* =========================================================
+   PAYROLL
+========================================================= */
 
 export interface SalaryStructure {
   id: string;
@@ -280,9 +514,11 @@ export interface Payslip {
   netPay: number;
   daysPayable: number;
   daysInMonth: number;
+
   month?: number;
   year?: number;
   runStatus?: string;
+
   firstName?: string;
   lastName?: string;
   employeeCode?: string;
@@ -290,8 +526,15 @@ export interface Payslip {
   designationTitle?: string;
 }
 
-export type PayslipRequestPeriod = "3_MONTHS" | "6_MONTHS" | "12_MONTHS";
-export type PayslipRequestStatus = "PENDING" | "SENT" | "REJECTED";
+export type PayslipRequestPeriod =
+  | "3_MONTHS"
+  | "6_MONTHS"
+  | "12_MONTHS";
+
+export type PayslipRequestStatus =
+  | "PENDING"
+  | "SENT"
+  | "REJECTED";
 
 export interface PayslipRequest {
   id: string;
@@ -303,11 +546,16 @@ export interface PayslipRequest {
   processedByUserId: string | null;
   requestedAt: string;
   completedAt: string | null;
+
   firstName?: string;
   lastName?: string;
   employeeCode?: string;
   availablePayslips?: Payslip[];
 }
+
+/* =========================================================
+   NOTIFICATIONS
+========================================================= */
 
 export interface Notification {
   id: string;
@@ -319,6 +567,10 @@ export interface Notification {
   link: string | null;
   createdAt: string;
 }
+
+/* =========================================================
+   ANNOUNCEMENTS
+========================================================= */
 
 export interface AnnouncementReceipt {
   isRead: boolean;
@@ -348,9 +600,16 @@ export type AnnouncementAudience =
   | "DEPARTMENT"
   | "TARGETED_GROUP";
 
-export type AnnouncementChannel = "IN_APP" | "EMAIL" | "BANNER" | "CALENDAR";
+export type AnnouncementChannel =
+  | "IN_APP"
+  | "EMAIL"
+  | "BANNER"
+  | "CALENDAR";
 
-export type AnnouncementStatus = "DRAFT" | "SCHEDULED" | "PUBLISHED";
+export type AnnouncementStatus =
+  | "DRAFT"
+  | "SCHEDULED"
+  | "PUBLISHED";
 
 export interface Announcement {
   id: string;
@@ -375,6 +634,7 @@ export interface Announcement {
   createdBy: string;
 
   status?: AnnouncementStatus | string;
+
   scheduledAt?: string | null;
   publishedAt?: string | null;
 
@@ -393,13 +653,20 @@ export interface AnnouncementStatusEntry {
   id: string;
   announcementId: string;
   userId: string;
+
   isRead: boolean;
   isAcknowledged: boolean;
+
   readAt: string | null;
   acknowledgedAt: string | null;
+
   createdAt: string;
   updatedAt: string;
 }
+
+/* =========================================================
+   HOLIDAYS
+========================================================= */
 
 export interface Holiday {
   id: string;
@@ -407,6 +674,10 @@ export interface Holiday {
   date: string;
   isOptional: boolean;
 }
+
+/* =========================================================
+   ASSETS
+========================================================= */
 
 export interface Asset {
   id: string;
@@ -416,7 +687,11 @@ export interface Asset {
   name: string;
   assignedAt: string;
   returnedAt: string | null;
-  status: "ASSIGNED" | "RETURNED" | "DAMAGED" | "LOST";
+  status:
+    | "ASSIGNED"
+    | "RETURNED"
+    | "DAMAGED"
+    | "LOST";
 
   firstName?: string;
   lastName?: string;
