@@ -316,9 +316,11 @@ ticketRouter.patch(
       // Fetch existing ticket so we can detect status changes.
       const existingTicket = await repo.getTicket(req.params.id);
 
-      // Managers may update only Complaint tickets assigned to themselves.
-      // This prevents one manager from modifying another manager's team
-      // grievance while leaving the existing staff/employee behavior intact.
+      // Managers may update:
+      // 1. their own tickets, OR
+      // 2. Complaint tickets assigned to their team.
+      //
+      // They must not be able to update another manager's team grievance.
       if (String(req.user.role) === "MANAGER") {
         if (!req.user.employeeId) {
           return res.status(401).json({
@@ -328,15 +330,19 @@ ticketRouter.patch(
           });
         }
 
-        const managerTicket = await repo.getTeamGrievanceTicket(
-          req.params.id,
-          req.user.employeeId,
-        );
+        const isOwnTicket = existingTicket?.employeeId === req.user.employeeId;
 
-        if (!managerTicket) {
+        const managerTicket = isOwnTicket
+          ? null
+          : await repo.getTeamGrievanceTicket(
+              req.params.id,
+              req.user.employeeId,
+            );
+
+        if (!isOwnTicket && !managerTicket) {
           return res.status(403).json({
             error: {
-              message: "You are not authorized to update this team grievance",
+              message: "You are not authorized to update this ticket",
             },
           });
         }
