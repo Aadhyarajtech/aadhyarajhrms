@@ -92,7 +92,7 @@ export default function Dashboard() {
 
       return bDate - aDate;
     })
-    .slice(0, 2);
+    .slice(0, 1);
 
   if (isLoading || !data) {
     return (
