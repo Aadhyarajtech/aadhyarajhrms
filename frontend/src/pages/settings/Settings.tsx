@@ -219,7 +219,7 @@ function CyclesTab() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const { data, isLoading } = useQuery({ queryKey: ["performance", "cycles"], queryFn: PerformanceApi.cycles });
-  const { register, handleSubmit, reset } = useForm({ defaultValues: { name: "", startDate: "", endDate: "" } });
+  const { register, handleSubmit, reset } = useForm({ defaultValues: { name: "", startDate: "", endDate: "", type: "ANNUAL", purpose: "" } });
 
   const mutation = useMutation({
     mutationFn: PerformanceApi.createCycle,
@@ -258,6 +258,8 @@ function CyclesTab() {
       }>
         <div className="space-y-4">
           <TextField label="Name" required placeholder="e.g. H2 2026" {...register("name", { required: true })} />
+          <label className="block text-[13px] font-medium text-ink-soft">Review type<select {...register("type")} className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink"><option value="PROBATION">Probation review</option><option value="QUARTERLY">Quarterly review</option><option value="HALF_YEARLY">Half-yearly review</option><option value="ANNUAL">Annual appraisal</option><option value="THREE_SIXTY">360-degree review</option><option value="PIP">PIP review</option></select></label>
+          <TextField label="Purpose (optional)" placeholder="e.g. Goal tracking and mid-course correction" {...register("purpose")} />
           <div className="grid grid-cols-2 gap-4">
             <TextField label="Start date" type="date" required {...register("startDate", { required: true })} />
             <TextField label="End date" type="date" required {...register("endDate", { required: true })} />

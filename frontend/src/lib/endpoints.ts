@@ -14,6 +14,8 @@ import type {
   PerformanceCycle,
   PerformanceReview,
   Goal,
+  PerformanceOutcome,
+  FeedbackSummary,
   SalaryStructure,
   PayrollRun,
   Payslip,
@@ -410,10 +412,16 @@ export const PerformanceApi = {
     title: string;
     description?: string;
     dueDate: string;
+    employeeId?: string; cycleId?: string | null; parentGoalId?: string | null; category?: string; targetValue?: number | null; currentValue?: number | null; milestones?: { title: string; targetDate?: string | null; completed?: boolean }[];
   }) =>
     api
       .post<{ goal: Goal }>("/performance/goals", payload)
       .then((r) => r.data.goal),
+  goalTrend: () => api.get<{ data: { cycleId: string | null; cycleName: string; achievementPercentage: number }[] }>("/performance/goals/trend").then((r) => r.data.data),
+  feedbackRequests: () => api.get<{ reviews: PerformanceReview[] }>("/performance/feedback-requests").then((r) => r.data.reviews),
+  submitFeedback: (id: string, payload: { type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) => api.post(`/performance/reviews/${id}/feedback`, payload).then((r) => r.data.feedback),
+  feedbackSummary: (id: string) => api.get<{ summary: FeedbackSummary }>(`/performance/reviews/${id}/feedback-summary`).then((r) => r.data.summary),
+  outcome: (id: string) => api.get<{ outcome: PerformanceOutcome | null }>(`/performance/reviews/${id}/outcome`).then((r) => r.data.outcome),
   updateGoalProgress: (id: string, progress: number) =>
     api
       .patch<{ goal: Goal }>(`/performance/goals/${id}/progress`, { progress })
