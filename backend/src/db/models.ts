@@ -491,6 +491,8 @@ export interface PerformanceCycleDoc {
   startDate: string;
   endDate: string;
   isActive: boolean;
+  type: "PROBATION" | "QUARTERLY" | "HALF_YEARLY" | "ANNUAL" | "THREE_SIXTY" | "PIP";
+  purpose: string | null;
 }
 
 const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
@@ -500,6 +502,8 @@ const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
     startDate: { type: String, required: true },
     endDate: { type: String, required: true },
     isActive: { type: Boolean, default: true },
+    type: { type: String, enum: ["PROBATION", "QUARTERLY", "HALF_YEARLY", "ANNUAL", "THREE_SIXTY", "PIP"], default: "ANNUAL" },
+    purpose: { type: String, default: null },
   },
   baseOptions,
 );
@@ -559,6 +563,13 @@ export interface GoalDoc {
   status: "NOT_STARTED" | "IN_PROGRESS" | "AT_RISK" | "COMPLETED";
   dueDate: string;
   createdAt: string;
+  cycleId: string | null;
+  parentGoalId: string | null;
+  category: string | null;
+  targetValue: number | null;
+  currentValue: number | null;
+  milestones: { title: string; targetDate: string | null; completed: boolean }[];
+  assignedBy: string | null;
 }
 
 const goalSchema = new Schema<GoalDoc>(
@@ -575,10 +586,30 @@ const goalSchema = new Schema<GoalDoc>(
     },
     dueDate: { type: String, required: true },
     createdAt: { type: String, required: true },
+    cycleId: { type: String, default: null },
+    parentGoalId: { type: String, default: null },
+    category: { type: String, default: null },
+    targetValue: { type: Number, default: null },
+    currentValue: { type: Number, default: null },
+    milestones: { type: [{ title: String, targetDate: { type: String, default: null }, completed: Boolean }], default: [] },
+    assignedBy: { type: String, default: null },
   },
   baseOptions,
 );
 export const Goal = model<GoalDoc>("Goal", goalSchema);
+
+export interface PerformanceFeedbackDoc { _id: string; reviewId: string; reviewerEmployeeId: string; type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments: string | null; submittedAt: string; }
+const performanceFeedbackSchema = new Schema<PerformanceFeedbackDoc>({ _id: idField("pfb"), reviewId: { type: String, required: true }, reviewerEmployeeId: { type: String, required: true }, type: { type: String, enum: ["PEER", "SUBORDINATE"], required: true }, competencyRatings: { type: [{ competency: String, rating: Number }], default: [] }, comments: { type: String, default: null }, submittedAt: { type: String, required: true } }, baseOptions);
+performanceFeedbackSchema.index({ reviewId: 1, reviewerEmployeeId: 1 }, { unique: true });
+export const PerformanceFeedback = model<PerformanceFeedbackDoc>("PerformanceFeedback", performanceFeedbackSchema);
+
+export interface PerformanceOutcomeDoc { _id: string; reviewId: string; incrementRecommendation: "MAXIMUM" | "STANDARD" | "NONE" | "PIP"; promotionEligible: boolean; trainingNeeds: string[]; pipRecommended: boolean; fastTrackEligible: boolean; createdAt: string; }
+const performanceOutcomeSchema = new Schema<PerformanceOutcomeDoc>({ _id: idField("pout"), reviewId: { type: String, required: true, unique: true }, incrementRecommendation: { type: String, enum: ["MAXIMUM", "STANDARD", "NONE", "PIP"], required: true }, promotionEligible: { type: Boolean, default: false }, trainingNeeds: { type: [String], default: [] }, pipRecommended: { type: Boolean, default: false }, fastTrackEligible: { type: Boolean, default: false }, createdAt: { type: String, required: true } }, baseOptions);
+export const PerformanceOutcome = model<PerformanceOutcomeDoc>("PerformanceOutcome", performanceOutcomeSchema);
+
+export interface PerformanceImprovementPlanDoc { _id: string; reviewId: string; employeeId: string; status: "ACTIVE" | "COMPLETED" | "CANCELLED"; startDate: string; endDate: string; objectives: string[]; checkInFrequency: "MONTHLY"; createdAt: string; }
+const performanceImprovementPlanSchema = new Schema<PerformanceImprovementPlanDoc>({ _id: idField("pip"), reviewId: { type: String, required: true, unique: true }, employeeId: { type: String, required: true }, status: { type: String, enum: ["ACTIVE", "COMPLETED", "CANCELLED"], default: "ACTIVE" }, startDate: { type: String, required: true }, endDate: { type: String, required: true }, objectives: { type: [String], default: [] }, checkInFrequency: { type: String, enum: ["MONTHLY"], default: "MONTHLY" }, createdAt: { type: String, required: true } }, baseOptions);
+export const PerformanceImprovementPlan = model<PerformanceImprovementPlanDoc>("PerformanceImprovementPlan", performanceImprovementPlanSchema);
 
 // ---------------------------------------------------------------------------
 // Payroll
