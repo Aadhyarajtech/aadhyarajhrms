@@ -422,6 +422,8 @@ export interface PerformanceCycle {
   startDate: string;
   endDate: string;
   isActive: boolean;
+  type: "PROBATION" | "QUARTERLY" | "HALF_YEARLY" | "ANNUAL" | "THREE_SIXTY" | "PIP";
+  purpose: string | null;
 }
 
 export interface PerformanceReview {
@@ -464,7 +466,10 @@ export interface Goal {
     | "COMPLETED";
   dueDate: string;
   createdAt: string;
+  cycleId: string | null; parentGoalId: string | null; category: string | null; targetValue: number | null; currentValue: number | null; milestones: { title: string; targetDate: string | null; completed: boolean }[]; assignedBy: string | null;
 }
+export interface PerformanceOutcome { id: string; reviewId: string; incrementRecommendation: "MAXIMUM" | "STANDARD" | "NONE" | "PIP"; promotionEligible: boolean; trainingNeeds: string[]; pipRecommended: boolean; fastTrackEligible: boolean; createdAt: string; }
+export interface FeedbackSummary { responseCount: number; competencies: { competency: string; averageRating: number }[]; comments: string[]; }
 
 /* =========================================================
    PAYROLL
