@@ -117,11 +117,45 @@ function TeamMembers({
     enabled: !!managerId,
   });
 
+  const [search, setSearch] = useState("");
+
+  const filteredTeamMembers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+      return teamMembers ?? [];
+    }
+
+    return (teamMembers ?? []).filter((employee) => {
+      const name = `${employee.firstName} ${employee.lastName}`.toLowerCase();
+      const code = employee.employeeCode?.toLowerCase() ?? "";
+      const designation = employee.designationTitle?.toLowerCase() ?? "";
+      const department = employee.departmentName?.toLowerCase() ?? "";
+
+      return (
+        name.includes(query) ||
+        code.includes(query) ||
+        designation.includes(query) ||
+        department.includes(query)
+      );
+    });
+  }, [teamMembers, search]);
+
   return (
     <Card>
       <CardHeader
         title="Direct team members"
         subtitle="Employees who report directly to you."
+        action={
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search team..."
+            aria-label="Search direct team members"
+            className="h-9 w-48 rounded-xl border border-line bg-white px-3 text-sm outline-none focus:border-brand-500"
+          />
+        }
       />
 
       {isLoading && (
@@ -148,9 +182,21 @@ function TeamMembers({
         />
       )}
 
-      {!isLoading && !isError && teamMembers && teamMembers.length > 0 && (
+      {!isLoading &&
+        !isError &&
+        !!teamMembers &&
+        teamMembers.length > 0 &&
+        filteredTeamMembers.length === 0 && (
+          <EmptyState
+            icon={Users}
+            title="No matching team members"
+            description="Try a different name, employee code, designation, or department."
+          />
+        )}
+
+      {!isLoading && !isError && filteredTeamMembers.length > 0 && (
         <div className="space-y-2">
-          {teamMembers.map((employee) => (
+          {filteredTeamMembers.map((employee) => (
             <div
               key={employee.id}
               className="flex flex-col gap-4 rounded-2xl border border-line/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"

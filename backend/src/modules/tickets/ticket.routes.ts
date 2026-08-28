@@ -12,7 +12,7 @@ import { validate } from "@/middleware/validate";
 
 import * as repo from "./ticket.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
-import { User } from "@/db/models";
+import { User, AuditLog } from "@/db/models";
 import { Employee } from "@/db/models";
 
 import type { AuthUser } from "@/types/express";
@@ -300,6 +300,11 @@ const updateSchema = z.object({
   ]),
 });
 
+const escalateSchema = z.object({
+  escalatedTo: z.enum(["HR_ADMIN", "SUPER_ADMIN"]),
+  reason: z.string().trim().min(3).max(1000),
+});
+
 ticketRouter.patch(
   "/:id",
   validate(updateSchema),
@@ -313,14 +318,23 @@ ticketRouter.patch(
         });
       }
 
-      // Fetch existing ticket so we can detect status changes.
+      // Fetch the existing ticket first so we can enforce the Manager's
+      // team-only boundary and correctly notify the ticket owner.
       const existingTicket = await repo.getTicket(req.params.id);
+
+      if (!existingTicket) {
+        return res.status(404).json({
+          error: {
+            message: "Ticket not found",
+          },
+        });
+      }
 
       // Managers may update:
       // 1. their own tickets, OR
-      // 2. Complaint tickets assigned to their team.
+      // 2. Complaint/grievance tickets assigned to their team.
       //
-      // They must not be able to update another manager's team grievance.
+      // They must never be able to update another Manager's team grievance.
       if (String(req.user.role) === "MANAGER") {
         if (!req.user.employeeId) {
           return res.status(401).json({
@@ -419,6 +433,290 @@ ticketRouter.patch(
 );
 
 /* =========================================================
+   ESCALATE MANAGER GRIEVANCE
+
+   Manager may escalate only an assigned Complaint from their
+   direct-report team. The repository performs the ownership
+   check again before changing the ticket.
+========================================================= */
+
+ticketRouter.post(
+  "/:id/escalate",
+  validate(escalateSchema),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
+
+      if (String(req.user.role) !== "MANAGER") {
+        return res.status(403).json({
+          error: {
+            message: "Only Managers can escalate team grievances",
+          },
+        });
+      }
+
+      if (!req.user.employeeId) {
+        return res.status(401).json({
+          error: {
+            message: "Manager employee profile not found",
+          },
+        });
+      }
+
+      const parsed = escalateSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: {
+            message: "Invalid escalation information",
+            details: parsed.error.flatten(),
+          },
+        });
+      }
+
+      // Verify the Manager is allowed to act on this exact grievance
+      // before attempting the state-changing operation.
+      const teamTicket = await repo.getTeamGrievanceTicket(
+        req.params.id,
+        req.user.employeeId,
+      );
+
+      if (!teamTicket) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to escalate this grievance",
+          },
+        });
+      }
+
+      if ((teamTicket as any).isEscalated) {
+        return res.status(409).json({
+          error: {
+            message: "This grievance has already been escalated",
+          },
+        });
+      }
+
+      const ticket = await repo.escalateTeamGrievance(
+        req.params.id,
+        req.user.employeeId,
+        parsed.data.escalatedTo,
+        parsed.data.reason,
+      );
+
+      // Record a permanent audit entry for the escalation.
+      try {
+        await AuditLog.create({
+          userId: req.user.userId,
+          action: "TICKET_ESCALATED",
+          entity: "Ticket",
+          entityId: ticket._id,
+          metadata: JSON.stringify({
+            ticketId: ticket.ticketId,
+            escalatedTo: parsed.data.escalatedTo,
+            reason: parsed.data.reason,
+            managerEmployeeId: req.user.employeeId,
+          }),
+          ipAddress: req.ip || null,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (auditError) {
+        // Escalation itself has succeeded; do not roll it back because
+        // an audit write failed. Surface the error in server logs.
+        console.error(
+          "Failed to create ticket escalation audit log",
+          auditError,
+        );
+      }
+
+      // Notify the employee who raised the grievance.
+      try {
+        const owner = await Employee.findById(ticket.employeeId).lean();
+
+        if (owner?.userId && owner.userId !== req.user.userId) {
+          await notify({
+            userId: owner.userId,
+            type: "TICKET_MESSAGE",
+            title: "Your grievance has been escalated",
+            message: `${ticket.ticketId} — ${ticket.subject}`,
+            link: `/app/tickets/${ticket._id}`,
+          });
+        }
+      } catch (notificationError) {
+        console.error(
+          "Failed to notify employee about grievance escalation",
+          notificationError,
+        );
+      }
+
+      // Notify active users who own the escalation destination role.
+      try {
+        const recipients = await User.find({
+          role: parsed.data.escalatedTo,
+          isActive: true,
+        }).lean();
+
+        for (const recipient of recipients) {
+          if (recipient._id === req.user.userId) continue;
+
+          await notify({
+            userId: recipient._id,
+            type: "TICKET_MESSAGE",
+            title: "Grievance escalated for your attention",
+            message: `${ticket.ticketId} — ${ticket.subject}`,
+            link: `/app/tickets/${ticket._id}`,
+          });
+        }
+      } catch (notificationError) {
+        console.error(
+          "Failed to notify escalation recipients",
+          notificationError,
+        );
+      }
+
+      return res.json({
+        ticket,
+        message: "Grievance escalated successfully",
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+
+      if (
+        message === "Invalid escalation target." ||
+        message === "Escalation reason is required." ||
+        message === "Escalation reason must not exceed 1000 characters."
+      ) {
+        return res.status(400).json({
+          error: {
+            message,
+          },
+        });
+      }
+
+      if (
+        message === "Grievance not found or not assigned to this manager." ||
+        message.includes("no longer assigned to this manager")
+      ) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to escalate this grievance",
+          },
+        });
+      }
+
+      if (message === "This grievance has already been escalated.") {
+        return res.status(409).json({
+          error: {
+            message,
+          },
+        });
+      }
+
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   GRIEVANCE SLA / ESCALATION HISTORY
+   Manager can inspect SLA state and escalation history only for
+   grievances belonging to their direct-report team.
+========================================================= */
+
+ticketRouter.get(
+  "/:id/escalation-history",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
+
+      if (String(req.user.role) !== "MANAGER") {
+        return res.status(403).json({
+          error: {
+            message: "Only Managers can view team grievance escalation history",
+          },
+        });
+      }
+
+      if (!req.user.employeeId) {
+        return res.status(401).json({
+          error: {
+            message: "Manager employee profile not found",
+          },
+        });
+      }
+
+      const history = await repo.getGrievanceEscalationHistory(
+        req.params.id,
+        req.user.employeeId,
+      );
+
+      return res.json({
+        history,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+
+      if (message === "Grievance not found or not assigned to this manager.") {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to view this grievance history",
+          },
+        });
+      }
+
+      next(err);
+    }
+  },
+);
+
+ticketRouter.post(
+  "/sla/refresh",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
+
+      // This endpoint is intentionally restricted. It is useful for an
+      // internal scheduler/health process, but must not be exposed as a
+      // Manager action that can mutate arbitrary tickets.
+      if (!["SUPER_ADMIN", "HR_ADMIN"].includes(String(req.user.role))) {
+        return res.status(403).json({
+          error: {
+            message: "Only HR Admin or Super Admin can refresh grievance SLA",
+          },
+        });
+      }
+
+      const result = await repo.refreshOpenGrievanceSla();
+
+      return res.json({
+        ...result,
+        message: "Open grievance SLA statuses refreshed successfully",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
    GET SINGLE TICKET
 
    Access rules:
@@ -495,10 +793,16 @@ ticketRouter.get(
           });
         }
 
-        const managerTicket = await repo.getTeamGrievanceTicket(
-          req.params.id,
-          req.user.employeeId,
-        );
+        // Managers can access only grievance/Complaint tickets assigned
+        // to their own team. The authenticated employeeId is the only
+        // manager scope used here.
+        const managerTicket =
+          ticket.category === "Complaint"
+            ? await repo.getTeamGrievanceTicket(
+                req.params.id,
+                req.user.employeeId,
+              )
+            : null;
 
         if (managerTicket) {
           return res.json({

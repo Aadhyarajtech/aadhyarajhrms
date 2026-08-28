@@ -94,10 +94,7 @@ const departmentSchema = new Schema<DepartmentDoc>(
   baseOptions,
 );
 
-export const Department = model<DepartmentDoc>(
-  "Department",
-  departmentSchema,
-);
+export const Department = model<DepartmentDoc>("Department", departmentSchema);
 
 export interface DesignationDoc {
   _id: string;
@@ -116,10 +113,7 @@ const designationSchema = new Schema<DesignationDoc>(
   baseOptions,
 );
 
-designationSchema.index(
-  { title: 1, departmentId: 1 },
-  { unique: true },
-);
+designationSchema.index({ title: 1, departmentId: 1 }, { unique: true });
 
 export const Designation = model<DesignationDoc>(
   "Designation",
@@ -148,17 +142,8 @@ export interface EmployeeDoc {
   departmentId: string;
   designationId: string;
   managerId: string | null;
-  employmentType:
-    | "FULL_TIME"
-    | "PART_TIME"
-    | "CONTRACT"
-    | "INTERN";
-  status:
-    | "ACTIVE"
-    | "ON_LEAVE"
-    | "NOTICE_PERIOD"
-    | "TERMINATED"
-    | "RESIGNED";
+  employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
+  status: "ACTIVE" | "ON_LEAVE" | "NOTICE_PERIOD" | "TERMINATED" | "RESIGNED";
   dateOfJoining: string;
   dateOfExit: string | null;
   emergencyContactName: string | null;
@@ -182,13 +167,7 @@ const employeeSchema = new Schema<EmployeeDoc>(
     gender: { type: String, default: null },
     maritalStatus: {
       type: String,
-      enum: [
-        "SINGLE",
-        "MARRIED",
-        "DIVORCED",
-        "WIDOWED",
-        "NOT_LISTED",
-      ],
+      enum: ["SINGLE", "MARRIED", "DIVORCED", "WIDOWED", "NOT_LISTED"],
       default: null,
     },
     dateOfBirth: { type: String, default: null },
@@ -203,23 +182,12 @@ const employeeSchema = new Schema<EmployeeDoc>(
     managerId: { type: String, default: null },
     employmentType: {
       type: String,
-      enum: [
-        "FULL_TIME",
-        "PART_TIME",
-        "CONTRACT",
-        "INTERN",
-      ],
+      enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"],
       default: "FULL_TIME",
     },
     status: {
       type: String,
-      enum: [
-        "ACTIVE",
-        "ON_LEAVE",
-        "NOTICE_PERIOD",
-        "TERMINATED",
-        "RESIGNED",
-      ],
+      enum: ["ACTIVE", "ON_LEAVE", "NOTICE_PERIOD", "TERMINATED", "RESIGNED"],
       default: "ACTIVE",
     },
     dateOfJoining: { type: String, required: true },
@@ -245,10 +213,7 @@ const employeeSchema = new Schema<EmployeeDoc>(
 employeeSchema.index({ departmentId: 1 });
 employeeSchema.index({ managerId: 1 });
 
-export const Employee = model<EmployeeDoc>(
-  "Employee",
-  employeeSchema,
-);
+export const Employee = model<EmployeeDoc>("Employee", employeeSchema);
 
 // ---------------------------------------------------------------------------
 // Attendance & holidays
@@ -301,17 +266,147 @@ const attendanceSchema = new Schema<AttendanceDoc>(
   baseOptions,
 );
 
-attendanceSchema.index(
-  { employeeId: 1, date: 1 },
-  { unique: true },
-);
+attendanceSchema.index({ employeeId: 1, date: 1 }, { unique: true });
 
 attendanceSchema.index({ date: 1 });
 
-export const Attendance = model<AttendanceDoc>(
-  "Attendance",
-  attendanceSchema,
-);
+export const Attendance = model<AttendanceDoc>("Attendance", attendanceSchema);
+
+/**
+ * Employee attendance regularization / exception request.
+ *
+ * The request is kept separate from Attendance so that:
+ * - the original attendance record is not overwritten when an employee
+ *   submits a request;
+ * - Managers can review pending requests belonging only to their team;
+ * - approval/rejection has a durable workflow and audit trail;
+ * - the Attendance record can be changed only after approval.
+ */
+export type AttendanceRegularizationStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED";
+
+export interface AttendanceRegularizationRequestDoc {
+  _id: string;
+  employeeId: string;
+  attendanceId: string | null;
+  date: string;
+
+  requestedCheckIn: string | null;
+  requestedCheckOut: string | null;
+  requestedStatus:
+    | "PRESENT"
+    | "ABSENT"
+    | "HALF_DAY"
+    | "WORK_FROM_HOME"
+    | "ON_LEAVE";
+
+  reason: string;
+
+  status: AttendanceRegularizationStatus;
+
+  approverId: string | null;
+  decisionNote: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+}
+
+const attendanceRegularizationRequestSchema =
+  new Schema<AttendanceRegularizationRequestDoc>(
+    {
+      _id: idField("areg"),
+
+      employeeId: {
+        type: String,
+        required: true,
+      },
+
+      attendanceId: {
+        type: String,
+        default: null,
+      },
+
+      date: {
+        type: String,
+        required: true,
+      },
+
+      requestedCheckIn: {
+        type: String,
+        default: null,
+      },
+
+      requestedCheckOut: {
+        type: String,
+        default: null,
+      },
+
+      requestedStatus: {
+        type: String,
+        enum: ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"],
+        required: true,
+      },
+
+      reason: {
+        type: String,
+        required: true,
+        trim: true,
+        maxlength: 1000,
+      },
+
+      status: {
+        type: String,
+        enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
+        default: "PENDING",
+      },
+
+      approverId: {
+        type: String,
+        default: null,
+      },
+
+      decisionNote: {
+        type: String,
+        default: null,
+        trim: true,
+        maxlength: 1000,
+      },
+
+      requestedAt: {
+        type: String,
+        required: true,
+      },
+
+      decidedAt: {
+        type: String,
+        default: null,
+      },
+    },
+    baseOptions,
+  );
+
+attendanceRegularizationRequestSchema.index({
+  employeeId: 1,
+  date: 1,
+});
+
+attendanceRegularizationRequestSchema.index({
+  status: 1,
+  requestedAt: -1,
+});
+
+attendanceRegularizationRequestSchema.index({
+  employeeId: 1,
+  status: 1,
+});
+
+export const AttendanceRegularizationRequest =
+  model<AttendanceRegularizationRequestDoc>(
+    "AttendanceRegularizationRequest",
+    attendanceRegularizationRequestSchema,
+  );
 
 export interface HolidayDoc {
   _id: string;
@@ -330,10 +425,7 @@ const holidaySchema = new Schema<HolidayDoc>(
   baseOptions,
 );
 
-export const Holiday = model<HolidayDoc>(
-  "Holiday",
-  holidaySchema,
-);
+export const Holiday = model<HolidayDoc>("Holiday", holidaySchema);
 
 // ---------------------------------------------------------------------------
 // Leave
@@ -359,10 +451,7 @@ const leaveTypeSchema = new Schema<LeaveTypeDoc>(
   baseOptions,
 );
 
-export const LeaveType = model<LeaveTypeDoc>(
-  "LeaveType",
-  leaveTypeSchema,
-);
+export const LeaveType = model<LeaveTypeDoc>("LeaveType", leaveTypeSchema);
 
 export interface LeaveBalanceDoc {
   _id: string;
@@ -405,11 +494,7 @@ export interface LeaveRequestDoc {
   endDate: string;
   totalDays: number;
   reason: string;
-  status:
-    | "PENDING"
-    | "APPROVED"
-    | "REJECTED"
-    | "CANCELLED";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
   approverId: string | null;
   decisionNote: string | null;
   appliedAt: string;
@@ -427,12 +512,7 @@ const leaveRequestSchema = new Schema<LeaveRequestDoc>(
     reason: { type: String, required: true },
     status: {
       type: String,
-      enum: [
-        "PENDING",
-        "APPROVED",
-        "REJECTED",
-        "CANCELLED",
-      ],
+      enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
       default: "PENDING",
     },
     approverId: { type: String, default: null },
@@ -458,10 +538,7 @@ export const LeaveRequest = model<LeaveRequestDoc>(
 export interface ApprovalStepDoc {
   approverId: string;
   level: number;
-  status:
-    | "PENDING"
-    | "APPROVED"
-    | "REJECTED";
+  status: "PENDING" | "APPROVED" | "REJECTED";
   actedAt: string | null;
   comment: string | null;
 }
@@ -477,11 +554,7 @@ export interface JobPostingDoc {
 
   location: string;
 
-  employmentType:
-    | "FULL_TIME"
-    | "PART_TIME"
-    | "CONTRACT"
-    | "INTERN";
+  employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
 
   experienceMin: number;
 
@@ -489,19 +562,13 @@ export interface JobPostingDoc {
 
   description: string;
 
-  status:
-    | "OPEN"
-    | "ON_HOLD"
-    | "CLOSED";
+  status: "OPEN" | "ON_HOLD" | "CLOSED";
 
   openings: number;
 
   postedAt: string;
 
-  requisitionStatus:
-    | "PENDING_APPROVAL"
-    | "APPROVED"
-    | "REJECTED";
+  requisitionStatus: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 
   headcount: number;
 
@@ -515,10 +582,7 @@ export interface JobPostingDoc {
 
   screeningQuestions: string[];
 
-  hiringMode:
-    | "STANDARD"
-    | "WALK_IN"
-    | "CAMPUS";
+  hiringMode: "STANDARD" | "WALK_IN" | "CAMPUS";
 
   skills: string[];
 
@@ -557,12 +621,7 @@ const jobPostingSchema = new Schema<JobPostingDoc>(
 
     employmentType: {
       type: String,
-      enum: [
-        "FULL_TIME",
-        "PART_TIME",
-        "CONTRACT",
-        "INTERN",
-      ],
+      enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"],
       default: "FULL_TIME",
     },
 
@@ -583,11 +642,7 @@ const jobPostingSchema = new Schema<JobPostingDoc>(
 
     status: {
       type: String,
-      enum: [
-        "OPEN",
-        "ON_HOLD",
-        "CLOSED",
-      ],
+      enum: ["OPEN", "ON_HOLD", "CLOSED"],
       default: "OPEN",
     },
 
@@ -603,11 +658,7 @@ const jobPostingSchema = new Schema<JobPostingDoc>(
 
     requisitionStatus: {
       type: String,
-      enum: [
-        "PENDING_APPROVAL",
-        "APPROVED",
-        "REJECTED",
-      ],
+      enum: ["PENDING_APPROVAL", "APPROVED", "REJECTED"],
       default: "PENDING_APPROVAL",
     },
 
@@ -641,11 +692,7 @@ const jobPostingSchema = new Schema<JobPostingDoc>(
 
           status: {
             type: String,
-            enum: [
-              "PENDING",
-              "APPROVED",
-              "REJECTED",
-            ],
+            enum: ["PENDING", "APPROVED", "REJECTED"],
             default: "PENDING",
           },
 
@@ -675,11 +722,7 @@ const jobPostingSchema = new Schema<JobPostingDoc>(
 
     hiringMode: {
       type: String,
-      enum: [
-        "STANDARD",
-        "WALK_IN",
-        "CAMPUS",
-      ],
+      enum: ["STANDARD", "WALK_IN", "CAMPUS"],
       default: "STANDARD",
     },
 
@@ -711,18 +754,10 @@ const jobPostingSchema = new Schema<JobPostingDoc>(
   baseOptions,
 );
 
-export const JobPosting = model<JobPostingDoc>(
-  "JobPosting",
-  jobPostingSchema,
-);
+export const JobPosting = model<JobPostingDoc>("JobPosting", jobPostingSchema);
 
 export interface CandidateOfferDoc {
-  status:
-    | "NOT_GENERATED"
-    | "NOT_SENT"
-    | "SENT"
-    | "ACCEPTED"
-    | "DECLINED";
+  status: "NOT_GENERATED" | "NOT_SENT" | "SENT" | "ACCEPTED" | "DECLINED";
 
   offerUrl: string | null;
 
@@ -742,11 +777,7 @@ export interface CandidateOfferDoc {
 }
 
 export interface BackgroundVerificationDoc {
-  status:
-    | "NOT_STARTED"
-    | "IN_PROGRESS"
-    | "VERIFIED"
-    | "FAILED";
+  status: "NOT_STARTED" | "IN_PROGRESS" | "VERIFIED" | "FAILED";
 
   provider: string | null;
 
@@ -770,10 +801,7 @@ export interface PreboardingDocumentDoc {
 }
 
 export interface PreboardingDoc {
-  status:
-    | "NOT_STARTED"
-    | "IN_PROGRESS"
-    | "COMPLETED";
+  status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
 
   completedAt: string | null;
 
@@ -797,13 +825,7 @@ export interface CandidateDoc {
 
   resumeText: string | null;
 
-  stage:
-    | "APPLIED"
-    | "SCREENING"
-    | "INTERVIEW"
-    | "OFFER"
-    | "HIRED"
-    | "REJECTED";
+  stage: "APPLIED" | "SCREENING" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED";
 
   rating: number | null;
 
@@ -825,8 +847,7 @@ export interface CandidateDoc {
 
   offer: CandidateOfferDoc | null;
 
-  backgroundVerification:
-    BackgroundVerificationDoc | null;
+  backgroundVerification: BackgroundVerificationDoc | null;
 
   preboarding: PreboardingDoc | null;
 
@@ -874,14 +895,7 @@ const candidateSchema = new Schema<CandidateDoc>(
 
     stage: {
       type: String,
-      enum: [
-        "APPLIED",
-        "SCREENING",
-        "INTERVIEW",
-        "OFFER",
-        "HIRED",
-        "REJECTED",
-      ],
+      enum: ["APPLIED", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"],
       default: "APPLIED",
     },
 
@@ -934,13 +948,7 @@ const candidateSchema = new Schema<CandidateDoc>(
       type: {
         status: {
           type: String,
-          enum: [
-            "NOT_GENERATED",
-            "NOT_SENT",
-            "SENT",
-            "ACCEPTED",
-            "DECLINED",
-          ],
+          enum: ["NOT_GENERATED", "NOT_SENT", "SENT", "ACCEPTED", "DECLINED"],
           default: "NOT_GENERATED",
         },
 
@@ -992,12 +1000,7 @@ const candidateSchema = new Schema<CandidateDoc>(
       type: {
         status: {
           type: String,
-          enum: [
-            "NOT_STARTED",
-            "IN_PROGRESS",
-            "VERIFIED",
-            "FAILED",
-          ],
+          enum: ["NOT_STARTED", "IN_PROGRESS", "VERIFIED", "FAILED"],
           default: "NOT_STARTED",
         },
 
@@ -1034,11 +1037,7 @@ const candidateSchema = new Schema<CandidateDoc>(
       type: {
         status: {
           type: String,
-          enum: [
-            "NOT_STARTED",
-            "IN_PROGRESS",
-            "COMPLETED",
-          ],
+          enum: ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"],
           default: "NOT_STARTED",
         },
 
@@ -1089,10 +1088,7 @@ const candidateSchema = new Schema<CandidateDoc>(
 
 candidateSchema.index({ stage: 1 });
 
-export const Candidate = model<CandidateDoc>(
-  "Candidate",
-  candidateSchema,
-);
+export const Candidate = model<CandidateDoc>("Candidate", candidateSchema);
 
 export interface InterviewDoc {
   _id: string;
@@ -1119,10 +1115,7 @@ const interviewSchema = new Schema<InterviewDoc>(
   baseOptions,
 );
 
-export const Interview = model<InterviewDoc>(
-  "Interview",
-  interviewSchema,
-);
+export const Interview = model<InterviewDoc>("Interview", interviewSchema);
 
 // ---------------------------------------------------------------------------
 // Performance
@@ -1133,53 +1126,56 @@ export interface PerformanceCycleDoc {
   startDate: string;
   endDate: string;
   isActive: boolean;
-  type: "PROBATION" | "QUARTERLY" | "HALF_YEARLY" | "ANNUAL" | "THREE_SIXTY" | "PIP";
+  type:
+    | "PROBATION"
+    | "QUARTERLY"
+    | "HALF_YEARLY"
+    | "ANNUAL"
+    | "THREE_SIXTY"
+    | "PIP";
   purpose: string | null;
 }
 
-const performanceCycleSchema =
-  new Schema<PerformanceCycleDoc>(
-    {
-      _id: idField("cyc"),
-      name: { type: String, required: true },
-      startDate: { type: String, required: true },
-      endDate: { type: String, required: true },
-      isActive: { type: Boolean, default: true },
-      type: {
-        type: String,
-        enum: [
-          "PROBATION",
-          "QUARTERLY",
-          "HALF_YEARLY",
-          "ANNUAL",
-          "THREE_SIXTY",
-          "PIP",
-        ],
-        default: "ANNUAL",
-      },
-      purpose: { type: String, default: null },
+const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
+  {
+    _id: idField("cyc"),
+    name: { type: String, required: true },
+    startDate: { type: String, required: true },
+    endDate: { type: String, required: true },
+    isActive: { type: Boolean, default: true },
+    type: {
+      type: String,
+      enum: [
+        "PROBATION",
+        "QUARTERLY",
+        "HALF_YEARLY",
+        "ANNUAL",
+        "THREE_SIXTY",
+        "PIP",
+      ],
+      default: "ANNUAL",
     },
-    baseOptions,
-  );
+    purpose: { type: String, default: null },
+  },
+  baseOptions,
+);
 
-export const PerformanceCycle =
-  model<PerformanceCycleDoc>(
-    "PerformanceCycle",
-    performanceCycleSchema,
-  );
+export const PerformanceCycle = model<PerformanceCycleDoc>(
+  "PerformanceCycle",
+  performanceCycleSchema,
+);
 
 export interface PerformanceReviewDoc {
   _id: string;
   cycleId: string;
   revieweeId: string;
   reviewerId: string;
-  status:
-    | "NOT_STARTED"
-    | "SELF_REVIEW"
-    | "MANAGER_REVIEW"
-    | "COMPLETED";
+  status: "NOT_STARTED" | "SELF_REVIEW" | "MANAGER_REVIEW" | "COMPLETED";
   selfRating: number | null;
   managerRating: number | null;
+  managerTechnicalRating: number | null;
+  managerDeliveryRating: number | null;
+  managerBehaviorRating: number | null;
   finalRating: number | null;
   strengths: string | null;
   improvements: string | null;
@@ -1187,44 +1183,37 @@ export interface PerformanceReviewDoc {
   submittedAt: string | null;
 }
 
-const performanceReviewSchema =
-  new Schema<PerformanceReviewDoc>(
-    {
-      _id: idField("rev"),
-      cycleId: { type: String, required: true },
-      revieweeId: { type: String, required: true },
-      reviewerId: { type: String, required: true },
-      status: {
-        type: String,
-        enum: [
-          "NOT_STARTED",
-          "SELF_REVIEW",
-          "MANAGER_REVIEW",
-          "COMPLETED",
-        ],
-        default: "NOT_STARTED",
-      },
-      selfRating: { type: Number, default: null },
-      managerRating: { type: Number, default: null },
-      finalRating: { type: Number, default: null },
-      strengths: { type: String, default: null },
-      improvements: { type: String, default: null },
-      managerComments: { type: String, default: null },
-      submittedAt: { type: String, default: null },
+const performanceReviewSchema = new Schema<PerformanceReviewDoc>(
+  {
+    _id: idField("rev"),
+    cycleId: { type: String, required: true },
+    revieweeId: { type: String, required: true },
+    reviewerId: { type: String, required: true },
+    status: {
+      type: String,
+      enum: ["NOT_STARTED", "SELF_REVIEW", "MANAGER_REVIEW", "COMPLETED"],
+      default: "NOT_STARTED",
     },
-    baseOptions,
-  );
-
-performanceReviewSchema.index(
-  { cycleId: 1, revieweeId: 1 },
-  { unique: true },
+    selfRating: { type: Number, default: null },
+    managerRating: { type: Number, default: null },
+    managerTechnicalRating: { type: Number, default: null },
+    managerDeliveryRating: { type: Number, default: null },
+    managerBehaviorRating: { type: Number, default: null },
+    finalRating: { type: Number, default: null },
+    strengths: { type: String, default: null },
+    improvements: { type: String, default: null },
+    managerComments: { type: String, default: null },
+    submittedAt: { type: String, default: null },
+  },
+  baseOptions,
 );
 
-export const PerformanceReview =
-  model<PerformanceReviewDoc>(
-    "PerformanceReview",
-    performanceReviewSchema,
-  );
+performanceReviewSchema.index({ cycleId: 1, revieweeId: 1 }, { unique: true });
+
+export const PerformanceReview = model<PerformanceReviewDoc>(
+  "PerformanceReview",
+  performanceReviewSchema,
+);
 
 export interface GoalDoc {
   _id: string;
@@ -1232,11 +1221,7 @@ export interface GoalDoc {
   title: string;
   description: string | null;
   progress: number;
-  status:
-    | "NOT_STARTED"
-    | "IN_PROGRESS"
-    | "AT_RISK"
-    | "COMPLETED";
+  status: "NOT_STARTED" | "IN_PROGRESS" | "AT_RISK" | "COMPLETED";
   dueDate: string;
   createdAt: string;
   cycleId: string | null;
@@ -1244,7 +1229,11 @@ export interface GoalDoc {
   category: string | null;
   targetValue: number | null;
   currentValue: number | null;
-  milestones: { title: string; targetDate: string | null; completed: boolean }[];
+  milestones: {
+    title: string;
+    targetDate: string | null;
+    completed: boolean;
+  }[];
   assignedBy: string | null;
 }
 
@@ -1257,12 +1246,7 @@ const goalSchema = new Schema<GoalDoc>(
     progress: { type: Number, default: 0 },
     status: {
       type: String,
-      enum: [
-        "NOT_STARTED",
-        "IN_PROGRESS",
-        "AT_RISK",
-        "COMPLETED",
-      ],
+      enum: ["NOT_STARTED", "IN_PROGRESS", "AT_RISK", "COMPLETED"],
       default: "NOT_STARTED",
     },
     dueDate: { type: String, required: true },
@@ -1272,29 +1256,122 @@ const goalSchema = new Schema<GoalDoc>(
     category: { type: String, default: null },
     targetValue: { type: Number, default: null },
     currentValue: { type: Number, default: null },
-    milestones: { type: [{ title: String, targetDate: { type: String, default: null }, completed: Boolean }], default: [] },
+    milestones: {
+      type: [
+        {
+          title: String,
+          targetDate: { type: String, default: null },
+          completed: Boolean,
+        },
+      ],
+      default: [],
+    },
     assignedBy: { type: String, default: null },
   },
   baseOptions,
 );
 
-export const Goal = model<GoalDoc>(
-  "Goal",
-  goalSchema,
+export const Goal = model<GoalDoc>("Goal", goalSchema);
+
+export interface PerformanceFeedbackDoc {
+  _id: string;
+  reviewId: string;
+  reviewerEmployeeId: string;
+  type: "PEER" | "SUBORDINATE";
+  competencyRatings: { competency: string; rating: number }[];
+  comments: string | null;
+  submittedAt: string;
+}
+const performanceFeedbackSchema = new Schema<PerformanceFeedbackDoc>(
+  {
+    _id: idField("pfb"),
+    reviewId: { type: String, required: true },
+    reviewerEmployeeId: { type: String, required: true },
+    type: { type: String, enum: ["PEER", "SUBORDINATE"], required: true },
+    competencyRatings: {
+      type: [{ competency: String, rating: Number }],
+      default: [],
+    },
+    comments: { type: String, default: null },
+    submittedAt: { type: String, required: true },
+  },
+  baseOptions,
+);
+performanceFeedbackSchema.index(
+  { reviewId: 1, reviewerEmployeeId: 1 },
+  { unique: true },
+);
+export const PerformanceFeedback = model<PerformanceFeedbackDoc>(
+  "PerformanceFeedback",
+  performanceFeedbackSchema,
 );
 
-export interface PerformanceFeedbackDoc { _id: string; reviewId: string; reviewerEmployeeId: string; type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments: string | null; submittedAt: string; }
-const performanceFeedbackSchema = new Schema<PerformanceFeedbackDoc>({ _id: idField("pfb"), reviewId: { type: String, required: true }, reviewerEmployeeId: { type: String, required: true }, type: { type: String, enum: ["PEER", "SUBORDINATE"], required: true }, competencyRatings: { type: [{ competency: String, rating: Number }], default: [] }, comments: { type: String, default: null }, submittedAt: { type: String, required: true } }, baseOptions);
-performanceFeedbackSchema.index({ reviewId: 1, reviewerEmployeeId: 1 }, { unique: true });
-export const PerformanceFeedback = model<PerformanceFeedbackDoc>("PerformanceFeedback", performanceFeedbackSchema);
+export interface PerformanceOutcomeDoc {
+  _id: string;
+  reviewId: string;
+  incrementRecommendation: "MAXIMUM" | "STANDARD" | "NONE" | "PIP";
+  promotionEligible: boolean;
+  trainingNeeds: string[];
+  pipRecommended: boolean;
+  fastTrackEligible: boolean;
+  createdAt: string;
+}
+const performanceOutcomeSchema = new Schema<PerformanceOutcomeDoc>(
+  {
+    _id: idField("pout"),
+    reviewId: { type: String, required: true, unique: true },
+    incrementRecommendation: {
+      type: String,
+      enum: ["MAXIMUM", "STANDARD", "NONE", "PIP"],
+      required: true,
+    },
+    promotionEligible: { type: Boolean, default: false },
+    trainingNeeds: { type: [String], default: [] },
+    pipRecommended: { type: Boolean, default: false },
+    fastTrackEligible: { type: Boolean, default: false },
+    createdAt: { type: String, required: true },
+  },
+  baseOptions,
+);
+export const PerformanceOutcome = model<PerformanceOutcomeDoc>(
+  "PerformanceOutcome",
+  performanceOutcomeSchema,
+);
 
-export interface PerformanceOutcomeDoc { _id: string; reviewId: string; incrementRecommendation: "MAXIMUM" | "STANDARD" | "NONE" | "PIP"; promotionEligible: boolean; trainingNeeds: string[]; pipRecommended: boolean; fastTrackEligible: boolean; createdAt: string; }
-const performanceOutcomeSchema = new Schema<PerformanceOutcomeDoc>({ _id: idField("pout"), reviewId: { type: String, required: true, unique: true }, incrementRecommendation: { type: String, enum: ["MAXIMUM", "STANDARD", "NONE", "PIP"], required: true }, promotionEligible: { type: Boolean, default: false }, trainingNeeds: { type: [String], default: [] }, pipRecommended: { type: Boolean, default: false }, fastTrackEligible: { type: Boolean, default: false }, createdAt: { type: String, required: true } }, baseOptions);
-export const PerformanceOutcome = model<PerformanceOutcomeDoc>("PerformanceOutcome", performanceOutcomeSchema);
-
-export interface PerformanceImprovementPlanDoc { _id: string; reviewId: string; employeeId: string; status: "ACTIVE" | "COMPLETED" | "CANCELLED"; startDate: string; endDate: string; objectives: string[]; checkInFrequency: "MONTHLY"; createdAt: string; }
-const performanceImprovementPlanSchema = new Schema<PerformanceImprovementPlanDoc>({ _id: idField("pip"), reviewId: { type: String, required: true, unique: true }, employeeId: { type: String, required: true }, status: { type: String, enum: ["ACTIVE", "COMPLETED", "CANCELLED"], default: "ACTIVE" }, startDate: { type: String, required: true }, endDate: { type: String, required: true }, objectives: { type: [String], default: [] }, checkInFrequency: { type: String, enum: ["MONTHLY"], default: "MONTHLY" }, createdAt: { type: String, required: true } }, baseOptions);
-export const PerformanceImprovementPlan = model<PerformanceImprovementPlanDoc>("PerformanceImprovementPlan", performanceImprovementPlanSchema);
+export interface PerformanceImprovementPlanDoc {
+  _id: string;
+  reviewId: string;
+  employeeId: string;
+  status: "ACTIVE" | "COMPLETED" | "CANCELLED";
+  startDate: string;
+  endDate: string;
+  objectives: string[];
+  checkInFrequency: "MONTHLY";
+  createdAt: string;
+}
+const performanceImprovementPlanSchema =
+  new Schema<PerformanceImprovementPlanDoc>(
+    {
+      _id: idField("pip"),
+      reviewId: { type: String, required: true, unique: true },
+      employeeId: { type: String, required: true },
+      status: {
+        type: String,
+        enum: ["ACTIVE", "COMPLETED", "CANCELLED"],
+        default: "ACTIVE",
+      },
+      startDate: { type: String, required: true },
+      endDate: { type: String, required: true },
+      objectives: { type: [String], default: [] },
+      checkInFrequency: { type: String, enum: ["MONTHLY"], default: "MONTHLY" },
+      createdAt: { type: String, required: true },
+    },
+    baseOptions,
+  );
+export const PerformanceImprovementPlan = model<PerformanceImprovementPlanDoc>(
+  "PerformanceImprovementPlan",
+  performanceImprovementPlanSchema,
+);
 
 // ---------------------------------------------------------------------------
 // Payroll
@@ -1313,45 +1390,43 @@ export interface SalaryStructureDoc {
   effectiveFrom: string;
 }
 
-const salaryStructureSchema =
-  new Schema<SalaryStructureDoc>(
-    {
-      _id: idField("sal"),
-      employeeId: {
-        type: String,
-        required: true,
-        unique: true,
-      },
-      basic: { type: Number, required: true },
-      hra: { type: Number, required: true },
-      conveyance: { type: Number, required: true },
-      medical: { type: Number, required: true },
-      specialAllowance: {
-        type: Number,
-        required: true,
-      },
-      pf: { type: Number, required: true },
-      professionalTax: {
-        type: Number,
-        required: true,
-      },
-      incomeTax: {
-        type: Number,
-        required: true,
-      },
-      effectiveFrom: {
-        type: String,
-        required: true,
-      },
+const salaryStructureSchema = new Schema<SalaryStructureDoc>(
+  {
+    _id: idField("sal"),
+    employeeId: {
+      type: String,
+      required: true,
+      unique: true,
     },
-    baseOptions,
-  );
+    basic: { type: Number, required: true },
+    hra: { type: Number, required: true },
+    conveyance: { type: Number, required: true },
+    medical: { type: Number, required: true },
+    specialAllowance: {
+      type: Number,
+      required: true,
+    },
+    pf: { type: Number, required: true },
+    professionalTax: {
+      type: Number,
+      required: true,
+    },
+    incomeTax: {
+      type: Number,
+      required: true,
+    },
+    effectiveFrom: {
+      type: String,
+      required: true,
+    },
+  },
+  baseOptions,
+);
 
-export const SalaryStructure =
-  model<SalaryStructureDoc>(
-    "SalaryStructure",
-    salaryStructureSchema,
-  );
+export const SalaryStructure = model<SalaryStructureDoc>(
+  "SalaryStructure",
+  salaryStructureSchema,
+);
 
 export interface PayrollRunDoc {
   _id: string;
@@ -1365,36 +1440,28 @@ export interface PayrollRunDoc {
   headcount: number;
 }
 
-const payrollRunSchema =
-  new Schema<PayrollRunDoc>(
-    {
-      _id: idField("prun"),
-      month: { type: Number, required: true },
-      year: { type: Number, required: true },
-      status: {
-        type: String,
-        enum: ["DRAFT", "PROCESSED", "PAID"],
-        default: "DRAFT",
-      },
-      processedAt: { type: String, default: null },
-      totalGross: { type: Number, default: 0 },
-      totalDeductions: { type: Number, default: 0 },
-      totalNet: { type: Number, default: 0 },
-      headcount: { type: Number, default: 0 },
+const payrollRunSchema = new Schema<PayrollRunDoc>(
+  {
+    _id: idField("prun"),
+    month: { type: Number, required: true },
+    year: { type: Number, required: true },
+    status: {
+      type: String,
+      enum: ["DRAFT", "PROCESSED", "PAID"],
+      default: "DRAFT",
     },
-    baseOptions,
-  );
-
-payrollRunSchema.index(
-  { month: 1, year: 1 },
-  { unique: true },
+    processedAt: { type: String, default: null },
+    totalGross: { type: Number, default: 0 },
+    totalDeductions: { type: Number, default: 0 },
+    totalNet: { type: Number, default: 0 },
+    headcount: { type: Number, default: 0 },
+  },
+  baseOptions,
 );
 
-export const PayrollRun =
-  model<PayrollRunDoc>(
-    "PayrollRun",
-    payrollRunSchema,
-  );
+payrollRunSchema.index({ month: 1, year: 1 }, { unique: true });
+
+export const PayrollRun = model<PayrollRunDoc>("PayrollRun", payrollRunSchema);
 
 export interface PayslipDoc {
   _id: string;
@@ -1463,25 +1530,13 @@ const payslipSchema = new Schema<PayslipDoc>(
   baseOptions,
 );
 
-payslipSchema.index(
-  { payrollRunId: 1, employeeId: 1 },
-  { unique: true },
-);
+payslipSchema.index({ payrollRunId: 1, employeeId: 1 }, { unique: true });
 
-export const Payslip = model<PayslipDoc>(
-  "Payslip",
-  payslipSchema,
-);
+export const Payslip = model<PayslipDoc>("Payslip", payslipSchema);
 
-export type PayslipRequestPeriod =
-  | "3_MONTHS"
-  | "6_MONTHS"
-  | "12_MONTHS";
+export type PayslipRequestPeriod = "3_MONTHS" | "6_MONTHS" | "12_MONTHS";
 
-export type PayslipRequestStatus =
-  | "PENDING"
-  | "SENT"
-  | "REJECTED";
+export type PayslipRequestStatus = "PENDING" | "SENT" | "REJECTED";
 
 export interface PayslipRequestDoc {
   _id: string;
@@ -1495,55 +1550,46 @@ export interface PayslipRequestDoc {
   completedAt: string | null;
 }
 
-const payslipRequestSchema =
-  new Schema<PayslipRequestDoc>(
-    {
-      _id: idField("preq"),
-      employeeId: {
-        type: String,
-        required: true,
-      },
-      requestedByUserId: {
-        type: String,
-        required: true,
-      },
-      period: {
-        type: String,
-        enum: [
-          "3_MONTHS",
-          "6_MONTHS",
-          "12_MONTHS",
-        ],
-        required: true,
-      },
-      status: {
-        type: String,
-        enum: [
-          "PENDING",
-          "SENT",
-          "REJECTED",
-        ],
-        default: "PENDING",
-      },
-      payslipIds: {
-        type: [String],
-        default: [],
-      },
-      processedByUserId: {
-        type: String,
-        default: null,
-      },
-      requestedAt: {
-        type: String,
-        required: true,
-      },
-      completedAt: {
-        type: String,
-        default: null,
-      },
+const payslipRequestSchema = new Schema<PayslipRequestDoc>(
+  {
+    _id: idField("preq"),
+    employeeId: {
+      type: String,
+      required: true,
     },
-    baseOptions,
-  );
+    requestedByUserId: {
+      type: String,
+      required: true,
+    },
+    period: {
+      type: String,
+      enum: ["3_MONTHS", "6_MONTHS", "12_MONTHS"],
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["PENDING", "SENT", "REJECTED"],
+      default: "PENDING",
+    },
+    payslipIds: {
+      type: [String],
+      default: [],
+    },
+    processedByUserId: {
+      type: String,
+      default: null,
+    },
+    requestedAt: {
+      type: String,
+      required: true,
+    },
+    completedAt: {
+      type: String,
+      default: null,
+    },
+  },
+  baseOptions,
+);
 
 payslipRequestSchema.index({
   employeeId: 1,
@@ -1554,11 +1600,10 @@ payslipRequestSchema.index({
   status: 1,
 });
 
-export const PayslipRequest =
-  model<PayslipRequestDoc>(
-    "PayslipRequest",
-    payslipRequestSchema,
-  );
+export const PayslipRequest = model<PayslipRequestDoc>(
+  "PayslipRequest",
+  payslipRequestSchema,
+);
 
 // ---------------------------------------------------------------------------
 // Announcements & notifications
@@ -1587,66 +1632,64 @@ export interface AnnouncementReceiptDoc {
   updatedAt: string;
 }
 
-const announcementReceiptSchema =
-  new Schema<AnnouncementReceiptDoc>(
-    {
-      _id: idField("anr"),
+const announcementReceiptSchema = new Schema<AnnouncementReceiptDoc>(
+  {
+    _id: idField("anr"),
 
-      announcementId: {
-        type: String,
-        required: true,
-        index: true,
-      },
-
-      userId: {
-        type: String,
-        required: true,
-        index: true,
-      },
-
-      isRead: {
-        type: Boolean,
-        default: false,
-      },
-
-      isAcknowledged: {
-        type: Boolean,
-        default: false,
-      },
-
-      readAt: {
-        type: String,
-        default: null,
-      },
-
-      acknowledgedAt: {
-        type: String,
-        default: null,
-      },
-
-      createdAt: {
-        type: String,
-        required: true,
-      },
-
-      updatedAt: {
-        type: String,
-        required: true,
-      },
+    announcementId: {
+      type: String,
+      required: true,
+      index: true,
     },
-    baseOptions,
-  );
+
+    userId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+
+    isRead: {
+      type: Boolean,
+      default: false,
+    },
+
+    isAcknowledged: {
+      type: Boolean,
+      default: false,
+    },
+
+    readAt: {
+      type: String,
+      default: null,
+    },
+
+    acknowledgedAt: {
+      type: String,
+      default: null,
+    },
+
+    createdAt: {
+      type: String,
+      required: true,
+    },
+
+    updatedAt: {
+      type: String,
+      required: true,
+    },
+  },
+  baseOptions,
+);
 
 announcementReceiptSchema.index(
   { announcementId: 1, userId: 1 },
   { unique: true },
 );
 
-export const AnnouncementReceipt =
-  model<AnnouncementReceiptDoc>(
-    "AnnouncementReceipt",
-    announcementReceiptSchema,
-  );
+export const AnnouncementReceipt = model<AnnouncementReceiptDoc>(
+  "AnnouncementReceipt",
+  announcementReceiptSchema,
+);
 
 export type NotificationType =
   | "LEAVE_REQUEST"
@@ -1672,81 +1715,76 @@ export interface NotificationDoc {
   createdAt: string;
 }
 
-const notificationSchema =
-  new Schema<NotificationDoc>(
-    {
-      _id: idField("ntf"),
+const notificationSchema = new Schema<NotificationDoc>(
+  {
+    _id: idField("ntf"),
 
-      userId: {
-        type: String,
-        required: true,
-      },
-
-      type: {
-        type: String,
-        enum: [
-          "LEAVE_REQUEST",
-          "LEAVE_DECISION",
-          "ANNOUNCEMENT",
-          "PAYROLL",
-          "PERFORMANCE",
-          "RECRUITMENT",
-          "TICKET_MESSAGE",
-          "SYSTEM",
-          "DOCUMENT_REQUESTED",
-          "DOCUMENT_UPLOADED",
-          "DOCUMENT_READY",
-        ],
-        default: "SYSTEM",
-      },
-
-      title: {
-        type: String,
-        required: true,
-      },
-
-      message: {
-        type: String,
-        required: true,
-      },
-
-      isRead: {
-        type: Boolean,
-        default: false,
-      },
-
-      link: {
-        type: String,
-        default: null,
-      },
-
-      createdAt: {
-        type: String,
-        required: true,
-      },
+    userId: {
+      type: String,
+      required: true,
     },
-    baseOptions,
-  );
+
+    type: {
+      type: String,
+      enum: [
+        "LEAVE_REQUEST",
+        "LEAVE_DECISION",
+        "ANNOUNCEMENT",
+        "PAYROLL",
+        "PERFORMANCE",
+        "RECRUITMENT",
+        "TICKET_MESSAGE",
+        "SYSTEM",
+        "DOCUMENT_REQUESTED",
+        "DOCUMENT_UPLOADED",
+        "DOCUMENT_READY",
+      ],
+      default: "SYSTEM",
+    },
+
+    title: {
+      type: String,
+      required: true,
+    },
+
+    message: {
+      type: String,
+      required: true,
+    },
+
+    isRead: {
+      type: Boolean,
+      default: false,
+    },
+
+    link: {
+      type: String,
+      default: null,
+    },
+
+    createdAt: {
+      type: String,
+      required: true,
+    },
+  },
+  baseOptions,
+);
 
 notificationSchema.index({
   userId: 1,
   isRead: 1,
 });
 
-export const Notification =
-  model<NotificationDoc>(
-    "Notification",
-    notificationSchema,
-  );
+export const Notification = model<NotificationDoc>(
+  "Notification",
+  notificationSchema,
+);
 
 // ---------------------------------------------------------------------------
 // Documents & assets
 // ---------------------------------------------------------------------------
 
-export type DocumentStatus =
-  | "PENDING"
-  | "VERIFIED"
-  | "REJECTED";
+export type DocumentStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
 // Employee-provided document types plus company-issued document types.
 export type DocumentRecordType =
@@ -1777,84 +1815,78 @@ export interface DocumentRecordDoc {
   requestId: string | null;
 }
 
-const documentSchema =
-  new Schema<DocumentRecordDoc>(
-    {
-      _id: idField("doc"),
-      employeeId: {
-        type: String,
-        required: true,
-      },
-      type: {
-        type: String,
-        enum: [
-          "OFFER_LETTER",
-          "ID_PROOF",
-          "ADDRESS_PROOF",
-          "EDUCATIONAL",
-          "CONTRACT",
-          "APPOINTMENT_LETTER",
-          "EXPERIENCE_LETTER",
-          "RELIEVING_LETTER",
-          "SALARY_CERTIFICATE",
-          "EMPLOYMENT_CERTIFICATE",
-          "OTHER",
-        ],
-        default: "OTHER",
-      },
-      fileName: {
-        type: String,
-        required: true,
-      },
-      fileUrl: {
-        type: String,
-        required: true,
-      },
-      uploadedAt: {
-        type: String,
-        required: true,
-      },
-      status: {
-        type: String,
-        enum: [
-          "PENDING",
-          "VERIFIED",
-          "REJECTED",
-        ],
-        default: "PENDING",
-      },
-      uploadedBy: {
-        type: String,
-        default: null,
-      },
-      reviewedBy: {
-        type: String,
-        default: null,
-      },
-      reviewedAt: {
-        type: String,
-        default: null,
-      },
-      rejectionReason: {
-        type: String,
-        default: null,
-      },
-      requestId: {
-        type: String,
-        default: null,
-      },
+const documentSchema = new Schema<DocumentRecordDoc>(
+  {
+    _id: idField("doc"),
+    employeeId: {
+      type: String,
+      required: true,
     },
-    baseOptions,
-  );
+    type: {
+      type: String,
+      enum: [
+        "OFFER_LETTER",
+        "ID_PROOF",
+        "ADDRESS_PROOF",
+        "EDUCATIONAL",
+        "CONTRACT",
+        "APPOINTMENT_LETTER",
+        "EXPERIENCE_LETTER",
+        "RELIEVING_LETTER",
+        "SALARY_CERTIFICATE",
+        "EMPLOYMENT_CERTIFICATE",
+        "OTHER",
+      ],
+      default: "OTHER",
+    },
+    fileName: {
+      type: String,
+      required: true,
+    },
+    fileUrl: {
+      type: String,
+      required: true,
+    },
+    uploadedAt: {
+      type: String,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["PENDING", "VERIFIED", "REJECTED"],
+      default: "PENDING",
+    },
+    uploadedBy: {
+      type: String,
+      default: null,
+    },
+    reviewedBy: {
+      type: String,
+      default: null,
+    },
+    reviewedAt: {
+      type: String,
+      default: null,
+    },
+    rejectionReason: {
+      type: String,
+      default: null,
+    },
+    requestId: {
+      type: String,
+      default: null,
+    },
+  },
+  baseOptions,
+);
 
 documentSchema.index({ requestId: 1 });
 
-export const DocumentRecord =
-  model<DocumentRecordDoc>(
-    "DocumentRecord",
-    documentSchema,
-    "documents",
-  );
+export const DocumentRecord = model<DocumentRecordDoc>(
+  "DocumentRecord",
+  documentSchema,
+  "documents",
+);
 
 // ---------------------------------------------------------------------------
 // Document requests (both directions)
@@ -1864,10 +1896,7 @@ export type DocumentRequestDirection =
   | "COMPANY_TO_EMPLOYEE"
   | "EMPLOYEE_TO_COMPANY";
 
-export type DocumentRequestStatus =
-  | "PENDING"
-  | "UPLOADED"
-  | "REJECTED";
+export type DocumentRequestStatus = "PENDING" | "UPLOADED" | "REJECTED";
 
 export interface DocumentRequestDoc {
   _id: string;
@@ -1883,75 +1912,67 @@ export interface DocumentRequestDoc {
   completedAt: string | null;
 }
 
-const documentRequestSchema =
-  new Schema<DocumentRequestDoc>(
-    {
-      _id: idField("dreq"),
-      employeeId: {
-        type: String,
-        required: true,
-      },
-      direction: {
-        type: String,
-        enum: [
-          "COMPANY_TO_EMPLOYEE",
-          "EMPLOYEE_TO_COMPANY",
-        ],
-        required: true,
-      },
-      type: {
-        type: String,
-        enum: [
-          "OFFER_LETTER",
-          "ID_PROOF",
-          "ADDRESS_PROOF",
-          "EDUCATIONAL",
-          "CONTRACT",
-          "APPOINTMENT_LETTER",
-          "EXPERIENCE_LETTER",
-          "RELIEVING_LETTER",
-          "SALARY_CERTIFICATE",
-          "EMPLOYMENT_CERTIFICATE",
-          "OTHER",
-        ],
-        required: true,
-      },
-      note: {
-        type: String,
-        default: null,
-      },
-      status: {
-        type: String,
-        enum: [
-          "PENDING",
-          "UPLOADED",
-          "REJECTED",
-        ],
-        default: "PENDING",
-      },
-      requestedByUserId: {
-        type: String,
-        required: true,
-      },
-      processedByUserId: {
-        type: String,
-        default: null,
-      },
-      documentId: {
-        type: String,
-        default: null,
-      },
-      requestedAt: {
-        type: String,
-        required: true,
-      },
-      completedAt: {
-        type: String,
-        default: null,
-      },
+const documentRequestSchema = new Schema<DocumentRequestDoc>(
+  {
+    _id: idField("dreq"),
+    employeeId: {
+      type: String,
+      required: true,
     },
-    baseOptions,
-  );
+    direction: {
+      type: String,
+      enum: ["COMPANY_TO_EMPLOYEE", "EMPLOYEE_TO_COMPANY"],
+      required: true,
+    },
+    type: {
+      type: String,
+      enum: [
+        "OFFER_LETTER",
+        "ID_PROOF",
+        "ADDRESS_PROOF",
+        "EDUCATIONAL",
+        "CONTRACT",
+        "APPOINTMENT_LETTER",
+        "EXPERIENCE_LETTER",
+        "RELIEVING_LETTER",
+        "SALARY_CERTIFICATE",
+        "EMPLOYMENT_CERTIFICATE",
+        "OTHER",
+      ],
+      required: true,
+    },
+    note: {
+      type: String,
+      default: null,
+    },
+    status: {
+      type: String,
+      enum: ["PENDING", "UPLOADED", "REJECTED"],
+      default: "PENDING",
+    },
+    requestedByUserId: {
+      type: String,
+      required: true,
+    },
+    processedByUserId: {
+      type: String,
+      default: null,
+    },
+    documentId: {
+      type: String,
+      default: null,
+    },
+    requestedAt: {
+      type: String,
+      required: true,
+    },
+    completedAt: {
+      type: String,
+      default: null,
+    },
+  },
+  baseOptions,
+);
 
 documentRequestSchema.index({
   employeeId: 1,
@@ -1963,11 +1984,10 @@ documentRequestSchema.index({
   status: 1,
 });
 
-export const DocumentRequest =
-  model<DocumentRequestDoc>(
-    "DocumentRequest",
-    documentRequestSchema,
-  );
+export const DocumentRequest = model<DocumentRequestDoc>(
+  "DocumentRequest",
+  documentRequestSchema,
+);
 
 export interface AssetDoc {
   _id: string;
@@ -1977,11 +1997,7 @@ export interface AssetDoc {
   name: string;
   assignedAt: string;
   returnedAt: string | null;
-  status:
-    | "ASSIGNED"
-    | "RETURNED"
-    | "DAMAGED"
-    | "LOST";
+  status: "ASSIGNED" | "RETURNED" | "DAMAGED" | "LOST";
 }
 
 const assetSchema = new Schema<AssetDoc>(
@@ -2014,22 +2030,14 @@ const assetSchema = new Schema<AssetDoc>(
     },
     status: {
       type: String,
-      enum: [
-        "ASSIGNED",
-        "RETURNED",
-        "DAMAGED",
-        "LOST",
-      ],
+      enum: ["ASSIGNED", "RETURNED", "DAMAGED", "LOST"],
       default: "ASSIGNED",
     },
   },
   baseOptions,
 );
 
-export const Asset = model<AssetDoc>(
-  "Asset",
-  assetSchema,
-);
+export const Asset = model<AssetDoc>("Asset", assetSchema);
 
 // ---------------------------------------------------------------------------
 // Audit log
@@ -2064,33 +2072,59 @@ auditLogSchema.index({
   entityId: 1,
 });
 
-export const AuditLog = model<AuditLogDoc>(
-  "AuditLog",
-  auditLogSchema,
-);
+export const AuditLog = model<AuditLogDoc>("AuditLog", auditLogSchema);
 
 // ---------------------------------------------------------------------------
 // Tickets
 // ---------------------------------------------------------------------------
+
+export type TicketCategory =
+  | "HR"
+  | "Payroll"
+  | "Leave"
+  | "Attendance"
+  | "Recruitment"
+  | "Employee Referral"
+  | "IT Support"
+  | "Complaint";
+
+export type TicketPriority = "LOW" | "MEDIUM" | "HIGH";
+
+export type TicketStatus =
+  | "OPEN"
+  | "IN_PROGRESS"
+  | "WAITING_FOR_EMPLOYEE"
+  | "RESOLVED"
+  | "CLOSED";
+
+export type TicketEscalationTarget = "HR_ADMIN" | "SUPER_ADMIN";
+
+export type TicketSlaStatus = "ON_TRACK" | "DUE_SOON" | "BREACHED" | "PAUSED";
+
+export type TicketEscalationReason =
+  | "MANUAL"
+  | "SLA_BREACH"
+  | "SEVERITY"
+  | "MANAGER_REQUEST";
+
+export interface TicketEscalationHistoryDoc {
+  _id: string;
+  ticketId: string;
+  escalatedById: string;
+  escalatedFrom: string;
+  escalatedTo: TicketEscalationTarget;
+  reason: TicketEscalationReason;
+  note: string | null;
+  createdAt: string;
+}
 
 export interface TicketDoc {
   _id: string;
   ticketId: string;
   employeeId: string;
 
-  category:
-    | "HR"
-    | "Payroll"
-    | "Leave"
-    | "Attendance"
-    | "Recruitment"
-    | "Employee Referral"
-    | "IT Support";
-
-  priority:
-    | "LOW"
-    | "MEDIUM"
-    | "HIGH";
+  category: TicketCategory;
+  priority: TicketPriority;
 
   subject: string;
   description: string;
@@ -2099,16 +2133,88 @@ export interface TicketDoc {
 
   assignedTo: string;
 
-  status:
-    | "OPEN"
-    | "IN_PROGRESS"
-    | "WAITING_FOR_EMPLOYEE"
-    | "RESOLVED"
-    | "CLOSED";
+  // Manager responsible for the employee's team.
+  // Used to scope Manager access to grievance tickets.
+  assignedManagerId: string | null;
+
+  status: TicketStatus;
+
+  // SLA tracking. The repository/service layer is responsible for
+  // calculating the actual dueAt from the project's SLA configuration.
+  slaDueAt: string | null;
+  slaStatus: TicketSlaStatus;
+
+  // Current escalation state.
+  isEscalated: boolean;
+  escalatedAt: string | null;
+  escalatedById: string | null;
+  escalatedTo: TicketEscalationTarget | null;
+  escalationReason: string | null;
 
   createdAt: string;
   updatedAt: string;
 }
+
+const ticketEscalationHistorySchema = new Schema<TicketEscalationHistoryDoc>(
+  {
+    _id: idField("tesc"),
+
+    ticketId: {
+      type: String,
+      required: true,
+    },
+
+    escalatedById: {
+      type: String,
+      required: true,
+    },
+
+    escalatedFrom: {
+      type: String,
+      required: true,
+    },
+
+    escalatedTo: {
+      type: String,
+      enum: ["HR_ADMIN", "SUPER_ADMIN"],
+      required: true,
+    },
+
+    reason: {
+      type: String,
+      enum: ["MANUAL", "SLA_BREACH", "SEVERITY", "MANAGER_REQUEST"],
+      required: true,
+    },
+
+    note: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 1000,
+    },
+
+    createdAt: {
+      type: String,
+      required: true,
+    },
+  },
+  baseOptions,
+);
+
+ticketEscalationHistorySchema.index({
+  ticketId: 1,
+  createdAt: -1,
+});
+
+ticketEscalationHistorySchema.index({
+  escalatedTo: 1,
+  createdAt: -1,
+});
+
+export const TicketEscalationHistory = model<TicketEscalationHistoryDoc>(
+  "TicketEscalationHistory",
+  ticketEscalationHistorySchema,
+);
 
 const ticketSchema = new Schema<TicketDoc>(
   {
@@ -2135,17 +2241,14 @@ const ticketSchema = new Schema<TicketDoc>(
         "Recruitment",
         "Employee Referral",
         "IT Support",
+        "Complaint",
       ],
       required: true,
     },
 
     priority: {
       type: String,
-      enum: [
-        "LOW",
-        "MEDIUM",
-        "HIGH",
-      ],
+      enum: ["LOW", "MEDIUM", "HIGH"],
       default: "MEDIUM",
     },
 
@@ -2169,6 +2272,11 @@ const ticketSchema = new Schema<TicketDoc>(
       required: true,
     },
 
+    assignedManagerId: {
+      type: String,
+      default: null,
+    },
+
     status: {
       type: String,
       enum: [
@@ -2179,6 +2287,45 @@ const ticketSchema = new Schema<TicketDoc>(
         "CLOSED",
       ],
       default: "OPEN",
+    },
+
+    slaDueAt: {
+      type: String,
+      default: null,
+    },
+
+    slaStatus: {
+      type: String,
+      enum: ["ON_TRACK", "DUE_SOON", "BREACHED", "PAUSED"],
+      default: "ON_TRACK",
+    },
+
+    isEscalated: {
+      type: Boolean,
+      default: false,
+    },
+
+    escalatedAt: {
+      type: String,
+      default: null,
+    },
+
+    escalatedById: {
+      type: String,
+      default: null,
+    },
+
+    escalatedTo: {
+      type: String,
+      enum: ["HR_ADMIN", "SUPER_ADMIN"],
+      default: null,
+    },
+
+    escalationReason: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 1000,
     },
 
     createdAt: {
@@ -2203,10 +2350,21 @@ ticketSchema.index({
 });
 
 ticketSchema.index({
+  assignedManagerId: 1,
+});
+
+ticketSchema.index({
   status: 1,
 });
 
-export const Ticket = model<TicketDoc>(
-  "Ticket",
-  ticketSchema,
-);
+ticketSchema.index({
+  slaStatus: 1,
+  slaDueAt: 1,
+});
+
+ticketSchema.index({
+  isEscalated: 1,
+  escalatedTo: 1,
+});
+
+export const Ticket = model<TicketDoc>("Ticket", ticketSchema);
