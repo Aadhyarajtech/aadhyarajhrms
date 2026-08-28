@@ -22,7 +22,16 @@ const cycleSchema = z.object({
   name: z.string().min(2),
   startDate: z.string(),
   endDate: z.string(),
-  type: z.enum(["PROBATION", "QUARTERLY", "HALF_YEARLY", "ANNUAL", "THREE_SIXTY", "PIP"]).optional(),
+  type: z
+    .enum([
+      "PROBATION",
+      "QUARTERLY",
+      "HALF_YEARLY",
+      "ANNUAL",
+      "THREE_SIXTY",
+      "PIP",
+    ])
+    .optional(),
   purpose: z.string().max(1000).optional(),
 });
 performanceRouter.post(
@@ -155,17 +164,34 @@ const selfReviewSchema = z.object({
   strengths: z.string().min(2),
   improvements: z.string().min(2),
 });
-performanceRouter.post("/reviews/:id/self", validate(selfReviewSchema), async (req, res, next) => {
-  try {
-    const review = await repo.getReview(req.params.id);
-    if (!review) throw AppError.notFound("Review not found.");
-    if (review.revieweeId !== req.user!.employeeId) throw AppError.forbidden("You can only submit your own self-review.");
-    res.json({ review: await repo.submitSelfReview(req.params.id, req.body.selfRating, req.body.strengths, req.body.improvements) });
-  } catch (err) { next(err); }
-});
+performanceRouter.post(
+  "/reviews/:id/self",
+  validate(selfReviewSchema),
+  async (req, res, next) => {
+    try {
+      const review = await repo.getReview(req.params.id);
+      if (!review) throw AppError.notFound("Review not found.");
+      if (review.revieweeId !== req.user!.employeeId)
+        throw AppError.forbidden("You can only submit your own self-review.");
+      res.json({
+        review: await repo.submitSelfReview(
+          req.params.id,
+          req.body.selfRating,
+          req.body.strengths,
+          req.body.improvements,
+        ),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 const managerReviewSchema = z.object({
-  managerRating: z.number().min(1).max(5),
-  managerComments: z.string().min(2),
+  managerRating: z.number().int().min(1).max(5),
+  managerComments: z.string().trim().min(2),
+  managerTechnicalRating: z.number().int().min(1).max(5),
+  managerDeliveryRating: z.number().int().min(1).max(5),
+  managerBehaviorRating: z.number().int().min(1).max(5),
 });
 performanceRouter.post(
   "/reviews/:id/manager",
@@ -210,6 +236,9 @@ performanceRouter.post(
           req.params.id,
           req.body.managerRating,
           req.body.managerComments,
+          req.body.managerTechnicalRating,
+          req.body.managerDeliveryRating,
+          req.body.managerBehaviorRating,
         ),
       });
     } catch (err) {
@@ -221,7 +250,12 @@ performanceRouter.post(
 performanceRouter.get("/goals", async (req, res, next) => {
   try {
     const requestedEmployeeId = req.query.employeeId as string | undefined;
-    if (requestedEmployeeId && requestedEmployeeId !== req.user!.employeeId && !["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(req.user!.role)) throw AppError.forbidden();
+    if (
+      requestedEmployeeId &&
+      requestedEmployeeId !== req.user!.employeeId &&
+      !["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(req.user!.role)
+    )
+      throw AppError.forbidden();
     const employeeId = requestedEmployeeId || req.user!.employeeId!;
     res.json({ goals: await repo.listGoals(employeeId) });
   } catch (err) {
@@ -233,7 +267,21 @@ const goalSchema = z.object({
   title: z.string().min(2),
   description: z.string().optional(),
   dueDate: z.string(),
-  employeeId: z.string().optional(), cycleId: z.string().nullable().optional(), parentGoalId: z.string().nullable().optional(), category: z.string().max(100).nullable().optional(), targetValue: z.number().nonnegative().nullable().optional(), currentValue: z.number().nonnegative().nullable().optional(), milestones: z.array(z.object({ title: z.string().min(1), targetDate: z.string().nullable().optional(), completed: z.boolean().optional() })).optional(),
+  employeeId: z.string().optional(),
+  cycleId: z.string().nullable().optional(),
+  parentGoalId: z.string().nullable().optional(),
+  category: z.string().max(100).nullable().optional(),
+  targetValue: z.number().nonnegative().nullable().optional(),
+  currentValue: z.number().nonnegative().nullable().optional(),
+  milestones: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        targetDate: z.string().nullable().optional(),
+        completed: z.boolean().optional(),
+      }),
+    )
+    .optional(),
 });
 performanceRouter.post(
   "/goals",
@@ -242,10 +290,15 @@ performanceRouter.post(
     try {
       const employeeId = req.body.employeeId ?? req.user!.employeeId;
       if (!employeeId) throw AppError.forbidden();
-      if (employeeId !== req.user!.employeeId && !["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(req.user!.role)) throw AppError.forbidden();
+      if (
+        employeeId !== req.user!.employeeId &&
+        !["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(req.user!.role)
+      )
+        throw AppError.forbidden();
       res.status(201).json({
         goal: await repo.createGoal({
-          employeeId, assignedBy: req.user!.employeeId,
+          employeeId,
+          assignedBy: req.user!.employeeId,
           ...req.body,
         }),
       });
@@ -263,7 +316,11 @@ performanceRouter.patch(
     try {
       const goal = await repo.getGoal(req.params.id);
       if (!goal) throw AppError.notFound("Goal not found.");
-      if (goal.employeeId !== req.user!.employeeId && !["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(req.user!.role)) throw AppError.forbidden();
+      if (
+        goal.employeeId !== req.user!.employeeId &&
+        !["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(req.user!.role)
+      )
+        throw AppError.forbidden();
       res.json({
         goal: await repo.updateGoalProgress(req.params.id, req.body.progress),
       });
@@ -273,12 +330,91 @@ performanceRouter.patch(
   },
 );
 
-performanceRouter.get("/goals/trend", async (req, res, next) => { try { res.json({ data: await repo.getGoalTrend(req.user!.employeeId!) }); } catch (err) { next(err); } });
-const feedbackSchema = z.object({ type: z.enum(["PEER", "SUBORDINATE"]), competencyRatings: z.array(z.object({ competency: z.string().min(1), rating: z.number().int().min(1).max(5) })).min(1), comments: z.string().max(2000).optional() });
-performanceRouter.get("/feedback-requests", async (req, res, next) => { try { const cycle = await repo.getActiveCycle(); if (!cycle || !req.user!.employeeId) return res.json({ reviews: [] }); const reviews = await repo.listReviews({ cycleId: cycle.id }); res.json({ reviews: reviews.filter((review: any) => review.revieweeId !== req.user!.employeeId) }); } catch (err) { next(err); } });
-performanceRouter.post("/reviews/:id/feedback", validate(feedbackSchema), async (req, res, next) => { try { const review = await repo.getReview(req.params.id); if (!review) throw AppError.notFound("Review not found."); if (!req.user!.employeeId || review.revieweeId === req.user!.employeeId) throw AppError.forbidden("You cannot submit feedback for yourself."); res.status(201).json({ feedback: await repo.submitFeedback({ reviewId: req.params.id, reviewerEmployeeId: req.user!.employeeId, ...req.body }) }); } catch (err) { next(err); } });
-performanceRouter.get("/reviews/:id/feedback-summary", async (req, res, next) => { try { const review = await repo.getReview(req.params.id); if (!review) throw AppError.notFound(); const allowed = review.revieweeId === req.user!.employeeId || review.reviewerId === req.user!.employeeId || ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role); if (!allowed) throw AppError.forbidden(); res.json({ summary: await repo.getFeedbackSummary(req.params.id) }); } catch (err) { next(err); } });
-performanceRouter.get("/reviews/:id/outcome", async (req, res, next) => { try { const review = await repo.getReview(req.params.id); if (!review) throw AppError.notFound(); const allowed = review.revieweeId === req.user!.employeeId || review.reviewerId === req.user!.employeeId || ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role); if (!allowed) throw AppError.forbidden(); res.json({ outcome: await repo.getOutcome(req.params.id) }); } catch (err) { next(err); } });
+performanceRouter.get("/goals/trend", async (req, res, next) => {
+  try {
+    res.json({ data: await repo.getGoalTrend(req.user!.employeeId!) });
+  } catch (err) {
+    next(err);
+  }
+});
+const feedbackSchema = z.object({
+  type: z.enum(["PEER", "SUBORDINATE"]),
+  competencyRatings: z
+    .array(
+      z.object({
+        competency: z.string().min(1),
+        rating: z.number().int().min(1).max(5),
+      }),
+    )
+    .min(1),
+  comments: z.string().max(2000).optional(),
+});
+performanceRouter.get("/feedback-requests", async (req, res, next) => {
+  try {
+    const cycle = await repo.getActiveCycle();
+    if (!cycle || !req.user!.employeeId) return res.json({ reviews: [] });
+    const reviews = await repo.listReviews({ cycleId: cycle.id });
+    res.json({
+      reviews: reviews.filter(
+        (review: any) => review.revieweeId !== req.user!.employeeId,
+      ),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+performanceRouter.post(
+  "/reviews/:id/feedback",
+  validate(feedbackSchema),
+  async (req, res, next) => {
+    try {
+      const review = await repo.getReview(req.params.id);
+      if (!review) throw AppError.notFound("Review not found.");
+      if (!req.user!.employeeId || review.revieweeId === req.user!.employeeId)
+        throw AppError.forbidden("You cannot submit feedback for yourself.");
+      res.status(201).json({
+        feedback: await repo.submitFeedback({
+          reviewId: req.params.id,
+          reviewerEmployeeId: req.user!.employeeId,
+          ...req.body,
+        }),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+performanceRouter.get(
+  "/reviews/:id/feedback-summary",
+  async (req, res, next) => {
+    try {
+      const review = await repo.getReview(req.params.id);
+      if (!review) throw AppError.notFound();
+      const allowed =
+        review.revieweeId === req.user!.employeeId ||
+        review.reviewerId === req.user!.employeeId ||
+        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+      if (!allowed) throw AppError.forbidden();
+      res.json({ summary: await repo.getFeedbackSummary(req.params.id) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+performanceRouter.get("/reviews/:id/outcome", async (req, res, next) => {
+  try {
+    const review = await repo.getReview(req.params.id);
+    if (!review) throw AppError.notFound();
+    const allowed =
+      review.revieweeId === req.user!.employeeId ||
+      review.reviewerId === req.user!.employeeId ||
+      ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+    if (!allowed) throw AppError.forbidden();
+    res.json({ outcome: await repo.getOutcome(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
 
 performanceRouter.get(
   "/analytics/rating-by-department",

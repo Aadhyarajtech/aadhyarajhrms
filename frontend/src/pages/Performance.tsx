@@ -3,7 +3,16 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Target, Star, CheckCircle2, ClipboardList, Award, MessageSquare, TrendingUp } from "lucide-react";
+import {
+  Plus,
+  Target,
+  Star,
+  CheckCircle2,
+  ClipboardList,
+  Award,
+  MessageSquare,
+  TrendingUp,
+} from "lucide-react";
 import { PerformanceApi, EmployeesApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -19,13 +28,15 @@ import { TextField, TextareaField, SelectField } from "@/components/ui/Field";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, cx } from "@/lib/format";
 
-const MANAGER_ROLES = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
+const MANAGER_ROLES: string[] = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
 
 const goalSchema = z.object({
   title: z.string().min(2, "Required"),
   description: z.string().optional(),
   dueDate: z.string().min(1, "Required"),
-  category: z.string().optional(), targetValue: z.string().optional(), milestones: z.string().optional(),
+  category: z.string().optional(),
+  targetValue: z.string().optional(),
+  milestones: z.string().optional(),
 });
 type GoalForm = z.infer<typeof goalSchema>;
 
@@ -79,9 +90,20 @@ function MyPerformance() {
     queryKey: ["performance", "goals", "mine"],
     queryFn: () => PerformanceApi.goals(),
   });
-  const { data: trend } = useQuery({ queryKey: ["performance", "goal-trend"], queryFn: PerformanceApi.goalTrend });
-  const { data: outcome } = useQuery({ queryKey: ["performance", "outcome", review?.id], queryFn: () => PerformanceApi.outcome(review!.id), enabled: !!review?.id && review.status === "COMPLETED" });
-  const { data: feedback } = useQuery({ queryKey: ["performance", "feedback-summary", review?.id], queryFn: () => PerformanceApi.feedbackSummary(review!.id), enabled: !!review?.id });
+  const { data: trend } = useQuery({
+    queryKey: ["performance", "goal-trend"],
+    queryFn: PerformanceApi.goalTrend,
+  });
+  const { data: outcome } = useQuery({
+    queryKey: ["performance", "outcome", review?.id],
+    queryFn: () => PerformanceApi.outcome(review!.id),
+    enabled: !!review?.id && review.status === "COMPLETED",
+  });
+  const { data: feedback } = useQuery({
+    queryKey: ["performance", "feedback-summary", review?.id],
+    queryFn: () => PerformanceApi.feedbackSummary(review!.id),
+    enabled: !!review?.id,
+  });
 
   const progressMutation = useMutation({
     mutationFn: ({ id, progress }: { id: string; progress: number }) =>
@@ -154,9 +176,59 @@ function MyPerformance() {
       <Card>
         <CardHeader title="Performance insights" />
         <div className="space-y-4">
-          {trend?.length ? <div><p className="flex items-center gap-1.5 text-[12px] font-medium text-ink-faint"><TrendingUp size={14} /> Goal achievement history</p><div className="mt-2 space-y-2">{trend.slice(-3).map((item) => <div key={item.cycleId ?? item.cycleName} className="flex justify-between text-[13px]"><span className="text-ink-soft">{item.cycleName}</span><span className="font-medium text-ink">{item.achievementPercentage}%</span></div>)}</div></div> : <p className="text-[13px] text-ink-faint">Goal trends appear after goals are added to a cycle.</p>}
-          {feedback?.responseCount ? <div className="rounded-2xl bg-ink/[0.03] p-4"><p className="text-[12px] font-medium text-ink-faint">360-degree feedback</p><p className="mt-1 text-[13px] text-ink">{feedback.responseCount} anonymous response{feedback.responseCount === 1 ? "" : "s"}</p></div> : null}
-          {outcome ? <div className="rounded-2xl bg-brand-50 p-4"><p className="flex items-center gap-1 text-[12px] font-medium text-brand-700"><Award size={14} /> Review outcome</p><p className="mt-1 text-[13px] text-ink-soft">{outcome.incrementRecommendation} increment{outcome.promotionEligible ? " · Promotion eligible" : ""}{outcome.fastTrackEligible ? " · Fast-track nominee" : ""}{outcome.pipRecommended ? " · PIP created" : ""}</p>{outcome.trainingNeeds.length ? <p className="mt-1 text-[12px] text-ink-faint">Development focus: {outcome.trainingNeeds.join(", ")}</p> : null}</div> : null}
+          {trend?.length ? (
+            <div>
+              <p className="flex items-center gap-1.5 text-[12px] font-medium text-ink-faint">
+                <TrendingUp size={14} /> Goal achievement history
+              </p>
+              <div className="mt-2 space-y-2">
+                {trend.slice(-3).map((item) => (
+                  <div
+                    key={item.cycleId ?? item.cycleName}
+                    className="flex justify-between text-[13px]"
+                  >
+                    <span className="text-ink-soft">{item.cycleName}</span>
+                    <span className="font-medium text-ink">
+                      {item.achievementPercentage}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[13px] text-ink-faint">
+              Goal trends appear after goals are added to a cycle.
+            </p>
+          )}
+          {feedback?.responseCount ? (
+            <div className="rounded-2xl bg-ink/[0.03] p-4">
+              <p className="text-[12px] font-medium text-ink-faint">
+                360-degree feedback
+              </p>
+              <p className="mt-1 text-[13px] text-ink">
+                {feedback.responseCount} anonymous response
+                {feedback.responseCount === 1 ? "" : "s"}
+              </p>
+            </div>
+          ) : null}
+          {outcome ? (
+            <div className="rounded-2xl bg-brand-50 p-4">
+              <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
+                <Award size={14} /> Review outcome
+              </p>
+              <p className="mt-1 text-[13px] text-ink-soft">
+                {outcome.incrementRecommendation} increment
+                {outcome.promotionEligible ? " · Promotion eligible" : ""}
+                {outcome.fastTrackEligible ? " · Fast-track nominee" : ""}
+                {outcome.pipRecommended ? " · PIP created" : ""}
+              </p>
+              {outcome.trainingNeeds.length ? (
+                <p className="mt-1 text-[12px] text-ink-faint">
+                  Development focus: {outcome.trainingNeeds.join(", ")}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </Card>
 
@@ -259,7 +331,9 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
     id: string;
     name: string;
   } | null>(null);
-  const [goalFor, setGoalFor] = useState<{ id: string; name: string } | null>(null);
+  const [goalFor, setGoalFor] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const employeeId = user?.employee?.id;
 
   const { data: reports, isLoading: reportsLoading } = useQuery({
@@ -283,7 +357,7 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["performance", "reviews", "team"],
+        queryKey: ["performance", "reviews", "team", activeCycleId],
       });
       showToast("Review started.");
     },
@@ -332,35 +406,49 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">{!review ? (
+              <div className="flex items-center gap-2">
+                {!review || review.status === "NOT_STARTED" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => ensureMutation.mutate(emp.id)}
+                    isLoading={ensureMutation.isPending}
+                  >
+                    Start review
+                  </Button>
+                ) : review.status === "COMPLETED" ? (
+                  <span className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+                    <Star size={14} className="fill-gold-500 text-gold-500" />{" "}
+                    {review.finalRating}/5
+                  </span>
+                ) : review.status === "MANAGER_REVIEW" ? (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      setManagerReviewOpen({
+                        id: review.id,
+                        name: `${emp.firstName} ${emp.lastName}`,
+                      })
+                    }
+                  >
+                    Conduct review
+                  </Button>
+                ) : (
+                  <Badge tone="neutral">Awaiting self-review</Badge>
+                )}
                 <Button
                   size="sm"
-                  variant="outline"
-                  onClick={() => ensureMutation.mutate(emp.id)}
-                  isLoading={ensureMutation.isPending}
-                >
-                  Start review
-                </Button>
-              ) : review.status === "COMPLETED" ? (
-                <span className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
-                  <Star size={14} className="fill-gold-500 text-gold-500" />{" "}
-                  {review.finalRating}/5
-                </span>
-              ) : review.status === "MANAGER_REVIEW" ? (
-                <Button
-                  size="sm"
+                  variant="ghost"
                   onClick={() =>
-                    setManagerReviewOpen({
-                      id: review.id,
+                    setGoalFor({
+                      id: emp.id,
                       name: `${emp.firstName} ${emp.lastName}`,
                     })
                   }
                 >
-                  Submit review
+                  Assign goal
                 </Button>
-              ) : (
-                <Badge tone="neutral">Awaiting self-review</Badge>
-              )}<Button size="sm" variant="ghost" onClick={() => setGoalFor({ id: emp.id, name: `${emp.firstName} ${emp.lastName}` })}>Assign goal</Button></div>
+              </div>
             </div>
           );
         })}
@@ -372,23 +460,196 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
           onClose={() => setManagerReviewOpen(null)}
         />
       )}
-      {goalFor && <AddGoalModal open onClose={() => setGoalFor(null)} employeeId={goalFor.id} employeeName={goalFor.name} />}
+      {goalFor && (
+        <AddGoalModal
+          open
+          onClose={() => setGoalFor(null)}
+          employeeId={goalFor.id}
+          employeeName={goalFor.name}
+        />
+      )}
     </Card>
   );
 }
 
 function FeedbackRequests() {
-  const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
-  const { data: reviews, isLoading } = useQuery({ queryKey: ["performance", "feedback-requests"], queryFn: PerformanceApi.feedbackRequests });
+  const [selected, setSelected] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  const { data: reviews, isLoading } = useQuery({
+    queryKey: ["performance", "feedback-requests"],
+    queryFn: PerformanceApi.feedbackRequests,
+  });
   if (isLoading) return <Skeleton className="h-64 rounded-3xl" />;
-  if (!reviews?.length) return <EmptyState icon={MessageSquare} title="No 360 feedback requests" description="Feedback requests will appear when reviews are initiated in the active cycle." />;
-  return <Card><CardHeader title="360-degree feedback" subtitle="Your responses are aggregated and never show your name to the reviewee." /><div className="space-y-2">{reviews.map((review) => <div key={review.id} className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"><div className="flex items-center gap-3"><Avatar firstName={review.revieweeFirstName} lastName={review.revieweeLastName} src={review.revieweeAvatar} size="sm" /><div><p className="text-[13px] font-medium text-ink">{review.revieweeFirstName} {review.revieweeLastName}</p><p className="text-[12px] text-ink-faint">{review.revieweeDesignation}</p></div></div><Button size="sm" variant="outline" onClick={() => setSelected({ id: review.id, name: `${review.revieweeFirstName} ${review.revieweeLastName}` })}>Give feedback</Button></div>)}</div>{selected && <FeedbackModal reviewId={selected.id} employeeName={selected.name} onClose={() => setSelected(null)} />}</Card>;
+  if (!reviews?.length)
+    return (
+      <EmptyState
+        icon={MessageSquare}
+        title="No 360 feedback requests"
+        description="Feedback requests will appear when reviews are initiated in the active cycle."
+      />
+    );
+  return (
+    <Card>
+      <CardHeader
+        title="360-degree feedback"
+        subtitle="Your responses are aggregated and never show your name to the reviewee."
+      />
+      <div className="space-y-2">
+        {reviews.map((review) => (
+          <div
+            key={review.id}
+            className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
+          >
+            <div className="flex items-center gap-3">
+              <Avatar
+                firstName={review.revieweeFirstName}
+                lastName={review.revieweeLastName}
+                src={review.revieweeAvatar}
+                size="sm"
+              />
+              <div>
+                <p className="text-[13px] font-medium text-ink">
+                  {review.revieweeFirstName} {review.revieweeLastName}
+                </p>
+                <p className="text-[12px] text-ink-faint">
+                  {review.revieweeDesignation}
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                setSelected({
+                  id: review.id,
+                  name: `${review.revieweeFirstName} ${review.revieweeLastName}`,
+                })
+              }
+            >
+              Give feedback
+            </Button>
+          </div>
+        ))}
+      </div>
+      {selected && (
+        <FeedbackModal
+          reviewId={selected.id}
+          employeeName={selected.name}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </Card>
+  );
 }
 
-function FeedbackModal({ reviewId, employeeName, onClose }: { reviewId: string; employeeName: string; onClose: () => void }) {
-  const { showToast } = useToast(); const queryClient = useQueryClient(); const [type, setType] = useState<"PEER" | "SUBORDINATE">("PEER"); const [ratings, setRatings] = useState<Record<string, number>>({ Collaboration: 3, Communication: 3, Ownership: 3 }); const { register, handleSubmit } = useForm<{ comments: string }>({ defaultValues: { comments: "" } });
-  const mutation = useMutation({ mutationFn: (value: { comments: string }) => PerformanceApi.submitFeedback(reviewId, { type, comments: value.comments, competencyRatings: Object.entries(ratings).map(([competency, rating]) => ({ competency, rating })) }), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["performance", "feedback-requests"] }); showToast("Anonymous feedback submitted."); onClose(); }, onError: (err) => showToast(getErrorMessage(err), "error") });
-  return <Modal open onClose={onClose} title={`Feedback — ${employeeName}`} footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button isLoading={mutation.isPending} onClick={handleSubmit((value) => mutation.mutate(value))}>Submit feedback</Button></>}><div className="space-y-4"><SelectField label="Feedback relationship" value={type} onChange={(event) => setType(event.target.value as "PEER" | "SUBORDINATE")}><option value="PEER">Peer</option><option value="SUBORDINATE">Subordinate</option></SelectField>{Object.entries(ratings).map(([competency, rating]) => <div key={competency}><p className="text-[13px] font-medium text-ink-soft">{competency}</p><div className="mt-1 flex gap-1">{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" aria-label={`${competency}: ${value}`} onClick={() => setRatings((current) => ({ ...current, [competency]: value }))}><Star size={22} className={cx(value <= rating ? "fill-gold-500 text-gold-500" : "text-line")} /></button>)}</div></div>)}<TextareaField label="Comments" hint="Your identity is not shown to the reviewee." {...register("comments")} /></div></Modal>;
+function FeedbackModal({
+  reviewId,
+  employeeName,
+  onClose,
+}: {
+  reviewId: string;
+  employeeName: string;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [type, setType] = useState<"PEER" | "SUBORDINATE">("PEER");
+  const [ratings, setRatings] = useState<Record<string, number>>({
+    Collaboration: 3,
+    Communication: 3,
+    Ownership: 3,
+  });
+  const { register, handleSubmit } = useForm<{ comments: string }>({
+    defaultValues: { comments: "" },
+  });
+  const mutation = useMutation({
+    mutationFn: (value: { comments: string }) =>
+      PerformanceApi.submitFeedback(reviewId, {
+        type,
+        comments: value.comments,
+        competencyRatings: Object.entries(ratings).map(
+          ([competency, rating]) => ({ competency, rating }),
+        ),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "feedback-requests"],
+      });
+      showToast("Anonymous feedback submitted.");
+      onClose();
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Feedback — ${employeeName}`}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            isLoading={mutation.isPending}
+            onClick={handleSubmit((value) => mutation.mutate(value))}
+          >
+            Submit feedback
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <SelectField
+          label="Feedback relationship"
+          value={type}
+          onChange={(event) =>
+            setType(event.target.value as "PEER" | "SUBORDINATE")
+          }
+        >
+          <option value="PEER">Peer</option>
+          <option value="SUBORDINATE">Subordinate</option>
+        </SelectField>
+        {Object.entries(ratings).map(([competency, rating]) => (
+          <div key={competency}>
+            <p className="text-[13px] font-medium text-ink-soft">
+              {competency}
+            </p>
+            <div className="mt-1 flex gap-1">
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-label={`${competency}: ${value}`}
+                  onClick={() =>
+                    setRatings((current) => ({
+                      ...current,
+                      [competency]: value,
+                    }))
+                  }
+                >
+                  <Star
+                    size={22}
+                    className={cx(
+                      value <= rating
+                        ? "fill-gold-500 text-gold-500"
+                        : "text-line",
+                    )}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <TextareaField
+          label="Comments"
+          hint="Your identity is not shown to the reviewee."
+          {...register("comments")}
+        />
+      </div>
+    </Modal>
+  );
 }
 
 function AddGoalModal({
@@ -412,7 +673,21 @@ function AddGoalModal({
   } = useForm<GoalForm>({ resolver: zodResolver(goalSchema) });
 
   const mutation = useMutation({
-    mutationFn: (value: GoalForm) => PerformanceApi.createGoal({ title: value.title, description: value.description, dueDate: value.dueDate, employeeId, category: value.category || undefined, targetValue: value.targetValue ? Number(value.targetValue) : null, milestones: value.milestones?.split(",").map((title) => title.trim()).filter(Boolean).map((title) => ({ title })) ?? [] }),
+    mutationFn: (value: GoalForm) =>
+      PerformanceApi.createGoal({
+        title: value.title,
+        description: value.description,
+        dueDate: value.dueDate,
+        employeeId,
+        category: value.category || undefined,
+        targetValue: value.targetValue ? Number(value.targetValue) : null,
+        milestones:
+          value.milestones
+            ?.split(",")
+            .map((title) => title.trim())
+            .filter(Boolean)
+            .map((title) => ({ title })) ?? [],
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["performance", "goals", "mine"],
@@ -451,8 +726,24 @@ function AddGoalModal({
           {...register("title")}
         />
         <TextareaField label="Description" {...register("description")} />
-        <div className="grid grid-cols-2 gap-4"><TextField label="KPI category" placeholder="e.g. Delivery" {...register("category")} /><TextField label="Target value" type="number" min="0" {...register("targetValue")} /></div>
-        <TextareaField label="Milestones" hint="Separate milestones with commas" {...register("milestones")} />
+        <div className="grid grid-cols-2 gap-4">
+          <TextField
+            label="KPI category"
+            placeholder="e.g. Delivery"
+            {...register("category")}
+          />
+          <TextField
+            label="Target value"
+            type="number"
+            min="0"
+            {...register("targetValue")}
+          />
+        </div>
+        <TextareaField
+          label="Milestones"
+          hint="Separate milestones with commas"
+          {...register("milestones")}
+        />
         <TextField
           label="Due date"
           type="date"
@@ -555,28 +846,91 @@ function ManagerReviewModal({
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [rating, setRating] = useState<number | null>(null);
+  const [technicalRating, setTechnicalRating] = useState<number | null>(null);
+  const [deliveryRating, setDeliveryRating] = useState<number | null>(null);
+  const [behaviorRating, setBehaviorRating] = useState<number | null>(null);
+  const [overallRating, setOverallRating] = useState<number | null>(null);
+
   const { register, handleSubmit } = useForm({
     defaultValues: { managerComments: "" },
   });
 
-  const mutation = useMutation({
-    mutationFn: (v: { managerComments: string }) => {
-      if (rating === null) {
-        throw new Error("Please select a manager rating.");
+  const mutation = useMutation<
+    Awaited<ReturnType<typeof PerformanceApi.submitManager>>,
+    unknown,
+    { managerComments: string }
+  >({
+    mutationFn: async (v: { managerComments: string }) => {
+      if (
+        technicalRating === null ||
+        deliveryRating === null ||
+        behaviorRating === null ||
+        overallRating === null
+      ) {
+        throw new Error("Please complete all manager ratings.");
       }
 
-      return PerformanceApi.submitManager(reviewId, rating, v.managerComments);
+      return PerformanceApi.submitManager(
+        reviewId,
+        overallRating,
+        v.managerComments,
+        technicalRating,
+        deliveryRating,
+        behaviorRating,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["performance", "reviews", "team"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "my-review"],
       });
       showToast("Review completed.");
       onClose();
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
+
+  const renderRating = (
+    label: string,
+    rating: number | null,
+    setRating: (value: number) => void,
+  ) => (
+    <div>
+      <label className="text-[13px] font-medium text-ink-soft">{label}</label>
+      <div className="mt-1.5 flex gap-1">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setRating(n)}
+            aria-label={`${label}: rate ${n} out of 5`}
+          >
+            <Star
+              size={24}
+              className={cx(
+                rating !== null && n <= rating
+                  ? "fill-gold-500 text-gold-500"
+                  : "text-line",
+              )}
+            />
+          </button>
+        ))}
+      </div>
+      {rating === null && (
+        <p className="mt-1 text-[11.5px] text-ink-faint">
+          Select a rating from 1 to 5.
+        </p>
+      )}
+    </div>
+  );
+
+  const allRatingsSelected =
+    technicalRating !== null &&
+    deliveryRating !== null &&
+    behaviorRating !== null &&
+    overallRating !== null;
 
   return (
     <Modal
@@ -591,47 +945,51 @@ function ManagerReviewModal({
           <Button
             onClick={handleSubmit((v) => mutation.mutate(v))}
             isLoading={mutation.isPending}
-            disabled={rating === null}
+            disabled={!allRatingsSelected}
           >
             Complete review
           </Button>
         </>
       }
     >
-      <div className="space-y-4">
-        <div>
-          <label className="text-[13px] font-medium text-ink-soft">
-            Manager rating
-          </label>
-          <div className="mt-1.5 flex gap-1">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setRating(n)}
-                aria-label={`Rate ${n} out of 5`}
-              >
-                <Star
-                  size={24}
-                  className={cx(
-                    rating !== null && n <= rating
-                      ? "fill-gold-500 text-gold-500"
-                      : "text-line",
-                  )}
-                />
-              </button>
-            ))}
-          </div>
-          {rating === null && (
-            <p className="mt-1 text-[11.5px] text-ink-faint">
-              Select a rating from 1 to 5.
-            </p>
-          )}
+      <div className="space-y-5">
+        <div className="rounded-2xl bg-ink/[0.03] p-4">
+          <p className="text-[12px] font-medium text-ink-faint">
+            Manager evaluation
+          </p>
+          <p className="mt-1 text-[13px] text-ink-soft">
+            Rate the employee's technical skills, delivery, and behavior for
+            this review cycle.
+          </p>
         </div>
+
+        {renderRating("Technical Skills", technicalRating, setTechnicalRating)}
+
+        {renderRating(
+          "Delivery / Execution",
+          deliveryRating,
+          setDeliveryRating,
+        )}
+
+        {renderRating(
+          "Behavior / Collaboration",
+          behaviorRating,
+          setBehaviorRating,
+        )}
+
+        {renderRating(
+          "Overall Manager Rating",
+          overallRating,
+          setOverallRating,
+        )}
+
         <TextareaField
           label="Feedback for this cycle"
           required
-          {...register("managerComments")}
+          hint="Include meaningful feedback on strengths, achievements, and areas for improvement."
+          {...register("managerComments", {
+            required: "Manager feedback is required",
+          })}
         />
       </div>
     </Modal>

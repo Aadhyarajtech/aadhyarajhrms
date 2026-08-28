@@ -174,6 +174,9 @@ export async function submitManagerReview(
   id: string,
   managerRating: number,
   managerComments: string,
+  managerTechnicalRating: number,
+  managerDeliveryRating: number,
+  managerBehaviorRating: number,
 ) {
   const review = (await getReview(id)) as any;
 
@@ -197,15 +200,66 @@ export async function submitManagerReview(
       $set: {
         managerRating,
         managerComments,
+        managerTechnicalRating,
+        managerDeliveryRating,
+        managerBehaviorRating,
         finalRating,
         status: "COMPLETED",
         submittedAt: nowIso(),
       },
     },
   );
+
   const rating = Math.round(finalRating);
-  await PerformanceOutcome.findOneAndUpdate({ reviewId: id }, { $set: { reviewId: id, incrementRecommendation: rating >= 5 ? "MAXIMUM" : rating >= 3 ? "STANDARD" : rating === 2 ? "PIP" : "NONE", promotionEligible: rating >= 4, fastTrackEligible: rating >= 5, pipRecommended: rating <= 2, trainingNeeds: rating <= 3 && review.improvements ? [review.improvements] : [], createdAt: nowIso() } }, { upsert: true, new: true, setDefaultsOnInsert: true });
-  if (rating <= 2) { const start = new Date(); const end = new Date(start); end.setMonth(end.getMonth() + 3); await PerformanceImprovementPlan.findOneAndUpdate({ reviewId: id }, { $set: { reviewId: id, employeeId: review.revieweeId, status: "ACTIVE", startDate: start.toISOString(), endDate: end.toISOString(), objectives: review.improvements ? [review.improvements] : ["Meet agreed performance expectations."], checkInFrequency: "MONTHLY", createdAt: nowIso() } }, { upsert: true, new: true, setDefaultsOnInsert: true }); }
+
+  await PerformanceOutcome.findOneAndUpdate(
+    { reviewId: id },
+    {
+      $set: {
+        reviewId: id,
+        incrementRecommendation:
+          rating >= 5
+            ? "MAXIMUM"
+            : rating >= 3
+              ? "STANDARD"
+              : rating === 2
+                ? "PIP"
+                : "NONE",
+        promotionEligible: rating >= 4,
+        fastTrackEligible: rating >= 5,
+        pipRecommended: rating <= 2,
+        trainingNeeds:
+          rating <= 3 && review.improvements ? [review.improvements] : [],
+        createdAt: nowIso(),
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  if (rating <= 2) {
+    const start = new Date();
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + 3);
+
+    await PerformanceImprovementPlan.findOneAndUpdate(
+      { reviewId: id },
+      {
+        $set: {
+          reviewId: id,
+          employeeId: review.revieweeId,
+          status: "ACTIVE",
+          startDate: start.toISOString(),
+          endDate: end.toISOString(),
+          objectives: review.improvements
+            ? [review.improvements]
+            : ["Meet agreed performance expectations."],
+          checkInFrequency: "MONTHLY",
+          createdAt: nowIso(),
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+  }
 
   return getReview(id);
 }
@@ -220,7 +274,17 @@ export async function createGoal(input: {
   title: string;
   description?: string;
   dueDate: string;
-  cycleId?: string | null; parentGoalId?: string | null; category?: string | null; targetValue?: number | null; currentValue?: number | null; milestones?: { title: string; targetDate?: string | null; completed?: boolean }[]; assignedBy?: string | null;
+  cycleId?: string | null;
+  parentGoalId?: string | null;
+  category?: string | null;
+  targetValue?: number | null;
+  currentValue?: number | null;
+  milestones?: {
+    title: string;
+    targetDate?: string | null;
+    completed?: boolean;
+  }[];
+  assignedBy?: string | null;
 }) {
   const doc = await Goal.create({
     employeeId: input.employeeId,
@@ -230,7 +294,17 @@ export async function createGoal(input: {
     status: "NOT_STARTED",
     progress: 0,
     createdAt: nowIso(),
-    cycleId: input.cycleId ?? null, parentGoalId: input.parentGoalId ?? null, category: input.category ?? null, targetValue: input.targetValue ?? null, currentValue: input.currentValue ?? null, milestones: (input.milestones ?? []).map((milestone) => ({ title: milestone.title, targetDate: milestone.targetDate ?? null, completed: milestone.completed ?? false })), assignedBy: input.assignedBy ?? null,
+    cycleId: input.cycleId ?? null,
+    parentGoalId: input.parentGoalId ?? null,
+    category: input.category ?? null,
+    targetValue: input.targetValue ?? null,
+    currentValue: input.currentValue ?? null,
+    milestones: (input.milestones ?? []).map((milestone) => ({
+      title: milestone.title,
+      targetDate: milestone.targetDate ?? null,
+      completed: milestone.completed ?? false,
+    })),
+    assignedBy: input.assignedBy ?? null,
   });
   return toApiDoc((await Goal.findById(doc._id).lean())!);
 }
@@ -246,11 +320,73 @@ export async function updateGoalProgress(id: string, progress: number) {
   return toApiDoc((await Goal.findById(id).lean())!);
 }
 
-export async function getGoal(id: string) { return toApiDoc(await Goal.findById(id).lean()); }
-export async function getGoalTrend(employeeId: string) { const goals = await Goal.find({ employeeId }).lean(); const values = new Map<string, { total: number; count: number }>(); for (const goal of goals) { const key = goal.cycleId ?? "unassigned"; const entry = values.get(key) ?? { total: 0, count: 0 }; entry.total += goal.progress; entry.count++; values.set(key, entry); } const cycles = await PerformanceCycle.find({ _id: { $in: [...values.keys()].filter((key) => key !== "unassigned") } }).lean(); const names = new Map(cycles.map((cycle) => [cycle._id, cycle.name])); return [...values].map(([cycleId, value]) => ({ cycleId: cycleId === "unassigned" ? null : cycleId, cycleName: names.get(cycleId) ?? "Unassigned goals", achievementPercentage: Math.round(value.total / value.count) })); }
-export async function submitFeedback(input: { reviewId: string; reviewerEmployeeId: string; type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) { const doc = await PerformanceFeedback.findOneAndUpdate({ reviewId: input.reviewId, reviewerEmployeeId: input.reviewerEmployeeId }, { $set: { ...input, comments: input.comments ?? null, submittedAt: nowIso() } }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean(); return toApiDoc(doc); }
-export async function getFeedbackSummary(reviewId: string) { const feedback = await PerformanceFeedback.find({ reviewId }).lean(); const ratings = new Map<string, number[]>(); for (const entry of feedback) for (const item of entry.competencyRatings) { const values = ratings.get(item.competency) ?? []; values.push(item.rating); ratings.set(item.competency, values); } return { responseCount: feedback.length, competencies: [...ratings].map(([competency, values]) => ({ competency, averageRating: Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100 })), comments: feedback.map((entry) => entry.comments).filter(Boolean) }; }
-export async function getOutcome(reviewId: string) { return toApiDoc(await PerformanceOutcome.findOne({ reviewId }).lean()); }
+export async function getGoal(id: string) {
+  return toApiDoc(await Goal.findById(id).lean());
+}
+export async function getGoalTrend(employeeId: string) {
+  const goals = await Goal.find({ employeeId }).lean();
+  const values = new Map<string, { total: number; count: number }>();
+  for (const goal of goals) {
+    const key = goal.cycleId ?? "unassigned";
+    const entry = values.get(key) ?? { total: 0, count: 0 };
+    entry.total += goal.progress;
+    entry.count++;
+    values.set(key, entry);
+  }
+  const cycles = await PerformanceCycle.find({
+    _id: { $in: [...values.keys()].filter((key) => key !== "unassigned") },
+  }).lean();
+  const names = new Map(cycles.map((cycle) => [cycle._id, cycle.name]));
+  return [...values].map(([cycleId, value]) => ({
+    cycleId: cycleId === "unassigned" ? null : cycleId,
+    cycleName: names.get(cycleId) ?? "Unassigned goals",
+    achievementPercentage: Math.round(value.total / value.count),
+  }));
+}
+export async function submitFeedback(input: {
+  reviewId: string;
+  reviewerEmployeeId: string;
+  type: "PEER" | "SUBORDINATE";
+  competencyRatings: { competency: string; rating: number }[];
+  comments?: string;
+}) {
+  const doc = await PerformanceFeedback.findOneAndUpdate(
+    { reviewId: input.reviewId, reviewerEmployeeId: input.reviewerEmployeeId },
+    {
+      $set: {
+        ...input,
+        comments: input.comments ?? null,
+        submittedAt: nowIso(),
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  ).lean();
+  return toApiDoc(doc);
+}
+export async function getFeedbackSummary(reviewId: string) {
+  const feedback = await PerformanceFeedback.find({ reviewId }).lean();
+  const ratings = new Map<string, number[]>();
+  for (const entry of feedback)
+    for (const item of entry.competencyRatings) {
+      const values = ratings.get(item.competency) ?? [];
+      values.push(item.rating);
+      ratings.set(item.competency, values);
+    }
+  return {
+    responseCount: feedback.length,
+    competencies: [...ratings].map(([competency, values]) => ({
+      competency,
+      averageRating:
+        Math.round(
+          (values.reduce((sum, value) => sum + value, 0) / values.length) * 100,
+        ) / 100,
+    })),
+    comments: feedback.map((entry) => entry.comments).filter(Boolean),
+  };
+}
+export async function getOutcome(reviewId: string) {
+  return toApiDoc(await PerformanceOutcome.findOne({ reviewId }).lean());
+}
 
 export async function getAverageRatingByDepartment() {
   const reviews = await PerformanceReview.find({
