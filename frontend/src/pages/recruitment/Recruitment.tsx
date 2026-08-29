@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   useMutation,
@@ -10,6 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   Briefcase,
+  FileText,
   MapPin,
   Plus,
   Users,
@@ -18,7 +19,7 @@ import {
   RecruitmentApi,
   OrganizationApi,
 } from "@/lib/endpoints";
-import { getErrorMessage } from "@/lib/api";
+import { api, getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -45,6 +46,86 @@ import {
 } from "recharts";
 
 /* =========================================================
+   ROLE TEMPLATES
+========================================================= */
+
+const ROLE_TEMPLATES = {
+  ENGINEERING: {
+    label: "Engineering",
+    description:
+      "We are looking for a skilled engineering professional to design, develop, test, and maintain high-quality software solutions. The candidate will collaborate with cross-functional teams, participate in code reviews, and contribute to the continuous improvement of our products and engineering processes.",
+    skills:
+      "Problem Solving, Programming, System Design, Git, Communication",
+    approvalLevelRequired: 1,
+  },
+
+  DATA: {
+    label: "Data",
+    description:
+      "We are looking for a data professional to collect, analyze, transform, and manage data for business and technology initiatives. The candidate will work with stakeholders to build reliable data solutions and deliver meaningful insights.",
+    skills:
+      "SQL, Python, Data Analysis, Problem Solving, Communication",
+    approvalLevelRequired: 1,
+  },
+
+  HR: {
+    label: "Human Resources",
+    description:
+      "We are looking for an HR professional to support people operations, recruitment, employee engagement, and organizational processes. The candidate will work closely with managers and employees to ensure smooth HR operations.",
+    skills:
+      "Recruitment, Communication, Employee Relations, HR Operations, Organization",
+    approvalLevelRequired: 1,
+  },
+
+  SALES: {
+    label: "Sales",
+    description:
+      "We are looking for a sales professional to identify business opportunities, build client relationships, manage the sales pipeline, and contribute to revenue growth.",
+    skills:
+      "Communication, Negotiation, Lead Generation, CRM, Relationship Management",
+    approvalLevelRequired: 1,
+  },
+
+  MARKETING: {
+    label: "Marketing",
+    description:
+      "We are looking for a marketing professional to support campaigns, brand initiatives, content creation, digital marketing, and performance analysis.",
+    skills:
+      "Digital Marketing, Content Marketing, Communication, Analytics, Campaign Management",
+    approvalLevelRequired: 1,
+  },
+
+  FINANCE: {
+    label: "Finance",
+    description:
+      "We are looking for a finance professional to support financial planning, reporting, budgeting, analysis, and compliance activities.",
+    skills:
+      "Financial Analysis, Excel, Budgeting, Reporting, Attention to Detail",
+    approvalLevelRequired: 1,
+  },
+
+  MANAGEMENT: {
+    label: "Management",
+    description:
+      "We are looking for an experienced management professional to lead teams, drive strategic initiatives, manage business outcomes, and collaborate with senior stakeholders.",
+    skills:
+      "Leadership, People Management, Strategic Planning, Decision Making, Communication",
+    approvalLevelRequired: 2,
+  },
+
+  SENIOR: {
+    label: "Senior Leadership",
+    description:
+      "We are looking for a senior professional with strong leadership, domain expertise, and strategic decision-making capabilities. The candidate will lead initiatives, mentor team members, and work with leadership on key business objectives.",
+    skills:
+      "Leadership, Strategic Planning, Decision Making, Stakeholder Management, Mentoring",
+    approvalLevelRequired: 2,
+  },
+} as const;
+
+type RoleCategory = keyof typeof ROLE_TEMPLATES;
+
+/* =========================================================
    JOB REQUISITION FORM
 ========================================================= */
 
@@ -59,6 +140,10 @@ const jobSchema = z
     designationId: z
       .string()
       .min(1, "Designation is required"),
+
+    roleCategory: z.string().optional(),
+
+    useTemplate: z.boolean(),
 
     location: z.string().optional(),
 
@@ -82,10 +167,27 @@ const jobSchema = z
       .int()
       .min(1, "At least one opening is required"),
 
-    budgetCtc: z.coerce
-      .number()
-      .min(0, "Budget cannot be negative")
-      .optional(),
+    budgetCtc: z.preprocess(
+      (value) => {
+        if (
+          value === "" ||
+          value === null ||
+          value === undefined
+        ) {
+          return undefined;
+        }
+
+        const numberValue = Number(value);
+
+        return Number.isNaN(numberValue)
+          ? undefined
+          : numberValue;
+      },
+      z
+        .number()
+        .min(0, "Budget cannot be negative")
+        .optional(),
+    ),
 
     approvalLevelRequired: z.coerce
       .number()
@@ -93,7 +195,9 @@ const jobSchema = z
       .min(1)
       .max(10),
 
-    postingChannels: z.array(z.string()).default(["CAREERS"]),
+    postingChannels: z
+      .array(z.string())
+      .default(["CAREERS"]),
 
     screeningQuestionsText: z.string().optional(),
 
@@ -102,15 +206,45 @@ const jobSchema = z
       "WALK_IN",
       "CAMPUS",
     ]),
+    walkInDriveDate: z.string().optional(),
+walkInStartTime: z.string().optional(),
+walkInEndTime: z.string().optional(),
+walkInVenue: z.string().optional(),
+walkInCoordinatorName: z.string().optional(),
+walkInCoordinatorContact: z.string().optional(),
+walkInRegistrationDeadline: z.string().optional(),
+walkInExpectedCandidates: z.preprocess(
+  (value) => value === "" ? undefined : Number(value),
+  z.number().int().min(0).optional(),
+),
+
+campusCollegeName: z.string().optional(),
+campusLocation: z.string().optional(),
+campusDriveDate: z.string().optional(),
+campusStartTime: z.string().optional(),
+campusEndTime: z.string().optional(),
+campusPlacementCoordinator: z.string().optional(),
+campusCoordinatorContact: z.string().optional(),
+campusExpectedCandidates: z.preprocess(
+  (value) => value === "" ? undefined : Number(value),
+  z.number().int().min(0).optional(),
+),
 
     skillsText: z.string().optional(),
 
-    description: z
-      .string()
-      .min(10, "Add a fuller job description"),
+    description: z.string().optional(),
+
+    shortlistingCriteria: z.object({
+      enabled: z.boolean().default(false),
+      minimumJobFitScore: z.coerce.number().min(0).max(100).default(60),
+      requiredSkillsText: z.string().optional(),
+      minimumExperience: z.coerce.number().min(0).default(0),
+    }),
   })
   .refine(
-    (data) => data.experienceMax >= data.experienceMin,
+    (data) =>
+      data.experienceMax >=
+      data.experienceMin,
     {
       message:
         "Maximum experience must be greater than or equal to minimum experience",
@@ -118,7 +252,9 @@ const jobSchema = z
     },
   );
 
+
 type JobForm = z.infer<typeof jobSchema>;
+
 
 /* =========================================================
    PIPELINE
@@ -156,39 +292,101 @@ export default function Recruitment() {
     queryFn: RecruitmentApi.pipelineSummary,
   });
 
-  const pipelineData = STAGE_ORDER.map((stage) => ({
-    stage:
-      stage.charAt(0) +
-      stage.slice(1).toLowerCase(),
-    count:
-      pipeline?.find(
-        (item) => item.stage === stage,
-      )?.count ?? 0,
-  }));
+  const { data: sourceAnalytics } = useQuery({
+    queryKey: ["recruitment", "analytics", "sources"],
+    queryFn: () =>
+      api
+        .get<{ data: Array<{
+          source: string;
+          applications: number;
+          screening: number;
+          interviews: number;
+          offers: number;
+          accepted: number;
+          hired: number;
+          hireConversionRate: number;
+          acceptanceRate: number;
+        }> }>("/recruitment/analytics/sources")
+        .then((response) => response.data.data ?? []),
+  });
+
+  const { data: referralAnalytics } = useQuery({
+    queryKey: ["recruitment", "analytics", "referrals"],
+    queryFn: () =>
+      api
+        .get<{ data: {
+          totalReferrals: number;
+          inPipeline: number;
+          interviewed: number;
+          offers: number;
+          accepted: number;
+          hired: number;
+          conversionRate: number;
+        } }>("/recruitment/analytics/referrals")
+        .then((response) => response.data.data),
+  });
+
+  const { data: volumeHiringAnalytics } = useQuery({
+    queryKey: ["recruitment", "analytics", "volume-hiring"],
+    queryFn: () =>
+      api
+        .get<{ data: {
+          walkIn: {
+            source: string;
+            applications: number;
+            screening: number;
+            interviewed: number;
+            hired: number;
+            conversionRate: number;
+          };
+          campus: {
+            source: string;
+            applications: number;
+            screening: number;
+            interviewed: number;
+            hired: number;
+            conversionRate: number;
+          };
+        } }>("/recruitment/analytics/volume-hiring")
+        .then((response) => response.data.data),
+  });
+
+  const pipelineData = useMemo(
+    () =>
+      STAGE_ORDER.map((stage) => ({
+        stage:
+          stage.charAt(0) +
+          stage.slice(1).toLowerCase(),
+        count:
+          pipeline?.find(
+            (item) =>
+              item.stage === stage,
+          )?.count ?? 0,
+      })),
+    [pipeline],
+  );
 
   return (
     <div>
       <PageHeader
         title="Recruitment"
-        subtitle="Manage job requisitions, postings, and every candidate's journey."
+        subtitle="Manage job requisitions, approvals, postings, and every candidate's journey."
         action={
           <Button
             leftIcon={<Plus size={16} />}
-            onClick={() => setPostOpen(true)}
+            onClick={() =>
+              setPostOpen(true)
+            }
           >
-            Post a job
+            Create requisition
           </Button>
         }
       />
 
-      {/* =====================================================
-          PIPELINE OVERVIEW
-      ===================================================== */}
-
       <Card className="mb-6">
         <CardHeader
           title="Pipeline overview"
-          subtitle="Candidates by stage, across all open roles"
+          subtitle="Candidates by stage across all recruitment roles"
         />
 
         <ResponsiveContainer
@@ -216,7 +414,8 @@ export default function Recruitment() {
             <Tooltip
               contentStyle={{
                 borderRadius: 12,
-                border: "1px solid #E7E5E0",
+                border:
+                  "1px solid #E7E5E0",
                 fontSize: 13,
               }}
             />
@@ -230,20 +429,94 @@ export default function Recruitment() {
         </ResponsiveContainer>
       </Card>
 
-      {/* =====================================================
-          JOB LIST
-      ===================================================== */}
+      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="Recruitment Source Analytics"
+            subtitle="Applications and hiring performance by source"
+          />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="border-b border-line text-[11px] uppercase tracking-wide text-ink-faint">
+                <tr>
+                  <th className="px-5 py-3 font-medium">Source</th>
+                  <th className="px-3 py-3 font-medium">Applications</th>
+                  <th className="px-3 py-3 font-medium">Interviews</th>
+                  <th className="px-3 py-3 font-medium">Offers</th>
+                  <th className="px-3 py-3 font-medium">Hired</th>
+                  <th className="px-5 py-3 font-medium">Conversion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sourceAnalytics?.length ? sourceAnalytics.map((item) => (
+                  <tr key={item.source} className="border-b border-line/70 last:border-0">
+                    <td className="px-5 py-3 font-medium text-ink">{item.source}</td>
+                    <td className="px-3 py-3 text-ink-muted">{item.applications}</td>
+                    <td className="px-3 py-3 text-ink-muted">{item.interviews}</td>
+                    <td className="px-3 py-3 text-ink-muted">{item.offers}</td>
+                    <td className="px-3 py-3 text-ink-muted">{item.hired}</td>
+                    <td className="px-5 py-3 font-semibold text-ink">{item.hireConversionRate}%</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-ink-faint">
+                      No source analytics available yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card>
+            <CardHeader title="Employee Referrals" subtitle="Referral pipeline performance" />
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ["Total", referralAnalytics?.totalReferrals ?? 0],
+                ["Pipeline", referralAnalytics?.inPipeline ?? 0],
+                ["Offers", referralAnalytics?.offers ?? 0],
+                ["Hired", referralAnalytics?.hired ?? 0],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="rounded-xl bg-canvas px-3 py-3">
+                  <p className="text-[10px] uppercase tracking-wide text-ink-faint">{label}</p>
+                  <p className="mt-1 text-xl font-semibold text-ink">{value}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 text-xs text-ink-faint">
+              Hire conversion: <span className="font-semibold text-ink">{referralAnalytics?.conversionRate ?? 0}%</span>
+            </p>
+          </Card>
+
+          <Card>
+            <CardHeader title="Volume Hiring" subtitle="Walk-in and campus recruitment" />
+            {[volumeHiringAnalytics?.walkIn, volumeHiringAnalytics?.campus].map((item, index) => (
+              <div key={item?.source ?? index} className="mb-3 last:mb-0 rounded-xl border border-line px-3 py-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-ink">{item?.source ?? (index === 0 ? "Walk-in" : "Campus")}</p>
+                  <p className="text-sm font-semibold text-ink">{item?.conversionRate ?? 0}%</p>
+                </div>
+                <p className="mt-1 text-xs text-ink-faint">
+                  {item?.applications ?? 0} applications · {item?.interviewed ?? 0} interviews · {item?.hired ?? 0} hired
+                </p>
+              </div>
+            ))}
+          </Card>
+        </div>
+      </div>
 
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map(
-            (_, index) => (
-              <Skeleton
-                key={index}
-                className="h-48 rounded-3xl"
-              />
-            ),
-          )}
+          {Array.from({
+            length: 6,
+          }).map((_, index) => (
+            <Skeleton
+              key={index}
+              className="h-48 rounded-3xl"
+            />
+          ))}
         </div>
       ) : !jobs?.length ? (
         <EmptyState
@@ -294,21 +567,32 @@ export default function Recruitment() {
               </div>
 
               <div className="mt-3 text-[12px] text-ink-faint">
-                {job.experienceMin}–{job.experienceMax} yrs exp ·{" "}
+                {job.experienceMin}–
+                {job.experienceMax} yrs exp ·{" "}
                 {job.openings} opening(s)
               </div>
+
+              {job.requisitionStatus && (
+                <div className="mt-3 flex items-center gap-1.5 text-[11px] text-ink-faint">
+                  <FileText size={12} />
+                  Requisition:{" "}
+                  {String(
+                    job.requisitionStatus,
+                  )
+                    .replace(/_/g, " ")
+                    .toLowerCase()}
+                </div>
+              )}
             </Card>
           ))}
         </div>
       )}
 
-      {/* =====================================================
-          POST JOB MODAL
-      ===================================================== */}
-
       <PostJobModal
         open={postOpen}
-        onClose={() => setPostOpen(false)}
+        onClose={() =>
+          setPostOpen(false)
+        }
       />
     </div>
   );
@@ -332,17 +616,19 @@ function PostJobModal({
     data: departments,
   } = useQuery({
     queryKey: ["departments"],
-    queryFn: OrganizationApi.departments,
+    queryFn:
+      OrganizationApi.departments,
     enabled: open,
   });
 
- const {
-  data: designations,
-} = useQuery({
-  queryKey: ["designations"],
-  queryFn: () => OrganizationApi.designations(),
-  enabled: open,
-});
+  const {
+    data: designations,
+  } = useQuery({
+    queryKey: ["designations"],
+    queryFn: () =>
+      OrganizationApi.designations(),
+    enabled: open,
+  });
 
   const {
     register,
@@ -354,6 +640,11 @@ function PostJobModal({
   } = useForm<JobForm>({
     resolver: zodResolver(jobSchema),
     defaultValues: {
+      title: "",
+      departmentId: "",
+      designationId: "",
+      roleCategory: "",
+      useTemplate: true,
       location: "Bengaluru, India",
       employmentType: "FULL_TIME",
       experienceMin: 0,
@@ -364,16 +655,61 @@ function PostJobModal({
       postingChannels: ["CAREERS"],
       screeningQuestionsText: "",
       hiringMode: "STANDARD",
+      walkInDriveDate: "",
+walkInStartTime: "",
+walkInEndTime: "",
+walkInVenue: "",
+walkInCoordinatorName: "",
+walkInCoordinatorContact: "",
+walkInRegistrationDeadline: "",
+walkInExpectedCandidates: undefined,
+
+campusCollegeName: "",
+campusLocation: "",
+campusDriveDate: "",
+campusStartTime: "",
+campusEndTime: "",
+campusPlacementCoordinator: "",
+campusCoordinatorContact: "",
+campusExpectedCandidates: undefined,
       skillsText: "",
       description: "",
+      shortlistingCriteria: {
+  enabled: false,
+  minimumJobFitScore: 60,
+  requiredSkillsText: "",
+  minimumExperience: 0,
+},
     },
   });
+
+  const selectedHiringMode =
+  watch("hiringMode");
 
   const selectedChannels =
     watch("postingChannels") ?? [];
 
+  const selectedRoleCategory =
+    watch("roleCategory") ?? "";
+
+  const useTemplate =
+    watch("useTemplate");
+
+  const selectedDepartmentId =
+    watch("departmentId");
+
+  const filteredDesignations =
+    designations?.filter(
+      (designation: any) =>
+        !selectedDepartmentId ||
+        !designation.departmentId ||
+        designation.departmentId ===
+          selectedDepartmentId,
+    ) ?? [];
+
   const mutation = useMutation({
-    mutationFn: RecruitmentApi.createJob,
+    mutationFn:
+      RecruitmentApi.createJob,
 
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -384,7 +720,45 @@ function PostJobModal({
         "Job requisition created successfully.",
       );
 
-      reset();
+      reset({
+        title: "",
+        departmentId: "",
+        designationId: "",
+        roleCategory: "",
+        useTemplate: true,
+        location: "Bengaluru, India",
+        employmentType: "FULL_TIME",
+        experienceMin: 0,
+        experienceMax: 5,
+        openings: 1,
+        budgetCtc: undefined,
+        approvalLevelRequired: 1,
+        postingChannels: ["CAREERS"],
+        screeningQuestionsText: "",
+        hiringMode: "STANDARD",
+
+walkInDriveDate: "",
+walkInStartTime: "",
+walkInEndTime: "",
+walkInVenue: "",
+walkInCoordinatorName: "",
+walkInCoordinatorContact: "",
+walkInRegistrationDeadline: "",
+walkInExpectedCandidates: undefined,
+
+campusCollegeName: "",
+campusLocation: "",
+campusDriveDate: "",
+campusStartTime: "",
+campusEndTime: "",
+campusPlacementCoordinator: "",
+campusCoordinatorContact: "",
+campusExpectedCandidates: undefined,
+
+skillsText: "",
+description: "",
+      });
+
       onClose();
     },
 
@@ -396,10 +770,6 @@ function PostJobModal({
     },
   });
 
-  /* =======================================================
-     CHANNEL TOGGLE
-  ======================================================= */
-
   const toggleChannel = (
     channel: string,
   ) => {
@@ -410,27 +780,89 @@ function PostJobModal({
       setValue(
         "postingChannels",
         current.filter(
-          (item) => item !== channel,
+          (item) =>
+            item !== channel,
         ),
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
       );
     } else {
       setValue(
         "postingChannels",
         [...current, channel],
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
       );
     }
   };
 
-  /* =======================================================
-     SUBMIT
-  ======================================================= */
+  const applyRoleTemplate = (
+    category: string,
+  ) => {
+    setValue(
+      "roleCategory",
+      category,
+      {
+        shouldDirty: true,
+      },
+    );
 
-  const submitJob = (values: JobForm) => {
+    if (
+      !category ||
+      !useTemplate
+    ) {
+      return;
+    }
+
+    const template =
+      ROLE_TEMPLATES[
+        category as RoleCategory
+      ];
+
+    if (!template) {
+      return;
+    }
+
+    setValue(
+      "description",
+      template.description,
+      {
+        shouldDirty: true,
+        shouldValidate: true,
+      },
+    );
+
+    setValue(
+      "skillsText",
+      template.skills,
+      {
+        shouldDirty: true,
+      },
+    );
+
+    setValue(
+      "approvalLevelRequired",
+      template.approvalLevelRequired,
+      {
+        shouldDirty: true,
+      },
+    );
+  };
+
+  const submitJob = (
+    values: JobForm,
+  ) => {
     const screeningQuestions =
       values.screeningQuestionsText
         ? values.screeningQuestionsText
             .split("\n")
-            .map((item) => item.trim())
+            .map((item) =>
+              item.trim(),
+            )
             .filter(Boolean)
         : [];
 
@@ -438,19 +870,38 @@ function PostJobModal({
       values.skillsText
         ? values.skillsText
             .split(",")
-            .map((item) => item.trim())
+            .map((item) =>
+              item.trim(),
+            )
             .filter(Boolean)
         : [];
+        const shortlistingRequiredSkills =
+  values.shortlistingCriteria.requiredSkillsText
+    ? values.shortlistingCriteria.requiredSkillsText
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
 
     const payload = {
-      title: values.title,
+      title:
+        values.title.trim(),
+
       departmentId:
         values.departmentId,
+
       designationId:
         values.designationId,
 
+      roleCategory:
+        values.roleCategory ||
+        undefined,
+
+      useTemplate:
+        values.useTemplate,
+
       location:
-        values.location ||
+        values.location?.trim() ||
         "Bengaluru, India",
 
       employmentType:
@@ -463,7 +914,8 @@ function PostJobModal({
         values.experienceMax,
 
       description:
-        values.description,
+        values.description?.trim() ||
+        undefined,
 
       openings:
         values.openings,
@@ -478,17 +930,87 @@ function PostJobModal({
         values.approvalLevelRequired,
 
       postingChannels:
-        values.postingChannels,
+        values.postingChannels.length
+          ? values.postingChannels
+          : ["CAREERS"],
 
       screeningQuestions,
 
       hiringMode:
-        values.hiringMode,
+  values.hiringMode,
 
-      skills,
+walkInDrive:
+  values.hiringMode === "WALK_IN"
+    ? {
+        driveDate:
+          values.walkInDriveDate || null,
+
+        startTime:
+          values.walkInStartTime || null,
+
+        endTime:
+          values.walkInEndTime || null,
+
+        venue:
+          values.walkInVenue?.trim() || null,
+
+        coordinatorName:
+          values.walkInCoordinatorName?.trim() || null,
+
+        coordinatorContact:
+          values.walkInCoordinatorContact?.trim() || null,
+
+        registrationDeadline:
+          values.walkInRegistrationDeadline || null,
+
+        expectedCandidates:
+          values.walkInExpectedCandidates ?? null,
+      }
+    : null,
+
+campusDrive:
+  values.hiringMode === "CAMPUS"
+    ? {
+        collegeName:
+          values.campusCollegeName?.trim() || null,
+
+        campusLocation:
+          values.campusLocation?.trim() || null,
+
+        driveDate:
+          values.campusDriveDate || null,
+
+        startTime:
+          values.campusStartTime || null,
+
+        endTime:
+          values.campusEndTime || null,
+
+        placementCoordinator:
+          values.campusPlacementCoordinator?.trim() || null,
+
+        coordinatorContact:
+          values.campusCoordinatorContact?.trim() || null,
+
+        expectedCandidates:
+          values.campusExpectedCandidates ?? null,
+      }
+    : null,
+
+
+      shortlistingCriteria: {
+        enabled: values.shortlistingCriteria.enabled,
+        minimumJobFitScore: values.shortlistingCriteria.minimumJobFitScore,
+        requiredSkills: shortlistingRequiredSkills,
+        minimumExperience: values.shortlistingCriteria.minimumExperience,
+      },
+
+skills,
     };
 
-    mutation.mutate(payload);
+    mutation.mutate(
+      payload as any,
+    );
   };
 
   return (
@@ -502,14 +1024,20 @@ function PostJobModal({
           <Button
             variant="outline"
             onClick={onClose}
-            disabled={mutation.isPending}
+            disabled={
+              mutation.isPending
+            }
           >
             Cancel
           </Button>
 
           <Button
-            onClick={handleSubmit(submitJob)}
-            isLoading={mutation.isPending}
+            onClick={handleSubmit(
+              submitJob,
+            )}
+            isLoading={
+              mutation.isPending
+            }
           >
             Submit Requisition
           </Button>
@@ -518,19 +1046,19 @@ function PostJobModal({
     >
       <form
         className="grid gap-5 sm:grid-cols-2"
-        onSubmit={handleSubmit(submitJob)}
+        onSubmit={handleSubmit(
+          submitJob,
+        )}
       >
-        {/* =================================================
-            BASIC INFORMATION
-        ================================================= */}
-
         <div className="sm:col-span-2">
           <p className="mb-1 text-sm font-semibold text-ink">
             Basic information
           </p>
 
           <p className="text-xs text-ink-faint">
-            Define the role and organizational details.
+            Define the role,
+            organizational details and
+            recruitment requirements.
           </p>
         </div>
 
@@ -548,20 +1076,32 @@ function PostJobModal({
           error={
             errors.departmentId?.message
           }
-          {...register("departmentId")}
+          {...register("departmentId", {
+            onChange: () => {
+              setValue(
+                "designationId",
+                "",
+                {
+                  shouldDirty: true,
+                },
+              );
+            },
+          })}
         >
           <option value="">
             Select department
           </option>
 
-          {departments?.map((department) => (
-            <option
-              key={department.id}
-              value={department.id}
-            >
-              {department.name}
-            </option>
-          ))}
+          {departments?.map(
+            (department) => (
+              <option
+                key={department.id}
+                value={department.id}
+              >
+                {department.name}
+              </option>
+            ),
+          )}
         </SelectField>
 
         <SelectField
@@ -570,29 +1110,63 @@ function PostJobModal({
           error={
             errors.designationId?.message
           }
-          {...register("designationId")}
+          {...register(
+            "designationId",
+          )}
         >
           <option value="">
             Select designation
           </option>
 
-          {designations?.map(
-            (designation) => (
+          {filteredDesignations.map(
+            (designation: any) => (
               <option
-                key={designation.id}
-                value={designation.id}
+                key={
+                  designation.id
+                }
+                value={
+                  designation.id
+                }
               >
-                {designation.title}
+                {
+                  designation.title
+                }
               </option>
             ),
           )}
         </SelectField>
 
-        <TextField
-          label="Location"
-          placeholder="Bengaluru, India"
-          {...register("location")}
-        />
+        <SelectField
+          label="Role category"
+          value={
+            selectedRoleCategory
+          }
+          onChange={(event) =>
+            applyRoleTemplate(
+              event.target.value,
+            )
+          }
+        >
+          <option value="">
+            Auto detect from job title
+          </option>
+
+          {Object.entries(
+            ROLE_TEMPLATES,
+          ).map(
+            ([
+              value,
+              template,
+            ]) => (
+              <option
+                key={value}
+                value={value}
+              >
+                {template.label}
+              </option>
+            ),
+          )}
+        </SelectField>
 
         <SelectField
           label="Employment type"
@@ -618,9 +1192,56 @@ function PostJobModal({
           </option>
         </SelectField>
 
-        {/* =================================================
-            HEADCOUNT
-        ================================================= */}
+        <div className="sm:col-span-2">
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line px-4 py-3">
+            <input
+              type="checkbox"
+              checked={useTemplate}
+              onChange={(event) => {
+                const checked =
+                  event.target.checked;
+
+                setValue(
+                  "useTemplate",
+                  checked,
+                  {
+                    shouldDirty: true,
+                  },
+                );
+
+                if (
+                  checked &&
+                  selectedRoleCategory
+                ) {
+                  applyRoleTemplate(
+                    selectedRoleCategory,
+                  );
+                }
+              }}
+              className="h-4 w-4"
+            />
+
+            <div>
+              <p className="text-sm font-medium text-ink">
+                Use role template
+              </p>
+
+              <p className="text-xs text-ink-faint">
+                Automatically fill the job
+                description and suggested
+                skills from the selected role.
+              </p>
+            </div>
+          </label>
+        </div>
+
+        <TextField
+          label="Location"
+          placeholder="Bengaluru, India"
+          {...register("location")}
+        />
+
+        <div />
 
         <div className="sm:col-span-2 mt-1">
           <p className="mb-1 text-sm font-semibold text-ink">
@@ -628,8 +1249,9 @@ function PostJobModal({
           </p>
 
           <p className="text-xs text-ink-faint">
-            Specify headcount, experience and approved
-            compensation range.
+            Specify headcount,
+            experience and compensation
+            requirements.
           </p>
         </div>
 
@@ -638,7 +1260,9 @@ function PostJobModal({
           type="number"
           min="1"
           required
-          error={errors.openings?.message}
+          error={
+            errors.openings?.message
+          }
           {...register("openings")}
         />
 
@@ -647,7 +1271,9 @@ function PostJobModal({
           type="number"
           min="0"
           placeholder="Optional"
-          error={errors.budgetCtc?.message}
+          error={
+            errors.budgetCtc?.message
+          }
           {...register("budgetCtc")}
         />
 
@@ -657,9 +1283,12 @@ function PostJobModal({
           min="0"
           required
           error={
-            errors.experienceMin?.message
+            errors.experienceMin
+              ?.message
           }
-          {...register("experienceMin")}
+          {...register(
+            "experienceMin",
+          )}
         />
 
         <TextField
@@ -668,14 +1297,13 @@ function PostJobModal({
           min="0"
           required
           error={
-            errors.experienceMax?.message
+            errors.experienceMax
+              ?.message
           }
-          {...register("experienceMax")}
+          {...register(
+            "experienceMax",
+          )}
         />
-
-        {/* =================================================
-            APPROVAL
-        ================================================= */}
 
         <div className="sm:col-span-2 mt-1">
           <p className="mb-1 text-sm font-semibold text-ink">
@@ -683,8 +1311,9 @@ function PostJobModal({
           </p>
 
           <p className="text-xs text-ink-faint">
-            The requisition remains on hold until the
-            required approval levels are completed.
+            Senior and management roles
+            may automatically require
+            additional approval levels.
           </p>
         </div>
 
@@ -692,7 +1321,8 @@ function PostJobModal({
           label="Approval levels required"
           required
           error={
-            errors.approvalLevelRequired
+            errors
+              .approvalLevelRequired
               ?.message
           }
           {...register(
@@ -720,10 +1350,220 @@ function PostJobModal({
           </option>
         </SelectField>
 
+        {selectedHiringMode === "WALK_IN" && (
+  <div className="sm:col-span-2 grid gap-5 rounded-xl border border-line bg-canvas p-4 sm:grid-cols-2">
+    <div className="sm:col-span-2">
+      <p className="text-sm font-semibold text-ink">
+        Walk-in Drive Details
+      </p>
+
+      <p className="mt-1 text-xs text-ink-faint">
+        Configure the venue, schedule and coordinator details for the walk-in drive.
+      </p>
+    </div>
+
+    <TextField
+      label="Drive date"
+      type="date"
+      required
+      {...register("walkInDriveDate")}
+    />
+
+    <TextField
+      label="Expected candidates"
+      type="number"
+      min="0"
+      placeholder="100"
+      {...register("walkInExpectedCandidates")}
+    />
+
+    <TextField
+      label="Start time"
+      type="time"
+      required
+      {...register("walkInStartTime")}
+    />
+
+    <TextField
+      label="End time"
+      type="time"
+      required
+      {...register("walkInEndTime")}
+    />
+
+    <TextField
+      label="Venue"
+      required
+      className="sm:col-span-2"
+      placeholder="Office address or walk-in venue"
+      {...register("walkInVenue")}
+    />
+
+    <TextField
+      label="Coordinator name"
+      required
+      placeholder="HR / Recruitment coordinator"
+      {...register("walkInCoordinatorName")}
+    />
+
+    <TextField
+      label="Coordinator contact"
+      required
+      placeholder="Phone number or email"
+      {...register("walkInCoordinatorContact")}
+    />
+
+    <TextField
+      label="Registration deadline"
+      type="date"
+      {...register("walkInRegistrationDeadline")}
+    />
+  </div>
+)}
+<div className="sm:col-span-2 mt-2 rounded-2xl border border-line bg-surface p-4">
+  <div className="flex items-start justify-between gap-4">
+    <div>
+      <p className="text-sm font-semibold text-ink">
+        Automated Shortlisting
+      </p>
+
+      <p className="mt-1 text-xs text-ink-faint">
+        Automatically recommend candidates based on
+        job-fit score, required skills and experience.
+      </p>
+    </div>
+
+    <label className="flex items-center gap-2 text-sm text-ink">
+      <input
+        type="checkbox"
+        {...register(
+          "shortlistingCriteria.enabled",
+        )}
+      />
+      Enable
+    </label>
+  </div>
+
+  <div className="mt-4 grid gap-4 sm:grid-cols-3">
+    <TextField
+      label="Minimum Job Fit Score"
+      type="number"
+      min="0"
+      max="100"
+      error={
+        errors.shortlistingCriteria
+          ?.minimumJobFitScore?.message
+      }
+      {...register(
+        "shortlistingCriteria.minimumJobFitScore",
+      )}
+    />
+
+    <TextField
+      label="Minimum Experience (Years)"
+      type="number"
+      min="0"
+      error={
+        errors.shortlistingCriteria
+          ?.minimumExperience?.message
+      }
+      {...register(
+        "shortlistingCriteria.minimumExperience",
+      )}
+    />
+
+    <TextField
+      label="Required Skills"
+      placeholder="React, TypeScript, Node.js"
+      error={
+        errors.shortlistingCriteria
+          ?.requiredSkillsText?.message
+      }
+      {...register(
+        "shortlistingCriteria.requiredSkillsText",
+      )}
+    />
+  </div>
+</div>
+
+{selectedHiringMode === "CAMPUS" && (
+  <div className="sm:col-span-2 grid gap-5 rounded-xl border border-line bg-canvas p-4 sm:grid-cols-2">
+    <div className="sm:col-span-2">
+      <p className="text-sm font-semibold text-ink">
+        Campus Drive Details
+      </p>
+
+      <p className="mt-1 text-xs text-ink-faint">
+        Configure the college, campus location, drive schedule and placement coordinator.
+      </p>
+    </div>
+
+    <TextField
+      label="College name"
+      required
+      className="sm:col-span-2"
+      placeholder="Enter college or university name"
+      {...register("campusCollegeName")}
+    />
+
+    <TextField
+      label="Campus location"
+      required
+      placeholder="City, State"
+      {...register("campusLocation")}
+    />
+
+    <TextField
+      label="Expected candidates"
+      type="number"
+      min="0"
+      placeholder="100"
+      {...register("campusExpectedCandidates")}
+    />
+
+    <TextField
+      label="Drive date"
+      type="date"
+      required
+      {...register("campusDriveDate")}
+    />
+
+    <TextField
+      label="Start time"
+      type="time"
+      required
+      {...register("campusStartTime")}
+    />
+
+    <TextField
+      label="End time"
+      type="time"
+      required
+      {...register("campusEndTime")}
+    />
+
+    <TextField
+      label="Placement coordinator"
+      required
+      placeholder="Coordinator name"
+      {...register("campusPlacementCoordinator")}
+    />
+
+    <TextField
+      label="Coordinator contact"
+      required
+      placeholder="Phone number or email"
+      {...register("campusCoordinatorContact")}
+    />
+  </div>
+)}
+
         <SelectField
           label="Hiring mode"
           required
-          {...register("hiringMode")}
+          {...register(
+            "hiringMode",
+          )}
         >
           <option value="STANDARD">
             Standard recruitment
@@ -738,10 +1578,6 @@ function PostJobModal({
           </option>
         </SelectField>
 
-        {/* =================================================
-            POSTING CHANNELS
-        ================================================= */}
-
         <div className="sm:col-span-2">
           <p className="mb-2 text-sm font-medium text-ink">
             Posting channels
@@ -749,11 +1585,26 @@ function PostJobModal({
 
           <div className="grid gap-2 sm:grid-cols-2">
             {[
-              ["CAREERS", "Company Careers Page"],
-              ["LINKEDIN", "LinkedIn"],
-              ["NAUKRI", "Naukri"],
-              ["INDEED", "Indeed"],
-              ["REFERRALS", "Employee Referrals"],
+              [
+                "CAREERS",
+                "Company Careers Page",
+              ],
+              [
+                "LINKEDIN",
+                "LinkedIn",
+              ],
+              [
+                "NAUKRI",
+                "Naukri",
+              ],
+              [
+                "INDEED",
+                "Indeed",
+              ],
+              [
+                "REFERRALS",
+                "Employee Referrals",
+              ],
             ].map(
               ([value, label]) => {
                 const checked =
@@ -772,7 +1623,9 @@ function PostJobModal({
                   >
                     <input
                       type="checkbox"
-                      checked={checked}
+                      checked={
+                        checked
+                      }
                       onChange={() =>
                         toggleChannel(
                           value,
@@ -791,24 +1644,21 @@ function PostJobModal({
           </div>
         </div>
 
-        {/* =================================================
-            SKILLS
-        ================================================= */}
-
         <TextField
           label="Required skills"
           placeholder="React, Node.js, MongoDB"
           className="sm:col-span-2"
-          {...register("skillsText")}
+          {...register(
+            "skillsText",
+          )}
         />
 
         <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
           Separate skills with commas.
+          These skills are used by the
+          AI-assisted candidate screening
+          system.
         </p>
-
-        {/* =================================================
-            SCREENING QUESTIONS
-        ================================================= */}
 
         <TextareaField
           label="Screening questions"
@@ -817,7 +1667,8 @@ function PostJobModal({
           }
           className="sm:col-span-2"
           error={
-            errors.screeningQuestionsText
+            errors
+              .screeningQuestionsText
               ?.message
           }
           {...register(
@@ -829,20 +1680,24 @@ function PostJobModal({
           Enter one question per line.
         </p>
 
-        {/* =================================================
-            DESCRIPTION
-        ================================================= */}
-
         <TextareaField
           label="Job description"
-          required
           className="sm:col-span-2"
           error={
             errors.description?.message
           }
-          placeholder="Describe responsibilities, qualifications, expectations and other requirements..."
-          {...register("description")}
+          placeholder="Describe responsibilities, qualifications, expectations and other requirements. You can also select a role category and use the automatic template."
+          {...register(
+            "description",
+          )}
         />
+
+        <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
+          When role templates are enabled,
+          the backend can automatically use
+          the selected template if no
+          description is entered.
+        </p>
       </form>
     </Modal>
   );

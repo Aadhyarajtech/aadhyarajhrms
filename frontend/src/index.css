@@ -3,15 +3,15 @@
 @tailwind utilities;
 
 @layer base {
- html {
-  -webkit-font-smoothing: antialiased;
-  tab-size: 4;
-  font-feature-settings: normal;
-  font-variation-settings: normal;
-  -webkit-tap-highlight-color: transparent;
-  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-  line-height: 1.5;
-}
+  html {
+    -webkit-font-smoothing: antialiased;
+    tab-size: 4;
+    font-feature-settings: normal;
+    font-variation-settings: normal;
+    -webkit-tap-highlight-color: transparent;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    line-height: 1.5;
+  }
 
   body {
     @apply bg-canvas text-ink font-sans antialiased;
