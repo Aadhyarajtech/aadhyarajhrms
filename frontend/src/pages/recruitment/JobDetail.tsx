@@ -1,4 +1,5 @@
-import { useState, useEffect, type ReactNode } from "react";import { useParams, Link } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,7 +10,7 @@ import {
   Star,
   Calendar,
   ChevronRight,
-  GripVertical,
+  Trash2,
   Pencil,
   MapPin,
   CheckCircle2,
@@ -23,11 +24,16 @@ import {
   ShieldCheck,
   FileText,
   UserCheck,
+  Sparkles,
+  Search,
+  Filter,
+  SlidersHorizontal,
+  Copy,
+  AlertTriangle,
 } from "lucide-react";
 
 import { RecruitmentApi, EmployeesApi } from "@/lib/endpoints";
-import { api } from "@/lib/api";
-import { getErrorMessage } from "@/lib/api";
+import { api, getErrorMessage, resolveAssetUrl } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 
 import { Card } from "@/components/ui/Card";
@@ -62,11 +68,26 @@ const candidateSchema = z.object({
   lastName: z.string().min(1, "Required"),
   email: z.string().email(),
   phone: z.string().optional(),
-  expectedCtc: z.coerce.number().min(0, "CTC cannot be negative").optional(),
+  expectedCtc: z.coerce.number().optional(),
   source: z.string().optional(),
+  resumeText: z.string().optional(),
 });
 
 type CandidateForm = z.infer<typeof candidateSchema>;
+
+type ScreeningCandidate = Candidate & {
+  resumeText?: string;
+  extractedSkills?: string[];
+  jobFitScore?: number;
+  screeningSummary?: string;
+  screening?: {
+    score: number;
+    recommendation: string;
+    requiredSkills: string[];
+    matchedSkills: string[];
+    missingSkills: string[];
+  };
+};
 
 /* =========================================================
    LOCAL REQUISITION TYPES
@@ -119,6 +140,7 @@ type RecruitmentJob = {
 
 export default function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
@@ -127,8 +149,17 @@ export default function JobDetail() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [lifecycleFor, setLifecycleFor] = useState<Candidate | null>(null);
   const [editCandidateFor, setEditCandidateFor] = useState<Candidate | null>(null);
-  const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
-  const [dragOverStage, setDragOverStage] = useState<Candidate["stage"] | null>(null);
+  const [deleteCandidateFor, setDeleteCandidateFor] = useState<Candidate | null>(null);
+  const [editJobOpen, setEditJobOpen] = useState(false);
+  const [deleteJobOpen, setDeleteJobOpen] = useState(false);
+
+  const [screeningSearch, setScreeningSearch] = useState("");
+  const [screeningStage, setScreeningStage] = useState<"ALL" | Candidate["stage"]>("ALL");
+  const [screeningSource, setScreeningSource] = useState("ALL");
+  const [minimumFit, setMinimumFit] = useState(0);
+  const [screeningRecommendation, setScreeningRecommendation] = useState("ALL");
+  const [hideDuplicates, setHideDuplicates] = useState(false);
+  const [hideSpam, setHideSpam] = useState(false);
 
   const {
     data: rawJob,
@@ -146,13 +177,9 @@ export default function JobDetail() {
     isLoading: candidatesLoading,
   } = useQuery({
     queryKey: ["candidates", jobId],
-    queryFn: () => RecruitmentApi.candidates(jobId),
+    queryFn: () => RecruitmentApi.candidates(jobId!),
     enabled: !!jobId,
   });
-
-  /* =======================================================
-     MOVE CANDIDATE STAGE
-  ======================================================= */
 
   const stageMutation = useMutation({
     mutationFn: ({
@@ -179,10 +206,6 @@ export default function JobDetail() {
       showToast(getErrorMessage(err), "error"),
   });
 
-  /* =======================================================
-     RATE CANDIDATE
-  ======================================================= */
-
   const rateMutation = useMutation({
     mutationFn: ({
       id,
@@ -202,9 +225,93 @@ export default function JobDetail() {
       showToast(getErrorMessage(err), "error"),
   });
 
-  /* =======================================================
-     APPROVE REQUISITION
-  ======================================================= */
+  const screenMutation = useMutation({
+    mutationFn: ({ id, resumeText }: { id: string; resumeText?: string }) =>
+      RecruitmentApi.screenCandidate(id, resumeText),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["candidates", jobId],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["candidate"],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["recruitment", "pipeline"],
+      });
+
+      showToast("AI candidate screening completed.");
+    },
+
+    onError: (err) =>
+      showToast(getErrorMessage(err), "error"),
+  });
+
+  const duplicateIds = getDuplicateCandidateIds(candidates ?? []);
+
+  const filteredCandidates = (candidates ?? []).filter((candidate) => {
+    const item = candidate as ScreeningCandidate;
+    const search = screeningSearch.trim().toLowerCase();
+    const name = `${candidate.firstName} ${candidate.lastName}`.toLowerCase();
+    const email = (candidate.email ?? "").toLowerCase();
+    const source = (candidate.source ?? "").toLowerCase();
+    const fit = item.jobFitScore ?? item.screening?.score ?? 0;
+    const recommendation = (item.screening?.recommendation ?? "").toUpperCase();
+
+    return (
+      (!search || name.includes(search) || email.includes(search) || source.includes(search)) &&
+      (screeningStage === "ALL" || candidate.stage === screeningStage) &&
+      (screeningSource === "ALL" || candidate.source === screeningSource) &&
+      fit >= minimumFit &&
+      (screeningRecommendation === "ALL" || recommendation === screeningRecommendation) &&
+      (!hideDuplicates || !duplicateIds.has(candidate.id)) &&
+      (!hideSpam || !isSpamCandidate(candidate))
+    );
+  });
+
+  const screeningTotal = candidates?.length ?? 0;
+  const screenedCount = (candidates ?? []).filter((candidate) => {
+    const item = candidate as ScreeningCandidate;
+    return item.jobFitScore != null || item.screening?.score != null;
+  }).length;
+  const strongFitCount = (candidates ?? []).filter((candidate) => {
+    const item = candidate as ScreeningCandidate;
+    return (item.jobFitScore ?? item.screening?.score ?? 0) >= 80;
+  }).length;
+  const duplicateCount = duplicateIds.size;
+  const spamCount = (candidates ?? []).filter(isSpamCandidate).length;
+
+  const refreshCandidates = () => {
+    void queryClient.invalidateQueries({ queryKey: ["candidates", jobId] });
+    void queryClient.invalidateQueries({ queryKey: ["candidate"] });
+    void queryClient.invalidateQueries({ queryKey: ["recruitment", "pipeline"] });
+  };
+
+  const updateCandidateMutation = useMutation({
+    mutationFn: ({ id, values }: { id: string; values: CandidateForm }) =>
+      api
+        .patch<{ candidate: Candidate }>(`/recruitment/candidates/${id}`, values)
+        .then((response) => response.data.candidate),
+    onSuccess: () => {
+      refreshCandidates();
+      setEditCandidateFor(null);
+      showToast("Candidate updated successfully.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const deleteCandidateMutation = useMutation({
+    mutationFn: (id: string) =>
+      api.delete(`/recruitment/candidates/${id}`),
+    onSuccess: () => {
+      refreshCandidates();
+      setDeleteCandidateFor(null);
+      showToast("Candidate deleted successfully.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
 
   const approveMutation = useMutation({
     mutationFn: async () => {
@@ -235,10 +342,6 @@ export default function JobDetail() {
     onError: (err) =>
       showToast(getErrorMessage(err), "error"),
   });
-
-  /* =======================================================
-     REJECT REQUISITION
-  ======================================================= */
 
   const rejectMutation = useMutation({
     mutationFn: async (reason: string) => {
@@ -274,6 +377,28 @@ export default function JobDetail() {
       showToast(getErrorMessage(err), "error"),
   });
 
+  const updateJobMutation = useMutation({
+    mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) =>
+      RecruitmentApi.updateJob(id, values),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
+      queryClient.invalidateQueries({ queryKey: ["recruitment", "jobs"] });
+      setEditJobOpen(false);
+      showToast("Job posting updated successfully.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const deleteJobMutation = useMutation({
+    mutationFn: (id: string) => RecruitmentApi.deleteJob(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recruitment"] });
+      showToast("Job posting deleted successfully.");
+      navigate("/app/recruitment");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
   if (jobLoading) {
     return (
       <div className="space-y-4">
@@ -286,10 +411,6 @@ export default function JobDetail() {
 
   return (
     <div>
-      {/* ===================================================
-          BACK
-      =================================================== */}
-
       <Link
         to="/app/recruitment"
         className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-faint hover:text-ink"
@@ -297,10 +418,6 @@ export default function JobDetail() {
         <ArrowLeft size={14} />
         Back to all roles
       </Link>
-
-      {/* ===================================================
-          JOB HEADER
-      =================================================== */}
 
       {job && (
         <Card className="mb-5">
@@ -314,21 +431,15 @@ export default function JobDetail() {
                 <StatusBadge status={job.status} />
 
                 {job.requisitionStatus === "PENDING_APPROVAL" && (
-                  <Badge tone="warning">
-                    Pending Approval
-                  </Badge>
+                  <Badge tone="warning">Pending Approval</Badge>
                 )}
 
                 {job.requisitionStatus === "APPROVED" && (
-                  <Badge tone="success">
-                    Requisition Approved
-                  </Badge>
+                  <Badge tone="success">Requisition Approved</Badge>
                 )}
 
                 {job.requisitionStatus === "REJECTED" && (
-                  <Badge tone="danger">
-                    Requisition Rejected
-                  </Badge>
+                  <Badge tone="danger">Requisition Rejected</Badge>
                 )}
               </div>
 
@@ -354,19 +465,32 @@ export default function JobDetail() {
               </div>
             </div>
 
-            <Button
-              leftIcon={<Plus size={16} />}
-              onClick={() => setAddOpen(true)}
-            >
-              Add candidate
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                leftIcon={<Pencil size={15} />}
+                onClick={() => setEditJobOpen(true)}
+              >
+                Edit role
+              </Button>
+              <Button
+                variant="outline"
+                leftIcon={<Trash2 size={15} />}
+                onClick={() => setDeleteJobOpen(true)}
+                className="border-red-200 text-red-600 hover:bg-red-50"
+              >
+                Delete
+              </Button>
+              <Button
+                leftIcon={<Plus size={16} />}
+                onClick={() => setAddOpen(true)}
+              >
+                Add candidate
+              </Button>
+            </div>
           </div>
         </Card>
       )}
-
-      {/* ===================================================
-          REQUISITION / APPROVAL SECTION
-      =================================================== */}
 
       {job && (
         <RequisitionPanel
@@ -378,20 +502,12 @@ export default function JobDetail() {
         />
       )}
 
-      {/* ===================================================
-          REQUISITION REJECTION MODAL
-      =================================================== */}
-
       <RejectRequisitionModal
         open={rejectOpen}
         onClose={() => setRejectOpen(false)}
         isLoading={rejectMutation.isPending}
         onSubmit={(reason) => rejectMutation.mutate(reason)}
       />
-
-      {/* ===================================================
-          CANDIDATE PIPELINE
-      =================================================== */}
 
       <div className="mb-3 mt-7 flex items-center justify-between">
         <div>
@@ -405,6 +521,72 @@ export default function JobDetail() {
         </div>
       </div>
 
+      <Card className="mb-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal size={16} className="text-brand-600" />
+              <p className="text-[13px] font-semibold text-ink">Application Screening</p>
+            </div>
+            <p className="mt-1 text-[11.5px] text-ink-faint">
+              Centralized applicant tracking with AI-assisted screening and shortlisting.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge tone="neutral">{screeningTotal} Applications</Badge>
+            <Badge tone="success">{screenedCount} Screened</Badge>
+            <Badge tone="success">{strongFitCount} Strong Fit</Badge>
+            {duplicateCount > 0 && <Badge tone="warning">{duplicateCount} Duplicate</Badge>}
+            {spamCount > 0 && <Badge tone="warning">{spamCount} Suspicious</Badge>}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+          <div className="relative lg:col-span-2">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+            <input
+              value={screeningSearch}
+              onChange={(e) => setScreeningSearch(e.target.value)}
+              placeholder="Search candidate, email or source..."
+              className="h-9 w-full rounded-xl border border-line bg-white pl-9 pr-3 text-[12px] text-ink outline-none focus:border-brand-500"
+            />
+          </div>
+          <SelectField label="Stage" value={screeningStage} onChange={(e) => setScreeningStage(e.target.value as "ALL" | Candidate["stage"])}>
+            <option value="ALL">All stages</option>
+            {STAGES.map((stage) => <option key={stage.key} value={stage.key}>{stage.label}</option>)}
+          </SelectField>
+          <SelectField label="Source" value={screeningSource} onChange={(e) => setScreeningSource(e.target.value)}>
+            <option value="ALL">All sources</option>
+            {Array.from(new Set((candidates ?? []).map((candidate) => candidate.source).filter(Boolean))).map((source) => <option key={source} value={source}>{source}</option>)}
+          </SelectField>
+          <SelectField label="AI recommendation" value={screeningRecommendation} onChange={(e) => setScreeningRecommendation(e.target.value)}>
+            <option value="ALL">All recommendations</option>
+            <option value="STRONG_YES">Strong Yes</option>
+            <option value="YES">Yes</option>
+            <option value="NO">No</option>
+            <option value="STRONG_NO">Strong No</option>
+          </SelectField>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-[11.5px] text-ink-soft">
+            <input type="range" min={0} max={100} step={10} value={minimumFit} onChange={(e) => setMinimumFit(Number(e.target.value))} />
+            Minimum AI fit: <span className="font-semibold text-ink">{minimumFit}%</span>
+          </label>
+          <label className="flex items-center gap-2 text-[11.5px] text-ink-soft">
+            <input type="checkbox" checked={hideDuplicates} onChange={(e) => setHideDuplicates(e.target.checked)} />
+            Hide duplicates
+          </label>
+          <label className="flex items-center gap-2 text-[11.5px] text-ink-soft">
+            <input type="checkbox" checked={hideSpam} onChange={(e) => setHideSpam(e.target.checked)} />
+            Hide suspicious applications
+          </label>
+          <span className="ml-auto flex items-center gap-1 text-[11px] text-ink-faint">
+            <Filter size={12} /> Showing {filteredCandidates.length} of {screeningTotal}
+          </span>
+        </div>
+      </Card>
+
       {candidatesLoading ? (
         <div className="grid gap-4 lg:grid-cols-6">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -415,87 +597,57 @@ export default function JobDetail() {
           ))}
         </div>
       ) : (
-        <div className="overflow-x-auto pb-4"><div className="flex min-w-max items-start gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           {STAGES.map((stage) => {
             const stageCandidates =
-              candidates?.filter((candidate) => candidate.stage === stage.key) ?? [];
-            const isDropTarget = dragOverStage === stage.key;
+              filteredCandidates.filter(
+                (candidate) => candidate.stage === stage.key,
+              );
 
             return (
               <div
                 key={stage.key}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setDragOverStage(stage.key);
-                }}
-                onDragLeave={() => {
-                  if (dragOverStage === stage.key) setDragOverStage(null);
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const id = event.dataTransfer.getData("candidateId") || dragCandidateId;
-                  if (id && stage.key) {
-                    const candidate = candidates?.find((item) => item.id === id);
-                    if (candidate && candidate.stage !== stage.key) {
-                      stageMutation.mutate({ id, stage: stage.key });
-                    }
-                  }
-                  setDragCandidateId(null);
-                  setDragOverStage(null);
-                }}
-                className={cx(
-                  "w-[270px] shrink-0 self-start rounded-3xl border p-3 transition-all",
-                  isDropTarget
-                    ? "border-brand-400 bg-brand-50/70 shadow-[0_0_0_3px_rgba(99,102,241,0.08)]"
-                    : "border-transparent bg-ink/[0.03]",
-                )}
+                className="min-w-0 rounded-3xl bg-ink/[0.03] p-3"
               >
                 <div className="mb-3 flex items-center justify-between px-1">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-brand-500" />
-                    <p className="text-[13px] font-semibold text-ink-soft">
-                      {stage.label}
-                    </p>
-                  </div>
-                  <Badge tone="neutral">{stageCandidates.length}</Badge>
+                  <p className="text-[13px] font-semibold text-ink-soft">
+                    {stage.label}
+                  </p>
+
+                  <Badge tone="neutral">
+                    {stageCandidates.length}
+                  </Badge>
                 </div>
 
                 <div className="space-y-2.5">
                   {stageCandidates.map((candidate) => {
+                    const screeningCandidate =
+                      candidate as ScreeningCandidate;
+
+                    const screening =
+                      screeningCandidate.screening;
+
                     return (
                       <Card
                         key={candidate.id}
                         padded={false}
-                        draggable
-                        onDragStart={(event) => {
-                          event.dataTransfer.setData("candidateId", candidate.id);
-                          event.dataTransfer.effectAllowed = "move";
-                          setDragCandidateId(candidate.id);
-                        }}
-                        onDragEnd={() => {
-                          setDragCandidateId(null);
-                          setDragOverStage(null);
-                        }}
-                        className={cx(
-                          "group cursor-grab p-3.5 transition-all active:cursor-grabbing",
-                          dragCandidateId === candidate.id && "scale-[0.98] opacity-60",
-                        )}
+                        className="p-3.5"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-[13px] font-semibold text-ink">
-                              {candidate.firstName} {candidate.lastName}
-                            </p>
-                            <p className="truncate text-[11.5px] text-ink-faint">
-                              {candidate.email}
-                            </p>
-                          </div>
-                          <GripVertical size={15} className="mt-0.5 shrink-0 text-ink-faint" />
-                        </div>
+                        <p className="text-[13px] font-medium text-ink">
+                          {candidate.firstName}{" "}
+                          {candidate.lastName}
+                        </p>
+
+                        <p className="truncate text-[11.5px] text-ink-faint">
+                          {candidate.email}
+                        </p>
 
                         {candidate.expectedCtc ? (
                           <p className="mt-1 text-[11.5px] text-ink-faint">
-                            Expects {formatCurrencyINR(candidate.expectedCtc)}
+                            Expects{" "}
+                            {formatCurrencyINR(
+                              candidate.expectedCtc,
+                            )}
                           </p>
                         ) : null}
 
@@ -505,10 +657,11 @@ export default function JobDetail() {
                               type="button"
                               key={i}
                               onClick={() =>
-                                rateMutation.mutate({ id: candidate.id, rating: i + 1 })
+                                rateMutation.mutate({
+                                  id: candidate.id,
+                                  rating: i + 1,
+                                })
                               }
-                              className="rounded p-0.5 hover:bg-ink/[0.04]"
-                              aria-label={`Rate ${i + 1} stars`}
                             >
                               <Star
                                 size={13}
@@ -523,54 +676,169 @@ export default function JobDetail() {
                         </div>
 
                         <p className="mt-2 text-[10.5px] text-ink-faint">
-                          Applied {formatDate(candidate.appliedAt)} • {candidate.source}
+                          Applied{" "}
+                          {formatDate(candidate.appliedAt)} •{" "}
+                          {candidate.source}
                         </p>
 
-                        <div className="mt-3 rounded-xl border border-line/70 bg-white p-2">
-                          <div className="grid grid-cols-3 gap-1">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setScheduleFor(candidate);
-                              }}
-                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-[10.5px] font-medium text-brand-600 transition hover:bg-brand-50"
-                            >
-                              <Calendar size={12} className="shrink-0" />
-                              <span className="truncate">Interview</span>
-                            </button>
+                        {(duplicateIds.has(candidate.id) || isSpamCandidate(candidate)) && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {duplicateIds.has(candidate.id) && (
+                              <Badge tone="warning"><span className="flex items-center gap-1"><Copy size={10} /> Duplicate</span></Badge>
+                            )}
+                            {isSpamCandidate(candidate) && (
+                              <Badge tone="warning"><span className="flex items-center gap-1"><AlertTriangle size={10} /> Suspicious</span></Badge>
+                            )}
+                          </div>
+                        )}
 
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setLifecycleFor(candidate);
-                              }}
-                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-[10.5px] font-medium text-brand-600 transition hover:bg-brand-50"
-                            >
-                              <FileText size={12} className="shrink-0" />
-                              <span className="truncate">Lifecycle</span>
-                            </button>
+                        <div className="mt-3 flex items-center justify-end gap-2 border-t border-line/60 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => setEditCandidateFor(candidate)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-line bg-white px-2.5 py-1.5 text-[11px] font-medium text-ink transition hover:bg-surface"
+                          >
+                            <Pencil size={12} />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteCandidateFor(candidate)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-600 transition hover:bg-red-50"
+                          >
+                            <Trash2 size={12} />
+                            Delete
+                          </button>
+                        </div>
 
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setEditCandidateFor(candidate);
-                              }}
-                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-[10.5px] font-medium text-ink-soft transition hover:bg-ink/[0.05]"
-                              title="Edit candidate"
-                            >
-                              <Pencil size={12} className="shrink-0" />
-                              <span className="truncate">Edit</span>
-                            </button>
+                        <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/40 p-2.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <Sparkles
+                                size={13}
+                                className="text-brand-600"
+                              />
+                              <span className="text-[11px] font-semibold text-ink">
+                                AI Screening
+                              </span>
+                            </div>
+
+                            {screeningCandidate.jobFitScore != null && (
+                              <Badge
+                                tone={
+                                  screeningCandidate.jobFitScore >= 80
+                                    ? "success"
+                                    : screeningCandidate.jobFitScore >= 60
+                                      ? "neutral"
+                                      : "warning"
+                                }
+                              >
+                                {screeningCandidate.jobFitScore}% Fit
+                              </Badge>
+                            )}
                           </div>
 
-                          <div className="mt-1 border-t border-line/60 pt-2">
-                            <div className="flex items-center justify-center gap-1.5 text-[10.5px] font-medium text-ink-faint">
-                              <GripVertical size={13} />
-                              <span>Drag card to another stage</span>
+                          {screening?.recommendation && (
+                            <p className="mt-1.5 text-[10.5px] font-medium text-brand-700">
+                              {screening.recommendation.replaceAll(
+                                "_",
+                                " ",
+                              )}
+                            </p>
+                          )}
+
+                          {screeningCandidate.extractedSkills?.length ? (
+                            <p className="mt-1.5 line-clamp-2 text-[10.5px] text-ink-soft">
+                              Matched:{" "}
+                              {screeningCandidate.extractedSkills.join(", ")}
+                            </p>
+                          ) : null}
+
+                          {screening?.missingSkills?.length ? (
+                            <p className="mt-1 line-clamp-2 text-[10.5px] text-ink-faint">
+                              Missing:{" "}
+                              {screening.missingSkills.join(", ")}
+                            </p>
+                          ) : null}
+
+                          {screeningCandidate.screeningSummary ? (
+                            <p className="mt-1 line-clamp-3 text-[10px] text-ink-faint">
+                              {screeningCandidate.screeningSummary}
+                            </p>
+                          ) : null}
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 w-full"
+                            leftIcon={<Sparkles size={12} />}
+                            isLoading={
+                              screenMutation.isPending &&
+                              screenMutation.variables?.id === candidate.id
+                            }
+                            onClick={() =>
+                              screenMutation.mutate({
+                                id: candidate.id,
+                                resumeText:
+                                  screeningCandidate.resumeText,
+                              })
+                            }
+                          >
+                            {screeningCandidate.jobFitScore != null
+                              ? "Re-screen with AI"
+                              : "AI Screen Candidate"}
+                          </Button>
+                        </div>
+
+                        <div className="mt-2.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setScheduleFor(candidate)
+                                }
+                                className="flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:underline"
+                              >
+                                <Calendar size={12} />
+                                Interview
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setLifecycleFor(candidate)
+                                }
+                                className="flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:underline"
+                              >
+                                <FileText size={12} />
+                                Lifecycle
+                              </button>
                             </div>
+
+                            {stage.key !== "HIRED" &&
+                              stage.key !== "REJECTED" && (
+                                <select
+                                  value={candidate.stage}
+                                  onChange={(event) =>
+                                    stageMutation.mutate({
+                                      id: candidate.id,
+                                      stage: event.target.value,
+                                    })
+                                  }
+                                  aria-label={`Move ${candidate.firstName} ${candidate.lastName} to another stage`}
+                                  className="w-[88px] shrink-0 rounded-lg border border-line bg-white px-2 py-1 text-center text-[11px] font-medium text-ink shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                                >
+                                  {STAGES.map((s) => (
+                                    <option
+                                      key={s.key}
+                                      value={s.key}
+                                    >
+                                      {s.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
                           </div>
                         </div>
                       </Card>
@@ -578,37 +846,22 @@ export default function JobDetail() {
                   })}
 
                   {!stageCandidates.length && (
-                    <div className="rounded-2xl border border-dashed border-line/80 px-3 py-8 text-center">
-                      <p className="text-[11.5px] text-ink-faint">
-                        {isDropTarget ? "Drop candidate here" : "Drag candidate here"}
-                      </p>
-                    </div>
+                    <p className="px-1 text-[11.5px] text-ink-faint">
+                      No candidates
+                    </p>
                   )}
                 </div>
               </div>
             );
           })}
-          </div>
         </div>
       )}
-
-      {/* ===================================================
-          MODALS
-      =================================================== */}
 
       <AddCandidateModal
         open={addOpen}
         onClose={() => setAddOpen(false)}
         jobId={jobId!}
       />
-
-      {editCandidateFor && (
-        <EditCandidateModal
-          candidate={editCandidateFor}
-          jobId={jobId!}
-          onClose={() => setEditCandidateFor(null)}
-        />
-      )}
 
       {scheduleFor && (
         <ScheduleInterviewModal
@@ -624,6 +877,58 @@ export default function JobDetail() {
           job={job}
         />
       )}
+
+      {editCandidateFor && (
+        <EditCandidateModal
+          candidate={editCandidateFor}
+          isLoading={updateCandidateMutation.isPending}
+          onClose={() => {
+            if (!updateCandidateMutation.isPending) setEditCandidateFor(null);
+          }}
+          onSubmit={(values) =>
+            updateCandidateMutation.mutate({
+              id: editCandidateFor.id,
+              values,
+            })
+          }
+        />
+      )}
+
+      {deleteCandidateFor && (
+        <DeleteCandidateModal
+          candidate={deleteCandidateFor}
+          isLoading={deleteCandidateMutation.isPending}
+          onClose={() => {
+            if (!deleteCandidateMutation.isPending) setDeleteCandidateFor(null);
+          }}
+          onConfirm={() => deleteCandidateMutation.mutate(deleteCandidateFor.id)}
+        />
+      )}
+
+      {job && (
+        <EditJobModal
+          job={job}
+          open={editJobOpen}
+          isLoading={updateJobMutation.isPending}
+          onClose={() => {
+            if (!updateJobMutation.isPending) setEditJobOpen(false);
+          }}
+          onSubmit={(values) => updateJobMutation.mutate({ id: job.id, values })}
+        />
+      )}
+
+      {job && (
+        <DeleteJobModal
+          job={job}
+          open={deleteJobOpen}
+          isLoading={deleteJobMutation.isPending}
+          onClose={() => {
+            if (!deleteJobMutation.isPending) setDeleteJobOpen(false);
+          }}
+          onConfirm={() => deleteJobMutation.mutate(job.id)}
+        />
+      )}
+
     </div>
   );
 }
@@ -675,8 +980,7 @@ function RequisitionPanel({
           </p>
         </div>
 
-        {job.requisitionStatus ===
-          "PENDING_APPROVAL" && (
+        {job.requisitionStatus === "PENDING_APPROVAL" && (
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -702,9 +1006,7 @@ function RequisitionPanel({
         <InfoBox
           icon={Users}
           label="Headcount"
-          value={String(
-            job.headcount ?? job.openings ?? 1,
-          )}
+          value={String(job.headcount ?? job.openings ?? 1)}
         />
 
         <InfoBox
@@ -720,17 +1022,13 @@ function RequisitionPanel({
         <InfoBox
           icon={Clock3}
           label="Approval levels"
-          value={String(
-            job.approvalLevelRequired ?? 1,
-          )}
+          value={String(job.approvalLevelRequired ?? 1)}
         />
 
         <InfoBox
           icon={Building2}
           label="Hiring mode"
-          value={formatHiringMode(
-            job.hiringMode,
-          )}
+          value={formatHiringMode(job.hiringMode)}
         />
       </div>
 
@@ -751,15 +1049,12 @@ function RequisitionPanel({
               tone={
                 job.requisitionStatus === "APPROVED"
                   ? "success"
-                  : job.requisitionStatus ===
-                      "REJECTED"
+                  : job.requisitionStatus === "REJECTED"
                     ? "danger"
                     : "warning"
               }
             >
-              {formatRequisitionStatus(
-                job.requisitionStatus,
-              )}
+              {formatRequisitionStatus(job.requisitionStatus)}
             </Badge>
           </div>
 
@@ -878,13 +1173,11 @@ function RequisitionPanel({
 
             {job.screeningQuestions?.length ? (
               <ol className="mt-2 space-y-1.5 pl-5 text-[12px] text-ink-soft">
-                {job.screeningQuestions.map(
-                  (question, index) => (
-                    <li key={`${index}-${question}`}>
-                      {question}
-                    </li>
-                  ),
-                )}
+                {job.screeningQuestions.map((question, index) => (
+                  <li key={`${index}-${question}`}>
+                    {question}
+                  </li>
+                ))}
               </ol>
             ) : (
               <p className="mt-2 text-[12px] text-ink-faint">
@@ -998,8 +1291,7 @@ function RejectRequisitionModal({
     >
       <div className="space-y-3">
         <p className="text-[12.5px] text-ink-faint">
-          Provide a reason for rejecting this hiring
-          request.
+          Provide a reason for rejecting this hiring request.
         </p>
 
         <textarea
@@ -1123,155 +1415,9 @@ function AddCandidateModal({
         <TextField
           label="Expected CTC (₹)"
           type="number"
-          min={0}
-          error={errors.expectedCtc?.message}
           {...register("expectedCtc")}
         />
 
-        <SelectField
-          label="Source"
-          className="sm:col-span-2"
-          {...register("source")}
-        >
-          <option value="Career Site">
-            Career Site
-          </option>
-          <option value="LinkedIn">
-            LinkedIn
-          </option>
-          <option value="Naukri">
-            Naukri
-          </option>
-          <option value="Indeed">
-            Indeed
-          </option>
-          <option value="Referral">
-            Referral
-          </option>
-          <option value="Walk-in">
-            Walk-in
-          </option>
-          <option value="Campus">
-            Campus
-          </option>
-          <option value="Job Board">
-            Job Board
-          </option>
-        </SelectField>
-      </div>
-    </Modal>
-  );
-}
-
-/* =========================================================
-   EDIT CANDIDATE
-========================================================= */
-
-function EditCandidateModal({
-  candidate,
-  jobId,
-  onClose,
-}: {
-  candidate: Candidate;
-  jobId: string;
-  onClose: () => void;
-}) {
-  const { showToast } = useToast();
-  const queryClient = useQueryClient();
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<CandidateForm>({
-    resolver: zodResolver(candidateSchema),
-    defaultValues: {
-      firstName: candidate.firstName,
-      lastName: candidate.lastName,
-      email: candidate.email,
-      phone: candidate.phone ?? "",
-      expectedCtc: candidate.expectedCtc ?? undefined,
-      source: candidate.source ?? "Career Site",
-    },
-  });
-
-  const mutation = useMutation({
-    mutationFn: async (values: CandidateForm) => {
-      // The recruitment routes expose the candidate resource at this path.
-      // Keep the update isolated here so the rest of the recruitment UI does
-      // not need to know how candidate persistence is implemented.
-      const response = await api.patch(
-        `/recruitment/candidates/${candidate.id}`,
-        values,
-      );
-      return response.data;
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["candidates", jobId],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["candidate", candidate.id],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["recruitment", "pipeline"],
-      });
-      showToast("Candidate details updated.");
-      reset();
-      onClose();
-    },
-    onError: (err) => showToast(getErrorMessage(err), "error"),
-  });
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={`Edit candidate — ${candidate.firstName} ${candidate.lastName}`}
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit((values) => mutation.mutate(values))}
-            isLoading={mutation.isPending}
-          >
-            Save changes
-          </Button>
-        </>
-      }
-    >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          label="First name"
-          required
-          error={errors.firstName?.message}
-          {...register("firstName")}
-        />
-        <TextField
-          label="Last name"
-          required
-          error={errors.lastName?.message}
-          {...register("lastName")}
-        />
-        <TextField
-          label="Email"
-          type="email"
-          required
-          className="sm:col-span-2"
-          error={errors.email?.message}
-          {...register("email")}
-        />
-        <TextField label="Phone" {...register("phone")} />
-        <TextField
-          label="Expected CTC (₹)"
-          type="number"
-          min={0}
-          error={errors.expectedCtc?.message}
-          {...register("expectedCtc")}
-        />
         <SelectField
           label="Source"
           className="sm:col-span-2"
@@ -1286,6 +1432,243 @@ function EditCandidateModal({
           <option value="Campus">Campus</option>
           <option value="Job Board">Job Board</option>
         </SelectField>
+
+        <div className="sm:col-span-2">
+          <label className="mb-1.5 block text-[12px] font-medium text-ink">
+            Resume Text for AI Screening
+          </label>
+
+          <textarea
+            rows={6}
+            placeholder="Paste candidate skills, experience and qualifications..."
+            className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[12.5px] text-ink outline-none focus:border-brand-500"
+            {...register("resumeText")}
+          />
+
+          <p className="mt-1 text-[10.5px] text-ink-faint">
+            Used for AI-assisted skill matching and job-fit scoring.
+          </p>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   EDIT CANDIDATE MODAL
+========================================================= */
+
+type JobEditForm = {
+  title: string;
+  location: string;
+  experienceMin: number;
+  experienceMax: number;
+  openings: number;
+  budgetCtc: string;
+  description: string;
+  skillsText: string;
+  screeningQuestionsText: string;
+  hiringMode: "STANDARD" | "WALK_IN" | "CAMPUS";
+  status: "OPEN" | "ON_HOLD" | "CLOSED";
+};
+
+function EditJobModal({
+  job,
+  open,
+  isLoading,
+  onClose,
+  onSubmit,
+}: {
+  job: RecruitmentJob;
+  open: boolean;
+  isLoading: boolean;
+  onClose: () => void;
+  onSubmit: (values: Record<string, unknown>) => void;
+}) {
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<JobEditForm>({
+    defaultValues: {
+      title: job.title,
+      location: job.location ?? "",
+      experienceMin: job.experienceMin ?? 0,
+      experienceMax: job.experienceMax ?? 0,
+      openings: job.headcount ?? job.openings ?? 1,
+      budgetCtc: job.budgetCtc != null ? String(job.budgetCtc) : "",
+      description: job.description ?? "",
+      skillsText: (job.skills ?? []).join(", "),
+      screeningQuestionsText: (job.screeningQuestions ?? []).join("\n"),
+      hiringMode: job.hiringMode ?? "STANDARD",
+      status: job.status,
+    },
+  });
+
+  const submit = (values: JobEditForm) => {
+    if (values.experienceMax < values.experienceMin) return;
+    const budget = values.budgetCtc.trim();
+    onSubmit({
+      title: values.title.trim(),
+      location: values.location.trim(),
+      experienceMin: Number(values.experienceMin),
+      experienceMax: Number(values.experienceMax),
+      openings: Number(values.openings),
+      headcount: Number(values.openings),
+      budgetCtc: budget ? Number(budget) : null,
+      description: values.description.trim(),
+      skills: values.skillsText.split(",").map((item) => item.trim()).filter(Boolean),
+      screeningQuestions: values.screeningQuestionsText.split("\n").map((item) => item.trim()).filter(Boolean),
+      hiringMode: values.hiringMode,
+      status: values.status,
+    });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => { reset(); onClose(); }}
+      title="Edit Job Posting"
+      size="lg"
+      footer={<><Button variant="outline" onClick={onClose} disabled={isLoading}>Cancel</Button><Button onClick={handleSubmit(submit)} isLoading={isLoading}>Save changes</Button></>}
+    >
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit(submit)}>
+        <TextField label="Job title" required className="sm:col-span-2" error={errors.title?.message} {...register("title", { required: "Job title is required" })} />
+        <TextField label="Work location" required {...register("location", { required: "Location is required" })} />
+        <SelectField label="Status" {...register("status")}><option value="OPEN">Open</option><option value="ON_HOLD">On hold</option><option value="CLOSED">Closed</option></SelectField>
+        <TextField label="Minimum experience" type="number" min="0" {...register("experienceMin", { valueAsNumber: true })} />
+        <TextField label="Maximum experience" type="number" min="0" error={errors.experienceMax?.message} {...register("experienceMax", { valueAsNumber: true, validate: (value, form) => value >= form.experienceMin || "Must be greater than or equal to minimum experience" })} />
+        <TextField label="Openings" type="number" min="1" {...register("openings", { valueAsNumber: true, min: { value: 1, message: "At least 1 opening is required" } })} />
+        <TextField label="Budget / CTC" type="number" min="0" placeholder="Optional" {...register("budgetCtc")} />
+        <SelectField label="Hiring mode" className="sm:col-span-2" {...register("hiringMode")}><option value="STANDARD">Standard</option><option value="WALK_IN">Walk-in</option><option value="CAMPUS">Campus</option></SelectField>
+        <div className="sm:col-span-2"><label className="mb-1 block text-sm font-medium text-ink">Required skills</label><input className="h-10 w-full rounded-xl border border-line bg-white px-3 text-sm outline-none focus:border-brand-500" placeholder="React, TypeScript, Communication" {...register("skillsText")} /></div>
+        <div className="sm:col-span-2"><label className="mb-1 block text-sm font-medium text-ink">Screening questions</label><textarea className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-brand-500" placeholder="One question per line" {...register("screeningQuestionsText")} /></div>
+        <div className="sm:col-span-2"><label className="mb-1 block text-sm font-medium text-ink">Job description</label><textarea className="min-h-40 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-brand-500" {...register("description", { required: "Job description is required", minLength: { value: 10, message: "Add at least 10 characters" } })} />{errors.description?.message && <p className="mt-1 text-xs text-red-600">{errors.description.message}</p>}</div>
+      </form>
+    </Modal>
+  );
+}
+
+function DeleteJobModal({ job, open, isLoading, onClose, onConfirm }: { job: RecruitmentJob; open: boolean; isLoading: boolean; onClose: () => void; onConfirm: () => void; }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Delete Job Posting" size="sm" footer={<><Button variant="outline" onClick={onClose} disabled={isLoading}>Cancel</Button><Button onClick={onConfirm} isLoading={isLoading} className="bg-red-600 hover:bg-red-700">Delete job</Button></>}>
+      <div className="space-y-3 text-sm text-ink-soft"><p>Are you sure you want to delete <span className="font-semibold text-ink">{job.title}</span>?</p><p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-700">This permanently deletes the job posting and its candidates and interviews.</p></div>
+    </Modal>
+  );
+}
+
+function EditCandidateModal({
+  candidate,
+  isLoading,
+  onClose,
+  onSubmit,
+}: {
+  candidate: Candidate;
+  isLoading: boolean;
+  onClose: () => void;
+  onSubmit: (values: CandidateForm) => void;
+}) {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CandidateForm>({
+    resolver: zodResolver(candidateSchema),
+    defaultValues: {
+      firstName: candidate.firstName ?? "",
+      lastName: candidate.lastName ?? "",
+      email: candidate.email ?? "",
+      phone: candidate.phone ?? "",
+      expectedCtc: candidate.expectedCtc ?? undefined,
+      source: candidate.source ?? "",
+      resumeText: (candidate as ScreeningCandidate).resumeText ?? "",
+    },
+  });
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Edit Candidate — ${candidate.firstName} ${candidate.lastName}`}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit(onSubmit)} isLoading={isLoading}>
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField label="First name" required error={errors.firstName?.message} {...register("firstName")} />
+        <TextField label="Last name" required error={errors.lastName?.message} {...register("lastName")} />
+        <TextField label="Email" type="email" required className="sm:col-span-2" error={errors.email?.message} {...register("email")} />
+        <TextField label="Phone" {...register("phone")} />
+        <TextField label="Expected CTC (₹)" type="number" {...register("expectedCtc")} />
+        <SelectField label="Source" className="sm:col-span-2" {...register("source")}>
+          <option value="Career Site">Career Site</option>
+          <option value="LinkedIn">LinkedIn</option>
+          <option value="Naukri">Naukri</option>
+          <option value="Indeed">Indeed</option>
+          <option value="Referral">Referral</option>
+          <option value="Walk-in">Walk-in</option>
+          <option value="Campus">Campus</option>
+          <option value="Job Board">Job Board</option>
+        </SelectField>
+        <div className="sm:col-span-2">
+          <label className="mb-1.5 block text-[12px] font-medium text-ink">
+            Resume Text for AI Screening
+          </label>
+          <textarea
+            rows={6}
+            className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[12.5px] text-ink outline-none focus:border-brand-500"
+            {...register("resumeText")}
+          />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   DELETE CANDIDATE MODAL
+========================================================= */
+
+function DeleteCandidateModal({
+  candidate,
+  isLoading,
+  onClose,
+  onConfirm,
+}: {
+  candidate: Candidate;
+  isLoading: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Delete Candidate"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} isLoading={isLoading}>
+            Delete candidate
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-3">
+          <AlertTriangle size={18} className="shrink-0 text-red-600" />
+          <p className="text-[12.5px] leading-5 text-red-700">
+            This action cannot be undone.
+          </p>
+        </div>
+        <p className="text-[13px] text-ink-soft">
+          Are you sure you want to delete <span className="font-semibold text-ink">{candidate.firstName} {candidate.lastName}</span>?
+        </p>
       </div>
     </Modal>
   );
@@ -1312,7 +1695,8 @@ function ScheduleInterviewModal({
 
   const { data: interviews } = useQuery({
     queryKey: ["interviews", candidate.id],
-    queryFn: () => RecruitmentApi.interviews(candidate.id),
+    queryFn: () =>
+      RecruitmentApi.interviews(candidate.id),
   });
 
   const {
@@ -1327,8 +1711,12 @@ function ScheduleInterviewModal({
     },
   });
 
-  const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
-  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackFor, setFeedbackFor] =
+    useState<string | null>(null);
+
+  const [feedbackText, setFeedbackText] =
+    useState("");
+
   const [recommendation, setRecommendation] = useState<
     "STRONG_YES" | "YES" | "NO" | "STRONG_NO"
   >("YES");
@@ -1348,21 +1736,28 @@ function ScheduleInterviewModal({
       queryClient.invalidateQueries({
         queryKey: ["interviews", candidate.id],
       });
+
       queryClient.invalidateQueries({
         queryKey: ["candidates"],
       });
+
       showToast("Interview scheduled.");
       reset();
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err) =>
+      showToast(getErrorMessage(err), "error"),
   });
 
   const feedbackMutation = useMutation({
     mutationFn: (input: {
       id: string;
       feedback: string;
-      recommendation: "STRONG_YES" | "YES" | "NO" | "STRONG_NO";
+      recommendation:
+        | "STRONG_YES"
+        | "YES"
+        | "NO"
+        | "STRONG_NO";
     }) =>
       RecruitmentApi.submitFeedback(
         input.id,
@@ -1374,16 +1769,19 @@ function ScheduleInterviewModal({
       queryClient.invalidateQueries({
         queryKey: ["interviews", candidate.id],
       });
+
       queryClient.invalidateQueries({
         queryKey: ["candidates"],
       });
+
       showToast("Interview feedback saved.");
       setFeedbackFor(null);
       setFeedbackText("");
       setRecommendation("YES");
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err) =>
+      showToast(getErrorMessage(err), "error"),
   });
 
   return (
@@ -1420,7 +1818,9 @@ function ScheduleInterviewModal({
                         "Completed"}
                     </Badge>
                   ) : (
-                    <Badge tone="warning">Scheduled</Badge>
+                    <Badge tone="warning">
+                      Scheduled
+                    </Badge>
                   )}
                 </div>
 
@@ -1429,6 +1829,7 @@ function ScheduleInterviewModal({
                     <p className="text-[11px] font-medium text-ink-faint">
                       Feedback
                     </p>
+
                     <p className="mt-0.5 text-[12px] text-ink-soft">
                       {interview.feedback}
                     </p>
@@ -1441,7 +1842,9 @@ function ScheduleInterviewModal({
                       <div className="space-y-2.5 rounded-xl border border-line/70 p-3">
                         <textarea
                           value={feedbackText}
-                          onChange={(e) => setFeedbackText(e.target.value)}
+                          onChange={(e) =>
+                            setFeedbackText(e.target.value)
+                          }
                           rows={4}
                           placeholder="Enter interview feedback..."
                           className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[12.5px] text-ink outline-none focus:border-brand-500"
@@ -1460,10 +1863,14 @@ function ScheduleInterviewModal({
                             )
                           }
                         >
-                          <option value="STRONG_YES">Strong Yes</option>
+                          <option value="STRONG_YES">
+                            Strong Yes
+                          </option>
                           <option value="YES">Yes</option>
                           <option value="NO">No</option>
-                          <option value="STRONG_NO">Strong No</option>
+                          <option value="STRONG_NO">
+                            Strong No
+                          </option>
                         </SelectField>
 
                         <div className="flex gap-2">
@@ -1477,11 +1884,16 @@ function ScheduleInterviewModal({
                           >
                             Cancel
                           </Button>
+
                           <Button
                             size="sm"
-                            isLoading={feedbackMutation.isPending}
+                            isLoading={
+                              feedbackMutation.isPending
+                            }
                             onClick={() => {
-                              if (feedbackText.trim().length < 2) {
+                              if (
+                                feedbackText.trim().length < 2
+                              ) {
                                 showToast(
                                   "Feedback must be at least 2 characters.",
                                   "error",
@@ -1491,7 +1903,8 @@ function ScheduleInterviewModal({
 
                               feedbackMutation.mutate({
                                 id: interview.id,
-                                feedback: feedbackText.trim(),
+                                feedback:
+                                  feedbackText.trim(),
                                 recommendation,
                               });
                             }}
@@ -1504,7 +1917,9 @@ function ScheduleInterviewModal({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => setFeedbackFor(interview.id)}
+                        onClick={() =>
+                          setFeedbackFor(interview.id)
+                        }
                       >
                         Submit feedback
                       </Button>
@@ -1531,16 +1946,26 @@ function ScheduleInterviewModal({
           </p>
 
           <div className="grid grid-cols-2 gap-3">
-            <SelectField label="Interviewer" {...register("interviewerId")}>
+            <SelectField
+              label="Interviewer"
+              {...register("interviewerId")}
+            >
               <option value="">Select</option>
+
               {managers?.map((manager) => (
-                <option key={manager.id} value={manager.id}>
+                <option
+                  key={manager.id}
+                  value={manager.id}
+                >
                   {manager.firstName} {manager.lastName}
                 </option>
               ))}
             </SelectField>
 
-            <TextField label="Round" {...register("round")} />
+            <TextField
+              label="Round"
+              {...register("round")}
+            />
           </div>
 
           <TextField
@@ -1567,20 +1992,19 @@ function ScheduleInterviewModal({
    CANDIDATE RECRUITMENT LIFECYCLE
 ========================================================= */
 
-type CandidateOffer = {
-  status?: "NOT_GENERATED" | "NOT_SENT" | "SENT" | "ACCEPTED" | "DECLINED";
-  offerUrl?: string | null;
-  annualCtc?: number;
-  basic?: number;
-  hra?: number;
-  specialAllowance?: number;
-  joiningDate?: string;
-  generatedAt?: string | null;
-  respondedAt?: string | null;
-};
+type LifecycleCandidate = Candidate & {
+  offer?: {
+    status?: "NOT_SENT" | "SENT" | "ACCEPTED" | "DECLINED";
+    offerUrl?: string | null;
+    annualCtc?: number;
+    basic?: number;
+    hra?: number;
+    specialAllowance?: number;
+    joiningDate?: string;
+    generatedAt?: string;
+    respondedAt?: string | null;
+  };
 
-type LifecycleCandidate = Omit<Candidate, "offer"> & {
-  offer?: CandidateOffer;
   backgroundVerification?: {
     status?: "NOT_STARTED" | "IN_PROGRESS" | "VERIFIED" | "FAILED";
     provider?: string;
@@ -1589,6 +2013,7 @@ type LifecycleCandidate = Omit<Candidate, "offer"> & {
     startedAt?: string | null;
     completedAt?: string | null;
   };
+
   preboarding?: {
     status?: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
     completedAt?: string | null;
@@ -1599,85 +2024,9 @@ type LifecycleCandidate = Omit<Candidate, "offer"> & {
       verified?: boolean;
     }>;
   };
+
   hiredEmployeeId?: string | null;
 };
-
-function LifecycleStageTracker({
-  candidate,
-}: {
-  candidate: LifecycleCandidate;
-}) {
-  const currentIndex = STAGES.findIndex(
-    (stage) => stage.key === candidate.stage,
-  );
-  const isRejected = candidate.stage === "REJECTED";
-
-  return (
-    <div className="rounded-2xl border border-line/70 bg-white p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-[12.5px] font-semibold text-ink">
-            Recruitment Stage
-          </p>
-          <p className="mt-0.5 text-[11px] text-ink-faint">
-            Drag the candidate card between pipeline columns to change the stage.
-          </p>
-        </div>
-        <Badge tone={isRejected ? "danger" : "neutral"}>
-          {STAGES.find((stage) => stage.key === candidate.stage)?.label ?? candidate.stage}
-        </Badge>
-      </div>
-
-      <div className="mt-5 overflow-x-auto pb-1">
-        <div className="flex min-w-[560px] items-start">
-          {STAGES.slice(0, 5).map((stage, index) => {
-            const completed = !isRejected && currentIndex > index;
-            const active = !isRejected && currentIndex === index;
-
-            return (
-              <div key={stage.key} className="flex min-w-[112px] flex-1 items-start">
-                <div className="relative flex w-full flex-col items-center">
-                  <div
-                    className={cx(
-                      "relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-[10px] font-semibold",
-                      completed
-                        ? "border-emerald-200 bg-emerald-100 text-emerald-700"
-                        : active
-                          ? "border-brand-500 bg-brand-600 text-white shadow-[0_0_0_4px_rgba(99,102,241,0.10)]"
-                          : "border-line bg-white text-ink-faint",
-                    )}
-                  >
-                    {completed ? <CheckCircle2 size={14} /> : index + 1}
-                  </div>
-                  <span
-                    className={cx(
-                      "mt-2 text-center text-[10.5px] font-medium",
-                      active
-                        ? "text-brand-700"
-                        : completed
-                          ? "text-emerald-700"
-                          : "text-ink-faint",
-                    )}
-                  >
-                    {stage.label}
-                  </span>
-                </div>
-                {index < 4 && (
-                  <div
-                    className={cx(
-                      "mt-[15px] h-0.5 flex-1",
-                      completed ? "bg-emerald-300" : "bg-line",
-                    )}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function CandidateLifecycleModal({
   candidate,
@@ -1691,217 +2040,90 @@ function CandidateLifecycleModal({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  const {
-    data: rawCandidate,
-    isLoading,
-    refetch: refreshCandidate,
-  } = useQuery({
+  const { data: rawCandidate, isLoading } = useQuery({
     queryKey: ["candidate", candidate.id],
-    queryFn: () => RecruitmentApi.candidate(candidate.id),
+    queryFn: () =>
+      RecruitmentApi.candidate(candidate.id),
   });
 
-  const current = (rawCandidate ?? candidate) as LifecycleCandidate;
-  const offer = current.offer as CandidateOffer | undefined;
-
-  // Older candidate records may not have the lifecycle subdocuments yet.
-  // Normalize them here so BGV/pre-boarding never crash or become unusable.
-  const backgroundVerification = current.backgroundVerification ?? {
-    status: "NOT_STARTED" as const,
-    provider: "",
-    reference: "",
-    notes: "",
-    startedAt: null,
-    completedAt: null,
-  };
-
-  const preboarding = current.preboarding ?? {
-    status: "NOT_STARTED" as const,
-    documents: [],
-    completedAt: null,
-  };
-
-  /* =========================================================
-     OFFER STATE
-  ========================================================= */
-
-  const [isEditingOffer, setIsEditingOffer] = useState(false);
+  const current =
+    (rawCandidate ?? candidate) as LifecycleCandidate;
 
   const [annualCtc, setAnnualCtc] = useState(
     String(
-      offer?.annualCtc ??
-        current.expectedCtc ??
+      current.expectedCtc ??
         job?.budgetCtc ??
-        "0",
+        0,
     ),
   );
 
-  const [joiningDate, setJoiningDate] = useState(
-    offer?.joiningDate ?? "",
-  );
-
-  /* =========================================================
-     BGV STATE
-  ========================================================= */
+  const [joiningDate, setJoiningDate] =
+    useState("");
 
   const [bgvStatus, setBgvStatus] = useState<
     "NOT_STARTED" | "IN_PROGRESS" | "VERIFIED" | "FAILED"
-  >(
-    backgroundVerification.status ??
-      "NOT_STARTED",
-  );
+  >("IN_PROGRESS");
 
-  const [bgvProvider, setBgvProvider] = useState(
-    backgroundVerification.provider ?? "",
-  );
+  const [bgvProvider, setBgvProvider] =
+    useState("");
 
-  const [bgvReference, setBgvReference] = useState(
-    backgroundVerification.reference ?? "",
-  );
+  const [bgvReference, setBgvReference] =
+    useState("");
 
-  const [bgvNotes, setBgvNotes] = useState(
-    backgroundVerification.notes ?? "",
-  );
+  const [bgvNotes, setBgvNotes] =
+    useState("");
 
-  /* =========================================================
-     PRE-BOARDING STATE
-  ========================================================= */
+  const [documentType, setDocumentType] =
+    useState("Aadhaar");
 
-  const [documentType, setDocumentType] = useState(
-    "",
-  );
+  const [documentUrl, setDocumentUrl] =
+    useState("");
 
-  const [documentUrl, setDocumentUrl] = useState(
-    "",
-  );
+  const refreshCandidate = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["candidate", candidate.id],
+    });
 
-  /* =========================================================
-     SYNC LOCAL STATE AFTER API REFRESH
-  ========================================================= */
+    queryClient.invalidateQueries({
+      queryKey: ["candidates", job?.id],
+    });
 
-  useEffect(() => {
-    if (!current) {
-      return;
-    }
-
-    if (offer?.annualCtc != null) {
-      setAnnualCtc(String(offer.annualCtc));
-    } else if (current.expectedCtc != null) {
-      setAnnualCtc(String(current.expectedCtc));
-    } else if (job?.budgetCtc != null) {
-      setAnnualCtc(String(job.budgetCtc));
-    }
-
-    if (offer?.joiningDate) {
-      setJoiningDate(offer.joiningDate);
-    }
-
-    setBgvStatus(
-      backgroundVerification.status ??
-        "NOT_STARTED",
-    );
-
-    setBgvProvider(
-      backgroundVerification.provider ??
-        "",
-    );
-
-    setBgvReference(
-      backgroundVerification.reference ??
-        "",
-    );
-
-    setBgvNotes(
-      backgroundVerification.notes ??
-        "",
-    );
-  }, [current, offer, job]);
-
-  /* =========================================================
-     OFFER GENERATE / UPDATE
-  ========================================================= */
+    queryClient.invalidateQueries({
+      queryKey: ["recruitment"],
+    });
+  };
 
   const offerMutation = useMutation({
-    mutationFn: async () => {
-      const wasAccepted = offer?.status === "ACCEPTED";
-      const result = await RecruitmentApi.generateOffer(candidate.id, {
-        annualCtc: Math.max(0, Number(annualCtc)),
+    mutationFn: () =>
+      RecruitmentApi.generateOffer(candidate.id, {
+        annualCtc: Number(annualCtc),
         joiningDate,
-      });
+      }),
 
-      // The existing generate-offer endpoint changes the offer state to SENT.
-      // If an accepted offer is edited, immediately restore ACCEPTED so editing
-      // salary/joining date does not accidentally move the candidate backward.
-      if (wasAccepted) {
-        await RecruitmentApi.respondToOffer(candidate.id, "ACCEPTED");
-      }
-
-      return result;
-    },
-
-    onSuccess: async () => {
-      await refreshCandidate();
-
-      queryClient.invalidateQueries({
-        queryKey: ["candidates", job?.id],
-      });
-
-      queryClient.invalidateQueries({
-        queryKey: ["recruitment", "pipeline"],
-      });
-
-      setIsEditingOffer(false);
-
-      showToast(
-        "Offer details updated successfully.",
-      );
+    onSuccess: () => {
+      refreshCandidate();
+      showToast("Offer generated successfully.");
     },
 
     onError: (err) =>
-      showToast(
-        getErrorMessage(err),
-        "error",
-      ),
+      showToast(getErrorMessage(err), "error"),
   });
 
-  /* =========================================================
-     OFFER ACCEPT / DECLINE
-  ========================================================= */
-
   const offerResponseMutation = useMutation({
-    mutationFn: (
-      status: "ACCEPTED" | "DECLINED",
-    ) =>
+    mutationFn: (status: "ACCEPTED" | "DECLINED") =>
       RecruitmentApi.respondToOffer(
         candidate.id,
         status,
       ),
 
-    onSuccess: async (_, status) => {
-      await refreshCandidate();
-
-      queryClient.invalidateQueries({
-        queryKey: ["candidates", job?.id],
-      });
-
-      queryClient.invalidateQueries({
-        queryKey: ["recruitment", "pipeline"],
-      });
-
-      showToast(
-        `Offer ${status.toLowerCase()}.`,
-      );
+    onSuccess: (_, status) => {
+      refreshCandidate();
+      showToast(`Offer ${status.toLowerCase()}.`);
     },
 
     onError: (err) =>
-      showToast(
-        getErrorMessage(err),
-        "error",
-      ),
+      showToast(getErrorMessage(err), "error"),
   });
-
-  /* =========================================================
-     BACKGROUND VERIFICATION
-  ========================================================= */
 
   const bgvMutation = useMutation({
     mutationFn: () =>
@@ -1909,66 +2131,40 @@ function CandidateLifecycleModal({
         candidate.id,
         {
           status: bgvStatus,
-          provider:
-            bgvProvider.trim() || undefined,
-          reference:
-            bgvReference.trim() || undefined,
-          notes:
-            bgvNotes.trim() || undefined,
+          provider: bgvProvider || undefined,
+          reference: bgvReference || undefined,
+          notes: bgvNotes || undefined,
         },
       ),
 
-    onSuccess: async (updatedCandidate) => {
-      queryClient.setQueryData(["candidate", candidate.id], updatedCandidate);
-      await refreshCandidate();
-      queryClient.invalidateQueries({
-        queryKey: ["candidates", job?.id],
-      });
+    onSuccess: () => {
+      refreshCandidate();
       showToast("Background verification updated.");
     },
 
     onError: (err) =>
-      showToast(
-        getErrorMessage(err),
-        "error",
-      ),
+      showToast(getErrorMessage(err), "error"),
   });
-
-  /* =========================================================
-     ADD PRE-BOARDING DOCUMENT
-  ========================================================= */
 
   const documentMutation = useMutation({
     mutationFn: () =>
       RecruitmentApi.addPreboardingDocument(
         candidate.id,
         {
-          type: documentType.trim(),
-          url: documentUrl.trim(),
+          type: documentType,
+          url: documentUrl,
         },
       ),
 
-    onSuccess: async (updatedCandidate) => {
-      queryClient.setQueryData(["candidate", candidate.id], updatedCandidate);
-      await refreshCandidate();
-      queryClient.invalidateQueries({
-        queryKey: ["candidates", job?.id],
-      });
-      setDocumentType("");
+    onSuccess: () => {
+      refreshCandidate();
       setDocumentUrl("");
       showToast("Pre-boarding document added.");
     },
 
     onError: (err) =>
-      showToast(
-        getErrorMessage(err),
-        "error",
-      ),
+      showToast(getErrorMessage(err), "error"),
   });
-
-  /* =========================================================
-     VERIFY PRE-BOARDING DOCUMENT
-  ========================================================= */
 
   const verifyDocumentMutation = useMutation({
     mutationFn: (index: number) =>
@@ -1977,25 +2173,14 @@ function CandidateLifecycleModal({
         index,
       ),
 
-    onSuccess: async (updatedCandidate) => {
-      queryClient.setQueryData(["candidate", candidate.id], updatedCandidate);
-      await refreshCandidate();
-      queryClient.invalidateQueries({
-        queryKey: ["candidates", job?.id],
-      });
+    onSuccess: () => {
+      refreshCandidate();
       showToast("Pre-boarding document verified.");
     },
 
     onError: (err) =>
-      showToast(
-        getErrorMessage(err),
-        "error",
-      ),
+      showToast(getErrorMessage(err), "error"),
   });
-
-  /* =========================================================
-     HIRE CANDIDATE
-  ========================================================= */
 
   const hireMutation = useMutation({
     mutationFn: () =>
@@ -2004,66 +2189,31 @@ function CandidateLifecycleModal({
         "EMPLOYEE",
       ),
 
-    onSuccess: async () => {
-      await refreshCandidate();
-
-      queryClient.invalidateQueries({
-        queryKey: ["candidates", job?.id],
-      });
-
-      queryClient.invalidateQueries({
-        queryKey: ["employees"],
-      });
-
-      queryClient.invalidateQueries({
-        queryKey: ["recruitment"],
-      });
-
+    onSuccess: () => {
+      refreshCandidate();
       showToast(
         "Candidate hired and employee account created.",
       );
     },
 
     onError: (err) =>
-      showToast(
-        getErrorMessage(err),
-        "error",
-      ),
+      showToast(getErrorMessage(err), "error"),
   });
 
-  /* =========================================================
-     DERIVED LIFECYCLE STATUS
-  ========================================================= */
+  const offerStatus =
+    current.offer?.status ?? "NOT_SENT";
 
   const offerAccepted =
-    offer?.status === "ACCEPTED";
+    offerStatus === "ACCEPTED";
 
   const bgvVerified =
-    backgroundVerification.status ===
+    current.backgroundVerification?.status ===
     "VERIFIED";
 
-  const preboardingDocuments =
-    preboarding.documents ?? [];
-
-  const verifiedPreboardingDocuments =
-    preboardingDocuments.filter((doc) => doc.verified).length;
-
   const preboardingCompleted =
-    preboarding.status ===
-      "COMPLETED" ||
-    (preboardingDocuments.length > 0 &&
-      preboardingDocuments.every((doc) => doc.verified));
+    current.preboarding?.status === "COMPLETED";
 
-  const preboardingInProgress =
-    preboardingDocuments.length > 0 &&
-    !preboardingCompleted;
-
-  const hired =
-    Boolean(current.hiredEmployeeId);
-
-  /* =========================================================
-     RENDER
-  ========================================================= */
+  const hired = Boolean(current.hiredEmployeeId);
 
   return (
     <Modal
@@ -2080,23 +2230,11 @@ function CandidateLifecycleModal({
         </div>
       ) : (
         <div className="space-y-4">
-
-          {/* =================================================
-              RECRUITMENT STAGE TRACKER
-          ================================================= */}
-
-          <LifecycleStageTracker candidate={current} />
-
-          {/* =================================================
-              CANDIDATE HEADER
-          ================================================= */}
-
           <div className="rounded-2xl border border-line/70 bg-ink/[0.02] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-medium text-ink">
-                  {current.firstName}{" "}
-                  {current.lastName}
+                  {current.firstName} {current.lastName}
                 </p>
 
                 <p className="text-[12px] text-ink-faint">
@@ -2104,59 +2242,29 @@ function CandidateLifecycleModal({
                 </p>
               </div>
 
-              <Badge
-                tone={
-                  hired
-                    ? "success"
-                    : offerAccepted
-                      ? "success"
-                      : "neutral"
-                }
-              >
-                {hired
-                  ? "HIRED"
-                  : current.stage}
+              <Badge tone={hired ? "success" : "neutral"}>
+                {hired ? "HIRED" : current.stage}
               </Badge>
             </div>
           </div>
 
-          {/* =================================================
-              1. OFFER
-          ================================================= */}
-
+          {/* 1. OFFER */}
           <LifecycleSection
             number="1"
             title="Offer"
-            status={
-              offer?.status ??
-              "NOT GENERATED"
-            }
+            status={offerStatus}
             complete={offerAccepted}
           >
-            {!offer?.status ||
-            offer.status ===
-              "NOT_SENT" ||
-            offer.status ===
-              "NOT_GENERATED" ||
-            isEditingOffer ? (
+            {offerStatus === "NOT_SENT" ||
+            offerStatus === "DECLINED" ? (
               <div className="grid gap-3 sm:grid-cols-2">
-
                 <TextField
-                  label="Annual CTC (₹)"
+                  label="Annual CTC"
                   type="number"
-                  min={0}
                   value={annualCtc}
-                  onChange={(e) => {
-                    const value =
-                      e.target.value;
-
-                    if (
-                      value === "" ||
-                      Number(value) >= 0
-                    ) {
-                      setAnnualCtc(value);
-                    }
-                  }}
+                  onChange={(e) =>
+                    setAnnualCtc(e.target.value)
+                  }
                 />
 
                 <TextField
@@ -2164,122 +2272,43 @@ function CandidateLifecycleModal({
                   type="date"
                   value={joiningDate}
                   onChange={(e) =>
-                    setJoiningDate(
-                      e.target.value,
-                    )
+                    setJoiningDate(e.target.value)
                   }
                 />
 
-                <div className="flex gap-2 sm:col-span-2">
+                <div className="sm:col-span-2">
                   <Button
                     size="sm"
-                    isLoading={
-                      offerMutation.isPending
-                    }
+                    isLoading={offerMutation.isPending}
                     disabled={
                       !joiningDate ||
-                      annualCtc === "" ||
-                      Number(annualCtc) < 0
+                      Number(annualCtc) <= 0
                     }
                     onClick={() =>
                       offerMutation.mutate()
                     }
                   >
-                    {isEditingOffer
-                      ? "Save changes"
+                    {offerStatus === "DECLINED"
+                      ? "Generate new offer"
                       : "Generate offer"}
                   </Button>
-
-                  {isEditingOffer && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setIsEditingOffer(
-                          false,
-                        );
-
-                        setAnnualCtc(
-                          String(
-                            offer?.annualCtc ??
-                              0,
-                          ),
-                        );
-
-                        setJoiningDate(
-                          offer?.joiningDate ??
-                            "",
-                        );
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  )}
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
+                <p className="text-[12px] text-ink-soft">
+                  CTC:{" "}
+                  {current.offer?.annualCtc != null
+                    ? formatCurrencyINR(
+                        current.offer.annualCtc,
+                      )
+                    : "—"}{" "}
+                  • Joining:{" "}
+                  {current.offer?.joiningDate ?? "—"}
+                </p>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-
-                  <div className="rounded-xl border border-line/60 bg-ink/[0.02] p-3">
-                    <p className="text-[10.5px] font-medium uppercase tracking-wide text-ink-faint">
-                      Annual CTC
-                    </p>
-
-                    <p className="mt-1 text-[13px] font-semibold text-ink">
-                      {offer?.annualCtc !=
-                      null
-                        ? formatCurrencyINR(
-                            offer.annualCtc,
-                          )
-                        : "—"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-line/60 bg-ink/[0.02] p-3">
-                    <p className="text-[10.5px] font-medium uppercase tracking-wide text-ink-faint">
-                      Joining date
-                    </p>
-
-                    <p className="mt-1 text-[13px] font-semibold text-ink">
-                      {offer?.joiningDate ??
-                        "—"}
-                    </p>
-                  </div>
-
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setIsEditingOffer(true)
-                    }
-                  >
-                    Edit salary / joining date
-                  </Button>
-
-                  {offer?.offerUrl && (
-                    <a
-                      href={offer.offerUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[12px] font-medium text-brand-600 hover:underline"
-                    >
-                      Open generated offer
-                      letter
-                    </a>
-                  )}
-
-                </div>
-
-                {/* OFFER RESPONSE */}
-
-                {offer?.status === "SENT" && (
-                  <div className="flex flex-wrap gap-2 pt-1">
+                {offerStatus === "SENT" && (
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
                       isLoading={
@@ -2311,88 +2340,47 @@ function CandidateLifecycleModal({
                   </div>
                 )}
 
-                {/* ACCEPTED */}
-
-                {offer?.status ===
-                  "ACCEPTED" && (
-                  <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3">
-
-                    <CheckCircle2
-                      size={15}
-                      className="text-emerald-600"
-                    />
-
-                    <div>
-                      <p className="text-[12.5px] font-semibold text-emerald-700">
-                        Offer accepted
-                      </p>
-
-                      {offer.respondedAt && (
-                        <p className="text-[11px] text-emerald-600">
-                          Responded on{" "}
-                          {formatDate(
-                            offer.respondedAt,
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                {offerStatus === "ACCEPTED" && (
+                  <Badge tone="success">
+                    Offer accepted
+                  </Badge>
                 )}
 
-                {/* DECLINED */}
-
-                {offer?.status ===
-                  "DECLINED" && (
-                  <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3">
-
-                    <XCircle
-                      size={15}
-                      className="text-red-600"
-                    />
-
-                    <div>
-                      <p className="text-[12.5px] font-semibold text-red-700">
-                        Offer declined
-                      </p>
-
-                      {offer.respondedAt && (
-                        <p className="text-[11px] text-red-600">
-                          Responded on{" "}
-                          {formatDate(
-                            offer.respondedAt,
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                {current.offer?.offerUrl && (
+                  <a
+                    href={
+                      resolveAssetUrl(
+                        current.offer.offerUrl,
+                      ) ?? "#"
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-block text-[12px] font-medium text-brand-600 hover:underline"
+                  >
+                    Open generated offer letter
+                  </a>
                 )}
               </div>
             )}
           </LifecycleSection>
 
-          {/* =================================================
-              2. BACKGROUND VERIFICATION
-          ================================================= */}
-
+          {/* 2. BACKGROUND VERIFICATION */}
           <LifecycleSection
             number="2"
             title="Background Verification"
             status={
-              current.backgroundVerification
-                ?.status ??
+              current.backgroundVerification?.status ??
               "NOT_STARTED"
             }
             complete={bgvVerified}
           >
             {!offerAccepted ? (
               <p className="text-[12px] text-ink-faint">
-                Accept the offer before
-                completing background
-                verification.
+                Accept the offer before completing
+                background verification.
               </p>
             ) : (
               <div className="space-y-3">
-
                 <SelectField
                   label="Status"
                   value={bgvStatus}
@@ -2409,172 +2397,96 @@ function CandidateLifecycleModal({
                   <option value="NOT_STARTED">
                     Not started
                   </option>
-
                   <option value="IN_PROGRESS">
                     In progress
                   </option>
-
                   <option value="VERIFIED">
                     Verified
                   </option>
-
                   <option value="FAILED">
                     Failed
                   </option>
                 </SelectField>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-
                   <TextField
                     label="Provider"
                     value={bgvProvider}
                     onChange={(e) =>
-                      setBgvProvider(
-                        e.target.value,
-                      )
+                      setBgvProvider(e.target.value)
                     }
-                    placeholder="e.g. AuthBridge"
                   />
 
                   <TextField
                     label="Reference"
                     value={bgvReference}
                     onChange={(e) =>
-                      setBgvReference(
-                        e.target.value,
-                      )
+                      setBgvReference(e.target.value)
                     }
-                    placeholder="BGV-REF-001"
-                  />
-
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-[11px] font-medium text-ink-soft">
-                    Verification notes
-                  </label>
-                  <textarea
-                    value={bgvNotes}
-                    onChange={(e) => setBgvNotes(e.target.value)}
-                    rows={3}
-                    placeholder="Add verification notes..."
-                    className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[12.5px] text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                   />
                 </div>
+
+                <textarea
+                  value={bgvNotes}
+                  onChange={(e) =>
+                    setBgvNotes(e.target.value)
+                  }
+                  rows={3}
+                  placeholder="Verification notes..."
+                  className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[12.5px] text-ink outline-none focus:border-brand-500"
+                />
 
                 <Button
                   size="sm"
-                  isLoading={
-                    bgvMutation.isPending
-                  }
+                  isLoading={bgvMutation.isPending}
                   onClick={() =>
                     bgvMutation.mutate()
                   }
                 >
                   Update verification
                 </Button>
-
               </div>
             )}
           </LifecycleSection>
 
-          {/* =================================================
-              3. PRE-BOARDING
-          ================================================= */}
-
+          {/* 3. PRE-BOARDING */}
           <LifecycleSection
             number="3"
             title="Pre-boarding"
             status={
-              preboardingCompleted
-                ? "COMPLETED"
-                : preboardingInProgress
-                  ? "IN_PROGRESS"
-                  : "NOT_STARTED"
+              current.preboarding?.status ??
+              "NOT_STARTED"
             }
             complete={preboardingCompleted}
           >
             {!bgvVerified ? (
               <p className="text-[12px] text-ink-faint">
-                Complete BGV with VERIFIED
-                status before pre-boarding.
+                Complete BGV with VERIFIED status before
+                pre-boarding.
               </p>
             ) : (
               <div className="space-y-3">
-
-                {/* DOCUMENT LIST */}
-
-                {preboardingDocuments.length >
-                0 ? (
-                  <div className="space-y-3">
-                    <div className={cx(
-                      "rounded-xl border px-3.5 py-3",
-                      preboardingCompleted
-                        ? "border-emerald-200 bg-emerald-50"
-                        : "border-amber-200 bg-amber-50",
-                    )}>
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className={cx(
-                            "text-[12.5px] font-semibold",
-                            preboardingCompleted
-                              ? "text-emerald-700"
-                              : "text-amber-700",
-                          )}>
-                            {preboardingCompleted
-                              ? "Pre-boarding completed"
-                              : "Verify all required documents"}
-                          </p>
-                          <p className="mt-0.5 text-[11px] text-ink-faint">
-                            {verifiedPreboardingDocuments} of {preboardingDocuments.length} documents verified
-                          </p>
-                        </div>
-                        {preboardingCompleted ? (
-                          <CheckCircle2 size={17} className="text-emerald-600" />
-                        ) : (
-                          <Clock3 size={16} className="text-amber-600" />
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-
-                    {preboardingDocuments.map(
+                {current.preboarding?.documents?.length ? (
+                  <div className="space-y-2">
+                    {current.preboarding.documents.map(
                       (doc, index) => (
                         <div
                           key={`${doc.type}-${index}`}
                           className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/60 px-3 py-2.5"
                         >
-                          <div className="min-w-0">
+                          <div>
                             <p className="text-[12.5px] font-medium text-ink">
                               {doc.type}
                             </p>
 
-                            <div className="mt-0.5 flex min-w-0 items-center gap-2">
-                              <p className="max-w-[360px] truncate text-[11px] text-ink-faint">
-                                {doc.url}
-                              </p>
-                              {/^https?:\/\//i.test(doc.url) && (
-                                <a
-                                  href={doc.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="shrink-0 text-[11px] font-medium text-brand-600 hover:underline"
-                                >
-                                  View
-                                </a>
-                              )}
-                            </div>
+                            <p className="max-w-[420px] truncate text-[11px] text-ink-faint">
+                              {doc.url}
+                            </p>
                           </div>
 
                           {doc.verified ? (
                             <Badge tone="success">
-                              <span className="flex items-center gap-1">
-                                <CheckCircle2
-                                  size={12}
-                                />
-                                Verified
-                              </span>
+                              Verified
                             </Badge>
                           ) : (
                             <Button
@@ -2595,62 +2507,36 @@ function CandidateLifecycleModal({
                         </div>
                       ),
                     )}
-
-                    </div>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-line px-3.5 py-3">
-                    <p className="text-[12px] font-medium text-ink-soft">
-                      No pre-boarding documents yet.
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-ink-faint">
-                      Add at least one document, then verify it to complete pre-boarding.
-                    </p>
-                  </div>
+                  <p className="text-[12px] text-ink-faint">
+                    No pre-boarding documents yet.
+                  </p>
                 )}
 
-                {/* ADD DOCUMENT */}
-
-                <div className="rounded-xl border border-line/60 bg-ink/[0.015] p-3">
-                  <p className="mb-3 text-[12px] font-semibold text-ink">
-                    Add pre-boarding document
-                  </p>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <SelectField
-                      label="Document type"
-                      value={documentType}
-                      onChange={(e) => setDocumentType(e.target.value)}
-                    >
-                    <option value="">Select document type</option>
-                    <option value="Aadhaar">Aadhaar</option>
-                    <option value="PAN">PAN</option>
-                    <option value="Passport">Passport</option>
-                    <option value="Degree Certificate">Degree Certificate</option>
-                    <option value="Bank Details">Bank Details</option>
-                    <option value="Other">Other</option>
-                  </SelectField>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <TextField
+                    label="Document type"
+                    value={documentType}
+                    onChange={(e) =>
+                      setDocumentType(e.target.value)
+                    }
+                  />
 
                   <TextField
                     label="Document URL"
                     value={documentUrl}
                     onChange={(e) =>
-                      setDocumentUrl(
-                        e.target.value,
-                      )
+                      setDocumentUrl(e.target.value)
                     }
                     placeholder="https://..."
                   />
-
-                  </div>
                 </div>
 
                 <Button
                   size="sm"
                   variant="outline"
-                  isLoading={
-                    documentMutation.isPending
-                  }
+                  isLoading={documentMutation.isPending}
                   disabled={
                     !documentType.trim() ||
                     !documentUrl.trim()
@@ -2661,65 +2547,36 @@ function CandidateLifecycleModal({
                 >
                   Add document
                 </Button>
-
               </div>
             )}
           </LifecycleSection>
 
-          {/* =================================================
-              4. HIRE / EMPLOYEE HANDOFF
-          ================================================= */}
-
+          {/* 4. HIRE */}
           <LifecycleSection
             number="4"
             title="Hire / Employee Handoff"
-            status={
-              hired
-                ? "COMPLETED"
-                : "PENDING"
-            }
+            status={hired ? "COMPLETED" : "PENDING"}
             complete={hired}
           >
             {!offerAccepted ||
             !bgvVerified ||
             !preboardingCompleted ? (
-              <div className="space-y-2">
-                <p className="text-[12px] text-ink-faint">
-                  Complete every prerequisite before creating the employee account.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Badge tone={offerAccepted ? "success" : "warning"}>
-                    {offerAccepted ? "✓ Offer Accepted" : "○ Offer not accepted"}
-                  </Badge>
-                  <Badge tone={bgvVerified ? "success" : "warning"}>
-                    {bgvVerified ? "✓ BGV Verified" : "○ BGV not verified"}
-                  </Badge>
-                  <Badge tone={preboardingCompleted ? "success" : "warning"}>
-                    {preboardingCompleted
-                      ? "✓ Pre-boarding Completed"
-                      : `○ Pre-boarding ${verifiedPreboardingDocuments}/${preboardingDocuments.length || 0} verified`}
-                  </Badge>
-                </div>
-              </div>
+              <p className="text-[12px] text-ink-faint">
+                Hiring unlocks after Offer Accepted, BGV
+                Verified and Pre-boarding Completed.
+              </p>
             ) : hired ? (
               <div className="flex items-center gap-2 text-[12.5px] text-ink-soft">
-
                 <UserCheck size={15} />
-
-                <span>
-                  Employee account created.
-                  {current.hiredEmployeeId
-                    ? ` Employee ID: ${current.hiredEmployeeId}`
-                    : ""}
-                </span>
-
+                Employee account created.
+                {current.hiredEmployeeId
+                  ? ` Employee ID: ${current.hiredEmployeeId}`
+                  : ""}
               </div>
             ) : (
               <Button
                 size="sm"
-                isLoading={
-                  hireMutation.isPending
-                }
+                isLoading={hireMutation.isPending}
                 onClick={() =>
                   hireMutation.mutate()
                 }
@@ -2728,12 +2585,15 @@ function CandidateLifecycleModal({
               </Button>
             )}
           </LifecycleSection>
-
         </div>
       )}
     </Modal>
   );
 }
+
+/* =========================================================
+   LIFECYCLE SECTION
+========================================================= */
 
 function LifecycleSection({
   number,
@@ -2760,10 +2620,18 @@ function LifecycleSection({
                 : "bg-brand-50 text-brand-700",
             )}
           >
-            {complete ? <CheckCircle2 size={14} /> : number}
+            {complete ? (
+              <CheckCircle2 size={14} />
+            ) : (
+              number
+            )}
           </div>
-          <p className="text-[13px] font-semibold text-ink">{title}</p>
+
+          <p className="text-[13px] font-semibold text-ink">
+            {title}
+          </p>
         </div>
+
         <Badge tone={complete ? "success" : "neutral"}>
           {String(status).replaceAll("_", " ")}
         </Badge>
@@ -2777,6 +2645,45 @@ function LifecycleSection({
 /* =========================================================
    HELPERS
 ========================================================= */
+
+function getDuplicateCandidateIds(candidates: Candidate[]) {
+  const seen = new Map<string, string[]>();
+
+  candidates.forEach((candidate) => {
+    const keys = [
+      candidate.email?.trim().toLowerCase(),
+      candidate.phone?.replace(/\D/g, ""),
+    ].filter(Boolean) as string[];
+
+    keys.forEach((key) => {
+      const ids = seen.get(key) ?? [];
+      ids.push(candidate.id);
+      seen.set(key, ids);
+    });
+  });
+
+  const duplicateIds = new Set<string>();
+  seen.forEach((ids) => {
+    if (ids.length > 1) ids.forEach((id) => duplicateIds.add(id));
+  });
+
+  return duplicateIds;
+}
+
+function isSpamCandidate(candidate: Candidate) {
+  const email = (candidate.email ?? "").trim().toLowerCase();
+  const suspiciousDomains = [
+    "tempmail.com",
+    "temp-mail.org",
+    "10minutemail.com",
+    "guerrillamail.com",
+    "mailinator.com",
+    "yopmail.com",
+  ];
+  const domain = email.includes("@") ? email.split("@")[1] : "";
+  const resumeText = String((candidate as ScreeningCandidate).resumeText ?? "").trim();
+  return suspiciousDomains.includes(domain) || (email === "" && resumeText === "");
+}
 
 function formatRequisitionStatus(
   status?: RecruitmentJob["requisitionStatus"],
