@@ -7,10 +7,7 @@ import {
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import {
-  upload,
-  UPLOADS_PUBLIC_PATH,
-} from "@/middleware/upload";
+import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 
 import type { AuthUser } from "@/types/express";
 
@@ -34,11 +31,7 @@ ticketMessageRouter.use(authenticate);
 
 ticketMessageRouter.get(
   "/:id/messages",
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -76,21 +69,27 @@ ticketMessageRouter.get(
         allowed = true;
       }
 
-      if (
-        req.user.employeeId &&
-        ticket.employeeId === req.user.employeeId
-      ) {
+      if (req.user.employeeId && ticket.employeeId === req.user.employeeId) {
         allowed = true;
       }
 
       const allowedAssignees: Record<string, string[]> = {
         HR_ADMIN: ["HR_ADMIN"],
         FINANCE: ["FINANCE"],
-        MANAGER: ["MANAGER"],
         IT_SUPPORT: ["IT_SUPPORT"],
       };
 
       if (
+        role === "MANAGER" &&
+        req.user.employeeId &&
+        ticket.category === "Complaint" &&
+        ticket.assignedManagerId === req.user.employeeId
+      ) {
+        allowed = true;
+      }
+
+      if (
+        role !== "MANAGER" &&
         allowedAssignees[role] &&
         ticket.assignedTo &&
         allowedAssignees[role].includes(ticket.assignedTo)
@@ -101,14 +100,12 @@ ticketMessageRouter.get(
       if (!allowed) {
         return res.status(403).json({
           error: {
-            message:
-              "You are not authorized to view this ticket",
+            message: "You are not authorized to view this ticket",
           },
         });
       }
 
-      const messages =
-        await messageRepo.getTicketMessages(ticketId);
+      const messages = await messageRepo.getTicketMessages(ticketId);
 
       return res.json({
         messages,
@@ -132,10 +129,7 @@ const createMessageSchema = z.object({
   message: z
     .string()
     .trim()
-    .max(
-      5000,
-      "Message cannot exceed 5000 characters",
-    )
+    .max(5000, "Message cannot exceed 5000 characters")
     .optional()
     .default(""),
 });
@@ -143,11 +137,7 @@ const createMessageSchema = z.object({
 ticketMessageRouter.post(
   "/:id/messages",
   upload.single("attachment"),
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -197,14 +187,12 @@ ticketMessageRouter.post(
       if (!parsed.data.message.trim() && !attachment) {
         return res.status(400).json({
           error: {
-            message:
-              "Please enter a message or attach a file",
+            message: "Please enter a message or attach a file",
           },
         });
       }
 
-      const ticket =
-        await ticketRepo.getTicket(ticketId);
+      const ticket = await ticketRepo.getTicket(ticketId);
 
       if (!ticket) {
         return res.status(404).json({
@@ -222,21 +210,27 @@ ticketMessageRouter.post(
         allowed = true;
       }
 
-      if (
-        req.user.employeeId &&
-        ticket.employeeId === req.user.employeeId
-      ) {
+      if (req.user.employeeId && ticket.employeeId === req.user.employeeId) {
         allowed = true;
       }
 
       const allowedAssignees: Record<string, string[]> = {
         HR_ADMIN: ["HR_ADMIN"],
         FINANCE: ["FINANCE"],
-        MANAGER: ["MANAGER"],
         IT_SUPPORT: ["IT_SUPPORT"],
       };
 
       if (
+        role === "MANAGER" &&
+        req.user.employeeId &&
+        ticket.category === "Complaint" &&
+        ticket.assignedManagerId === req.user.employeeId
+      ) {
+        allowed = true;
+      }
+
+      if (
+        role !== "MANAGER" &&
         allowedAssignees[role] &&
         ticket.assignedTo &&
         allowedAssignees[role].includes(ticket.assignedTo)
@@ -247,8 +241,7 @@ ticketMessageRouter.post(
       if (!allowed) {
         return res.status(403).json({
           error: {
-            message:
-              "You are not authorized to reply to this ticket",
+            message: "You are not authorized to reply to this ticket",
           },
         });
       }
@@ -264,13 +257,18 @@ ticketMessageRouter.post(
 
       // Create notifications for relevant users (do not notify the sender)
       try {
-        const ticketOwnerEmp = await Employee.findById(ticket.employeeId).lean();
+        const ticketOwnerEmp = await Employee.findById(
+          ticket.employeeId,
+        ).lean();
 
         const senderUserId = req.user.userId;
 
         if (role === "EMPLOYEE") {
           // Notify assigned role users (e.g., HR_ADMIN, FINANCE, MANAGER, IT_SUPPORT)
-          const recipients = await User.find({ role: ticket.assignedTo, isActive: true }).lean();
+          const recipients = await User.find({
+            role: ticket.assignedTo,
+            isActive: true,
+          }).lean();
           for (const r of recipients) {
             if (r._id === senderUserId) continue;
             await notify({
@@ -283,7 +281,11 @@ ticketMessageRouter.post(
           }
         } else {
           // Sender is admin/staff — notify ticket owner employee's user account
-          if (ticketOwnerEmp && ticketOwnerEmp.userId && ticketOwnerEmp.userId !== senderUserId) {
+          if (
+            ticketOwnerEmp &&
+            ticketOwnerEmp.userId &&
+            ticketOwnerEmp.userId !== senderUserId
+          ) {
             await notify({
               userId: ticketOwnerEmp.userId,
               type: "TICKET_MESSAGE",
