@@ -265,11 +265,17 @@ leaveRouter.post(
  * SUPER_ADMIN / HR_ADMIN / MANAGER
  *
  * The repository is responsible for validating that a Manager
- * is actually the employee's assigned manager.
+ * is actually the employee's assigned manager. The authenticated
+ * employeeId is always passed to the repository; it is never accepted
+ * from the request body or query string.
  */
 const decisionSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED"]),
-  decisionNote: z.string().optional(),
+  decisionNote: z
+    .string()
+    .trim()
+    .max(500, "Decision note must be 500 characters or less.")
+    .optional(),
 });
 
 leaveRouter.post(
@@ -282,11 +288,16 @@ leaveRouter.post(
         throw AppError.forbidden("Employee profile is required.");
       }
 
+      const decisionNote =
+        typeof req.body.decisionNote === "string"
+          ? req.body.decisionNote.trim() || undefined
+          : undefined;
+
       const request = await repo.decideRequest(
         req.params.id,
         req.user!.employeeId,
         req.body.status,
-        req.body.decisionNote,
+        decisionNote,
       );
 
       if (!request) {

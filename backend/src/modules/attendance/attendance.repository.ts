@@ -1,4 +1,9 @@
-import { Attendance, Employee, Department } from "@/db/models";
+import {
+  Attendance,
+  AttendanceRegularizationRequest,
+  Employee,
+  Department,
+} from "@/db/models";
 import { nowIso } from "@/db/connection";
 
 function todayDateString(): string {
@@ -69,17 +74,28 @@ export async function listForEmployee(
 }
 
 export async function listForDate(date: string, managerId?: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("Invalid attendance date.");
+  }
+
   let employeeIds: string[] | undefined;
 
-  // If a managerId is provided, restrict results to direct reports
+  // If a managerId is provided, restrict results to direct reports.
+  // An empty direct-report list must return no records, never organization-wide
+  // attendance.
   if (managerId) {
     const employees = await Employee.find({
       managerId,
+      status: "ACTIVE",
     })
       .select("_id")
       .lean();
 
     employeeIds = employees.map((employee) => employee._id);
+
+    if (employeeIds.length === 0) {
+      return [];
+    }
   }
 
   const query: Record<string, any> = { date };
@@ -150,41 +166,292 @@ export async function requestRegularization(
   date: string,
   note: string,
 ) {
-  const existing = await Attendance.findOne({ employeeId, date }).lean();
-  if (existing) {
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) {
+    throw new Error("Invalid attendance date.");
+  }
+
+  const reason = note.trim();
+
+  if (!reason) {
+    throw new Error("Regularization reason is required.");
+  }
+
+  if (reason.length > 1000) {
+    throw new Error("Regularization reason must not exceed 1000 characters.");
+  }
+
+  const existingPending = await AttendanceRegularizationRequest.findOne({
+    employeeId,
+    date,
+    status: "PENDING",
+  }).lean();
+
+  if (existingPending) {
+    throw new Error(
+      "A regularization request is already pending for this date.",
+    );
+  }
+
+  const attendance = await Attendance.findOne({
+    employeeId,
+    date,
+  }).lean();
+
+  const requestedCheckIn = attendance?.checkIn ?? null;
+  const requestedCheckOut = attendance?.checkOut ?? null;
+  const requestedStatus = attendance?.status ?? "PRESENT";
+  const now = nowIso();
+
+  const request = await AttendanceRegularizationRequest.create({
+    employeeId,
+    attendanceId: attendance?._id ?? null,
+    date,
+    requestedCheckIn,
+    requestedCheckOut,
+    requestedStatus,
+    reason,
+    status: "PENDING",
+    approverId: null,
+    decisionNote: null,
+    requestedAt: now,
+    decidedAt: null,
+  });
+
+  return toApiRecord(request.toObject());
+}
+
+export async function listTeamRegularizationRequests(
+  managerId: string,
+  status?: string,
+) {
+  const employees = await Employee.find({
+    managerId,
+    status: "ACTIVE",
+  })
+    .select("_id firstName lastName employeeCode departmentId")
+    .lean();
+
+  if (employees.length === 0) return [];
+
+  const employeeIds = employees.map((employee) => employee._id);
+
+  const query: Record<string, any> = {
+    employeeId: { $in: employeeIds },
+  };
+
+  if (status) {
+    const allowedStatuses = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"];
+
+    if (!allowedStatuses.includes(status)) {
+      throw new Error("Invalid regularization request status.");
+    }
+
+    query.status = status;
+  }
+
+  const requests = await AttendanceRegularizationRequest.find(query)
+    .sort({ requestedAt: -1 })
+    .lean();
+
+  const employeeMap = new Map(
+    employees.map((employee) => [employee._id, employee]),
+  );
+
+  return requests.map((request) => {
+    const employee = employeeMap.get(request.employeeId);
+
+    return {
+      ...toApiRecord(request),
+      firstName: employee?.firstName ?? null,
+      lastName: employee?.lastName ?? null,
+      employeeCode: employee?.employeeCode ?? null,
+    };
+  });
+}
+
+export async function approveRegularization(
+  requestId: string,
+  managerId: string,
+  decisionNote = "",
+) {
+  const request = await AttendanceRegularizationRequest.findOne({
+    _id: requestId,
+    status: "PENDING",
+  }).lean();
+
+  if (!request) {
+    throw new Error("Pending regularization request not found.");
+  }
+
+  const employee = await Employee.findOne({
+    _id: request.employeeId,
+    managerId,
+    status: "ACTIVE",
+  }).lean();
+
+  if (!employee) {
+    throw new Error(
+      "You are not authorized to approve this regularization request.",
+    );
+  }
+
+  const now = nowIso();
+  const note = decisionNote.trim();
+
+  let attendance = request.attendanceId
+    ? await Attendance.findOne({ _id: request.attendanceId }).lean()
+    : await Attendance.findOne({
+        employeeId: request.employeeId,
+        date: request.date,
+      }).lean();
+
+  if (attendance) {
     await Attendance.updateOne(
-      { employeeId, date },
-      { $set: { isRegularized: true, note } },
+      { _id: attendance._id },
+      {
+        $set: {
+          checkIn: request.requestedCheckIn,
+          checkOut: request.requestedCheckOut,
+          status: request.requestedStatus,
+          isRegularized: true,
+          note: request.reason,
+        },
+      },
     );
   } else {
-    await Attendance.create({
-      employeeId,
-      date,
-      status: "PRESENT",
+    attendance = await Attendance.create({
+      employeeId: request.employeeId,
+      date: request.date,
+      checkIn: request.requestedCheckIn,
+      checkOut: request.requestedCheckOut,
+      status: request.requestedStatus,
       isRegularized: true,
-      note,
-      createdAt: nowIso(),
+      note: request.reason,
+      createdAt: now,
     });
   }
-  const row = await Attendance.findOne({ employeeId, date }).lean();
-  return toApiRecord(row);
+
+  const updatedRequest = await AttendanceRegularizationRequest.findOneAndUpdate(
+    {
+      _id: requestId,
+      status: "PENDING",
+    },
+    {
+      $set: {
+        status: "APPROVED",
+        approverId: managerId,
+        decisionNote: note || null,
+        decidedAt: now,
+      },
+    },
+    { new: true },
+  ).lean();
+
+  if (!updatedRequest) {
+    throw new Error("Regularization request was already processed.");
+  }
+
+  return {
+    request: toApiRecord(updatedRequest),
+    attendance: toApiRecord(attendance),
+  };
+}
+
+export async function rejectRegularization(
+  requestId: string,
+  managerId: string,
+  decisionNote: string,
+) {
+  const note = decisionNote.trim();
+
+  if (!note) {
+    throw new Error("A rejection reason is required.");
+  }
+
+  if (note.length > 1000) {
+    throw new Error("Rejection reason must not exceed 1000 characters.");
+  }
+
+  const request = await AttendanceRegularizationRequest.findOne({
+    _id: requestId,
+    status: "PENDING",
+  }).lean();
+
+  if (!request) {
+    throw new Error("Pending regularization request not found.");
+  }
+
+  const employee = await Employee.findOne({
+    _id: request.employeeId,
+    managerId,
+    status: "ACTIVE",
+  }).lean();
+
+  if (!employee) {
+    throw new Error(
+      "You are not authorized to reject this regularization request.",
+    );
+  }
+
+  const updatedRequest = await AttendanceRegularizationRequest.findOneAndUpdate(
+    {
+      _id: requestId,
+      status: "PENDING",
+    },
+    {
+      $set: {
+        status: "REJECTED",
+        approverId: managerId,
+        decisionNote: note,
+        decidedAt: nowIso(),
+      },
+    },
+    { new: true },
+  ).lean();
+
+  if (!updatedRequest) {
+    throw new Error("Regularization request was already processed.");
+  }
+
+  return toApiRecord(updatedRequest);
 }
 
 export async function getMonthlyAttendanceTrend(
   months = 6,
   managerId?: string,
 ) {
+  if (!Number.isInteger(months) || months < 1 || months > 24) {
+    throw new Error("Months must be an integer between 1 and 24.");
+  }
+
   let employeeIds: string[] | undefined;
 
-  // Restrict manager analytics to direct reports
+  // Restrict Manager analytics to active direct reports only.
   if (managerId) {
     const employees = await Employee.find({
       managerId,
+      status: "ACTIVE",
     })
       .select("_id")
       .lean();
 
     employeeIds = employees.map((employee) => employee._id);
+
+    if (employeeIds.length === 0) {
+      return Array.from({ length: months }, (_, index) => {
+        const today = new Date();
+        const d = new Date(
+          today.getFullYear(),
+          today.getMonth() - (months - 1 - index),
+          1,
+        );
+
+        return {
+          month: d.toLocaleString("en-IN", { month: "short" }),
+          presentRate: 0,
+        };
+      });
+    }
   }
 
   const query: Record<string, any> = {};

@@ -8,20 +8,35 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Skeleton } from "@/components/ui/EmptyState";
 
 interface OrgNodeData {
-  id: string; firstName: string; lastName: string; avatarUrl: string | null; designationTitle: string;
-  departmentName: string; departmentColor: string; directReports: OrgNodeData[];
+  id: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl: string | null;
+  designationTitle: string;
+  departmentName: string;
+  departmentColor: string;
+  directReports: OrgNodeData[];
 }
 
 export default function OrgChart() {
-  const { data, isLoading } = useQuery({ queryKey: ["org-chart"], queryFn: EmployeesApi.orgChart });
+  const { data, isLoading } = useQuery({
+    queryKey: ["org-chart"],
+    queryFn: EmployeesApi.orgChart,
+  });
 
   return (
     <div>
-      <PageHeader title="Org Chart" subtitle="The full reporting structure of Aadhyaraj Technologies." />
+      <PageHeader
+        title="Org Chart"
+        subtitle="The full reporting structure of Aadhyaraj Technologies."
+      />
+
       <div className="rounded-3xl border border-line/70 bg-white p-4 sm:p-8">
         {isLoading ? (
           <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-2xl" />)}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 rounded-2xl" />
+            ))}
           </div>
         ) : !data?.length ? (
           <p className="text-sm text-ink-faint">No organization data yet.</p>
@@ -39,9 +54,6 @@ export default function OrgChart() {
   );
 }
 
-// Each node sits directly under its parent (single vertical line) when it has
-// one child, and only fans out horizontally with a T-connector when it has
-// multiple direct reports — matching a standard org-chart tree.
 function OrgNode({ node, depth }: { node: OrgNodeData; depth: number }) {
   const [open, setOpen] = useState(true);
   const children = node.directReports ?? [];
@@ -53,9 +65,9 @@ function OrgNode({ node, depth }: { node: OrgNodeData; depth: number }) {
 
       {hasChildren && (
         <>
-          {/* trunk from the card down to the toggle / branch point */}
           <div className="relative flex h-8 w-px items-center justify-center">
             <div className="absolute inset-y-0 w-px bg-line" />
+
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
@@ -67,21 +79,33 @@ function OrgNode({ node, depth }: { node: OrgNodeData; depth: number }) {
           </div>
 
           {open && (
-            <div className="flex">
-              {children.map((child, idx) => (
-                <div key={child.id} className="relative flex flex-col items-center px-4 sm:px-6">
-                  {/* horizontal bar linking this child to its siblings (collapses to nothing for an only child) */}
+            <div className="relative mt-0 flex min-w-max flex-col items-center">
+              {/* Vertical connector from this manager to the direct-report row. */}
+              <div className="h-6 w-px bg-line" />
+
+              {/* Direct reports are siblings and stay on the same horizontal row. */}
+              <div className="relative flex items-start justify-center gap-8">
+                {children.length > 1 && (
                   <div
-                    className="absolute top-0 h-px bg-line"
+                    className="absolute left-1/2 top-0 h-px -translate-y-0.5 bg-line"
                     style={{
-                      left: idx === 0 ? "50%" : 0,
-                      right: idx === children.length - 1 ? "50%" : 0,
+                      left: "calc(50% - 1px)",
+                      width: `calc(100% - 140px)`,
                     }}
                   />
-                  <div className="h-6 w-px bg-line" />
-                  <OrgNode node={child} depth={depth + 1} />
-                </div>
-              ))}
+                )}
+
+                {children.map((child) => (
+                  <div
+                    key={child.id}
+                    className="relative flex flex-col items-center"
+                  >
+                    {/* Branch from the shared sibling connector to the child. */}
+                    <div className="h-6 w-px bg-line" />
+                    <OrgNode node={child} depth={depth + 1} />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </>
@@ -101,16 +125,33 @@ function OrgNodeCard({ node, depth }: { node: OrgNodeData; depth: number }) {
       className="group flex items-center gap-3 whitespace-nowrap rounded-full border border-line/70 bg-white py-1.5 pl-1.5 pr-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md"
     >
       <span
-        className={`flex shrink-0 rounded-full p-0.5 ${isRoot ? "scale-125" : ""}`}
-        style={{ boxShadow: `0 0 0 2.5px ${node.departmentColor}` }}
+        className={`flex shrink-0 rounded-full p-0.5 ${
+          isRoot ? "scale-125" : ""
+        }`}
+        style={{
+          boxShadow: `0 0 0 2.5px ${node.departmentColor}`,
+        }}
       >
-        <Avatar firstName={node.firstName} lastName={node.lastName} src={node.avatarUrl} size="sm" />
+        <Avatar
+          firstName={node.firstName}
+          lastName={node.lastName}
+          src={node.avatarUrl}
+          size="sm"
+        />
       </span>
+
       <span className="min-w-0 text-left">
-        <p className={`truncate font-semibold text-ink ${isRoot ? "text-[15px]" : "text-[13.5px]"}`}>
+        <p
+          className={`truncate font-semibold text-ink ${
+            isRoot ? "text-[15px]" : "text-[13.5px]"
+          }`}
+        >
           {node.firstName} {node.lastName}
         </p>
-        <p className="truncate text-[12px] text-ink-faint">{node.designationTitle}</p>
+
+        <p className="truncate text-[12px] text-ink-faint">
+          {node.designationTitle}
+        </p>
       </span>
     </button>
   );

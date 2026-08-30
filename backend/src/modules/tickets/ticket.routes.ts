@@ -7,15 +7,12 @@ import {
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import {
-  upload,
-  UPLOADS_PUBLIC_PATH,
-} from "@/middleware/upload";
+import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 import { validate } from "@/middleware/validate";
 
 import * as repo from "./ticket.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
-import { User } from "@/db/models";
+import { User, AuditLog } from "@/db/models";
 import { Employee } from "@/db/models";
 
 import type { AuthUser } from "@/types/express";
@@ -46,11 +43,7 @@ const createTicketSchema = z.object({
     "Complaint",
   ]),
 
-  priority: z.enum([
-    "LOW",
-    "MEDIUM",
-    "HIGH",
-  ]),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH"]),
 
   subject: z.string().min(3),
 
@@ -62,11 +55,7 @@ const createTicketSchema = z.object({
 ticketRouter.post(
   "/",
   upload.single("attachment"),
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user?.employeeId) {
         return res.status(401).json({
@@ -76,9 +65,7 @@ ticketRouter.post(
         });
       }
 
-      const parsed = createTicketSchema.safeParse(
-        req.body,
-      );
+      const parsed = createTicketSchema.safeParse(req.body);
 
       if (!parsed.success) {
         return res.status(400).json({
@@ -95,8 +82,14 @@ ticketRouter.post(
         ? `${UPLOADS_PUBLIC_PATH}/${uploadedFile.filename}`
         : "";
 
+      // Complaints belong to the employee's direct manager.
+      // Resolve the manager from the employee record so the repository
+      // can store assignedManagerId for manager-scoped grievance access.
+      const employee = await Employee.findById(req.user.employeeId).lean();
+
       const ticket = await repo.createTicket({
         employeeId: req.user.employeeId,
+        managerId: employee?.managerId ?? null,
         category: parsed.data.category,
         priority: parsed.data.priority,
         subject: parsed.data.subject,
@@ -106,7 +99,10 @@ ticketRouter.post(
 
       // Notify role owners (e.g., HR_ADMIN, FINANCE, MANAGER, IT_SUPPORT)
       try {
-        const recipients = await User.find({ role: ticket.assignedTo, isActive: true }).lean();
+        const recipients = await User.find({
+          role: ticket.assignedTo,
+          isActive: true,
+        }).lean();
         for (const r of recipients) {
           if (r._id === req.user.userId) continue;
           await notify({
@@ -119,6 +115,30 @@ ticketRouter.post(
         }
       } catch (err) {
         console.error("Failed to send ticket notifications", err);
+      }
+
+      // A Complaint is also routed to the employee's direct manager.
+      if (ticket.category === "Complaint" && ticket.assignedManagerId) {
+        try {
+          const manager = await Employee.findById(
+            ticket.assignedManagerId,
+          ).lean();
+
+          if (manager?.userId && manager.userId !== req.user.userId) {
+            await notify({
+              userId: manager.userId,
+              type: "TICKET_MESSAGE",
+              title: `${req.user.name || "Employee"} raised a grievance`,
+              message: `${ticket.ticketId} — ${ticket.subject}`,
+              link: `/app/tickets/${ticket._id}`,
+            });
+          }
+        } catch (err) {
+          console.error(
+            "Failed to notify employee's manager about grievance",
+            err,
+          );
+        }
       }
 
       return res.status(201).json({
@@ -137,17 +157,13 @@ ticketRouter.post(
    SUPER_ADMIN → ALL
    HR_ADMIN    → HR assigned tickets
    FINANCE     → Payroll assigned tickets
-   MANAGER     → Recruitment assigned tickets
+   MANAGER     → Team grievance tickets assigned to that manager
    IT_SUPPORT  → IT assigned tickets
 ========================================================= */
 
 ticketRouter.get(
   "/",
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -172,10 +188,7 @@ ticketRouter.get(
       /* HR ADMIN → HR TICKETS */
 
       if (role === "HR_ADMIN") {
-        const tickets =
-          await repo.getTicketsByAssignees([
-            "HR_ADMIN",
-          ]);
+        const tickets = await repo.getTicketsByAssignees(["HR_ADMIN"]);
 
         return res.json({
           tickets,
@@ -185,23 +198,25 @@ ticketRouter.get(
       /* FINANCE → PAYROLL TICKETS */
 
       if (role === "FINANCE") {
-        const tickets =
-          await repo.getTicketsByAssignees([
-            "FINANCE",
-          ]);
+        const tickets = await repo.getTicketsByAssignees(["FINANCE"]);
 
         return res.json({
           tickets,
         });
       }
 
-      /* MANAGER → RECRUITMENT TICKETS */
+      /* MANAGER → TEAM GRIEVANCE TICKETS */
 
       if (role === "MANAGER") {
-        const tickets =
-          await repo.getTicketsByAssignees([
-            "MANAGER",
-          ]);
+        if (!req.user.employeeId) {
+          return res.status(401).json({
+            error: {
+              message: "Manager employee profile not found",
+            },
+          });
+        }
+
+        const tickets = await repo.getTeamGrievanceTickets(req.user.employeeId);
 
         return res.json({
           tickets,
@@ -211,10 +226,7 @@ ticketRouter.get(
       /* IT SUPPORT → IT TICKETS */
 
       if (role === "IT_SUPPORT") {
-        const tickets =
-          await repo.getTicketsByAssignees([
-            "IT_SUPPORT",
-          ]);
+        const tickets = await repo.getTicketsByAssignees(["IT_SUPPORT"]);
 
         return res.json({
           tickets,
@@ -223,8 +235,7 @@ ticketRouter.get(
 
       return res.status(403).json({
         error: {
-          message:
-            "You are not authorized to access tickets",
+          message: "You are not authorized to access tickets",
         },
       });
     } catch (err) {
@@ -248,11 +259,7 @@ ticketRouter.get(
 
 ticketRouter.get(
   "/my",
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user?.employeeId) {
         return res.status(401).json({
@@ -262,18 +269,11 @@ ticketRouter.get(
         });
       }
 
-      console.log(
-        "[Tickets] My Tickets employeeId:",
-        req.user.employeeId,
-      );
+      console.log("[Tickets] My Tickets employeeId:", req.user.employeeId);
 
-      const tickets = await repo.getMyTickets(
-        req.user.employeeId,
-      );
+      const tickets = await repo.getMyTickets(req.user.employeeId);
 
-      console.log(
-        `[Tickets] Found ${tickets.length} ticket(s)`,
-      );
+      console.log(`[Tickets] Found ${tickets.length} ticket(s)`);
 
       return res.json({
         tickets,
@@ -300,14 +300,15 @@ const updateSchema = z.object({
   ]),
 });
 
+const escalateSchema = z.object({
+  escalatedTo: z.enum(["HR_ADMIN", "SUPER_ADMIN"]),
+  reason: z.string().trim().min(3).max(1000),
+});
+
 ticketRouter.patch(
   "/:id",
   validate(updateSchema),
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -317,8 +318,49 @@ ticketRouter.patch(
         });
       }
 
-      // Fetch existing ticket so we can detect status changes
+      // Fetch the existing ticket first so we can enforce the Manager's
+      // team-only boundary and correctly notify the ticket owner.
       const existingTicket = await repo.getTicket(req.params.id);
+
+      if (!existingTicket) {
+        return res.status(404).json({
+          error: {
+            message: "Ticket not found",
+          },
+        });
+      }
+
+      // Managers may update:
+      // 1. their own tickets, OR
+      // 2. Complaint/grievance tickets assigned to their team.
+      //
+      // They must never be able to update another Manager's team grievance.
+      if (String(req.user.role) === "MANAGER") {
+        if (!req.user.employeeId) {
+          return res.status(401).json({
+            error: {
+              message: "Manager employee profile not found",
+            },
+          });
+        }
+
+        const isOwnTicket = existingTicket?.employeeId === req.user.employeeId;
+
+        const managerTicket = isOwnTicket
+          ? null
+          : await repo.getTeamGrievanceTicket(
+              req.params.id,
+              req.user.employeeId,
+            );
+
+        if (!isOwnTicket && !managerTicket) {
+          return res.status(403).json({
+            error: {
+              message: "You are not authorized to update this ticket",
+            },
+          });
+        }
+      }
 
       const ticket = await repo.updateTicketStatus(
         req.params.id,
@@ -343,7 +385,10 @@ ticketRouter.patch(
 
           // If the change is made by the employee (ticket owner), notify assignees
           if (String(req.user.role) === "EMPLOYEE") {
-            const recipients = await User.find({ role: ticket.assignedTo, isActive: true }).lean();
+            const recipients = await User.find({
+              role: ticket.assignedTo,
+              isActive: true,
+            }).lean();
             for (const r of recipients) {
               if (r._id === senderUserId) continue;
               await notify({
@@ -356,8 +401,14 @@ ticketRouter.patch(
             }
           } else {
             // Change is made by admin/staff — notify the ticket owner
-            const ticketOwnerEmp = await Employee.findById(ticket.employeeId).lean();
-            if (ticketOwnerEmp && ticketOwnerEmp.userId && ticketOwnerEmp.userId !== senderUserId) {
+            const ticketOwnerEmp = await Employee.findById(
+              ticket.employeeId,
+            ).lean();
+            if (
+              ticketOwnerEmp &&
+              ticketOwnerEmp.userId &&
+              ticketOwnerEmp.userId !== senderUserId
+            ) {
               await notify({
                 userId: ticketOwnerEmp.userId,
                 type: "TICKET_MESSAGE",
@@ -374,6 +425,290 @@ ticketRouter.patch(
 
       return res.json({
         ticket,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   ESCALATE MANAGER GRIEVANCE
+
+   Manager may escalate only an assigned Complaint from their
+   direct-report team. The repository performs the ownership
+   check again before changing the ticket.
+========================================================= */
+
+ticketRouter.post(
+  "/:id/escalate",
+  validate(escalateSchema),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
+
+      if (String(req.user.role) !== "MANAGER") {
+        return res.status(403).json({
+          error: {
+            message: "Only Managers can escalate team grievances",
+          },
+        });
+      }
+
+      if (!req.user.employeeId) {
+        return res.status(401).json({
+          error: {
+            message: "Manager employee profile not found",
+          },
+        });
+      }
+
+      const parsed = escalateSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: {
+            message: "Invalid escalation information",
+            details: parsed.error.flatten(),
+          },
+        });
+      }
+
+      // Verify the Manager is allowed to act on this exact grievance
+      // before attempting the state-changing operation.
+      const teamTicket = await repo.getTeamGrievanceTicket(
+        req.params.id,
+        req.user.employeeId,
+      );
+
+      if (!teamTicket) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to escalate this grievance",
+          },
+        });
+      }
+
+      if ((teamTicket as any).isEscalated) {
+        return res.status(409).json({
+          error: {
+            message: "This grievance has already been escalated",
+          },
+        });
+      }
+
+      const ticket = await repo.escalateTeamGrievance(
+        req.params.id,
+        req.user.employeeId,
+        parsed.data.escalatedTo,
+        parsed.data.reason,
+      );
+
+      // Record a permanent audit entry for the escalation.
+      try {
+        await AuditLog.create({
+          userId: req.user.userId,
+          action: "TICKET_ESCALATED",
+          entity: "Ticket",
+          entityId: ticket._id,
+          metadata: JSON.stringify({
+            ticketId: ticket.ticketId,
+            escalatedTo: parsed.data.escalatedTo,
+            reason: parsed.data.reason,
+            managerEmployeeId: req.user.employeeId,
+          }),
+          ipAddress: req.ip || null,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (auditError) {
+        // Escalation itself has succeeded; do not roll it back because
+        // an audit write failed. Surface the error in server logs.
+        console.error(
+          "Failed to create ticket escalation audit log",
+          auditError,
+        );
+      }
+
+      // Notify the employee who raised the grievance.
+      try {
+        const owner = await Employee.findById(ticket.employeeId).lean();
+
+        if (owner?.userId && owner.userId !== req.user.userId) {
+          await notify({
+            userId: owner.userId,
+            type: "TICKET_MESSAGE",
+            title: "Your grievance has been escalated",
+            message: `${ticket.ticketId} — ${ticket.subject}`,
+            link: `/app/tickets/${ticket._id}`,
+          });
+        }
+      } catch (notificationError) {
+        console.error(
+          "Failed to notify employee about grievance escalation",
+          notificationError,
+        );
+      }
+
+      // Notify active users who own the escalation destination role.
+      try {
+        const recipients = await User.find({
+          role: parsed.data.escalatedTo,
+          isActive: true,
+        }).lean();
+
+        for (const recipient of recipients) {
+          if (recipient._id === req.user.userId) continue;
+
+          await notify({
+            userId: recipient._id,
+            type: "TICKET_MESSAGE",
+            title: "Grievance escalated for your attention",
+            message: `${ticket.ticketId} — ${ticket.subject}`,
+            link: `/app/tickets/${ticket._id}`,
+          });
+        }
+      } catch (notificationError) {
+        console.error(
+          "Failed to notify escalation recipients",
+          notificationError,
+        );
+      }
+
+      return res.json({
+        ticket,
+        message: "Grievance escalated successfully",
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+
+      if (
+        message === "Invalid escalation target." ||
+        message === "Escalation reason is required." ||
+        message === "Escalation reason must not exceed 1000 characters."
+      ) {
+        return res.status(400).json({
+          error: {
+            message,
+          },
+        });
+      }
+
+      if (
+        message === "Grievance not found or not assigned to this manager." ||
+        message.includes("no longer assigned to this manager")
+      ) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to escalate this grievance",
+          },
+        });
+      }
+
+      if (message === "This grievance has already been escalated.") {
+        return res.status(409).json({
+          error: {
+            message,
+          },
+        });
+      }
+
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   GRIEVANCE SLA / ESCALATION HISTORY
+   Manager can inspect SLA state and escalation history only for
+   grievances belonging to their direct-report team.
+========================================================= */
+
+ticketRouter.get(
+  "/:id/escalation-history",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
+
+      if (String(req.user.role) !== "MANAGER") {
+        return res.status(403).json({
+          error: {
+            message: "Only Managers can view team grievance escalation history",
+          },
+        });
+      }
+
+      if (!req.user.employeeId) {
+        return res.status(401).json({
+          error: {
+            message: "Manager employee profile not found",
+          },
+        });
+      }
+
+      const history = await repo.getGrievanceEscalationHistory(
+        req.params.id,
+        req.user.employeeId,
+      );
+
+      return res.json({
+        history,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+
+      if (message === "Grievance not found or not assigned to this manager.") {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to view this grievance history",
+          },
+        });
+      }
+
+      next(err);
+    }
+  },
+);
+
+ticketRouter.post(
+  "/sla/refresh",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
+
+      // This endpoint is intentionally restricted. It is useful for an
+      // internal scheduler/health process, but must not be exposed as a
+      // Manager action that can mutate arbitrary tickets.
+      if (!["SUPER_ADMIN", "HR_ADMIN"].includes(String(req.user.role))) {
+        return res.status(403).json({
+          error: {
+            message: "Only HR Admin or Super Admin can refresh grievance SLA",
+          },
+        });
+      }
+
+      const result = await repo.refreshOpenGrievanceSla();
+
+      return res.json({
+        ...result,
+        message: "Open grievance SLA statuses refreshed successfully",
       });
     } catch (err) {
       next(err);
@@ -401,11 +736,7 @@ ticketRouter.patch(
 
 ticketRouter.get(
   "/:id",
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -415,9 +746,7 @@ ticketRouter.get(
         });
       }
 
-      const ticket = await repo.getTicket(
-        req.params.id,
-      );
+      const ticket = await repo.getTicket(req.params.id);
 
       if (!ticket) {
         return res.status(404).json({
@@ -444,10 +773,7 @@ ticketRouter.get(
          Employee can view their own ticket.
       ===================================================== */
 
-      if (
-        req.user.employeeId &&
-        ticket.employeeId === req.user.employeeId
-      ) {
+      if (req.user.employeeId && ticket.employeeId === req.user.employeeId) {
         return res.json({
           ticket,
         });
@@ -457,24 +783,49 @@ ticketRouter.get(
          ROLE-BASED ACCESS
       ===================================================== */
 
-      const allowedAssignees: Record<
-        string,
-        string[]
-      > = {
+      // MANAGER → only Complaint tickets assigned to this manager.
+      if (role === "MANAGER") {
+        if (!req.user.employeeId) {
+          return res.status(401).json({
+            error: {
+              message: "Manager employee profile not found",
+            },
+          });
+        }
+
+        // Managers can access only grievance/Complaint tickets assigned
+        // to their own team. The authenticated employeeId is the only
+        // manager scope used here.
+        const managerTicket =
+          ticket.category === "Complaint"
+            ? await repo.getTeamGrievanceTicket(
+                req.params.id,
+                req.user.employeeId,
+              )
+            : null;
+
+        if (managerTicket) {
+          return res.json({
+            ticket: managerTicket,
+          });
+        }
+
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to view this team grievance",
+          },
+        });
+      }
+
+      const allowedAssignees: Record<string, string[]> = {
         HR_ADMIN: ["HR_ADMIN"],
         FINANCE: ["FINANCE"],
-        MANAGER: ["MANAGER"],
         IT_SUPPORT: ["IT_SUPPORT"],
       };
 
-      const allowed =
-        allowedAssignees[role];
+      const allowed = allowedAssignees[role];
 
-      if (
-        allowed &&
-        ticket.assignedTo &&
-        allowed.includes(ticket.assignedTo)
-      ) {
+      if (allowed && ticket.assignedTo && allowed.includes(ticket.assignedTo)) {
         return res.json({
           ticket,
         });
@@ -482,8 +833,7 @@ ticketRouter.get(
 
       return res.status(403).json({
         error: {
-          message:
-            "You are not authorized to view this ticket",
+          message: "You are not authorized to view this ticket",
         },
       });
     } catch (err) {
