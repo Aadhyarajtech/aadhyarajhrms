@@ -269,18 +269,11 @@ function isSeniorRole(title?: string, designationTitle?: string) {
 
 function uniqueStrings(values: string[] = []) {
   return [
-    ...new Set(
-      values
-        .map((value) => String(value).trim())
-        .filter(Boolean),
-    ),
+    ...new Set(values.map((value) => String(value).trim()).filter(Boolean)),
   ];
 }
 
-function validateBudget(
-  budgetCtc: number | undefined,
-  headcount: number,
-) {
+function validateBudget(budgetCtc: number | undefined, headcount: number) {
   if (budgetCtc === undefined || budgetCtc === null) {
     return;
   }
@@ -318,11 +311,9 @@ export async function listJobPostings(
     query.requisitionStatus = requisitionStatus;
   }
 
-  const rows: AnyDoc[] = (
-    await JobPosting.find(query)
-      .sort({ requestedAt: -1 })
-      .lean()
-  ) as AnyDoc[];
+  const rows: AnyDoc[] = (await JobPosting.find(query)
+    .sort({ requestedAt: -1 })
+    .lean()) as AnyDoc[];
 
   if (!rows.length) {
     return [];
@@ -390,12 +381,9 @@ export async function listJobPostings(
   return rows.map((row: AnyDoc) => ({
     id: row._id,
     ...row,
-    departmentName:
-      deptMap.get(row.departmentId)?.name ?? null,
-    designationTitle:
-      designationMap.get(row.designationId)?.title ?? null,
-    candidateCount:
-      countMap.get(row._id) ?? 0,
+    departmentName: deptMap.get(row.departmentId)?.name ?? null,
+    designationTitle: designationMap.get(row.designationId)?.title ?? null,
+    candidateCount: countMap.get(row._id) ?? 0,
   }));
 }
 
@@ -436,50 +424,44 @@ export interface CreateJobInput {
   screeningQuestions?: string[];
   hiringMode?: "STANDARD" | "WALK_IN" | "CAMPUS";
 
-walkInDrive?: {
-  driveDate?: string | null;
-  startTime?: string | null;
-  endTime?: string | null;
-  venue?: string | null;
-  coordinatorName?: string | null;
-  coordinatorContact?: string | null;
-  registrationDeadline?: string | null;
-  expectedCandidates?: number | null;
-} | null;
+  walkInDrive?: {
+    driveDate?: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
+    venue?: string | null;
+    coordinatorName?: string | null;
+    coordinatorContact?: string | null;
+    registrationDeadline?: string | null;
+    expectedCandidates?: number | null;
+  } | null;
 
-campusDrive?: {
-  collegeName?: string | null;
-  campusLocation?: string | null;
-  driveDate?: string | null;
-  startTime?: string | null;
-  endTime?: string | null;
-  placementCoordinator?: string | null;
-  coordinatorContact?: string | null;
-  expectedCandidates?: number | null;
-} | null;
+  campusDrive?: {
+    collegeName?: string | null;
+    campusLocation?: string | null;
+    driveDate?: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
+    placementCoordinator?: string | null;
+    coordinatorContact?: string | null;
+    expectedCandidates?: number | null;
+  } | null;
 
-skills?: string[];
+  skills?: string[];
   requestedById: string;
   roleCategory?: string;
   useTemplate?: boolean;
 }
 
-export async function createJobPosting(
-  input: CreateJobInput,
-) {
+export async function createJobPosting(input: CreateJobInput) {
   const now = nowIso();
 
-  const department = await Department.findById(
-    input.departmentId,
-  ).lean();
+  const department = await Department.findById(input.departmentId).lean();
 
   if (!department) {
     throw new Error("Selected department was not found.");
   }
 
-  const designation = await Designation.findById(
-    input.designationId,
-  ).lean();
+  const designation = await Designation.findById(input.designationId).lean();
 
   if (!designation) {
     throw new Error("Selected designation was not found.");
@@ -494,15 +476,9 @@ export async function createJobPosting(
     );
   }
 
-  const headcount = Math.max(
-    1,
-    Number(input.headcount ?? input.openings ?? 1),
-  );
+  const headcount = Math.max(1, Number(input.headcount ?? input.openings ?? 1));
 
-  const openings = Math.max(
-    1,
-    Number(input.openings ?? input.headcount ?? 1),
-  );
+  const openings = Math.max(1, Number(input.openings ?? input.headcount ?? 1));
 
   if (!Number.isInteger(headcount)) {
     throw new Error("Headcount must be a whole number.");
@@ -512,10 +488,7 @@ export async function createJobPosting(
     throw new Error("Openings must be a whole number.");
   }
 
-  const experienceMin = Math.max(
-    0,
-    Number(input.experienceMin ?? 0),
-  );
+  const experienceMin = Math.max(0, Number(input.experienceMin ?? 0));
 
   const experienceMax = Math.max(
     experienceMin,
@@ -528,10 +501,7 @@ export async function createJobPosting(
     );
   }
 
-  validateBudget(
-    input.budgetCtc,
-    headcount,
-  );
+  validateBudget(input.budgetCtc, headcount);
 
   const template = getTemplateForRole(
     input.roleCategory,
@@ -552,20 +522,15 @@ export async function createJobPosting(
   }
 
   const skills = uniqueStrings([
-    ...(useTemplate ? template?.skills ?? [] : []),
+    ...(useTemplate ? (template?.skills ?? []) : []),
     ...(input.skills ?? []),
   ]);
 
-  const seniorRole = isSeniorRole(
-    input.title,
-    designation.title,
-  );
+  const seniorRole = isSeniorRole(input.title, designation.title);
 
-  const templateMinimumLevel =
-    template?.minApprovalLevel ?? 1;
+  const templateMinimumLevel = template?.minApprovalLevel ?? 1;
 
-  const seniorMinimumLevel =
-    seniorRole ? 2 : 1;
+  const seniorMinimumLevel = seniorRole ? 2 : 1;
 
   const requiredApprovalLevel = Math.max(
     1,
@@ -574,52 +539,104 @@ export async function createJobPosting(
     seniorMinimumLevel,
   );
 
-  const approvers: AnyDoc[] = (
-    await User.find({
-      role: {
-        $in: [
-          "SUPER_ADMIN",
-          "HR_ADMIN",
-        ],
-      },
-      isActive: true,
-    })
-      .select("_id role")
-      .sort({
-        role: 1,
-        createdAt: 1,
-      })
-      .lean()
-  ) as AnyDoc[];
+  const requester = (await User.findById(input.requestedById)
+    .select("_id role isActive")
+    .lean()) as AnyDoc | null;
 
-  if (approvers.length < requiredApprovalLevel) {
-    throw new Error(
-      `This requisition requires ${requiredApprovalLevel} approval level(s), but only ${approvers.length} active approver(s) are available.`,
-    );
+  if (!requester) {
+    throw new Error("The user creating this requisition was not found.");
   }
 
-  const approvalSteps = approvers
-    .slice(0, requiredApprovalLevel)
-    .map((user, index) => ({
-      approverId: user._id,
-      level: index + 1,
-      status: "PENDING",
-      actedAt: null,
-      comment: null,
-    }));
+  if (requester.isActive === false) {
+    throw new Error("The user creating this requisition is inactive.");
+  }
+
+  const isAdminRequester =
+    requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
+
+  const approvers: AnyDoc[] = (await User.find({
+    role: {
+      $in: ["SUPER_ADMIN", "HR_ADMIN"],
+    },
+    isActive: true,
+  })
+    .select("_id role")
+    .sort({
+      role: 1,
+      createdAt: 1,
+    })
+    .lean()) as AnyDoc[];
+
+  /*
+   * SUPER_ADMIN and HR_ADMIN are allowed to create requisitions.
+   * A recruiter creates a requisition for admin approval.
+   *
+   * When an admin creates a requisition, the creator can act as the
+   * first approval level. This prevents the creator from being blocked
+   * simply because the database has no second admin account available.
+   * Higher approval levels still require additional active admins.
+   */
+  const eligibleApprovers = approvers.filter(
+    (user) => String(user._id) !== String(requester._id),
+  );
+
+  let approvalSteps: AnyDoc[] = [];
+
+  if (isAdminRequester) {
+    const firstApprover = {
+      approverId: requester._id,
+      level: 1,
+      status: "APPROVED",
+      actedAt: now,
+      comment: "Automatically approved by the requisition creator.",
+    };
+
+    const remainingApprovalLevels = Math.max(0, requiredApprovalLevel - 1);
+
+    if (remainingApprovalLevels > eligibleApprovers.length) {
+      throw new Error(
+        `This requisition requires ${requiredApprovalLevel} approval level(s), but only ${eligibleApprovers.length + 1} active admin approver(s) are available.`,
+      );
+    }
+
+    approvalSteps = [
+      firstApprover,
+      ...eligibleApprovers
+        .slice(0, remainingApprovalLevels)
+        .map((user, index) => ({
+          approverId: user._id,
+          level: index + 2,
+          status: "PENDING",
+          actedAt: null,
+          comment: null,
+        })),
+    ];
+  } else {
+    if (approvers.length < requiredApprovalLevel) {
+      throw new Error(
+        `This requisition requires ${requiredApprovalLevel} approval level(s), but only ${approvers.length} active admin approver(s) are available.`,
+      );
+    }
+
+    approvalSteps = approvers
+      .slice(0, requiredApprovalLevel)
+      .map((user, index) => ({
+        approverId: user._id,
+        level: index + 1,
+        status: "PENDING",
+        actedAt: null,
+        comment: null,
+      }));
+  }
 
   const doc = await JobPosting.create({
     title: input.title.trim(),
     departmentId: input.departmentId,
     designationId: input.designationId,
 
-    location:
-      input.location?.trim() ||
-      "Bengaluru, India",
+    location: input.location?.trim() || "Bengaluru, India",
 
-    employmentType:
-      input.employmentType ??
-      "FULL_TIME",
+    employmentType: input.employmentType ?? "FULL_TIME",
 
     experienceMin,
     experienceMax,
@@ -634,103 +651,73 @@ export async function createJobPosting(
 
     requestedAt: now,
 
-    requestedById:
-      input.requestedById,
+    requestedById: input.requestedById,
 
-    requisitionStatus:
-      "PENDING_APPROVAL",
+    requisitionStatus: "PENDING_APPROVAL",
 
     headcount,
 
-    budgetCtc:
-      input.budgetCtc ?? null,
+    budgetCtc: input.budgetCtc ?? null,
 
-    approvalLevelRequired:
-      requiredApprovalLevel,
+    approvalLevelRequired: requiredApprovalLevel,
 
     approvalSteps,
 
-    postingChannels:
-      uniqueStrings(
-        input.postingChannels ?? [
-          "CAREERS",
-        ],
-      ),
+    postingChannels: uniqueStrings(input.postingChannels ?? ["CAREERS"]),
 
-    screeningQuestions:
-      uniqueStrings(
-        input.screeningQuestions ?? [],
-      ),
+    screeningQuestions: uniqueStrings(input.screeningQuestions ?? []),
 
-    hiringMode:
-  input.hiringMode ??
-  "STANDARD",
+    hiringMode: input.hiringMode ?? "STANDARD",
 
-walkInDrive:
-  input.hiringMode === "WALK_IN"
-    ? {
-        driveDate:
-          input.walkInDrive?.driveDate ?? null,
+    walkInDrive:
+      input.hiringMode === "WALK_IN"
+        ? {
+            driveDate: input.walkInDrive?.driveDate ?? null,
 
-        startTime:
-          input.walkInDrive?.startTime ?? null,
+            startTime: input.walkInDrive?.startTime ?? null,
 
-        endTime:
-          input.walkInDrive?.endTime ?? null,
+            endTime: input.walkInDrive?.endTime ?? null,
 
-        venue:
-          input.walkInDrive?.venue?.trim() ?? null,
+            venue: input.walkInDrive?.venue?.trim() ?? null,
 
-        coordinatorName:
-          input.walkInDrive?.coordinatorName?.trim() ?? null,
+            coordinatorName: input.walkInDrive?.coordinatorName?.trim() ?? null,
 
-        coordinatorContact:
-          input.walkInDrive?.coordinatorContact?.trim() ?? null,
+            coordinatorContact:
+              input.walkInDrive?.coordinatorContact?.trim() ?? null,
 
-        registrationDeadline:
-          input.walkInDrive?.registrationDeadline ?? null,
+            registrationDeadline:
+              input.walkInDrive?.registrationDeadline ?? null,
 
-        expectedCandidates:
-          input.walkInDrive?.expectedCandidates ?? null,
-      }
-    : null,
+            expectedCandidates: input.walkInDrive?.expectedCandidates ?? null,
+          }
+        : null,
 
-campusDrive:
-  input.hiringMode === "CAMPUS"
-    ? {
-        collegeName:
-          input.campusDrive?.collegeName?.trim() ?? null,
+    campusDrive:
+      input.hiringMode === "CAMPUS"
+        ? {
+            collegeName: input.campusDrive?.collegeName?.trim() ?? null,
 
-        campusLocation:
-          input.campusDrive?.campusLocation?.trim() ?? null,
+            campusLocation: input.campusDrive?.campusLocation?.trim() ?? null,
 
-        driveDate:
-          input.campusDrive?.driveDate ?? null,
+            driveDate: input.campusDrive?.driveDate ?? null,
 
-        startTime:
-          input.campusDrive?.startTime ?? null,
+            startTime: input.campusDrive?.startTime ?? null,
 
-        endTime:
-          input.campusDrive?.endTime ?? null,
+            endTime: input.campusDrive?.endTime ?? null,
 
-        placementCoordinator:
-          input.campusDrive?.placementCoordinator?.trim() ?? null,
+            placementCoordinator:
+              input.campusDrive?.placementCoordinator?.trim() ?? null,
 
-        coordinatorContact:
-          input.campusDrive?.coordinatorContact?.trim() ?? null,
+            coordinatorContact:
+              input.campusDrive?.coordinatorContact?.trim() ?? null,
 
-        expectedCandidates:
-          input.campusDrive?.expectedCandidates ?? null,
-      }
-    : null,
+            expectedCandidates: input.campusDrive?.expectedCandidates ?? null,
+          }
+        : null,
 
-skills,
+    skills,
     roleCategory:
-      template?.category ??
-      normalizeRoleCategory(
-        input.roleCategory,
-      ) ??
-      null,
+      template?.category ?? normalizeRoleCategory(input.roleCategory) ?? null,
 
     seniorRole,
   });
@@ -744,10 +731,14 @@ export async function approveJob(
   comment?: string,
 ) {
   const job = await JobPosting.findById(id);
-  if (!job) return undefined;
+
+  if (!job) {
+    return undefined;
+  }
 
   const approvalSteps = ((job as AnyDoc).approvalSteps ?? []) as AnyDoc[];
 
+  // Legacy/single-step requisitions without an approval workflow.
   if (!approvalSteps.length) {
     (job as AnyDoc).approvalSteps = [
       {
@@ -765,18 +756,27 @@ export async function approveJob(
     (job as AnyDoc).approvedAt = nowIso();
 
     await job.save();
+
     return getJobPosting(id);
   }
 
+  // Find the next approval step in level order.
   const pendingStep = approvalSteps
-    .filter((step) => step.status === "PENDING")
-    .sort((a, b) => (a.level ?? 0) - (b.level ?? 0))[0];
+    .filter((step: AnyDoc) => step.status === "PENDING")
+    .sort(
+      (a: AnyDoc, b: AnyDoc) => Number(a.level ?? 0) - Number(b.level ?? 0),
+    )[0];
 
   if (!pendingStep) {
+    // Nothing is pending, so do not change an already completed workflow.
     return getJobPosting(id);
   }
 
-  pendingStep.approverId = approverId;
+  // Only the assigned approver can approve the current step.
+  if (String(pendingStep.approverId) !== String(approverId)) {
+    throw new Error("You are not the current approver for this requisition.");
+  }
+
   pendingStep.status = "APPROVED";
   pendingStep.actedAt = nowIso();
   pendingStep.comment = comment ?? null;
@@ -784,20 +784,20 @@ export async function approveJob(
   (job as AnyDoc).approvalSteps = approvalSteps;
 
   const allApproved = approvalSteps.every(
-    (step) => step.status === "APPROVED",
+    (step: AnyDoc) => step.status === "APPROVED",
   );
 
-  (job as AnyDoc).requisitionStatus = allApproved
-    ? "APPROVED"
-    : "PENDING_APPROVAL";
-
   if (allApproved) {
+    (job as AnyDoc).requisitionStatus = "APPROVED";
     (job as AnyDoc).status = "OPEN";
     (job as AnyDoc).approvedById = approverId;
     (job as AnyDoc).approvedAt = nowIso();
+  } else {
+    (job as AnyDoc).requisitionStatus = "PENDING_APPROVAL";
   }
 
   await job.save();
+
   return getJobPosting(id);
 }
 
@@ -812,64 +812,39 @@ export async function rejectJob(
     return undefined;
   }
 
-  const rejectionReason =
-    reason.trim();
+  const rejectionReason = reason.trim();
 
   if (!rejectionReason) {
-    throw new Error(
-      "Rejection reason is required.",
-    );
+    throw new Error("Rejection reason is required.");
   }
 
-  if (
-    job.requisitionStatus ===
-    "APPROVED"
-  ) {
-    throw new Error(
-      "An approved requisition cannot be rejected.",
-    );
+  if (job.requisitionStatus === "APPROVED") {
+    throw new Error("An approved requisition cannot be rejected.");
   }
 
-  const approvalSteps =
-    (job.approvalSteps ??
-      []) as AnyDoc[];
+  const approvalSteps = (job.approvalSteps ?? []) as AnyDoc[];
 
-  const currentPendingStep =
-    approvalSteps.find(
-      (step: AnyDoc) =>
-        step.status === "PENDING",
-    );
+  const currentPendingStep = approvalSteps.find(
+    (step: AnyDoc) => step.status === "PENDING",
+  );
 
-  if (
-    !currentPendingStep ||
-    currentPendingStep.approverId !==
-      approverId
-  ) {
-    throw new Error(
-      "You are not the current approver for this requisition.",
-    );
+  if (!currentPendingStep || currentPendingStep.approverId !== approverId) {
+    throw new Error("You are not the current approver for this requisition.");
   }
 
-  currentPendingStep.status =
-    "REJECTED";
+  currentPendingStep.status = "REJECTED";
 
-  currentPendingStep.actedAt =
-    nowIso();
+  currentPendingStep.actedAt = nowIso();
 
-  currentPendingStep.comment =
-    rejectionReason;
+  currentPendingStep.comment = rejectionReason;
 
-  job.approvalSteps =
-    approvalSteps as any;
+  job.approvalSteps = approvalSteps as any;
 
-  job.requisitionStatus =
-    "REJECTED";
+  job.requisitionStatus = "REJECTED";
 
-  job.status =
-    "CLOSED";
+  job.status = "CLOSED";
 
-  job.rejectionReason =
-    rejectionReason;
+  job.rejectionReason = rejectionReason;
 
   await job.save();
 
@@ -891,36 +866,33 @@ export interface UpdateJobInput {
   screeningQuestions?: string[];
   hiringMode?: "STANDARD" | "WALK_IN" | "CAMPUS";
 
-walkInDrive?: {
-  driveDate?: string | null;
-  startTime?: string | null;
-  endTime?: string | null;
-  venue?: string | null;
-  coordinatorName?: string | null;
-  coordinatorContact?: string | null;
-  registrationDeadline?: string | null;
-  expectedCandidates?: number | null;
-} | null;
+  walkInDrive?: {
+    driveDate?: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
+    venue?: string | null;
+    coordinatorName?: string | null;
+    coordinatorContact?: string | null;
+    registrationDeadline?: string | null;
+    expectedCandidates?: number | null;
+  } | null;
 
-campusDrive?: {
-  collegeName?: string | null;
-  campusLocation?: string | null;
-  driveDate?: string | null;
-  startTime?: string | null;
-  endTime?: string | null;
-  placementCoordinator?: string | null;
-  coordinatorContact?: string | null;
-  expectedCandidates?: number | null;
-} | null;
+  campusDrive?: {
+    collegeName?: string | null;
+    campusLocation?: string | null;
+    driveDate?: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
+    placementCoordinator?: string | null;
+    coordinatorContact?: string | null;
+    expectedCandidates?: number | null;
+  } | null;
 
-skills?: string[];
+  skills?: string[];
   status?: "OPEN" | "ON_HOLD" | "CLOSED";
 }
 
-export async function updateJobPosting(
-  id: string,
-  input: UpdateJobInput,
-) {
+export async function updateJobPosting(id: string, input: UpdateJobInput) {
   const existing = await JobPosting.findById(id).lean();
 
   if (!existing) {
@@ -951,10 +923,7 @@ export async function updateJobPosting(
     updates.headcount = input.openings;
   }
 
-  await JobPosting.updateOne(
-    { _id: id },
-    { $set: updates },
-  );
+  await JobPosting.updateOne({ _id: id }, { $set: updates });
 
   return getJobPosting(id);
 }
@@ -990,10 +959,7 @@ export async function deleteJobPosting(id: string) {
   };
 }
 
-export async function updateJobStatus(
-  id: string,
-  status: string,
-) {
+export async function updateJobStatus(id: string, status: string) {
   await JobPosting.updateOne(
     {
       _id: id,
@@ -1008,90 +974,57 @@ export async function updateJobStatus(
   return getJobPosting(id);
 }
 
-
-
 // ===========================================================================
 // CANDIDATES
 // ===========================================================================
 
-export async function listCandidates(
-  jobPostingId?: string,
-) {
-  const query =
-    jobPostingId
-      ? {
-          jobPostingId,
-        }
-      : {};
+export async function listCandidates(jobPostingId?: string) {
+  const query = jobPostingId
+    ? {
+        jobPostingId,
+      }
+    : {};
 
-  const rows: AnyDoc[] = (
-    await Candidate.find(query)
-      .sort({
-        appliedAt: -1,
-      })
-      .lean()
-  ) as AnyDoc[];
+  const rows: AnyDoc[] = (await Candidate.find(query)
+    .sort({
+      appliedAt: -1,
+    })
+    .lean()) as AnyDoc[];
 
   if (!rows.length) {
     return [];
   }
 
-  const jobIds = [
-    ...new Set(
-      rows.map(
-        (row: AnyDoc) =>
-          row.jobPostingId,
-      ),
-    ),
-  ];
+  const jobIds = [...new Set(rows.map((row: AnyDoc) => row.jobPostingId))];
 
-  const jobs: AnyDoc[] = (
-    await JobPosting.find({
-      _id: {
-        $in: jobIds,
-      },
-    }).lean()
-  ) as AnyDoc[];
+  const jobs: AnyDoc[] = (await JobPosting.find({
+    _id: {
+      $in: jobIds,
+    },
+  }).lean()) as AnyDoc[];
 
-  const jobMap = new Map(
-    jobs.map((job: AnyDoc) => [
-      job._id,
-      job,
-    ]),
-  );
+  const jobMap = new Map(jobs.map((job: AnyDoc) => [job._id, job]));
 
-  return rows.map(
-    (row: AnyDoc) => ({
-      id: row._id,
-      ...row,
-      jobTitle:
-        jobMap.get(
-          row.jobPostingId,
-        )?.title ?? null,
-    }),
-  );
+  return rows.map((row: AnyDoc) => ({
+    id: row._id,
+    ...row,
+    jobTitle: jobMap.get(row.jobPostingId)?.title ?? null,
+  }));
 }
 
-export async function getCandidate(
-  id: string,
-) {
-  const row =
-    await Candidate.findById(id).lean();
+export async function getCandidate(id: string) {
+  const row = await Candidate.findById(id).lean();
 
   if (!row) {
     return undefined;
   }
 
-  const job =
-    await JobPosting.findById(
-      row.jobPostingId,
-    ).lean();
+  const job = await JobPosting.findById(row.jobPostingId).lean();
 
   return {
     id: row._id,
     ...row,
-    jobTitle:
-      job?.title ?? null,
+    jobTitle: job?.title ?? null,
   };
 }
 
@@ -1108,18 +1041,11 @@ export interface CreateCandidateInput {
   resumeText?: string;
 }
 
-export async function createCandidate(
-  input: CreateCandidateInput,
-) {
-  const duplicate =
-    await Candidate.findOne({
-      jobPostingId:
-        input.jobPostingId,
-      email:
-        input.email
-          .toLowerCase()
-          .trim(),
-    }).lean();
+export async function createCandidate(input: CreateCandidateInput) {
+  const duplicate = await Candidate.findOne({
+    jobPostingId: input.jobPostingId,
+    email: input.email.toLowerCase().trim(),
+  }).lean();
 
   if (duplicate) {
     throw new Error(
@@ -1127,61 +1053,38 @@ export async function createCandidate(
     );
   }
 
-  const doc =
-    await Candidate.create({
-      jobPostingId:
-        input.jobPostingId,
+  const doc = await Candidate.create({
+    jobPostingId: input.jobPostingId,
 
-      firstName:
-        input.firstName,
+    firstName: input.firstName,
 
-      lastName:
-        input.lastName,
+    lastName: input.lastName,
 
-      email:
-        input.email
-          .toLowerCase()
-          .trim(),
+    email: input.email.toLowerCase().trim(),
 
-      phone:
-        input.phone ?? null,
+    phone: input.phone ?? null,
 
-      expectedCtc:
-        input.expectedCtc ?? null,
+    expectedCtc: input.expectedCtc ?? null,
 
-      source:
-        input.source ??
-        "CAREERS",
+    source: input.source ?? "CAREERS",
 
-      referredById:
-        input.referredById ??
-        null,
+    referredById: input.referredById ?? null,
 
-      referralBonusStatus:
-        input.referredById
-          ? "PENDING"
-          : "NOT_APPLICABLE",
+    referralBonusStatus: input.referredById ? "PENDING" : "NOT_APPLICABLE",
 
-      notes:
-        input.notes ?? null,
+    notes: input.notes ?? null,
 
-      resumeText:
-        input.resumeText ?? null,
+    resumeText: input.resumeText ?? null,
 
-      stage:
-        "APPLIED",
+    stage: "APPLIED",
 
-      appliedAt:
-        nowIso(),
-    });
+    appliedAt: nowIso(),
+  });
 
   return getCandidate(doc._id);
 }
 
-export async function moveCandidateStage(
-  id: string,
-  stage: string,
-) {
+export async function moveCandidateStage(id: string, stage: string) {
   await Candidate.updateOne(
     {
       _id: id,
@@ -1196,10 +1099,7 @@ export async function moveCandidateStage(
   return getCandidate(id);
 }
 
-export async function rateCandidate(
-  id: string,
-  rating: number,
-) {
+export async function rateCandidate(id: string, rating: number) {
   await Candidate.updateOne(
     {
       _id: id,
@@ -1222,10 +1122,7 @@ export interface UpdateCandidateInput {
   source?: string;
 }
 
-export async function updateCandidate(
-  id: string,
-  input: UpdateCandidateInput,
-) {
+export async function updateCandidate(id: string, input: UpdateCandidateInput) {
   const candidate = await Candidate.findById(id);
 
   if (!candidate) {
@@ -1285,42 +1182,27 @@ export async function deleteCandidate(id: string) {
   };
 }
 
-function normalizeTokens(
-  text: string,
-) {
+function normalizeTokens(text: string) {
   return new Set(
     text
       .toLowerCase()
-      .split(
-        /[^a-z0-9+#.]+/,
-      )
-      .filter(
-        (value: string) =>
-          value.length > 1,
-      ),
+      .split(/[^a-z0-9+#.]+/)
+      .filter((value: string) => value.length > 1),
   );
 }
 
-export async function screenCandidate(
-  id: string,
-  resumeText?: string,
-) {
+export async function screenCandidate(id: string, resumeText?: string) {
   const candidate = await Candidate.findById(id);
 
   if (!candidate) {
     return undefined;
   }
 
-  if (
-    typeof resumeText === "string" &&
-    resumeText.trim()
-  ) {
+  if (typeof resumeText === "string" && resumeText.trim()) {
     candidate.resumeText = resumeText.trim();
   }
 
-  const job = await JobPosting.findById(
-    candidate.jobPostingId,
-  );
+  const job = await JobPosting.findById(candidate.jobPostingId);
 
   if (!job) {
     throw new Error("Job posting not found.");
@@ -1336,39 +1218,26 @@ export async function screenCandidate(
     .filter(Boolean)
     .join(" ");
 
-  const screeningText = String(
-    candidate.resumeText?.trim() || fallbackResume,
-  );
+  const screeningText = String(candidate.resumeText?.trim() || fallbackResume);
 
   const jobTokens = normalizeTokens(
     `${job.title} ${job.description} ${job.skills.join(" ")}`,
   );
 
-  const resumeTokens = normalizeTokens(
-    screeningText,
-  );
+  const resumeTokens = normalizeTokens(screeningText);
 
-  const matched = [...jobTokens].filter(
-    (value: string) => resumeTokens.has(value),
+  const matched = [...jobTokens].filter((value: string) =>
+    resumeTokens.has(value),
   );
 
   const score = jobTokens.size
-    ? Math.min(
-        100,
-        Math.round(
-          (matched.length / jobTokens.size) * 100,
-        ),
-      )
+    ? Math.min(100, Math.round((matched.length / jobTokens.size) * 100))
     : 0;
 
   const extractedSkills = [
     ...new Set(
       matched.filter((value: string) =>
-        job.skills
-          .map((skill: string) =>
-            skill.toLowerCase(),
-          )
-          .includes(value),
+        job.skills.map((skill: string) => skill.toLowerCase()).includes(value),
       ),
     ),
   ];
@@ -1379,60 +1248,42 @@ export async function screenCandidate(
 
   let autoShortlisted = false;
 
-  let shortlistingResult:
-    | "PENDING"
-    | "SHORTLISTED"
-    | "NOT_SHORTLISTED" = "PENDING";
+  let shortlistingResult: "PENDING" | "SHORTLISTED" | "NOT_SHORTLISTED" =
+    "PENDING";
 
   if (job.shortlistingCriteria?.enabled) {
     const criteria = job.shortlistingCriteria;
 
-    const candidateSkills = extractedSkills.map(
-      (skill: string) =>
-        skill.toLowerCase().trim(),
+    const candidateSkills = extractedSkills.map((skill: string) =>
+      skill.toLowerCase().trim(),
     );
 
-    const requiredSkills =
-      criteria.requiredSkills.map(
-        (skill: string) =>
-          skill.toLowerCase().trim(),
-      );
+    const requiredSkills = criteria.requiredSkills.map((skill: string) =>
+      skill.toLowerCase().trim(),
+    );
 
-    const matchedRequiredSkills =
-      requiredSkills.filter(
-        (skill: string) =>
-          candidateSkills.includes(skill),
-      );
+    const matchedRequiredSkills = requiredSkills.filter((skill: string) =>
+      candidateSkills.includes(skill),
+    );
 
     // 1. Job-fit score check
-    const scorePassed =
-      score >= criteria.minimumJobFitScore;
+    const scorePassed = score >= criteria.minimumJobFitScore;
 
     // 2. Required skills check
     const skillsPassed =
       requiredSkills.length === 0 ||
-      matchedRequiredSkills.length ===
-        requiredSkills.length;
+      matchedRequiredSkills.length === requiredSkills.length;
 
     // 3. Experience check
     // Uses candidate experience if available.
-    const candidateExperience = Number(
-      (candidate as any).experience ?? 0,
-    );
+    const candidateExperience = Number((candidate as any).experience ?? 0);
 
-    const experiencePassed =
-      candidateExperience >=
-      criteria.minimumExperience;
+    const experiencePassed = candidateExperience >= criteria.minimumExperience;
 
     // Candidate must satisfy ALL enabled criteria
-    autoShortlisted =
-      scorePassed &&
-      skillsPassed &&
-      experiencePassed;
+    autoShortlisted = scorePassed && skillsPassed && experiencePassed;
 
-    shortlistingResult = autoShortlisted
-      ? "SHORTLISTED"
-      : "NOT_SHORTLISTED";
+    shortlistingResult = autoShortlisted ? "SHORTLISTED" : "NOT_SHORTLISTED";
   }
 
   // =========================================================
@@ -1452,8 +1303,7 @@ export async function screenCandidate(
 
   candidate.autoShortlisted = autoShortlisted;
 
-  candidate.shortlistingResult =
-    shortlistingResult;
+  candidate.shortlistingResult = shortlistingResult;
 
   if (candidate.stage === "APPLIED") {
     candidate.stage = "SCREENING";
@@ -1468,49 +1318,30 @@ export async function screenCandidate(
 // INTERVIEWS
 // ===========================================================================
 
-export async function listInterviews(
-  candidateId?: string,
-) {
-  const rows: AnyDoc[] = (
-    await Interview.find(
-      candidateId
-        ? {
-            candidateId,
-          }
-        : {},
-    )
-      .sort({
-        scheduledAt: 1,
-      })
-      .lean()
-  ) as AnyDoc[];
+export async function listInterviews(candidateId?: string) {
+  const rows: AnyDoc[] = (await Interview.find(
+    candidateId
+      ? {
+          candidateId,
+        }
+      : {},
+  )
+    .sort({
+      scheduledAt: 1,
+    })
+    .lean()) as AnyDoc[];
 
   if (!rows.length) {
     return [];
   }
 
-  const candidateIds = [
-    ...new Set(
-      rows.map(
-        (row: AnyDoc) =>
-          row.candidateId,
-      ),
-    ),
-  ];
+  const candidateIds = [...new Set(rows.map((row: AnyDoc) => row.candidateId))];
 
   const interviewerIds = [
-    ...new Set(
-      rows.map(
-        (row: AnyDoc) =>
-          row.interviewerId,
-      ),
-    ),
+    ...new Set(rows.map((row: AnyDoc) => row.interviewerId)),
   ];
 
-  const [
-    candidates,
-    interviewers,
-  ] = await Promise.all([
+  const [candidates, interviewers] = await Promise.all([
     Candidate.find({
       _id: {
         $in: candidateIds,
@@ -1524,111 +1355,68 @@ export async function listInterviews(
     }).lean(),
   ]);
 
-  const candidateRows =
-    candidates as AnyDoc[];
+  const candidateRows = candidates as AnyDoc[];
 
-  const interviewerRows =
-    interviewers as AnyDoc[];
+  const interviewerRows = interviewers as AnyDoc[];
 
   const candidateMap = new Map(
-    candidateRows.map(
-      (candidate: AnyDoc) => [
-        candidate._id,
-        candidate,
-      ],
-    ),
+    candidateRows.map((candidate: AnyDoc) => [candidate._id, candidate]),
   );
 
   const employeeMap = new Map(
-    interviewerRows.map(
-      (employee: AnyDoc) => [
-        employee._id,
-        employee,
-      ],
-    ),
+    interviewerRows.map((employee: AnyDoc) => [employee._id, employee]),
   );
 
-  return rows.map(
-    (row: AnyDoc) => ({
-      id: row._id,
-      ...row,
-      candidateFirstName:
-        candidateMap.get(
-          row.candidateId,
-        )?.firstName ?? null,
-      candidateLastName:
-        candidateMap.get(
-          row.candidateId,
-        )?.lastName ?? null,
-      interviewerFirstName:
-        employeeMap.get(
-          row.interviewerId,
-        )?.firstName ?? null,
-      interviewerLastName:
-        employeeMap.get(
-          row.interviewerId,
-        )?.lastName ?? null,
-    }),
-  );
+  return rows.map((row: AnyDoc) => ({
+    id: row._id,
+    ...row,
+    candidateFirstName: candidateMap.get(row.candidateId)?.firstName ?? null,
+    candidateLastName: candidateMap.get(row.candidateId)?.lastName ?? null,
+    interviewerFirstName: employeeMap.get(row.interviewerId)?.firstName ?? null,
+    interviewerLastName: employeeMap.get(row.interviewerId)?.lastName ?? null,
+  }));
 }
 
-export async function scheduleInterview(
-  input: {
-    candidateId: string;
-    interviewerId: string;
-    scheduledAt: string;
-    round?: string;
-    mode?: "VIDEO" | "IN_PERSON" | "PHONE";
-  },
-) {
-  const mode =
-    input.mode ?? "VIDEO";
+export async function scheduleInterview(input: {
+  candidateId: string;
+  interviewerId: string;
+  scheduledAt: string;
+  round?: string;
+  mode?: "VIDEO" | "IN_PERSON" | "PHONE";
+}) {
+  const mode = input.mode ?? "VIDEO";
 
-  const doc =
-    await Interview.create({
-      candidateId:
-        input.candidateId,
+  const doc = await Interview.create({
+    candidateId: input.candidateId,
 
-      interviewerId:
-        input.interviewerId,
+    interviewerId: input.interviewerId,
 
-      scheduledAt:
-        input.scheduledAt,
+    scheduledAt: input.scheduledAt,
 
-      round:
-        input.round ??
-        "Round 1",
+    round: input.round ?? "Round 1",
 
-      mode,
+    mode,
 
-      meetingLink:
-        mode === "VIDEO"
-          ? `https://meet.jit.si/ART-${input.candidateId}-${Date.now()}`
-          : null,
+    meetingLink:
+      mode === "VIDEO"
+        ? `https://meet.jit.si/ART-${input.candidateId}-${Date.now()}`
+        : null,
 
-      scorecard: [],
-    });
+    scorecard: [],
+  });
 
   await Candidate.updateOne(
     {
-      _id:
-        input.candidateId,
+      _id: input.candidateId,
     },
     {
       $set: {
-        stage:
-          "INTERVIEW",
+        stage: "INTERVIEW",
       },
     },
   );
 
-  return toApiDoc(
-    (
-      await Interview.findById(
-        doc._id,
-      ).lean()
-    )!,
-  );
+  return toApiDoc((await Interview.findById(doc._id).lean())!);
 }
 
 export async function submitInterviewFeedback(
@@ -1651,13 +1439,7 @@ export async function submitInterviewFeedback(
     },
   );
 
-  return toApiDoc(
-    (
-      await Interview.findById(
-        id,
-      ).lean()
-    )!,
-  );
+  return toApiDoc((await Interview.findById(id).lean())!);
 }
 
 // ===========================================================================
@@ -1674,72 +1456,38 @@ export async function generateOffer(
     specialAllowance?: number;
   },
 ) {
-  const candidate =
-    await Candidate.findById(id).lean();
+  const candidate = await Candidate.findById(id).lean();
 
   if (!candidate) {
     return undefined;
   }
 
-  const job =
-    await JobPosting.findById(
-      candidate.jobPostingId,
-    ).lean();
+  const job = await JobPosting.findById(candidate.jobPostingId).lean();
 
   if (!job) {
-    throw new Error(
-      "Job posting not found.",
-    );
+    throw new Error("Job posting not found.");
   }
 
   const now = nowIso();
 
-  const basic =
-    input.basic ??
-    Math.round(
-      input.annualCtc * 0.4,
-    );
+  const basic = input.basic ?? Math.round(input.annualCtc * 0.4);
 
-  const hra =
-    input.hra ??
-    Math.round(
-      input.annualCtc * 0.2,
-    );
+  const hra = input.hra ?? Math.round(input.annualCtc * 0.2);
 
   const specialAllowance =
-    input.specialAllowance ??
-    Math.max(
-      0,
-      input.annualCtc -
-        basic -
-        hra,
-    );
+    input.specialAllowance ?? Math.max(0, input.annualCtc - basic - hra);
 
-  const uploads = path.join(
-    process.cwd(),
-    "uploads",
-  );
+  const uploads = path.join(process.cwd(), "uploads");
 
-  fs.mkdirSync(
-    uploads,
-    {
-      recursive: true,
-    },
-  );
+  fs.mkdirSync(uploads, {
+    recursive: true,
+  });
 
-  const filename =
-    `offer-${candidate._id}-${Date.now()}.html`;
+  const filename = `offer-${candidate._id}-${Date.now()}.html`;
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Offer Letter</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;line-height:1.6}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:10px;text-align:left}</style></head><body><h1>Employment Offer</h1><p>Dear ${candidate.firstName} ${candidate.lastName},</p><p>We are pleased to offer you the position of <b>${job.title}</b>.</p><h3>Compensation</h3><table><tr><th>Component</th><th>Annual Amount</th></tr><tr><td>Basic</td><td>₹${basic.toLocaleString("en-IN")}</td></tr><tr><td>HRA</td><td>₹${hra.toLocaleString("en-IN")}</td></tr><tr><td>Special Allowance</td><td>₹${specialAllowance.toLocaleString("en-IN")}</td></tr><tr><th>Total CTC</th><th>₹${input.annualCtc.toLocaleString("en-IN")}</th></tr></table><p>Proposed joining date: <b>${input.joiningDate}</b></p><p>This is a digitally generated offer document from SmartHR Pro.</p></body></html>`;
 
-  fs.writeFileSync(
-    path.join(
-      uploads,
-      filename,
-    ),
-    html,
-    "utf8",
-  );
+  fs.writeFileSync(path.join(uploads, filename), html, "utf8");
 
   await Candidate.updateOne(
     {
@@ -1750,15 +1498,12 @@ export async function generateOffer(
         stage: "OFFER",
         offer: {
           status: "SENT",
-          offerUrl:
-            `/uploads/${filename}`,
-          annualCtc:
-            input.annualCtc,
+          offerUrl: `/uploads/${filename}`,
+          annualCtc: input.annualCtc,
           basic,
           hra,
           specialAllowance,
-          joiningDate:
-            input.joiningDate,
+          joiningDate: input.joiningDate,
           generatedAt: now,
           respondedAt: null,
         },
@@ -1773,31 +1518,24 @@ export async function respondToOffer(
   id: string,
   status: "ACCEPTED" | "DECLINED",
 ) {
-  const candidate =
-    await Candidate.findById(id);
+  const candidate = await Candidate.findById(id);
 
   if (!candidate) {
     return undefined;
   }
 
   if (!candidate.offer) {
-    throw new Error(
-      "Offer has not been generated for this candidate.",
-    );
+    throw new Error("Offer has not been generated for this candidate.");
   }
 
-  candidate.offer.status =
-    status;
+  candidate.offer.status = status;
 
-  candidate.offer.respondedAt =
-    nowIso();
+  candidate.offer.respondedAt = nowIso();
 
   if (status === "ACCEPTED") {
-    candidate.stage =
-      "OFFER";
+    candidate.stage = "OFFER";
   } else {
-    candidate.stage =
-      "REJECTED";
+    candidate.stage = "REJECTED";
   }
 
   await candidate.save();
@@ -1818,8 +1556,7 @@ export async function updateBackgroundVerification(
     notes?: string;
   },
 ) {
-  const candidate =
-    await Candidate.findById(id);
+  const candidate = await Candidate.findById(id);
 
   if (!candidate) {
     return undefined;
@@ -1838,36 +1575,24 @@ export async function updateBackgroundVerification(
     };
   }
 
-  candidate.backgroundVerification.status =
-    input.status as any;
+  candidate.backgroundVerification.status = input.status as any;
 
   candidate.backgroundVerification.provider =
-    input.provider ??
-    candidate.backgroundVerification.provider;
+    input.provider ?? candidate.backgroundVerification.provider;
 
   candidate.backgroundVerification.reference =
-    input.reference ??
-    candidate.backgroundVerification.reference;
+    input.reference ?? candidate.backgroundVerification.reference;
 
   candidate.backgroundVerification.notes =
-    input.notes ??
-    candidate.backgroundVerification.notes;
+    input.notes ?? candidate.backgroundVerification.notes;
 
-  if (
-    input.status ===
-    "IN_PROGRESS"
-  ) {
+  if (input.status === "IN_PROGRESS") {
     candidate.backgroundVerification.startedAt =
-      candidate.backgroundVerification.startedAt ??
-      now;
+      candidate.backgroundVerification.startedAt ?? now;
   }
 
-  if (
-    input.status === "VERIFIED" ||
-    input.status === "FAILED"
-  ) {
-    candidate.backgroundVerification.completedAt =
-      now;
+  if (input.status === "VERIFIED" || input.status === "FAILED") {
+    candidate.backgroundVerification.completedAt = now;
   }
 
   await candidate.save();
@@ -1884,8 +1609,7 @@ export async function addPreboardingDocument(
   type: string,
   url: string,
 ) {
-  const candidate =
-    await Candidate.findById(id);
+  const candidate = await Candidate.findById(id);
 
   if (!candidate) {
     return undefined;
@@ -1910,63 +1634,43 @@ export async function addPreboardingDocument(
     verified: false,
   });
 
-  candidate.preboarding.status =
-    "IN_PROGRESS";
+  candidate.preboarding.status = "IN_PROGRESS";
 
   await candidate.save();
 
   return getCandidate(id);
 }
 
-export async function verifyPreboardingDocument(
-  id: string,
-  index: number,
-) {
-  const candidate =
-    await Candidate.findById(id);
+export async function verifyPreboardingDocument(id: string, index: number) {
+  const candidate = await Candidate.findById(id);
 
   if (!candidate) {
     return undefined;
   }
 
   if (!candidate.preboarding) {
-    throw new Error(
-      "Pre-boarding has not been started.",
-    );
+    throw new Error("Pre-boarding has not been started.");
   }
 
   if (!candidate.preboarding.documents) {
-    throw new Error(
-      "No pre-boarding documents found.",
-    );
+    throw new Error("No pre-boarding documents found.");
   }
 
-  if (
-    !candidate.preboarding.documents[
-      index
-    ]
-  ) {
-    throw new Error(
-      "Pre-boarding document not found.",
-    );
+  if (!candidate.preboarding.documents[index]) {
+    throw new Error("Pre-boarding document not found.");
   }
 
-  candidate.preboarding.documents[
-    index
-  ].verified = true;
+  candidate.preboarding.documents[index].verified = true;
 
   if (
     candidate.preboarding.documents.length &&
     candidate.preboarding.documents.every(
-      (document: AnyDoc) =>
-        document.verified,
+      (document: AnyDoc) => document.verified,
     )
   ) {
-    candidate.preboarding.status =
-      "COMPLETED";
+    candidate.preboarding.status = "COMPLETED";
 
-    candidate.preboarding.completedAt =
-      nowIso();
+    candidate.preboarding.completedAt = nowIso();
   }
 
   await candidate.save();
@@ -1978,30 +1682,19 @@ export async function verifyPreboardingDocument(
 // HIRING / EMPLOYEE HANDOFF
 // ===========================================================================
 
-export async function hireCandidate(
-  id: string,
-  role = "EMPLOYEE",
-) {
-  const candidate =
-    await Candidate.findById(id);
+export async function hireCandidate(id: string, role = "EMPLOYEE") {
+  const candidate = await Candidate.findById(id);
 
   if (!candidate) {
     return undefined;
   }
 
   if (!candidate.offer) {
-    throw new Error(
-      "Offer has not been generated.",
-    );
+    throw new Error("Offer has not been generated.");
   }
 
-  if (
-    candidate.offer.status !==
-    "ACCEPTED"
-  ) {
-    throw new Error(
-      "Candidate must accept the offer before joining.",
-    );
+  if (candidate.offer.status !== "ACCEPTED") {
+    throw new Error("Candidate must accept the offer before joining.");
   }
 
   if (!candidate.backgroundVerification) {
@@ -2010,186 +1703,131 @@ export async function hireCandidate(
     );
   }
 
-  if (
-    candidate.backgroundVerification.status !==
-    "VERIFIED"
-  ) {
-    throw new Error(
-      "Background verification must be VERIFIED before joining.",
-    );
+  if (candidate.backgroundVerification.status !== "VERIFIED") {
+    throw new Error("Background verification must be VERIFIED before joining.");
   }
 
   if (!candidate.preboarding) {
-    throw new Error(
-      "Pre-boarding must be completed before joining.",
-    );
+    throw new Error("Pre-boarding must be completed before joining.");
   }
 
-  if (
-    candidate.preboarding.status !==
-    "COMPLETED"
-  ) {
-    throw new Error(
-      "Pre-boarding documents must be completed before joining.",
-    );
+  if (candidate.preboarding.status !== "COMPLETED") {
+    throw new Error("Pre-boarding documents must be completed before joining.");
   }
 
   if (candidate.hiredEmployeeId) {
     return getCandidate(id);
   }
 
-  const job =
-    await JobPosting.findById(
-      candidate.jobPostingId,
-    );
+  const job = await JobPosting.findById(candidate.jobPostingId);
 
   if (!job) {
-    throw new Error(
-      "Job posting not found.",
-    );
+    throw new Error("Job posting not found.");
   }
 
-  const existing =
-    await User.findOne({
-      email:
-        candidate.email.toLowerCase(),
-    }).lean();
+  const existing = await User.findOne({
+    email: candidate.email.toLowerCase(),
+  }).lean();
 
   if (existing) {
-    throw new Error(
-      "A user already exists with the candidate email.",
-    );
+    throw new Error("A user already exists with the candidate email.");
   }
 
-  const designation =
-    await Designation.findById(
-      job.designationId,
-    ).lean();
+  const designation = await Designation.findById(job.designationId).lean();
 
-  const department =
-    await Department.findById(
-      job.departmentId,
-    ).lean();
+  const department = await Department.findById(job.departmentId).lean();
 
   const now = nowIso();
 
-  const tempPassword =
-    `ART@${Math.random()
-      .toString(36)
-      .slice(2, 10)}1!`;
+  const tempPassword = `ART@${Math.random().toString(36).slice(2, 10)}1!`;
 
-  const user =
-    await User.create({
-      email:
-        candidate.email.toLowerCase(),
+  const user = await User.create({
+    email: candidate.email.toLowerCase(),
 
-      passwordHash:
-        bcrypt.hashSync(
-          tempPassword,
-          10,
-        ),
+    passwordHash: bcrypt.hashSync(tempPassword, 10),
 
-      role: role as any,
+    role: role as any,
 
-      isActive: true,
+    isActive: true,
 
-      mustResetPwd: true,
+    mustResetPwd: true,
 
-      createdAt: now,
+    createdAt: now,
 
-      updatedAt: now,
-    });
+    updatedAt: now,
+  });
 
-  const employeeCode =
-    `ART-${new Date().getFullYear()}-${String(
-      (await Employee.countDocuments()) + 1,
-    ).padStart(4, "0")}`;
+  const employeeCode = `ART-${new Date().getFullYear()}-${String(
+    (await Employee.countDocuments()) + 1,
+  ).padStart(4, "0")}`;
 
-  const employee =
-    await Employee.create({
-      employeeCode,
+  const employee = await Employee.create({
+    employeeCode,
 
-      userId:
-        user._id,
+    userId: user._id,
 
-      firstName:
-        candidate.firstName,
+    firstName: candidate.firstName,
 
-      lastName:
-        candidate.lastName,
+    lastName: candidate.lastName,
 
-      avatarUrl: null,
-      gender: null,
-      maritalStatus: null,
-      dateOfBirth: null,
+    avatarUrl: null,
+    gender: null,
+    maritalStatus: null,
+    dateOfBirth: null,
 
-      personalEmail:
-        candidate.email,
+    personalEmail: candidate.email,
 
-      phone:
-        candidate.phone,
+    phone: candidate.phone,
 
-      address: null,
-      city: null,
-      state: null,
-      country: "India",
+    address: null,
+    city: null,
+    state: null,
+    country: "India",
 
-      departmentId:
-        job.departmentId,
+    departmentId: job.departmentId,
 
-      designationId:
-        job.designationId,
+    designationId: job.designationId,
 
-      managerId: null,
+    managerId: null,
 
-      employmentType:
-        job.employmentType,
+    employmentType: job.employmentType,
 
-      status:
-        "ACTIVE",
+    status: "ACTIVE",
 
-      dateOfJoining:
-        candidate.offer.joiningDate ??
-        now,
+    dateOfJoining: candidate.offer.joiningDate ?? now,
 
-      dateOfExit: null,
+    dateOfExit: null,
 
-      emergencyContactName: null,
-      emergencyContactPhone: null,
-      emergencyContactRelationship: null,
-      emergencyContactEmail: null,
+    emergencyContactName: null,
+    emergencyContactPhone: null,
+    emergencyContactRelationship: null,
+    emergencyContactEmail: null,
 
-      employeeAadhaar: null,
-      employeePan: null,
+    employeeAadhaar: null,
+    employeePan: null,
 
-      createdAt: now,
-      updatedAt: now,
-    });
+    createdAt: now,
+    updatedAt: now,
+  });
 
-  candidate.hiredEmployeeId =
-    employee._id;
+  candidate.hiredEmployeeId = employee._id;
 
-  candidate.stage =
-    "HIRED";
+  candidate.stage = "HIRED";
 
   await candidate.save();
 
   return {
     ...(await getCandidate(id)),
 
-    employeeId:
-      employee._id,
+    employeeId: employee._id,
 
     employeeCode,
 
-    temporaryPassword:
-      tempPassword,
+    temporaryPassword: tempPassword,
 
-    departmentName:
-      department?.name ?? null,
+    departmentName: department?.name ?? null,
 
-    designationTitle:
-      designation?.title ?? null,
+    designationTitle: designation?.title ?? null,
   };
 }
 
@@ -2198,26 +1836,21 @@ export async function hireCandidate(
 // ===========================================================================
 
 export async function getPipelineSummary() {
-  const rows =
-    await Candidate.aggregate([
-      {
-        $group: {
-          _id: "$stage",
-          count: {
-            $sum: 1,
-          },
+  const rows = await Candidate.aggregate([
+    {
+      $group: {
+        _id: "$stage",
+        count: {
+          $sum: 1,
         },
       },
-    ]);
+    },
+  ]);
 
-  return (
-    rows as AnyDoc[]
-  ).map(
-    (row: AnyDoc) => ({
-      stage: row._id,
-      count: row.count,
-    }),
-  );
+  return (rows as AnyDoc[]).map((row: AnyDoc) => ({
+    stage: row._id,
+    count: row.count,
+  }));
 }
 
 export async function getOpenRolesCount() {
@@ -2293,15 +1926,7 @@ export async function getSourceAnalytics() {
           $sum: {
             $cond: [
               {
-                $in: [
-                  "$stage",
-                  [
-                    "SCREENING",
-                    "INTERVIEW",
-                    "OFFER",
-                    "HIRED",
-                  ],
-                ],
+                $in: ["$stage", ["SCREENING", "INTERVIEW", "OFFER", "HIRED"]],
               },
               1,
               0,
@@ -2312,14 +1937,7 @@ export async function getSourceAnalytics() {
           $sum: {
             $cond: [
               {
-                $in: [
-                  "$stage",
-                  [
-                    "INTERVIEW",
-                    "OFFER",
-                    "HIRED",
-                  ],
-                ],
+                $in: ["$stage", ["INTERVIEW", "OFFER", "HIRED"]],
               },
               1,
               0,
@@ -2332,19 +1950,10 @@ export async function getSourceAnalytics() {
               {
                 $or: [
                   {
-                    $in: [
-                      "$stage",
-                      [
-                        "OFFER",
-                        "HIRED",
-                      ],
-                    ],
+                    $in: ["$stage", ["OFFER", "HIRED"]],
                   },
                   {
-                    $eq: [
-                      "$offer.status",
-                      "ACCEPTED",
-                    ],
+                    $eq: ["$offer.status", "ACCEPTED"],
                   },
                 ],
               },
@@ -2357,10 +1966,7 @@ export async function getSourceAnalytics() {
           $sum: {
             $cond: [
               {
-                $eq: [
-                  "$offer.status",
-                  "ACCEPTED",
-                ],
+                $eq: ["$offer.status", "ACCEPTED"],
               },
               1,
               0,
@@ -2371,10 +1977,7 @@ export async function getSourceAnalytics() {
           $sum: {
             $cond: [
               {
-                $eq: [
-                  "$stage",
-                  "HIRED",
-                ],
+                $eq: ["$stage", "HIRED"],
               },
               1,
               0,
@@ -2391,50 +1994,31 @@ export async function getSourceAnalytics() {
     },
   ]);
 
-  return (rows as AnyDoc[]).map(
-    (row) => {
-      const applications =
-        Number(row.applications ?? 0);
+  return (rows as AnyDoc[]).map((row) => {
+    const applications = Number(row.applications ?? 0);
 
-      const hired =
-        Number(row.hired ?? 0);
+    const hired = Number(row.hired ?? 0);
 
-      const accepted =
-        Number(row.accepted ?? 0);
+    const accepted = Number(row.accepted ?? 0);
 
-      return {
-        source:
-          String(row._id ?? "Unknown"),
-        applications,
-        screening:
-          Number(row.screening ?? 0),
-        interviews:
-          Number(row.interviews ?? 0),
-        offers:
-          Number(row.offers ?? 0),
-        accepted,
-        hired,
-        hireConversionRate:
-          applications > 0
-            ? Number(
-                (
-                  (hired / applications) *
-                  100
-                ).toFixed(1),
-              )
-            : 0,
-        acceptanceRate:
-          applications > 0
-            ? Number(
-                (
-                  (accepted / applications) *
-                  100
-                ).toFixed(1),
-              )
-            : 0,
-      };
-    },
-  );
+    return {
+      source: String(row._id ?? "Unknown"),
+      applications,
+      screening: Number(row.screening ?? 0),
+      interviews: Number(row.interviews ?? 0),
+      offers: Number(row.offers ?? 0),
+      accepted,
+      hired,
+      hireConversionRate:
+        applications > 0
+          ? Number(((hired / applications) * 100).toFixed(1))
+          : 0,
+      acceptanceRate:
+        applications > 0
+          ? Number(((accepted / applications) * 100).toFixed(1))
+          : 0,
+    };
+  });
 }
 
 // ===========================================================================
@@ -2444,73 +2028,55 @@ export async function getSourceAnalytics() {
 // ===========================================================================
 
 export async function getReferralAnalytics() {
-  const [
-    totalReferrals,
-    inPipeline,
-    interviewed,
-    offers,
-    accepted,
-    hired,
-  ] = await Promise.all([
-    Candidate.countDocuments({
-      source: {
-        $regex: /^referral$/i,
-      },
-    }),
+  const [totalReferrals, inPipeline, interviewed, offers, accepted, hired] =
+    await Promise.all([
+      Candidate.countDocuments({
+        source: {
+          $regex: /^referral$/i,
+        },
+      }),
 
-    Candidate.countDocuments({
-      source: {
-        $regex: /^referral$/i,
-      },
-      stage: {
-        $in: [
-          "APPLIED",
-          "SCREENING",
-          "INTERVIEW",
-          "OFFER",
-        ],
-      },
-    }),
+      Candidate.countDocuments({
+        source: {
+          $regex: /^referral$/i,
+        },
+        stage: {
+          $in: ["APPLIED", "SCREENING", "INTERVIEW", "OFFER"],
+        },
+      }),
 
-    Candidate.countDocuments({
-      source: {
-        $regex: /^referral$/i,
-      },
-      stage: {
-        $in: [
-          "INTERVIEW",
-          "OFFER",
-          "HIRED",
-        ],
-      },
-    }),
+      Candidate.countDocuments({
+        source: {
+          $regex: /^referral$/i,
+        },
+        stage: {
+          $in: ["INTERVIEW", "OFFER", "HIRED"],
+        },
+      }),
 
-    Candidate.countDocuments({
-      source: {
-        $regex: /^referral$/i,
-      },
-      stage: {
-        $in: [
-          "OFFER",
-          "HIRED",
-        ],
-      },
-    }),
+      Candidate.countDocuments({
+        source: {
+          $regex: /^referral$/i,
+        },
+        stage: {
+          $in: ["OFFER", "HIRED"],
+        },
+      }),
 
-    Candidate.countDocuments({
-      source: {
-        $regex: /^referral$/i,
-      },
-      "offer.status": "ACCEPTED",
-    }),
+      Candidate.countDocuments({
+        source: {
+          $regex: /^referral$/i,
+        },
+        "offer.status": "ACCEPTED",
+      }),
 
-    Candidate.countDocuments({
-      source: {
-        $regex: /^referral$/i,
-      },
-      stage: "HIRED",
-    }),
-  ]);
+      Candidate.countDocuments({
+        source: {
+          $regex: /^referral$/i,
+        },
+        stage: "HIRED",
+      }),
+    ]);
 
   return {
     totalReferrals,
@@ -2521,12 +2087,7 @@ export async function getReferralAnalytics() {
     hired,
     conversionRate:
       totalReferrals > 0
-        ? Number(
-            (
-              (hired / totalReferrals) *
-              100
-            ).toFixed(1),
-          )
+        ? Number(((hired / totalReferrals) * 100).toFixed(1))
         : 0,
   };
 }
@@ -2536,187 +2097,132 @@ export async function getReferralAnalytics() {
 // ===========================================================================
 
 export async function getVolumeHiringAnalytics() {
-  const [walkIn, campus] =
-    await Promise.all([
-      Candidate.aggregate([
-        {
-          $match: {
-            source: {
-              $regex: /^walk-in$/i,
+  const [walkIn, campus] = await Promise.all([
+    Candidate.aggregate([
+      {
+        $match: {
+          source: {
+            $regex: /^walk-in$/i,
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          applications: {
+            $sum: 1,
+          },
+          screening: {
+            $sum: {
+              $cond: [
+                {
+                  $in: ["$stage", ["SCREENING", "INTERVIEW", "OFFER", "HIRED"]],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          interviewed: {
+            $sum: {
+              $cond: [
+                {
+                  $in: ["$stage", ["INTERVIEW", "OFFER", "HIRED"]],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          hired: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: ["$stage", "HIRED"],
+                },
+                1,
+                0,
+              ],
             },
           },
         },
-        {
-          $group: {
-            _id: null,
-            applications: {
-              $sum: 1,
-            },
-            screening: {
-              $sum: {
-                $cond: [
-                  {
-                    $in: [
-                      "$stage",
-                      [
-                        "SCREENING",
-                        "INTERVIEW",
-                        "OFFER",
-                        "HIRED",
-                      ],
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-            interviewed: {
-              $sum: {
-                $cond: [
-                  {
-                    $in: [
-                      "$stage",
-                      [
-                        "INTERVIEW",
-                        "OFFER",
-                        "HIRED",
-                      ],
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-            hired: {
-              $sum: {
-                $cond: [
-                  {
-                    $eq: [
-                      "$stage",
-                      "HIRED",
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-          },
-        },
-      ]),
+      },
+    ]),
 
-      Candidate.aggregate([
-        {
-          $match: {
-            source: {
-              $regex: /^campus$/i,
+    Candidate.aggregate([
+      {
+        $match: {
+          source: {
+            $regex: /^campus$/i,
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          applications: {
+            $sum: 1,
+          },
+          screening: {
+            $sum: {
+              $cond: [
+                {
+                  $in: ["$stage", ["SCREENING", "INTERVIEW", "OFFER", "HIRED"]],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          interviewed: {
+            $sum: {
+              $cond: [
+                {
+                  $in: ["$stage", ["INTERVIEW", "OFFER", "HIRED"]],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          hired: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: ["$stage", "HIRED"],
+                },
+                1,
+                0,
+              ],
             },
           },
         },
-        {
-          $group: {
-            _id: null,
-            applications: {
-              $sum: 1,
-            },
-            screening: {
-              $sum: {
-                $cond: [
-                  {
-                    $in: [
-                      "$stage",
-                      [
-                        "SCREENING",
-                        "INTERVIEW",
-                        "OFFER",
-                        "HIRED",
-                      ],
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-            interviewed: {
-              $sum: {
-                $cond: [
-                  {
-                    $in: [
-                      "$stage",
-                      [
-                        "INTERVIEW",
-                        "OFFER",
-                        "HIRED",
-                      ],
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-            hired: {
-              $sum: {
-                $cond: [
-                  {
-                    $eq: [
-                      "$stage",
-                      "HIRED",
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-          },
-        },
-      ]),
-    ]);
+      },
+    ]),
+  ]);
 
-  const normalize = (
-    rows: AnyDoc[],
-    source: string,
-  ) => {
+  const normalize = (rows: AnyDoc[], source: string) => {
     const row = rows[0] ?? {};
 
-    const applications =
-      Number(row.applications ?? 0);
+    const applications = Number(row.applications ?? 0);
 
-    const hired =
-      Number(row.hired ?? 0);
+    const hired = Number(row.hired ?? 0);
 
     return {
       source,
       applications,
-      screening:
-        Number(row.screening ?? 0),
-      interviewed:
-        Number(row.interviewed ?? 0),
+      screening: Number(row.screening ?? 0),
+      interviewed: Number(row.interviewed ?? 0),
       hired,
       conversionRate:
         applications > 0
-          ? Number(
-              (
-                (hired / applications) *
-                100
-              ).toFixed(1),
-            )
+          ? Number(((hired / applications) * 100).toFixed(1))
           : 0,
     };
   };
 
   return {
-    walkIn: normalize(
-      walkIn as AnyDoc[],
-      "Walk-in",
-    ),
-    campus: normalize(
-      campus as AnyDoc[],
-      "Campus",
-    ),
+    walkIn: normalize(walkIn as AnyDoc[], "Walk-in"),
+    campus: normalize(campus as AnyDoc[], "Campus"),
   };
 }

@@ -1,40 +1,20 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import {
-  Briefcase,
-  FileText,
-  MapPin,
-  Plus,
-  Users,
-} from "lucide-react";
-import {
-  RecruitmentApi,
-  OrganizationApi,
-} from "@/lib/endpoints";
+import { Briefcase, FileText, MapPin, Plus, Users } from "lucide-react";
+import { RecruitmentApi, OrganizationApi } from "@/lib/endpoints";
 import { api, getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
-import {
-  TextField,
-  SelectField,
-  TextareaField,
-} from "@/components/ui/Field";
+import { TextField, SelectField, TextareaField } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
-import {
-  Skeleton,
-  EmptyState,
-} from "@/components/ui/EmptyState";
+import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import {
   ResponsiveContainer,
   BarChart,
@@ -54,8 +34,7 @@ const ROLE_TEMPLATES = {
     label: "Engineering",
     description:
       "We are looking for a skilled engineering professional to design, develop, test, and maintain high-quality software solutions. The candidate will collaborate with cross-functional teams, participate in code reviews, and contribute to the continuous improvement of our products and engineering processes.",
-    skills:
-      "Problem Solving, Programming, System Design, Git, Communication",
+    skills: "Problem Solving, Programming, System Design, Git, Communication",
     approvalLevelRequired: 1,
   },
 
@@ -63,8 +42,7 @@ const ROLE_TEMPLATES = {
     label: "Data",
     description:
       "We are looking for a data professional to collect, analyze, transform, and manage data for business and technology initiatives. The candidate will work with stakeholders to build reliable data solutions and deliver meaningful insights.",
-    skills:
-      "SQL, Python, Data Analysis, Problem Solving, Communication",
+    skills: "SQL, Python, Data Analysis, Problem Solving, Communication",
     approvalLevelRequired: 1,
   },
 
@@ -133,13 +111,9 @@ const jobSchema = z
   .object({
     title: z.string().min(2, "Job title is required"),
 
-    departmentId: z
-      .string()
-      .min(1, "Department is required"),
+    departmentId: z.string().min(1, "Department is required"),
 
-    designationId: z
-      .string()
-      .min(1, "Designation is required"),
+    designationId: z.string().min(1, "Designation is required"),
 
     roleCategory: z.string().optional(),
 
@@ -147,12 +121,7 @@ const jobSchema = z
 
     location: z.string().optional(),
 
-    employmentType: z.enum([
-      "FULL_TIME",
-      "PART_TIME",
-      "CONTRACT",
-      "INTERN",
-    ]),
+    employmentType: z.enum(["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"]),
 
     experienceMin: z.coerce
       .number()
@@ -167,72 +136,60 @@ const jobSchema = z
       .int()
       .min(1, "At least one opening is required"),
 
-    budgetCtc: z.preprocess(
-      (value) => {
-        if (
-          value === "" ||
-          value === null ||
-          value === undefined
-        ) {
-          return undefined;
-        }
+    budgetCtc: z.preprocess((value) => {
+      if (value === "" || value === null || value === undefined) {
+        return undefined;
+      }
 
-        const numberValue = Number(value);
+      const numberValue = Number(value);
 
-        return Number.isNaN(numberValue)
-          ? undefined
-          : numberValue;
-      },
-      z
-        .number()
-        .min(0, "Budget cannot be negative")
-        .optional(),
-    ),
+      return Number.isNaN(numberValue) ? undefined : numberValue;
+    }, z.number().min(0, "Budget cannot be negative").optional()),
 
-    approvalLevelRequired: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(10),
+    approvalLevelRequired: z.coerce.number().int().min(1).max(10),
 
-    postingChannels: z
-      .array(z.string())
-      .default(["CAREERS"]),
+    postingChannels: z.array(z.string()).default(["CAREERS"]),
 
     screeningQuestionsText: z.string().optional(),
 
-    hiringMode: z.enum([
-      "STANDARD",
-      "WALK_IN",
-      "CAMPUS",
-    ]),
+    hiringMode: z.enum(["STANDARD", "WALK_IN", "CAMPUS"]),
     walkInDriveDate: z.string().optional(),
-walkInStartTime: z.string().optional(),
-walkInEndTime: z.string().optional(),
-walkInVenue: z.string().optional(),
-walkInCoordinatorName: z.string().optional(),
-walkInCoordinatorContact: z.string().optional(),
-walkInRegistrationDeadline: z.string().optional(),
-walkInExpectedCandidates: z.preprocess(
-  (value) => value === "" ? undefined : Number(value),
-  z.number().int().min(0).optional(),
-),
+    walkInStartTime: z.string().optional(),
+    walkInEndTime: z.string().optional(),
+    walkInVenue: z.string().optional(),
+    walkInCoordinatorName: z.string().optional(),
+    walkInCoordinatorContact: z.string().optional(),
+    walkInRegistrationDeadline: z.string().optional(),
+    walkInExpectedCandidates: z.preprocess((value) => {
+      if (value === "" || value === null || value === undefined) {
+        return undefined;
+      }
+      const numberValue = Number(value);
+      return Number.isNaN(numberValue) ? undefined : numberValue;
+    }, z.number().int().min(0).optional()),
 
-campusCollegeName: z.string().optional(),
-campusLocation: z.string().optional(),
-campusDriveDate: z.string().optional(),
-campusStartTime: z.string().optional(),
-campusEndTime: z.string().optional(),
-campusPlacementCoordinator: z.string().optional(),
-campusCoordinatorContact: z.string().optional(),
-campusExpectedCandidates: z.preprocess(
-  (value) => value === "" ? undefined : Number(value),
-  z.number().int().min(0).optional(),
-),
+    campusCollegeName: z.string().optional(),
+    campusLocation: z.string().optional(),
+    campusDriveDate: z.string().optional(),
+    campusStartTime: z.string().optional(),
+    campusEndTime: z.string().optional(),
+    campusPlacementCoordinator: z.string().optional(),
+    campusCoordinatorContact: z.string().optional(),
+    campusExpectedCandidates: z.preprocess((value) => {
+      if (value === "" || value === null || value === undefined) {
+        return undefined;
+      }
+      const numberValue = Number(value);
+      return Number.isNaN(numberValue) ? undefined : numberValue;
+    }, z.number().int().min(0).optional()),
 
     skillsText: z.string().optional(),
 
-    description: z.string().optional(),
+    description: z.preprocess((value) => {
+      if (typeof value !== "string") return value;
+      const trimmed = value.trim();
+      return trimmed === "" ? undefined : trimmed;
+    }, z.string().min(10, "Job description must contain at least 10 characters").optional()),
 
     shortlistingCriteria: z.object({
       enabled: z.boolean().default(false),
@@ -241,20 +198,13 @@ campusExpectedCandidates: z.preprocess(
       minimumExperience: z.coerce.number().min(0).default(0),
     }),
   })
-  .refine(
-    (data) =>
-      data.experienceMax >=
-      data.experienceMin,
-    {
-      message:
-        "Maximum experience must be greater than or equal to minimum experience",
-      path: ["experienceMax"],
-    },
-  );
-
+  .refine((data) => data.experienceMax >= data.experienceMin, {
+    message:
+      "Maximum experience must be greater than or equal to minimum experience",
+    path: ["experienceMax"],
+  });
 
 type JobForm = z.infer<typeof jobSchema>;
-
 
 /* =========================================================
    PIPELINE
@@ -277,17 +227,12 @@ export default function Recruitment() {
   const navigate = useNavigate();
   const [postOpen, setPostOpen] = useState(false);
 
-  const {
-    data: jobs,
-    isLoading,
-  } = useQuery({
+  const { data: jobs, isLoading } = useQuery({
     queryKey: ["recruitment", "jobs"],
     queryFn: () => RecruitmentApi.jobs(),
   });
 
-  const {
-    data: pipeline,
-  } = useQuery({
+  const { data: pipeline } = useQuery({
     queryKey: ["recruitment", "pipeline"],
     queryFn: RecruitmentApi.pipelineSummary,
   });
@@ -296,17 +241,19 @@ export default function Recruitment() {
     queryKey: ["recruitment", "analytics", "sources"],
     queryFn: () =>
       api
-        .get<{ data: Array<{
-          source: string;
-          applications: number;
-          screening: number;
-          interviews: number;
-          offers: number;
-          accepted: number;
-          hired: number;
-          hireConversionRate: number;
-          acceptanceRate: number;
-        }> }>("/recruitment/analytics/sources")
+        .get<{
+          data: Array<{
+            source: string;
+            applications: number;
+            screening: number;
+            interviews: number;
+            offers: number;
+            accepted: number;
+            hired: number;
+            hireConversionRate: number;
+            acceptanceRate: number;
+          }>;
+        }>("/recruitment/analytics/sources")
         .then((response) => response.data.data ?? []),
   });
 
@@ -314,15 +261,17 @@ export default function Recruitment() {
     queryKey: ["recruitment", "analytics", "referrals"],
     queryFn: () =>
       api
-        .get<{ data: {
-          totalReferrals: number;
-          inPipeline: number;
-          interviewed: number;
-          offers: number;
-          accepted: number;
-          hired: number;
-          conversionRate: number;
-        } }>("/recruitment/analytics/referrals")
+        .get<{
+          data: {
+            totalReferrals: number;
+            inPipeline: number;
+            interviewed: number;
+            offers: number;
+            accepted: number;
+            hired: number;
+            conversionRate: number;
+          };
+        }>("/recruitment/analytics/referrals")
         .then((response) => response.data.data),
   });
 
@@ -330,38 +279,34 @@ export default function Recruitment() {
     queryKey: ["recruitment", "analytics", "volume-hiring"],
     queryFn: () =>
       api
-        .get<{ data: {
-          walkIn: {
-            source: string;
-            applications: number;
-            screening: number;
-            interviewed: number;
-            hired: number;
-            conversionRate: number;
+        .get<{
+          data: {
+            walkIn: {
+              source: string;
+              applications: number;
+              screening: number;
+              interviewed: number;
+              hired: number;
+              conversionRate: number;
+            };
+            campus: {
+              source: string;
+              applications: number;
+              screening: number;
+              interviewed: number;
+              hired: number;
+              conversionRate: number;
+            };
           };
-          campus: {
-            source: string;
-            applications: number;
-            screening: number;
-            interviewed: number;
-            hired: number;
-            conversionRate: number;
-          };
-        } }>("/recruitment/analytics/volume-hiring")
+        }>("/recruitment/analytics/volume-hiring")
         .then((response) => response.data.data),
   });
 
   const pipelineData = useMemo(
     () =>
       STAGE_ORDER.map((stage) => ({
-        stage:
-          stage.charAt(0) +
-          stage.slice(1).toLowerCase(),
-        count:
-          pipeline?.find(
-            (item) =>
-              item.stage === stage,
-          )?.count ?? 0,
+        stage: stage.charAt(0) + stage.slice(1).toLowerCase(),
+        count: pipeline?.find((item) => item.stage === stage)?.count ?? 0,
       })),
     [pipeline],
   );
@@ -374,9 +319,7 @@ export default function Recruitment() {
         action={
           <Button
             leftIcon={<Plus size={16} />}
-            onClick={() =>
-              setPostOpen(true)
-            }
+            onClick={() => setPostOpen(true)}
           >
             Create requisition
           </Button>
@@ -389,15 +332,9 @@ export default function Recruitment() {
           subtitle="Candidates by stage across all recruitment roles"
         />
 
-        <ResponsiveContainer
-          width="100%"
-          height={180}
-        >
+        <ResponsiveContainer width="100%" height={180}>
           <BarChart data={pipelineData}>
-            <CartesianGrid
-              vertical={false}
-              stroke="#EFEEEB"
-            />
+            <CartesianGrid vertical={false} stroke="#EFEEEB" />
 
             <XAxis
               dataKey="stage"
@@ -414,17 +351,12 @@ export default function Recruitment() {
             <Tooltip
               contentStyle={{
                 borderRadius: 12,
-                border:
-                  "1px solid #E7E5E0",
+                border: "1px solid #E7E5E0",
                 fontSize: 13,
               }}
             />
 
-            <Bar
-              dataKey="count"
-              radius={[8, 8, 0, 0]}
-              fill="#5B4FE5"
-            />
+            <Bar dataKey="count" radius={[8, 8, 0, 0]} fill="#5B4FE5" />
           </BarChart>
         </ResponsiveContainer>
       </Card>
@@ -448,18 +380,36 @@ export default function Recruitment() {
                 </tr>
               </thead>
               <tbody>
-                {sourceAnalytics?.length ? sourceAnalytics.map((item) => (
-                  <tr key={item.source} className="border-b border-line/70 last:border-0">
-                    <td className="px-5 py-3 font-medium text-ink">{item.source}</td>
-                    <td className="px-3 py-3 text-ink-muted">{item.applications}</td>
-                    <td className="px-3 py-3 text-ink-muted">{item.interviews}</td>
-                    <td className="px-3 py-3 text-ink-muted">{item.offers}</td>
-                    <td className="px-3 py-3 text-ink-muted">{item.hired}</td>
-                    <td className="px-5 py-3 font-semibold text-ink">{item.hireConversionRate}%</td>
-                  </tr>
-                )) : (
+                {sourceAnalytics?.length ? (
+                  sourceAnalytics.map((item) => (
+                    <tr
+                      key={item.source}
+                      className="border-b border-line/70 last:border-0"
+                    >
+                      <td className="px-5 py-3 font-medium text-ink">
+                        {item.source}
+                      </td>
+                      <td className="px-3 py-3 text-ink-muted">
+                        {item.applications}
+                      </td>
+                      <td className="px-3 py-3 text-ink-muted">
+                        {item.interviews}
+                      </td>
+                      <td className="px-3 py-3 text-ink-muted">
+                        {item.offers}
+                      </td>
+                      <td className="px-3 py-3 text-ink-muted">{item.hired}</td>
+                      <td className="px-5 py-3 font-semibold text-ink">
+                        {item.hireConversionRate}%
+                      </td>
+                    </tr>
+                  ))
+                ) : (
                   <tr>
-                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-ink-faint">
+                    <td
+                      colSpan={6}
+                      className="px-5 py-8 text-center text-sm text-ink-faint"
+                    >
                       No source analytics available yet.
                     </td>
                   </tr>
@@ -471,7 +421,10 @@ export default function Recruitment() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Card>
-            <CardHeader title="Employee Referrals" subtitle="Referral pipeline performance" />
+            <CardHeader
+              title="Employee Referrals"
+              subtitle="Referral pipeline performance"
+            />
             <div className="grid grid-cols-2 gap-3">
               {[
                 ["Total", referralAnalytics?.totalReferrals ?? 0],
@@ -479,30 +432,52 @@ export default function Recruitment() {
                 ["Offers", referralAnalytics?.offers ?? 0],
                 ["Hired", referralAnalytics?.hired ?? 0],
               ].map(([label, value]) => (
-                <div key={String(label)} className="rounded-xl bg-canvas px-3 py-3">
-                  <p className="text-[10px] uppercase tracking-wide text-ink-faint">{label}</p>
+                <div
+                  key={String(label)}
+                  className="rounded-xl bg-canvas px-3 py-3"
+                >
+                  <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                    {label}
+                  </p>
                   <p className="mt-1 text-xl font-semibold text-ink">{value}</p>
                 </div>
               ))}
             </div>
             <p className="mt-4 text-xs text-ink-faint">
-              Hire conversion: <span className="font-semibold text-ink">{referralAnalytics?.conversionRate ?? 0}%</span>
+              Hire conversion:{" "}
+              <span className="font-semibold text-ink">
+                {referralAnalytics?.conversionRate ?? 0}%
+              </span>
             </p>
           </Card>
 
           <Card>
-            <CardHeader title="Volume Hiring" subtitle="Walk-in and campus recruitment" />
-            {[volumeHiringAnalytics?.walkIn, volumeHiringAnalytics?.campus].map((item, index) => (
-              <div key={item?.source ?? index} className="mb-3 last:mb-0 rounded-xl border border-line px-3 py-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-ink">{item?.source ?? (index === 0 ? "Walk-in" : "Campus")}</p>
-                  <p className="text-sm font-semibold text-ink">{item?.conversionRate ?? 0}%</p>
+            <CardHeader
+              title="Volume Hiring"
+              subtitle="Walk-in and campus recruitment"
+            />
+            {[volumeHiringAnalytics?.walkIn, volumeHiringAnalytics?.campus].map(
+              (item, index) => (
+                <div
+                  key={item?.source ?? index}
+                  className="mb-3 last:mb-0 rounded-xl border border-line px-3 py-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-ink">
+                      {item?.source ?? (index === 0 ? "Walk-in" : "Campus")}
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {item?.conversionRate ?? 0}%
+                    </p>
+                  </div>
+                  <p className="mt-1 text-xs text-ink-faint">
+                    {item?.applications ?? 0} applications ·{" "}
+                    {item?.interviewed ?? 0} interviews · {item?.hired ?? 0}{" "}
+                    hired
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-ink-faint">
-                  {item?.applications ?? 0} applications · {item?.interviewed ?? 0} interviews · {item?.hired ?? 0} hired
-                </p>
-              </div>
-            ))}
+              ),
+            )}
           </Card>
         </div>
       </div>
@@ -512,10 +487,7 @@ export default function Recruitment() {
           {Array.from({
             length: 6,
           }).map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-48 rounded-3xl"
-            />
+            <Skeleton key={index} className="h-48 rounded-3xl" />
           ))}
         </div>
       ) : !jobs?.length ? (
@@ -531,11 +503,7 @@ export default function Recruitment() {
               key={job.id}
               hoverable
               className="cursor-pointer"
-              onClick={() =>
-                navigate(
-                  `/app/recruitment/${job.id}`,
-                )
-              }
+              onClick={() => navigate(`/app/recruitment/${job.id}`)}
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -544,14 +512,11 @@ export default function Recruitment() {
                   </p>
 
                   <p className="mt-0.5 text-[12.5px] text-ink-faint">
-                    {job.departmentName} ·{" "}
-                    {job.designationTitle}
+                    {job.departmentName} · {job.designationTitle}
                   </p>
                 </div>
 
-                <StatusBadge
-                  status={job.status}
-                />
+                <StatusBadge status={job.status} />
               </div>
 
               <div className="mt-4 flex items-center gap-4 text-[12px] text-ink-faint">
@@ -567,18 +532,15 @@ export default function Recruitment() {
               </div>
 
               <div className="mt-3 text-[12px] text-ink-faint">
-                {job.experienceMin}–
-                {job.experienceMax} yrs exp ·{" "}
-                {job.openings} opening(s)
+                {job.experienceMin}–{job.experienceMax} yrs exp · {job.openings}{" "}
+                opening(s)
               </div>
 
               {job.requisitionStatus && (
                 <div className="mt-3 flex items-center gap-1.5 text-[11px] text-ink-faint">
                   <FileText size={12} />
                   Requisition:{" "}
-                  {String(
-                    job.requisitionStatus,
-                  )
+                  {String(job.requisitionStatus)
                     .replace(/_/g, " ")
                     .toLowerCase()}
                 </div>
@@ -588,12 +550,7 @@ export default function Recruitment() {
         </div>
       )}
 
-      <PostJobModal
-        open={postOpen}
-        onClose={() =>
-          setPostOpen(false)
-        }
-      />
+      <PostJobModal open={postOpen} onClose={() => setPostOpen(false)} />
     </div>
   );
 }
@@ -612,21 +569,15 @@ function PostJobModal({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  const {
-    data: departments,
-  } = useQuery({
+  const { data: departments } = useQuery({
     queryKey: ["departments"],
-    queryFn:
-      OrganizationApi.departments,
+    queryFn: OrganizationApi.departments,
     enabled: open,
   });
 
-  const {
-    data: designations,
-  } = useQuery({
+  const { data: designations } = useQuery({
     queryKey: ["designations"],
-    queryFn: () =>
-      OrganizationApi.designations(),
+    queryFn: () => OrganizationApi.designations(),
     enabled: open,
   });
 
@@ -656,69 +607,60 @@ function PostJobModal({
       screeningQuestionsText: "",
       hiringMode: "STANDARD",
       walkInDriveDate: "",
-walkInStartTime: "",
-walkInEndTime: "",
-walkInVenue: "",
-walkInCoordinatorName: "",
-walkInCoordinatorContact: "",
-walkInRegistrationDeadline: "",
-walkInExpectedCandidates: undefined,
+      walkInStartTime: "",
+      walkInEndTime: "",
+      walkInVenue: "",
+      walkInCoordinatorName: "",
+      walkInCoordinatorContact: "",
+      walkInRegistrationDeadline: "",
+      walkInExpectedCandidates: undefined,
 
-campusCollegeName: "",
-campusLocation: "",
-campusDriveDate: "",
-campusStartTime: "",
-campusEndTime: "",
-campusPlacementCoordinator: "",
-campusCoordinatorContact: "",
-campusExpectedCandidates: undefined,
+      campusCollegeName: "",
+      campusLocation: "",
+      campusDriveDate: "",
+      campusStartTime: "",
+      campusEndTime: "",
+      campusPlacementCoordinator: "",
+      campusCoordinatorContact: "",
+      campusExpectedCandidates: undefined,
       skillsText: "",
       description: "",
       shortlistingCriteria: {
-  enabled: false,
-  minimumJobFitScore: 60,
-  requiredSkillsText: "",
-  minimumExperience: 0,
-},
+        enabled: false,
+        minimumJobFitScore: 60,
+        requiredSkillsText: "",
+        minimumExperience: 0,
+      },
     },
   });
 
-  const selectedHiringMode =
-  watch("hiringMode");
+  const selectedHiringMode = watch("hiringMode");
 
-  const selectedChannels =
-    watch("postingChannels") ?? [];
+  const selectedChannels = watch("postingChannels") ?? [];
 
-  const selectedRoleCategory =
-    watch("roleCategory") ?? "";
+  const selectedRoleCategory = watch("roleCategory") ?? "";
 
-  const useTemplate =
-    watch("useTemplate");
+  const useTemplate = watch("useTemplate");
 
-  const selectedDepartmentId =
-    watch("departmentId");
+  const selectedDepartmentId = watch("departmentId");
 
   const filteredDesignations =
     designations?.filter(
       (designation: any) =>
         !selectedDepartmentId ||
         !designation.departmentId ||
-        designation.departmentId ===
-          selectedDepartmentId,
+        designation.departmentId === selectedDepartmentId,
     ) ?? [];
 
   const mutation = useMutation({
-    mutationFn:
-      RecruitmentApi.createJob,
+    mutationFn: RecruitmentApi.createJob,
 
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["recruitment"],
       });
 
-      showToast(
-        "Job requisition created successfully.",
-      );
+      showToast("Job requisition created successfully.");
 
       reset({
         title: "",
@@ -737,266 +679,194 @@ campusExpectedCandidates: undefined,
         screeningQuestionsText: "",
         hiringMode: "STANDARD",
 
-walkInDriveDate: "",
-walkInStartTime: "",
-walkInEndTime: "",
-walkInVenue: "",
-walkInCoordinatorName: "",
-walkInCoordinatorContact: "",
-walkInRegistrationDeadline: "",
-walkInExpectedCandidates: undefined,
+        walkInDriveDate: "",
+        walkInStartTime: "",
+        walkInEndTime: "",
+        walkInVenue: "",
+        walkInCoordinatorName: "",
+        walkInCoordinatorContact: "",
+        walkInRegistrationDeadline: "",
+        walkInExpectedCandidates: undefined,
 
-campusCollegeName: "",
-campusLocation: "",
-campusDriveDate: "",
-campusStartTime: "",
-campusEndTime: "",
-campusPlacementCoordinator: "",
-campusCoordinatorContact: "",
-campusExpectedCandidates: undefined,
+        campusCollegeName: "",
+        campusLocation: "",
+        campusDriveDate: "",
+        campusStartTime: "",
+        campusEndTime: "",
+        campusPlacementCoordinator: "",
+        campusCoordinatorContact: "",
+        campusExpectedCandidates: undefined,
 
-skillsText: "",
-description: "",
+        skillsText: "",
+        description: "",
+        shortlistingCriteria: {
+          enabled: false,
+          minimumJobFitScore: 60,
+          requiredSkillsText: "",
+          minimumExperience: 0,
+        },
       });
 
       onClose();
     },
 
     onError: (error) => {
-      showToast(
-        getErrorMessage(error),
-        "error",
-      );
+      showToast(getErrorMessage(error), "error");
     },
   });
 
-  const toggleChannel = (
-    channel: string,
-  ) => {
-    const current =
-      selectedChannels ?? [];
+  const toggleChannel = (channel: string) => {
+    const current = selectedChannels ?? [];
 
     if (current.includes(channel)) {
       setValue(
         "postingChannels",
-        current.filter(
-          (item) =>
-            item !== channel,
-        ),
+        current.filter((item) => item !== channel),
         {
           shouldDirty: true,
           shouldValidate: true,
         },
       );
     } else {
-      setValue(
-        "postingChannels",
-        [...current, channel],
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        },
-      );
+      setValue("postingChannels", [...current, channel], {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
     }
   };
 
-  const applyRoleTemplate = (
-    category: string,
-  ) => {
-    setValue(
-      "roleCategory",
-      category,
-      {
-        shouldDirty: true,
-      },
-    );
+  const applyRoleTemplate = (category: string) => {
+    setValue("roleCategory", category, {
+      shouldDirty: true,
+    });
 
-    if (
-      !category ||
-      !useTemplate
-    ) {
+    if (!category || !useTemplate) {
       return;
     }
 
-    const template =
-      ROLE_TEMPLATES[
-        category as RoleCategory
-      ];
+    const template = ROLE_TEMPLATES[category as RoleCategory];
 
     if (!template) {
       return;
     }
 
-    setValue(
-      "description",
-      template.description,
-      {
-        shouldDirty: true,
-        shouldValidate: true,
-      },
-    );
+    setValue("description", template.description, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
 
-    setValue(
-      "skillsText",
-      template.skills,
-      {
-        shouldDirty: true,
-      },
-    );
+    setValue("skillsText", template.skills, {
+      shouldDirty: true,
+    });
 
-    setValue(
-      "approvalLevelRequired",
-      template.approvalLevelRequired,
-      {
-        shouldDirty: true,
-      },
-    );
+    setValue("approvalLevelRequired", template.approvalLevelRequired, {
+      shouldDirty: true,
+    });
   };
 
-  const submitJob = (
-    values: JobForm,
-  ) => {
-    const screeningQuestions =
-      values.screeningQuestionsText
-        ? values.screeningQuestionsText
-            .split("\n")
-            .map((item) =>
-              item.trim(),
-            )
-            .filter(Boolean)
-        : [];
+  const submitJob = (values: JobForm) => {
+    const screeningQuestions = values.screeningQuestionsText
+      ? values.screeningQuestionsText
+          .split("\n")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
 
-    const skills =
-      values.skillsText
-        ? values.skillsText
-            .split(",")
-            .map((item) =>
-              item.trim(),
-            )
-            .filter(Boolean)
-        : [];
-        const shortlistingRequiredSkills =
-  values.shortlistingCriteria.requiredSkillsText
-    ? values.shortlistingCriteria.requiredSkillsText
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean)
-    : [];
+    const skills = values.skillsText
+      ? values.skillsText
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
+    const shortlistingRequiredSkills = values.shortlistingCriteria
+      .requiredSkillsText
+      ? values.shortlistingCriteria.requiredSkillsText
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
 
     const payload = {
-      title:
-        values.title.trim(),
+      title: values.title.trim(),
 
-      departmentId:
-        values.departmentId,
+      departmentId: values.departmentId,
 
-      designationId:
-        values.designationId,
+      designationId: values.designationId,
 
-      roleCategory:
-        values.roleCategory ||
-        undefined,
+      roleCategory: values.roleCategory || undefined,
 
-      useTemplate:
-        values.useTemplate,
+      useTemplate: values.useTemplate,
 
-      location:
-        values.location?.trim() ||
-        "Bengaluru, India",
+      location: values.location?.trim() || "Bengaluru, India",
 
-      employmentType:
-        values.employmentType,
+      employmentType: values.employmentType,
 
-      experienceMin:
-        values.experienceMin,
+      experienceMin: values.experienceMin,
 
-      experienceMax:
-        values.experienceMax,
+      experienceMax: values.experienceMax,
 
-      description:
-        values.description?.trim() ||
-        undefined,
+      description: values.description?.trim() || undefined,
 
-      openings:
-        values.openings,
+      openings: values.openings,
 
-      headcount:
-        values.openings,
+      headcount: values.openings,
 
-      budgetCtc:
-        values.budgetCtc,
+      budgetCtc: values.budgetCtc,
 
-      approvalLevelRequired:
-        values.approvalLevelRequired,
+      approvalLevelRequired: values.approvalLevelRequired,
 
-      postingChannels:
-        values.postingChannels.length
-          ? values.postingChannels
-          : ["CAREERS"],
+      postingChannels: values.postingChannels.length
+        ? values.postingChannels
+        : ["CAREERS"],
 
       screeningQuestions,
 
-      hiringMode:
-  values.hiringMode,
+      hiringMode: values.hiringMode,
 
-walkInDrive:
-  values.hiringMode === "WALK_IN"
-    ? {
-        driveDate:
-          values.walkInDriveDate || null,
+      walkInDrive:
+        values.hiringMode === "WALK_IN"
+          ? {
+              driveDate: values.walkInDriveDate || null,
 
-        startTime:
-          values.walkInStartTime || null,
+              startTime: values.walkInStartTime || null,
 
-        endTime:
-          values.walkInEndTime || null,
+              endTime: values.walkInEndTime || null,
 
-        venue:
-          values.walkInVenue?.trim() || null,
+              venue: values.walkInVenue?.trim() || null,
 
-        coordinatorName:
-          values.walkInCoordinatorName?.trim() || null,
+              coordinatorName: values.walkInCoordinatorName?.trim() || null,
 
-        coordinatorContact:
-          values.walkInCoordinatorContact?.trim() || null,
+              coordinatorContact:
+                values.walkInCoordinatorContact?.trim() || null,
 
-        registrationDeadline:
-          values.walkInRegistrationDeadline || null,
+              registrationDeadline: values.walkInRegistrationDeadline || null,
 
-        expectedCandidates:
-          values.walkInExpectedCandidates ?? null,
-      }
-    : null,
+              expectedCandidates: values.walkInExpectedCandidates ?? null,
+            }
+          : null,
 
-campusDrive:
-  values.hiringMode === "CAMPUS"
-    ? {
-        collegeName:
-          values.campusCollegeName?.trim() || null,
+      campusDrive:
+        values.hiringMode === "CAMPUS"
+          ? {
+              collegeName: values.campusCollegeName?.trim() || null,
 
-        campusLocation:
-          values.campusLocation?.trim() || null,
+              campusLocation: values.campusLocation?.trim() || null,
 
-        driveDate:
-          values.campusDriveDate || null,
+              driveDate: values.campusDriveDate || null,
 
-        startTime:
-          values.campusStartTime || null,
+              startTime: values.campusStartTime || null,
 
-        endTime:
-          values.campusEndTime || null,
+              endTime: values.campusEndTime || null,
 
-        placementCoordinator:
-          values.campusPlacementCoordinator?.trim() || null,
+              placementCoordinator:
+                values.campusPlacementCoordinator?.trim() || null,
 
-        coordinatorContact:
-          values.campusCoordinatorContact?.trim() || null,
+              coordinatorContact:
+                values.campusCoordinatorContact?.trim() || null,
 
-        expectedCandidates:
-          values.campusExpectedCandidates ?? null,
-      }
-    : null,
-
+              expectedCandidates: values.campusExpectedCandidates ?? null,
+            }
+          : null,
 
       shortlistingCriteria: {
         enabled: values.shortlistingCriteria.enabled,
@@ -1005,12 +875,11 @@ campusDrive:
         minimumExperience: values.shortlistingCriteria.minimumExperience,
       },
 
-skills,
+      skills,
     };
 
-    mutation.mutate(
-      payload as any,
-    );
+    if (mutation.isPending) return;
+    mutation.mutate(payload as any);
   };
 
   return (
@@ -1024,20 +893,25 @@ skills,
           <Button
             variant="outline"
             onClick={onClose}
-            disabled={
-              mutation.isPending
-            }
+            disabled={mutation.isPending}
           >
             Cancel
           </Button>
 
           <Button
-            onClick={handleSubmit(
-              submitJob,
-            )}
-            isLoading={
-              mutation.isPending
-            }
+            type="button"
+            onClick={handleSubmit(submitJob, (validationErrors) => {
+              console.error(
+                "Create requisition validation failed:",
+                validationErrors,
+              );
+              showToast(
+                "Please fix the highlighted fields before submitting.",
+                "error",
+              );
+            })}
+            isLoading={mutation.isPending}
+            disabled={mutation.isPending}
           >
             Submit Requisition
           </Button>
@@ -1045,10 +919,18 @@ skills,
       }
     >
       <form
+        id="create-job-requisition-form"
         className="grid gap-5 sm:grid-cols-2"
-        onSubmit={handleSubmit(
-          submitJob,
-        )}
+        onSubmit={handleSubmit(submitJob, (validationErrors) => {
+          console.error(
+            "Create requisition validation failed:",
+            validationErrors,
+          );
+          showToast(
+            "Please fix the highlighted fields before submitting.",
+            "error",
+          );
+        })}
       >
         <div className="sm:col-span-2">
           <p className="mb-1 text-sm font-semibold text-ink">
@@ -1056,9 +938,8 @@ skills,
           </p>
 
           <p className="text-xs text-ink-faint">
-            Define the role,
-            organizational details and
-            recruitment requirements.
+            Define the role, organizational details and recruitment
+            requirements.
           </p>
         </div>
 
@@ -1073,123 +954,65 @@ skills,
         <SelectField
           label="Department"
           required
-          error={
-            errors.departmentId?.message
-          }
+          error={errors.departmentId?.message}
           {...register("departmentId", {
             onChange: () => {
-              setValue(
-                "designationId",
-                "",
-                {
-                  shouldDirty: true,
-                },
-              );
+              setValue("designationId", "", {
+                shouldDirty: true,
+              });
             },
           })}
         >
-          <option value="">
-            Select department
-          </option>
+          <option value="">Select department</option>
 
-          {departments?.map(
-            (department) => (
-              <option
-                key={department.id}
-                value={department.id}
-              >
-                {department.name}
-              </option>
-            ),
-          )}
+          {departments?.map((department) => (
+            <option key={department.id} value={department.id}>
+              {department.name}
+            </option>
+          ))}
         </SelectField>
 
         <SelectField
           label="Designation"
           required
-          error={
-            errors.designationId?.message
-          }
-          {...register(
-            "designationId",
-          )}
+          error={errors.designationId?.message}
+          {...register("designationId")}
         >
-          <option value="">
-            Select designation
-          </option>
+          <option value="">Select designation</option>
 
-          {filteredDesignations.map(
-            (designation: any) => (
-              <option
-                key={
-                  designation.id
-                }
-                value={
-                  designation.id
-                }
-              >
-                {
-                  designation.title
-                }
-              </option>
-            ),
-          )}
+          {filteredDesignations.map((designation: any) => (
+            <option key={designation.id} value={designation.id}>
+              {designation.title}
+            </option>
+          ))}
         </SelectField>
 
         <SelectField
           label="Role category"
-          value={
-            selectedRoleCategory
-          }
-          onChange={(event) =>
-            applyRoleTemplate(
-              event.target.value,
-            )
-          }
+          value={selectedRoleCategory}
+          onChange={(event) => applyRoleTemplate(event.target.value)}
         >
-          <option value="">
-            Auto detect from job title
-          </option>
+          <option value="">Auto detect from job title</option>
 
-          {Object.entries(
-            ROLE_TEMPLATES,
-          ).map(
-            ([
-              value,
-              template,
-            ]) => (
-              <option
-                key={value}
-                value={value}
-              >
-                {template.label}
-              </option>
-            ),
-          )}
+          {Object.entries(ROLE_TEMPLATES).map(([value, template]) => (
+            <option key={value} value={value}>
+              {template.label}
+            </option>
+          ))}
         </SelectField>
 
         <SelectField
           label="Employment type"
           required
-          {...register(
-            "employmentType",
-          )}
+          {...register("employmentType")}
         >
-          <option value="FULL_TIME">
-            Full Time
-          </option>
+          <option value="FULL_TIME">Full Time</option>
 
-          <option value="PART_TIME">
-            Part Time
-          </option>
+          <option value="PART_TIME">Part Time</option>
 
-          <option value="CONTRACT">
-            Contract
-          </option>
+          <option value="CONTRACT">Contract</option>
 
-          <option value="INTERN">
-            Intern
-          </option>
+          <option value="INTERN">Intern</option>
         </SelectField>
 
         <div className="sm:col-span-2">
@@ -1198,38 +1021,25 @@ skills,
               type="checkbox"
               checked={useTemplate}
               onChange={(event) => {
-                const checked =
-                  event.target.checked;
+                const checked = event.target.checked;
 
-                setValue(
-                  "useTemplate",
-                  checked,
-                  {
-                    shouldDirty: true,
-                  },
-                );
+                setValue("useTemplate", checked, {
+                  shouldDirty: true,
+                });
 
-                if (
-                  checked &&
-                  selectedRoleCategory
-                ) {
-                  applyRoleTemplate(
-                    selectedRoleCategory,
-                  );
+                if (checked && selectedRoleCategory) {
+                  applyRoleTemplate(selectedRoleCategory);
                 }
               }}
               className="h-4 w-4"
             />
 
             <div>
-              <p className="text-sm font-medium text-ink">
-                Use role template
-              </p>
+              <p className="text-sm font-medium text-ink">Use role template</p>
 
               <p className="text-xs text-ink-faint">
-                Automatically fill the job
-                description and suggested
-                skills from the selected role.
+                Automatically fill the job description and suggested skills from
+                the selected role.
               </p>
             </div>
           </label>
@@ -1249,9 +1059,7 @@ skills,
           </p>
 
           <p className="text-xs text-ink-faint">
-            Specify headcount,
-            experience and compensation
-            requirements.
+            Specify headcount, experience and compensation requirements.
           </p>
         </div>
 
@@ -1260,9 +1068,7 @@ skills,
           type="number"
           min="1"
           required
-          error={
-            errors.openings?.message
-          }
+          error={errors.openings?.message}
           {...register("openings")}
         />
 
@@ -1271,9 +1077,7 @@ skills,
           type="number"
           min="0"
           placeholder="Optional"
-          error={
-            errors.budgetCtc?.message
-          }
+          error={errors.budgetCtc?.message}
           {...register("budgetCtc")}
         />
 
@@ -1282,13 +1086,8 @@ skills,
           type="number"
           min="0"
           required
-          error={
-            errors.experienceMin
-              ?.message
-          }
-          {...register(
-            "experienceMin",
-          )}
+          error={errors.experienceMin?.message}
+          {...register("experienceMin")}
         />
 
         <TextField
@@ -1296,13 +1095,8 @@ skills,
           type="number"
           min="0"
           required
-          error={
-            errors.experienceMax
-              ?.message
-          }
-          {...register(
-            "experienceMax",
-          )}
+          error={errors.experienceMax?.message}
+          {...register("experienceMax")}
         />
 
         <div className="sm:col-span-2 mt-1">
@@ -1311,336 +1105,262 @@ skills,
           </p>
 
           <p className="text-xs text-ink-faint">
-            Senior and management roles
-            may automatically require
-            additional approval levels.
+            Senior and management roles may automatically require additional
+            approval levels.
           </p>
         </div>
 
         <SelectField
           label="Approval levels required"
           required
-          error={
-            errors
-              .approvalLevelRequired
-              ?.message
-          }
-          {...register(
-            "approvalLevelRequired",
-          )}
+          error={errors.approvalLevelRequired?.message}
+          {...register("approvalLevelRequired")}
         >
-          <option value="1">
-            1 level
-          </option>
+          <option value="1">1 level</option>
 
-          <option value="2">
-            2 levels
-          </option>
+          <option value="2">2 levels</option>
 
-          <option value="3">
-            3 levels
-          </option>
+          <option value="3">3 levels</option>
 
-          <option value="4">
-            4 levels
-          </option>
+          <option value="4">4 levels</option>
 
-          <option value="5">
-            5 levels
-          </option>
+          <option value="5">5 levels</option>
         </SelectField>
 
         {selectedHiringMode === "WALK_IN" && (
-  <div className="sm:col-span-2 grid gap-5 rounded-xl border border-line bg-canvas p-4 sm:grid-cols-2">
-    <div className="sm:col-span-2">
-      <p className="text-sm font-semibold text-ink">
-        Walk-in Drive Details
-      </p>
+          <div className="sm:col-span-2 grid gap-5 rounded-xl border border-line bg-canvas p-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <p className="text-sm font-semibold text-ink">
+                Walk-in Drive Details
+              </p>
 
-      <p className="mt-1 text-xs text-ink-faint">
-        Configure the venue, schedule and coordinator details for the walk-in drive.
-      </p>
-    </div>
+              <p className="mt-1 text-xs text-ink-faint">
+                Configure the venue, schedule and coordinator details for the
+                walk-in drive.
+              </p>
+            </div>
 
-    <TextField
-      label="Drive date"
-      type="date"
-      required
-      {...register("walkInDriveDate")}
-    />
+            <TextField
+              label="Drive date"
+              type="date"
+              required
+              {...register("walkInDriveDate")}
+            />
 
-    <TextField
-      label="Expected candidates"
-      type="number"
-      min="0"
-      placeholder="100"
-      {...register("walkInExpectedCandidates")}
-    />
+            <TextField
+              label="Expected candidates"
+              type="number"
+              min="0"
+              placeholder="100"
+              {...register("walkInExpectedCandidates")}
+            />
 
-    <TextField
-      label="Start time"
-      type="time"
-      required
-      {...register("walkInStartTime")}
-    />
+            <TextField
+              label="Start time"
+              type="time"
+              required
+              {...register("walkInStartTime")}
+            />
 
-    <TextField
-      label="End time"
-      type="time"
-      required
-      {...register("walkInEndTime")}
-    />
+            <TextField
+              label="End time"
+              type="time"
+              required
+              {...register("walkInEndTime")}
+            />
 
-    <TextField
-      label="Venue"
-      required
-      className="sm:col-span-2"
-      placeholder="Office address or walk-in venue"
-      {...register("walkInVenue")}
-    />
+            <TextField
+              label="Venue"
+              required
+              className="sm:col-span-2"
+              placeholder="Office address or walk-in venue"
+              {...register("walkInVenue")}
+            />
 
-    <TextField
-      label="Coordinator name"
-      required
-      placeholder="HR / Recruitment coordinator"
-      {...register("walkInCoordinatorName")}
-    />
+            <TextField
+              label="Coordinator name"
+              required
+              placeholder="HR / Recruitment coordinator"
+              {...register("walkInCoordinatorName")}
+            />
 
-    <TextField
-      label="Coordinator contact"
-      required
-      placeholder="Phone number or email"
-      {...register("walkInCoordinatorContact")}
-    />
+            <TextField
+              label="Coordinator contact"
+              required
+              placeholder="Phone number or email"
+              {...register("walkInCoordinatorContact")}
+            />
 
-    <TextField
-      label="Registration deadline"
-      type="date"
-      {...register("walkInRegistrationDeadline")}
-    />
-  </div>
-)}
-<div className="sm:col-span-2 mt-2 rounded-2xl border border-line bg-surface p-4">
-  <div className="flex items-start justify-between gap-4">
-    <div>
-      <p className="text-sm font-semibold text-ink">
-        Automated Shortlisting
-      </p>
-
-      <p className="mt-1 text-xs text-ink-faint">
-        Automatically recommend candidates based on
-        job-fit score, required skills and experience.
-      </p>
-    </div>
-
-    <label className="flex items-center gap-2 text-sm text-ink">
-      <input
-        type="checkbox"
-        {...register(
-          "shortlistingCriteria.enabled",
+            <TextField
+              label="Registration deadline"
+              type="date"
+              {...register("walkInRegistrationDeadline")}
+            />
+          </div>
         )}
-      />
-      Enable
-    </label>
-  </div>
+        <div className="sm:col-span-2 mt-2 rounded-2xl border border-line bg-surface p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-ink">
+                Automated Shortlisting
+              </p>
 
-  <div className="mt-4 grid gap-4 sm:grid-cols-3">
-    <TextField
-      label="Minimum Job Fit Score"
-      type="number"
-      min="0"
-      max="100"
-      error={
-        errors.shortlistingCriteria
-          ?.minimumJobFitScore?.message
-      }
-      {...register(
-        "shortlistingCriteria.minimumJobFitScore",
-      )}
-    />
+              <p className="mt-1 text-xs text-ink-faint">
+                Automatically recommend candidates based on job-fit score,
+                required skills and experience.
+              </p>
+            </div>
 
-    <TextField
-      label="Minimum Experience (Years)"
-      type="number"
-      min="0"
-      error={
-        errors.shortlistingCriteria
-          ?.minimumExperience?.message
-      }
-      {...register(
-        "shortlistingCriteria.minimumExperience",
-      )}
-    />
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                {...register("shortlistingCriteria.enabled")}
+              />
+              Enable
+            </label>
+          </div>
 
-    <TextField
-      label="Required Skills"
-      placeholder="React, TypeScript, Node.js"
-      error={
-        errors.shortlistingCriteria
-          ?.requiredSkillsText?.message
-      }
-      {...register(
-        "shortlistingCriteria.requiredSkillsText",
-      )}
-    />
-  </div>
-</div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <TextField
+              label="Minimum Job Fit Score"
+              type="number"
+              min="0"
+              max="100"
+              error={errors.shortlistingCriteria?.minimumJobFitScore?.message}
+              {...register("shortlistingCriteria.minimumJobFitScore")}
+            />
 
-{selectedHiringMode === "CAMPUS" && (
-  <div className="sm:col-span-2 grid gap-5 rounded-xl border border-line bg-canvas p-4 sm:grid-cols-2">
-    <div className="sm:col-span-2">
-      <p className="text-sm font-semibold text-ink">
-        Campus Drive Details
-      </p>
+            <TextField
+              label="Minimum Experience (Years)"
+              type="number"
+              min="0"
+              error={errors.shortlistingCriteria?.minimumExperience?.message}
+              {...register("shortlistingCriteria.minimumExperience")}
+            />
 
-      <p className="mt-1 text-xs text-ink-faint">
-        Configure the college, campus location, drive schedule and placement coordinator.
-      </p>
-    </div>
+            <TextField
+              label="Required Skills"
+              placeholder="React, TypeScript, Node.js"
+              error={errors.shortlistingCriteria?.requiredSkillsText?.message}
+              {...register("shortlistingCriteria.requiredSkillsText")}
+            />
+          </div>
+        </div>
 
-    <TextField
-      label="College name"
-      required
-      className="sm:col-span-2"
-      placeholder="Enter college or university name"
-      {...register("campusCollegeName")}
-    />
+        {selectedHiringMode === "CAMPUS" && (
+          <div className="sm:col-span-2 grid gap-5 rounded-xl border border-line bg-canvas p-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <p className="text-sm font-semibold text-ink">
+                Campus Drive Details
+              </p>
 
-    <TextField
-      label="Campus location"
-      required
-      placeholder="City, State"
-      {...register("campusLocation")}
-    />
+              <p className="mt-1 text-xs text-ink-faint">
+                Configure the college, campus location, drive schedule and
+                placement coordinator.
+              </p>
+            </div>
 
-    <TextField
-      label="Expected candidates"
-      type="number"
-      min="0"
-      placeholder="100"
-      {...register("campusExpectedCandidates")}
-    />
+            <TextField
+              label="College name"
+              required
+              className="sm:col-span-2"
+              placeholder="Enter college or university name"
+              {...register("campusCollegeName")}
+            />
 
-    <TextField
-      label="Drive date"
-      type="date"
-      required
-      {...register("campusDriveDate")}
-    />
+            <TextField
+              label="Campus location"
+              required
+              placeholder="City, State"
+              {...register("campusLocation")}
+            />
 
-    <TextField
-      label="Start time"
-      type="time"
-      required
-      {...register("campusStartTime")}
-    />
+            <TextField
+              label="Expected candidates"
+              type="number"
+              min="0"
+              placeholder="100"
+              {...register("campusExpectedCandidates")}
+            />
 
-    <TextField
-      label="End time"
-      type="time"
-      required
-      {...register("campusEndTime")}
-    />
+            <TextField
+              label="Drive date"
+              type="date"
+              required
+              {...register("campusDriveDate")}
+            />
 
-    <TextField
-      label="Placement coordinator"
-      required
-      placeholder="Coordinator name"
-      {...register("campusPlacementCoordinator")}
-    />
+            <TextField
+              label="Start time"
+              type="time"
+              required
+              {...register("campusStartTime")}
+            />
 
-    <TextField
-      label="Coordinator contact"
-      required
-      placeholder="Phone number or email"
-      {...register("campusCoordinatorContact")}
-    />
-  </div>
-)}
+            <TextField
+              label="End time"
+              type="time"
+              required
+              {...register("campusEndTime")}
+            />
 
-        <SelectField
-          label="Hiring mode"
-          required
-          {...register(
-            "hiringMode",
-          )}
-        >
-          <option value="STANDARD">
-            Standard recruitment
-          </option>
+            <TextField
+              label="Placement coordinator"
+              required
+              placeholder="Coordinator name"
+              {...register("campusPlacementCoordinator")}
+            />
 
-          <option value="WALK_IN">
-            Walk-in recruitment
-          </option>
+            <TextField
+              label="Coordinator contact"
+              required
+              placeholder="Phone number or email"
+              {...register("campusCoordinatorContact")}
+            />
+          </div>
+        )}
 
-          <option value="CAMPUS">
-            Campus recruitment
-          </option>
+        <SelectField label="Hiring mode" required {...register("hiringMode")}>
+          <option value="STANDARD">Standard recruitment</option>
+
+          <option value="WALK_IN">Walk-in recruitment</option>
+
+          <option value="CAMPUS">Campus recruitment</option>
         </SelectField>
 
         <div className="sm:col-span-2">
-          <p className="mb-2 text-sm font-medium text-ink">
-            Posting channels
-          </p>
+          <p className="mb-2 text-sm font-medium text-ink">Posting channels</p>
 
           <div className="grid gap-2 sm:grid-cols-2">
             {[
-              [
-                "CAREERS",
-                "Company Careers Page",
-              ],
-              [
-                "LINKEDIN",
-                "LinkedIn",
-              ],
-              [
-                "NAUKRI",
-                "Naukri",
-              ],
-              [
-                "INDEED",
-                "Indeed",
-              ],
-              [
-                "REFERRALS",
-                "Employee Referrals",
-              ],
-            ].map(
-              ([value, label]) => {
-                const checked =
-                  selectedChannels.includes(
-                    value,
-                  );
+              ["CAREERS", "Company Careers Page"],
+              ["LINKEDIN", "LinkedIn"],
+              ["NAUKRI", "Naukri"],
+              ["INDEED", "Indeed"],
+              ["REFERRALS", "Employee Referrals"],
+            ].map(([value, label]) => {
+              const checked = selectedChannels.includes(value);
 
-                return (
-                  <label
-                    key={value}
-                    className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition ${
-                      checked
-                        ? "border-brand-300 bg-brand-50"
-                        : "border-line hover:bg-canvas"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={
-                        checked
-                      }
-                      onChange={() =>
-                        toggleChannel(
-                          value,
-                        )
-                      }
-                      className="h-4 w-4"
-                    />
+              return (
+                <label
+                  key={value}
+                  className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition ${
+                    checked
+                      ? "border-brand-300 bg-brand-50"
+                      : "border-line hover:bg-canvas"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleChannel(value)}
+                    className="h-4 w-4"
+                  />
 
-                    <span>
-                      {label}
-                    </span>
-                  </label>
-                );
-              },
-            )}
+                  <span>{label}</span>
+                </label>
+              );
+            })}
           </div>
         </div>
 
@@ -1648,16 +1368,12 @@ skills,
           label="Required skills"
           placeholder="React, Node.js, MongoDB"
           className="sm:col-span-2"
-          {...register(
-            "skillsText",
-          )}
+          {...register("skillsText")}
         />
 
         <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
-          Separate skills with commas.
-          These skills are used by the
-          AI-assisted candidate screening
-          system.
+          Separate skills with commas. These skills are used by the AI-assisted
+          candidate screening system.
         </p>
 
         <TextareaField
@@ -1666,14 +1382,8 @@ skills,
             "Do you have 4+ years of experience?\nAre you willing to relocate?"
           }
           className="sm:col-span-2"
-          error={
-            errors
-              .screeningQuestionsText
-              ?.message
-          }
-          {...register(
-            "screeningQuestionsText",
-          )}
+          error={errors.screeningQuestionsText?.message}
+          {...register("screeningQuestionsText")}
         />
 
         <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
@@ -1683,20 +1393,14 @@ skills,
         <TextareaField
           label="Job description"
           className="sm:col-span-2"
-          error={
-            errors.description?.message
-          }
+          error={errors.description?.message}
           placeholder="Describe responsibilities, qualifications, expectations and other requirements. You can also select a role category and use the automatic template."
-          {...register(
-            "description",
-          )}
+          {...register("description")}
         />
 
         <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
-          When role templates are enabled,
-          the backend can automatically use
-          the selected template if no
-          description is entered.
+          When role templates are enabled, the backend can automatically use the
+          selected template if no description is entered.
         </p>
       </form>
     </Modal>

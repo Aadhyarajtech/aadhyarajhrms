@@ -379,30 +379,40 @@ export const RecruitmentApi = {
     api
       .post<{ candidate: Candidate }>("/recruitment/candidates", payload)
       .then((r) => r.data.candidate),
-      updateCandidate: (
-  id: string,
-  payload: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone?: string;
-    expectedCtc?: number;
-    source?: string;
-  },
-) =>
-  api
-    .patch<{ candidate: Candidate }>(
-      `/recruitment/candidates/${id}`,
-      payload,
-    )
-    .then((r) => r.data.candidate),
 
-deleteCandidate: (id: string) =>
-  api
-    .delete<{ id: string; deleted: boolean }>(
-      `/recruitment/candidates/${id}`,
-    )
-    .then((r) => r.data),
+  uploadResume: (id: string, file: File) => {
+    const form = new FormData();
+    form.append("resume", file);
+
+    return api
+      .post<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/resume/upload`, form, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+      .then((r) => r.data.candidate);
+  },
+  updateCandidate: (
+    id: string,
+    payload: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone?: string;
+      expectedCtc?: number;
+      source?: string;
+    },
+  ) =>
+    api
+      .patch<{ candidate: Candidate }>(`/recruitment/candidates/${id}`, payload)
+      .then((r) => r.data.candidate),
+
+  deleteCandidate: (id: string) =>
+    api
+      .delete<{ id: string; deleted: boolean }>(`/recruitment/candidates/${id}`)
+      .then((r) => r.data),
 
   moveStage: (id: string, stage: string) =>
     api
@@ -417,19 +427,13 @@ deleteCandidate: (id: string) =>
         candidate: Candidate;
       }>(`/recruitment/candidates/${id}/rating`, { rating })
       .then((r) => r.data.candidate),
-      screenCandidate: (
-  id: string,
-  resumeText?: string,
-) =>
-  api
-    .post<{
-      candidate: Candidate;
-      message: string;
-    }>(
-      `/recruitment/candidates/${id}/screen`,
-      { resumeText },
-    )
-    .then((r) => r.data.candidate),
+  screenCandidate: (id: string, resumeText?: string) =>
+    api
+      .post<{
+        candidate: Candidate;
+        message: string;
+      }>(`/recruitment/candidates/${id}/screen`, { resumeText })
+      .then((r) => r.data.candidate),
 
   interviews: (candidateId?: string) =>
     api
@@ -545,7 +549,7 @@ deleteCandidate: (id: string) =>
       }>("/recruitment/analytics/pipeline")
       .then((r) => r.data.data),
 
-    openRoles: () =>
+  openRoles: () =>
     api
       .get<{ count: number }>("/recruitment/analytics/open-roles")
       .then((r) => r.data.count),
