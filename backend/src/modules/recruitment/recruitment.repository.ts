@@ -423,6 +423,8 @@ export interface CreateJobInput {
   postingChannels?: string[];
   screeningQuestions?: string[];
   hiringMode?: "STANDARD" | "WALK_IN" | "CAMPUS";
+  publishedAt?: string | null;
+  closedAt?: string | null;
 
   walkInDrive?: {
     driveDate?: string | null;
@@ -667,6 +669,9 @@ export async function createJobPosting(input: CreateJobInput) {
 
     screeningQuestions: uniqueStrings(input.screeningQuestions ?? []),
 
+    publishedAt: null,
+    closedAt: null,
+
     hiringMode: input.hiringMode ?? "STANDARD",
 
     walkInDrive:
@@ -750,10 +755,13 @@ export async function approveJob(
       },
     ];
 
+    const approvedAt = nowIso();
     (job as AnyDoc).requisitionStatus = "APPROVED";
     (job as AnyDoc).status = "OPEN";
     (job as AnyDoc).approvedById = approverId;
-    (job as AnyDoc).approvedAt = nowIso();
+    (job as AnyDoc).approvedAt = approvedAt;
+    (job as AnyDoc).publishedAt = approvedAt;
+    (job as AnyDoc).closedAt = null;
 
     await job.save();
 
@@ -768,7 +776,26 @@ export async function approveJob(
     )[0];
 
   if (!pendingStep) {
-    // Nothing is pending, so do not change an already completed workflow.
+    // The creator may have already approved level 1 during job creation.
+    // If every configured approval step is already approved, finalize the
+    // requisition here instead of incorrectly leaving it PENDING_APPROVAL.
+    const allApproved =
+      approvalSteps.length > 0 &&
+      approvalSteps.every((step: AnyDoc) => step.status === "APPROVED");
+
+    if (allApproved) {
+      const approvedAt = (job as AnyDoc).approvedAt ?? nowIso();
+
+      (job as AnyDoc).requisitionStatus = "APPROVED";
+      (job as AnyDoc).status = "OPEN";
+      (job as AnyDoc).approvedById = (job as AnyDoc).approvedById ?? approverId;
+      (job as AnyDoc).approvedAt = approvedAt;
+      (job as AnyDoc).publishedAt = (job as AnyDoc).publishedAt ?? approvedAt;
+      (job as AnyDoc).closedAt = null;
+
+      await job.save();
+    }
+
     return getJobPosting(id);
   }
 
@@ -788,12 +815,13 @@ export async function approveJob(
   );
 
   if (allApproved) {
+    const approvedAt = nowIso();
     (job as AnyDoc).requisitionStatus = "APPROVED";
     (job as AnyDoc).status = "OPEN";
     (job as AnyDoc).approvedById = approverId;
-    (job as AnyDoc).approvedAt = nowIso();
-  } else {
-    (job as AnyDoc).requisitionStatus = "PENDING_APPROVAL";
+    (job as AnyDoc).approvedAt = approvedAt;
+    (job as AnyDoc).publishedAt = approvedAt;
+    (job as AnyDoc).closedAt = null;
   }
 
   await job.save();
@@ -828,7 +856,10 @@ export async function rejectJob(
     (step: AnyDoc) => step.status === "PENDING",
   );
 
-  if (!currentPendingStep || currentPendingStep.approverId !== approverId) {
+  if (
+    !currentPendingStep ||
+    String(currentPendingStep.approverId) !== String(approverId)
+  ) {
     throw new Error("You are not the current approver for this requisition.");
   }
 
@@ -890,6 +921,8 @@ export interface UpdateJobInput {
 
   skills?: string[];
   status?: "OPEN" | "ON_HOLD" | "CLOSED";
+  publishedAt?: string | null;
+  closedAt?: string | null;
 }
 
 export async function updateJobPosting(id: string, input: UpdateJobInput) {
@@ -921,6 +954,15 @@ export async function updateJobPosting(id: string, input: UpdateJobInput) {
 
   if (input.openings !== undefined && input.headcount === undefined) {
     updates.headcount = input.openings;
+  }
+
+  if (input.status === "OPEN" && existing.status !== "OPEN") {
+    updates.publishedAt = nowIso();
+    updates.closedAt = null;
+  }
+
+  if (input.status === "CLOSED" && existing.status !== "CLOSED") {
+    updates.closedAt = nowIso();
   }
 
   await JobPosting.updateOne({ _id: id }, { $set: updates });
@@ -959,18 +1001,29 @@ export async function deleteJobPosting(id: string) {
   };
 }
 
-export async function updateJobStatus(id: string, status: string) {
-  await JobPosting.updateOne(
-    {
-      _id: id,
-    },
-    {
-      $set: {
-        status,
-      },
-    },
-  );
+export async function updateJobStatus(
+  id: string,
+  status: "OPEN" | "ON_HOLD" | "CLOSED",
+) {
+  const job = await JobPosting.findById(id);
+  if (!job) return undefined;
 
+  if (status === "OPEN" && job.requisitionStatus !== "APPROVED") {
+    throw new Error("Only an approved requisition can be opened.");
+  }
+
+  const updates: Record<string, unknown> = { status };
+
+  if (status === "OPEN" && job.status !== "OPEN") {
+    updates.publishedAt = nowIso();
+    updates.closedAt = null;
+  }
+
+  if (status === "CLOSED" && job.status !== "CLOSED") {
+    updates.closedAt = nowIso();
+  }
+
+  await JobPosting.updateOne({ _id: id }, { $set: updates });
   return getJobPosting(id);
 }
 
@@ -1012,6 +1065,54 @@ export async function listCandidates(jobPostingId?: string) {
   }));
 }
 
+export async function searchCandidates(input: {
+  jobPostingId?: string;
+  stage?: string;
+  finalResult?: string;
+  minJobFitScore?: number;
+  source?: string;
+  query?: string;
+}) {
+  const query: Record<string, any> = {};
+
+  if (input.jobPostingId) query.jobPostingId = input.jobPostingId;
+  if (input.stage) query.stage = input.stage;
+  if (input.finalResult) query.finalResult = input.finalResult;
+  if (input.source) query.source = input.source;
+
+  if (input.minJobFitScore !== undefined) {
+    query.jobFitScore = { $gte: Number(input.minJobFitScore) };
+  }
+
+  if (input.query?.trim()) {
+    const pattern = input.query.trim();
+    query.$or = [
+      { firstName: { $regex: pattern, $options: "i" } },
+      { lastName: { $regex: pattern, $options: "i" } },
+      { email: { $regex: pattern, $options: "i" } },
+      { phone: { $regex: pattern, $options: "i" } },
+    ];
+  }
+
+  const rows = (await Candidate.find(query)
+    .sort({ appliedAt: -1 })
+    .lean()) as AnyDoc[];
+
+  if (!rows.length) return [];
+
+  const jobIds = [...new Set(rows.map((row: AnyDoc) => row.jobPostingId))];
+  const jobs = (await JobPosting.find({
+    _id: { $in: jobIds },
+  }).lean()) as AnyDoc[];
+  const jobMap = new Map(jobs.map((job: AnyDoc) => [job._id, job]));
+
+  return rows.map((row: AnyDoc) => ({
+    id: row._id,
+    ...row,
+    jobTitle: jobMap.get(row.jobPostingId)?.title ?? null,
+  }));
+}
+
 export async function getCandidate(id: string) {
   const row = await Candidate.findById(id).lean();
 
@@ -1039,12 +1140,32 @@ export interface CreateCandidateInput {
   referredById?: string;
   notes?: string;
   resumeText?: string;
+  applicationAnswers?: Record<string, string>;
 }
 
 export async function createCandidate(input: CreateCandidateInput) {
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
+  const normalizedEmail = input.email.toLowerCase().trim();
+
+  if (!firstName || !lastName) {
+    throw new Error("Candidate first name and last name are required.");
+  }
+
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw new Error("A valid candidate email is required.");
+  }
+
+  const job = await JobPosting.findById(input.jobPostingId).lean();
+  if (!job) throw new Error("Job posting not found.");
+
+  if (job.requisitionStatus !== "APPROVED" || job.status !== "OPEN") {
+    throw new Error("Applications are only accepted for open, approved jobs.");
+  }
+
   const duplicate = await Candidate.findOne({
     jobPostingId: input.jobPostingId,
-    email: input.email.toLowerCase().trim(),
+    email: normalizedEmail,
   }).lean();
 
   if (duplicate) {
@@ -1056,15 +1177,22 @@ export async function createCandidate(input: CreateCandidateInput) {
   const doc = await Candidate.create({
     jobPostingId: input.jobPostingId,
 
-    firstName: input.firstName,
+    firstName,
 
-    lastName: input.lastName,
+    lastName,
 
     email: input.email.toLowerCase().trim(),
 
     phone: input.phone ?? null,
 
     expectedCtc: input.expectedCtc ?? null,
+
+    applicationAnswers: input.applicationAnswers ?? {},
+
+    duplicateStatus: "UNIQUE",
+    duplicateOfCandidateId: null,
+    spamFlag: false,
+    spamReason: null,
 
     source: input.source ?? "CAREERS",
 
@@ -1074,7 +1202,10 @@ export async function createCandidate(input: CreateCandidateInput) {
 
     notes: input.notes ?? null,
 
-    resumeText: input.resumeText ?? null,
+    resumeText: input.resumeText?.trim() || null,
+    resumeParsingStatus: input.resumeText?.trim() ? "PARSED" : "NOT_PARSED",
+    resumeParsedAt: input.resumeText?.trim() ? nowIso() : null,
+    resumeParsingError: null,
 
     stage: "APPLIED",
 
@@ -1085,6 +1216,37 @@ export async function createCandidate(input: CreateCandidateInput) {
 }
 
 export async function moveCandidateStage(id: string, stage: string) {
+  const allowedStages = [
+    "APPLIED",
+    "SCREENING",
+    "INTERVIEW",
+    "OFFER",
+    "HIRED",
+    "REJECTED",
+  ];
+  if (!allowedStages.includes(stage)) {
+    throw new Error(`Invalid candidate stage: ${stage}.`);
+  }
+
+  const candidate = await Candidate.findById(id);
+  if (!candidate) return undefined;
+
+  if (candidate.stage === "HIRED" && stage !== "HIRED") {
+    throw new Error("A hired candidate cannot move backwards in the pipeline.");
+  }
+  if (candidate.stage === "REJECTED" && stage !== "REJECTED") {
+    throw new Error(
+      "A rejected candidate cannot be moved back into the pipeline.",
+    );
+  }
+
+  const finalResult =
+    stage === "HIRED"
+      ? "SELECTED"
+      : stage === "REJECTED"
+        ? "REJECTED"
+        : "PENDING";
+
   await Candidate.updateOne(
     {
       _id: id,
@@ -1092,9 +1254,39 @@ export async function moveCandidateStage(id: string, stage: string) {
     {
       $set: {
         stage,
+        finalResult,
       },
     },
   );
+  return getCandidate(id);
+}
+
+export async function selectCandidate(id: string) {
+  const candidate = await Candidate.findById(id);
+  if (!candidate) return undefined;
+
+  if (candidate.stage === "REJECTED") {
+    throw new Error("A rejected candidate cannot be selected.");
+  }
+  if (candidate.stage === "HIRED") {
+    throw new Error("The candidate is already hired.");
+  }
+
+  const completedInterview = await Interview.exists({
+    candidateId: id,
+    completed: true,
+    recommendation: { $not: /^reject/i },
+  });
+
+  if (!completedInterview) {
+    throw new Error(
+      "Complete at least one interview before selecting the candidate.",
+    );
+  }
+
+  candidate.finalResult = "SELECTED";
+  candidate.stage = "OFFER";
+  await candidate.save();
 
   return getCandidate(id);
 }
@@ -1120,6 +1312,7 @@ export interface UpdateCandidateInput {
   phone?: string;
   expectedCtc?: number;
   source?: string;
+  applicationAnswers?: Record<string, string>;
 }
 
 export async function updateCandidate(id: string, input: UpdateCandidateInput) {
@@ -1156,8 +1349,148 @@ export async function updateCandidate(id: string, input: UpdateCandidateInput) {
     candidate.source = input.source;
   }
 
+  if (input.applicationAnswers !== undefined) {
+    candidate.applicationAnswers = input.applicationAnswers;
+  }
+
   await candidate.save();
 
+  return getCandidate(id);
+}
+
+export async function setCandidateResume(
+  id: string,
+  input: {
+    resumeUrl?: string | null;
+    resumeText?: string | null;
+  },
+) {
+  const candidate = await Candidate.findById(id);
+
+  if (!candidate) return undefined;
+
+  if (input.resumeUrl !== undefined) {
+    candidate.resumeUrl = input.resumeUrl;
+
+    // A newly uploaded file must be parsed again.
+    if (input.resumeUrl) {
+      (candidate as AnyDoc).resumeParsingStatus = "NOT_PARSED";
+      (candidate as AnyDoc).resumeParsingError = null;
+      (candidate as AnyDoc).resumeParsedAt = null;
+      (candidate as AnyDoc).extractedSkills = [];
+      (candidate as AnyDoc).extractedExperience = [];
+      (candidate as AnyDoc).extractedEducation = [];
+    }
+  }
+
+  if (input.resumeText !== undefined) {
+    candidate.resumeText = input.resumeText;
+    (candidate as AnyDoc).resumeParsingStatus = input.resumeText?.trim()
+      ? "PARSED"
+      : "NOT_PARSED";
+    (candidate as AnyDoc).resumeParsedAt = input.resumeText?.trim()
+      ? nowIso()
+      : null;
+  }
+
+  await candidate.save();
+
+  return getCandidate(id);
+}
+
+export async function updateParsedResume(
+  id: string,
+  input: {
+    resumeText?: string | null;
+    extractedSkills?: string[];
+    extractedExperience?: number | null;
+    extractedEducation?: string[];
+  },
+) {
+  const candidate = await Candidate.findById(id);
+  if (!candidate) return undefined;
+
+  const candidateDoc = candidate as AnyDoc;
+
+  if (input.resumeText !== undefined) {
+    candidateDoc.resumeText = input.resumeText?.trim() || null;
+  }
+
+  if (input.extractedSkills !== undefined) {
+    candidateDoc.extractedSkills = uniqueStrings(input.extractedSkills);
+  }
+
+  // resumeParser currently returns a numeric total-years value, while the
+  // Candidate model stores structured experience entries. Preserve the
+  // parser result in the model's structured shape.
+  if (input.extractedExperience !== undefined) {
+    const years = input.extractedExperience;
+    candidateDoc.extractedExperience =
+      years !== null && Number.isFinite(Number(years))
+        ? [
+            {
+              company: null,
+              position: null,
+              startDate: null,
+              endDate: null,
+              description: `${Number(years)} years of experience`,
+            },
+          ]
+        : [];
+  }
+
+  if (input.extractedEducation !== undefined) {
+    candidateDoc.extractedEducation = (input.extractedEducation ?? [])
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+      .slice(0, 10)
+      .map((degree) => ({
+        degree,
+        institution: null,
+        fieldOfStudy: null,
+        startDate: null,
+        endDate: null,
+        grade: null,
+      }));
+  }
+
+  candidateDoc.resumeParsingStatus = "PARSED";
+  candidateDoc.resumeParsedAt = nowIso();
+  candidateDoc.resumeParsingError = null;
+
+  await candidate.save();
+  return getCandidate(id);
+}
+
+export async function updateResumeParsingStatus(
+  id: string,
+  input: {
+    status: "NOT_PARSED" | "PARSING" | "PARSED" | "FAILED";
+    resumeText?: string | null;
+    error?: string | null;
+  },
+) {
+  const candidate = await Candidate.findById(id);
+  if (!candidate) return undefined;
+
+  const now = nowIso();
+  (candidate as AnyDoc).resumeParsingStatus = input.status;
+
+  if (input.resumeText !== undefined) {
+    (candidate as AnyDoc).resumeText = input.resumeText?.trim() || null;
+  }
+
+  if (input.status === "PARSED") {
+    (candidate as AnyDoc).resumeParsedAt = now;
+    (candidate as AnyDoc).resumeParsingError = null;
+  } else if (input.status === "FAILED") {
+    (candidate as AnyDoc).resumeParsingError =
+      input.error?.trim() || "Resume parsing failed.";
+  } else if (input.status === "PARSING") {
+    (candidate as AnyDoc).resumeParsingError = null;
+  }
+
+  await candidate.save();
   return getCandidate(id);
 }
 
@@ -1193,124 +1526,119 @@ function normalizeTokens(text: string) {
 
 export async function screenCandidate(id: string, resumeText?: string) {
   const candidate = await Candidate.findById(id);
-
-  if (!candidate) {
-    return undefined;
-  }
+  if (!candidate) return undefined;
 
   if (typeof resumeText === "string" && resumeText.trim()) {
     candidate.resumeText = resumeText.trim();
+    (candidate as AnyDoc).resumeParsingStatus = "PARSED";
+    (candidate as AnyDoc).resumeParsedAt = nowIso();
+    (candidate as AnyDoc).resumeParsingError = null;
   }
 
   const job = await JobPosting.findById(candidate.jobPostingId);
+  if (!job) throw new Error("Job posting not found.");
 
-  if (!job) {
-    throw new Error("Job posting not found.");
-  }
-
-  const fallbackResume = [
-    candidate.firstName,
-    candidate.lastName,
-    candidate.email,
-    candidate.phone ?? "",
-    candidate.notes ?? "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const screeningText = String(candidate.resumeText?.trim() || fallbackResume);
-
-  const jobTokens = normalizeTokens(
-    `${job.title} ${job.description} ${job.skills.join(" ")}`,
+  const screeningText = String(
+    candidate.resumeText?.trim() ||
+      [
+        candidate.firstName,
+        candidate.lastName,
+        candidate.email,
+        candidate.phone ?? "",
+        candidate.notes ?? "",
+      ]
+        .filter(Boolean)
+        .join(" "),
   );
 
-  const resumeTokens = normalizeTokens(screeningText);
+  const normalizeSkill = (value: string) =>
+    String(value ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9+#.]+/g, " ")
+      .trim();
 
-  const matched = [...jobTokens].filter((value: string) =>
-    resumeTokens.has(value),
+  const skillMatchesResume = (skill: string) => {
+    const normalizedSkill = normalizeSkill(skill);
+    if (!normalizedSkill) return false;
+
+    const normalizedResume = normalizeSkill(screeningText);
+    if (normalizedResume.includes(normalizedSkill)) return true;
+
+    const skillTokens = normalizedSkill.split(/\s+/).filter(Boolean);
+    const resumeTokens = new Set(
+      normalizedResume.split(/\s+/).filter((value) => value.length > 1),
+    );
+
+    return skillTokens.every((token) => resumeTokens.has(token));
+  };
+
+  const jobSkills = uniqueStrings(
+    (job.skills ?? []).map((skill: string) => String(skill)),
   );
 
-  const score = jobTokens.size
-    ? Math.min(100, Math.round((matched.length / jobTokens.size) * 100))
+  const matchedSkills = jobSkills.filter((skill) => skillMatchesResume(skill));
+
+  const missingSkills = jobSkills.filter(
+    (skill) => !matchedSkills.includes(skill),
+  );
+
+  const score = jobSkills.length
+    ? Math.round((matchedSkills.length / jobSkills.length) * 100)
     : 0;
 
-  const extractedSkills = [
-    ...new Set(
-      matched.filter((value: string) =>
-        job.skills.map((skill: string) => skill.toLowerCase()).includes(value),
-      ),
-    ),
-  ];
-
-  // =========================================================
-  // CUSTOM SHORTLISTING CRITERIA
-  // =========================================================
-
   let autoShortlisted = false;
-
   let shortlistingResult: "PENDING" | "SHORTLISTED" | "NOT_SHORTLISTED" =
     "PENDING";
 
-  if (job.shortlistingCriteria?.enabled) {
-    const criteria = job.shortlistingCriteria;
-
-    const candidateSkills = extractedSkills.map((skill: string) =>
-      skill.toLowerCase().trim(),
+  const criteria = (job as AnyDoc).shortlistingCriteria;
+  if (criteria?.enabled) {
+    const requiredSkills = (criteria.requiredSkills ?? []).map(
+      (skill: string) => String(skill),
     );
-
-    const requiredSkills = criteria.requiredSkills.map((skill: string) =>
-      skill.toLowerCase().trim(),
-    );
-
     const matchedRequiredSkills = requiredSkills.filter((skill: string) =>
-      candidateSkills.includes(skill),
+      skillMatchesResume(skill),
     );
 
-    // 1. Job-fit score check
-    const scorePassed = score >= criteria.minimumJobFitScore;
-
-    // 2. Required skills check
+    const scorePassed = score >= Number(criteria.minimumJobFitScore ?? 0);
     const skillsPassed =
       requiredSkills.length === 0 ||
       matchedRequiredSkills.length === requiredSkills.length;
+    const structuredExperience = Array.isArray(
+      (candidate as AnyDoc).extractedExperience,
+    )
+      ? (candidate as AnyDoc).extractedExperience
+      : [];
+    const parsedExperience = structuredExperience.length
+      ? Number.parseFloat(
+          String(structuredExperience[0]?.description ?? "").match(
+            /([0-9]+(?:\.[0-9]+)?)/,
+          )?.[1] ?? "0",
+        )
+      : 0;
+    const candidateExperience = Math.max(
+      parsedExperience,
+      Number((candidate as AnyDoc).experience ?? 0),
+    );
+    const experiencePassed =
+      candidateExperience >= Number(criteria.minimumExperience ?? 0);
 
-    // 3. Experience check
-    // Uses candidate experience if available.
-    const candidateExperience = Number((candidate as any).experience ?? 0);
-
-    const experiencePassed = candidateExperience >= criteria.minimumExperience;
-
-    // Candidate must satisfy ALL enabled criteria
     autoShortlisted = scorePassed && skillsPassed && experiencePassed;
-
     shortlistingResult = autoShortlisted ? "SHORTLISTED" : "NOT_SHORTLISTED";
   }
 
-  // =========================================================
-  // SAVE AI SCREENING RESULTS
-  // =========================================================
-
-  candidate.extractedSkills = extractedSkills;
-
+  candidate.extractedSkills = matchedSkills;
   candidate.jobFitScore = score;
-
   candidate.screeningSummary =
-    `AI-assisted screening completed. ` +
-    `Matched ${matched.length} relevant terms. ` +
-    `Fit score: ${score}%. ` +
-    `Auto-shortlisting result: ${shortlistingResult}. ` +
+    `AI-assisted screening completed. Matched ${matchedSkills.length} relevant skills. ` +
+    `Fit score: ${score}%. Auto-shortlisting result: ${shortlistingResult}. ` +
+    `Missing skills: ${missingSkills.length ? missingSkills.join(", ") : "None"}. ` +
     `Human review is required before rejection.`;
-
   candidate.autoShortlisted = autoShortlisted;
-
   candidate.shortlistingResult = shortlistingResult;
 
-  if (candidate.stage === "APPLIED") {
-    candidate.stage = "SCREENING";
-  }
+  if (candidate.stage === "APPLIED") candidate.stage = "SCREENING";
 
   await candidate.save();
-
   return getCandidate(id);
 }
 
@@ -1384,7 +1712,54 @@ export async function scheduleInterview(input: {
   round?: string;
   mode?: "VIDEO" | "IN_PERSON" | "PHONE";
 }) {
+  const candidate = await Candidate.findById(input.candidateId).lean();
+  if (!candidate) throw new Error("Candidate not found.");
+  if (candidate.finalResult === "REJECTED") {
+    throw new Error(
+      "A rejected candidate cannot be scheduled for an interview.",
+    );
+  }
+
+  const interviewer = await Employee.findById(input.interviewerId).lean();
+  if (!interviewer) throw new Error("Interviewer not found.");
+
+  if (!input.scheduledAt || Number.isNaN(Date.parse(input.scheduledAt))) {
+    throw new Error("A valid interview date and time is required.");
+  }
+
   const mode = input.mode ?? "VIDEO";
+  const interviewStart = new Date(input.scheduledAt);
+  const interviewEnd = new Date(interviewStart.getTime() + 60 * 60 * 1000);
+
+  const interviewerConflict = await Interview.findOne({
+    interviewerId: input.interviewerId,
+    completed: { $ne: true },
+    scheduledAt: {
+      $gte: new Date(interviewStart.getTime() - 60 * 60 * 1000).toISOString(),
+      $lt: interviewEnd.toISOString(),
+    },
+  }).lean();
+
+  if (interviewerConflict) {
+    throw new Error(
+      "The interviewer already has an interview scheduled around this time.",
+    );
+  }
+
+  const candidateConflict = await Interview.findOne({
+    candidateId: input.candidateId,
+    completed: { $ne: true },
+    scheduledAt: {
+      $gte: new Date(interviewStart.getTime() - 60 * 60 * 1000).toISOString(),
+      $lt: interviewEnd.toISOString(),
+    },
+  }).lean();
+
+  if (candidateConflict) {
+    throw new Error(
+      "The candidate already has an interview scheduled around this time.",
+    );
+  }
 
   const doc = await Interview.create({
     candidateId: input.candidateId,
@@ -1425,19 +1800,28 @@ export async function submitInterviewFeedback(
   recommendation: string,
   scorecard: any[] = [],
 ) {
-  await Interview.updateOne(
-    {
-      _id: id,
-    },
-    {
-      $set: {
-        feedback,
-        recommendation,
-        scorecard,
-        completed: true,
-      },
-    },
-  );
+  const interview = await Interview.findById(id);
+  if (!interview) return undefined;
+
+  if (!feedback.trim()) throw new Error("Interview feedback is required.");
+  if (!recommendation.trim())
+    throw new Error("Interview recommendation is required.");
+
+  interview.feedback = feedback.trim();
+  interview.recommendation = recommendation.trim();
+  interview.scorecard = scorecard;
+  interview.completed = true;
+  await interview.save();
+
+  const candidate = await Candidate.findById(interview.candidateId);
+  if (
+    candidate &&
+    candidate.stage !== "HIRED" &&
+    candidate.stage !== "REJECTED"
+  ) {
+    candidate.stage = "INTERVIEW";
+    await candidate.save();
+  }
 
   return toApiDoc((await Interview.findById(id).lean())!);
 }
@@ -1468,6 +1852,18 @@ export async function generateOffer(
     throw new Error("Job posting not found.");
   }
 
+  if (candidate.finalResult !== "SELECTED") {
+    throw new Error("Select the candidate before generating an offer.");
+  }
+
+  if (!Number.isFinite(input.annualCtc) || input.annualCtc <= 0) {
+    throw new Error("Annual CTC must be greater than zero.");
+  }
+
+  if (!input.joiningDate || Number.isNaN(Date.parse(input.joiningDate))) {
+    throw new Error("A valid joining date is required.");
+  }
+
   const now = nowIso();
 
   const basic = input.basic ?? Math.round(input.annualCtc * 0.4);
@@ -1476,6 +1872,16 @@ export async function generateOffer(
 
   const specialAllowance =
     input.specialAllowance ?? Math.max(0, input.annualCtc - basic - hra);
+
+  if (basic < 0 || hra < 0 || specialAllowance < 0) {
+    throw new Error("Offer salary components cannot be negative.");
+  }
+
+  if (
+    Math.round(basic + hra + specialAllowance) !== Math.round(input.annualCtc)
+  ) {
+    throw new Error("Basic, HRA and special allowance must equal annual CTC.");
+  }
 
   const uploads = path.join(process.cwd(), "uploads");
 
@@ -1528,14 +1934,20 @@ export async function respondToOffer(
     throw new Error("Offer has not been generated for this candidate.");
   }
 
+  if (candidate.offer.status !== "SENT") {
+    throw new Error("Only a sent offer can receive a response.");
+  }
+
   candidate.offer.status = status;
 
   candidate.offer.respondedAt = nowIso();
 
   if (status === "ACCEPTED") {
     candidate.stage = "OFFER";
+    candidate.finalResult = "PENDING";
   } else {
     candidate.stage = "REJECTED";
+    candidate.finalResult = "REJECTED";
   }
 
   await candidate.save();
@@ -1560,6 +1972,17 @@ export async function updateBackgroundVerification(
 
   if (!candidate) {
     return undefined;
+  }
+
+  if (candidate.offer?.status !== "ACCEPTED") {
+    throw new Error(
+      "Background verification can start only after offer acceptance.",
+    );
+  }
+
+  const allowedStatuses = ["NOT_STARTED", "IN_PROGRESS", "VERIFIED", "FAILED"];
+  if (!allowedStatuses.includes(input.status)) {
+    throw new Error("Invalid background verification status.");
   }
 
   const now = nowIso();
@@ -1613,6 +2036,20 @@ export async function addPreboardingDocument(
 
   if (!candidate) {
     return undefined;
+  }
+
+  if (candidate.offer?.status !== "ACCEPTED") {
+    throw new Error("Pre-boarding can start only after offer acceptance.");
+  }
+
+  if (candidate.backgroundVerification?.status !== "VERIFIED") {
+    throw new Error(
+      "Background verification must be VERIFIED before pre-boarding.",
+    );
+  }
+
+  if (!type.trim() || !url.trim()) {
+    throw new Error("Document type and URL are required.");
   }
 
   if (!candidate.preboarding) {
@@ -1725,6 +2162,18 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
     throw new Error("Job posting not found.");
   }
 
+  const hiredCount = await Candidate.countDocuments({
+    jobPostingId: candidate.jobPostingId,
+    stage: "HIRED",
+    _id: { $ne: candidate._id },
+  });
+
+  if (hiredCount >= Number(job.headcount ?? job.openings ?? 1)) {
+    throw new Error(
+      "The approved headcount for this requisition has already been filled.",
+    );
+  }
+
   const existing = await User.findOne({
     email: candidate.email.toLowerCase(),
   }).lean();
@@ -1813,6 +2262,7 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
   candidate.hiredEmployeeId = employee._id;
 
   candidate.stage = "HIRED";
+  candidate.finalResult = "SELECTED";
 
   await candidate.save();
 

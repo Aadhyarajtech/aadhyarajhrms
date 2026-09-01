@@ -36,11 +36,7 @@ export const AuthApi = {
       }>("/auth/login", { email, password })
       .then((r) => r.data),
 
-  register: (
-    email: string,
-    password: string,
-    confirmPassword: string,
-  ) =>
+  register: (email: string, password: string, confirmPassword: string) =>
     api
       .post("/auth/register", {
         email,
@@ -49,15 +45,9 @@ export const AuthApi = {
       })
       .then((r) => r.data),
 
-  me: () =>
-    api
-      .get<{ user: AuthUser }>("/auth/me")
-      .then((r) => r.data.user),
+  me: () => api.get<{ user: AuthUser }>("/auth/me").then((r) => r.data.user),
 
-  changePassword: (
-    currentPassword: string,
-    newPassword: string,
-  ) =>
+  changePassword: (currentPassword: string, newPassword: string) =>
     api
       .post("/auth/change-password", {
         currentPassword,
@@ -94,9 +84,7 @@ export const EmployeesApi = {
 
   directReports: (id: string) =>
     api
-      .get<{ employees: Employee[] }>(
-        `/employees/${id}/direct-reports`,
-      )
+      .get<{ employees: Employee[] }>(`/employees/${id}/direct-reports`)
       .then((r) => r.data.employees),
 
   managers: () =>
@@ -112,32 +100,21 @@ export const EmployeesApi = {
       .then((r) => r.data.managers),
 
   orgChart: () =>
-    api
-      .get<{ chart: any[] }>("/employees/org-chart")
-      .then((r) => r.data.chart),
+    api.get<{ chart: any[] }>("/employees/org-chart").then((r) => r.data.chart),
 
   create: (payload: Record<string, unknown>) =>
     api
       .post<{ employee: Employee }>("/employees", payload)
       .then((r) => r.data.employee),
 
-  update: (
-    id: string,
-    payload: Record<string, unknown>,
-  ) =>
+  update: (id: string, payload: Record<string, unknown>) =>
     api
-      .patch<{ employee: Employee }>(
-        `/employees/${id}`,
-        payload,
-      )
+      .patch<{ employee: Employee }>(`/employees/${id}`, payload)
       .then((r) => r.data.employee),
 
   updateMe: (payload: Record<string, unknown>) =>
     api
-      .patch<{ employee: Employee }>(
-        "/employees/me",
-        payload,
-      )
+      .patch<{ employee: Employee }>("/employees/me", payload)
       .then((r) => r.data.employee),
 
   headcountByDepartment: () =>
@@ -183,10 +160,7 @@ export const EmployeesApi = {
       })
       .then((r) => r.data.data),
 
-  uploadAvatar: (
-    id: string,
-    file: File,
-  ) => {
+  uploadAvatar: (id: string, file: File) => {
     const form = new FormData();
     form.append("avatar", file);
 
@@ -194,15 +168,11 @@ export const EmployeesApi = {
       .post<{
         avatarUrl: string;
         employee: Employee;
-      }>(
-        `/employees/${id}/avatar`,
-        form,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
+      }>(`/employees/${id}/avatar`, form, {
+        headers: {
+          "Content-Type": "multipart/form-data",
         },
-      )
+      })
       .then((r) => r.data);
   },
 };
@@ -211,35 +181,22 @@ export const EmployeesApi = {
 export const OrganizationApi = {
   departments: () =>
     api
-      .get<{ departments: Department[] }>(
-        "/organization/departments",
-      )
+      .get<{ departments: Department[] }>("/organization/departments")
       .then((r) => r.data.departments),
 
-  createDepartment: (
-    payload: Record<string, unknown>,
-  ) =>
+  createDepartment: (payload: Record<string, unknown>) =>
     api
-      .post<{ department: Department }>(
-        "/organization/departments",
-        payload,
-      )
+      .post<{ department: Department }>("/organization/departments", payload)
       .then((r) => r.data.department),
 
-  updateDepartment: (
-    id: string,
-    payload: Record<string, unknown>,
-  ) =>
+  updateDepartment: (id: string, payload: Record<string, unknown>) =>
     api
-      .patch<{ department: Department }>(
-        `/organization/departments/${id}`,
-        payload,
-      )
+      .patch<{
+        department: Department;
+      }>(`/organization/departments/${id}`, payload)
       .then((r) => r.data.department),
 
-  designations: (
-    departmentId?: string,
-  ) =>
+  designations: (departmentId?: string) =>
     api
       .get<{
         designations: Designation[];
@@ -248,67 +205,44 @@ export const OrganizationApi = {
       })
       .then((r) => r.data.designations),
 
-  createDesignation: (
-    payload: Record<string, unknown>,
-  ) =>
+  createDesignation: (payload: Record<string, unknown>) =>
     api
-      .post<{ designation: Designation }>(
-        "/organization/designations",
-        payload,
-      )
+      .post<{ designation: Designation }>("/organization/designations", payload)
       .then((r) => r.data.designation),
 
   holidays: (year?: number) =>
     api
-      .get<{ holidays: Holiday[] }>(
-        "/organization/holidays",
-        {
-          params: { year },
-        },
-      )
+      .get<{ holidays: Holiday[] }>("/organization/holidays", {
+        params: { year },
+      })
       .then((r) => r.data.holidays),
 
-  createHoliday: (
-    payload: Record<string, unknown>,
-  ) =>
+  createHoliday: (payload: Record<string, unknown>) =>
     api
-      .post<{ holiday: Holiday }>(
-        "/organization/holidays",
-        payload,
-      )
+      .post<{ holiday: Holiday }>("/organization/holidays", payload)
       .then((r) => r.data.holiday),
 
-  deleteHoliday: (id: string) =>
-    api.delete(`/organization/holidays/${id}`),
+  deleteHoliday: (id: string) => api.delete(`/organization/holidays/${id}`),
 };
 
 // --- Attendance --------------------------------------------------------------
 export const AttendanceApi = {
   today: () =>
     api
-      .get<{ record: AttendanceRecord | null }>(
-        "/attendance/today",
-      )
+      .get<{ record: AttendanceRecord | null }>("/attendance/today")
       .then((r) => r.data.record),
 
   checkIn: () =>
     api
-      .post<{ record: AttendanceRecord }>(
-        "/attendance/check-in",
-      )
+      .post<{ record: AttendanceRecord }>("/attendance/check-in")
       .then((r) => r.data.record),
 
   checkOut: () =>
     api
-      .post<{ record: AttendanceRecord }>(
-        "/attendance/check-out",
-      )
+      .post<{ record: AttendanceRecord }>("/attendance/check-out")
       .then((r) => r.data.record),
 
-  mine: (
-    month?: number,
-    year?: number,
-  ) =>
+  mine: (month?: number, year?: number) =>
     api
       .get<{
         records: AttendanceRecord[];
@@ -317,11 +251,7 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.records),
 
-  forEmployee: (
-    employeeId: string,
-    month?: number,
-    year?: number,
-  ) =>
+  forEmployee: (employeeId: string, month?: number, year?: number) =>
     api
       .get<{
         records: AttendanceRecord[];
@@ -332,9 +262,7 @@ export const AttendanceApi = {
 
   byDate: (date: string) =>
     api
-      .get<{ records: any[] }>(
-        `/attendance/by-date/${date}`,
-      )
+      .get<{ records: any[] }>(`/attendance/by-date/${date}`)
       .then((r) => r.data.records),
 
   summaryToday: () =>
@@ -359,10 +287,7 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.data),
 
-  regularize: (
-    date: string,
-    note: string,
-  ) =>
+  regularize: (date: string, note: string) =>
     api
       .post<{
         record: AttendanceRecord;
@@ -380,10 +305,7 @@ export const LeaveApi = {
       .get<{ leaveTypes: LeaveType[] }>("/leave/types")
       .then((r) => r.data.leaveTypes),
 
-  balances: (
-    employeeId?: string,
-    year?: number,
-  ) =>
+  balances: (employeeId?: string, year?: number) =>
     api
       .get<{
         balances: LeaveBalance[];
@@ -400,10 +322,7 @@ export const LeaveApi = {
     } = {},
   ) =>
     api
-      .get<{ requests: LeaveRequest[] }>(
-        "/leave/requests",
-        { params },
-      )
+      .get<{ requests: LeaveRequest[] }>("/leave/requests", { params })
       .then((r) => r.data.requests),
 
   apply: (payload: {
@@ -413,10 +332,7 @@ export const LeaveApi = {
     reason: string;
   }) =>
     api
-      .post<{ request: LeaveRequest }>(
-        "/leave/requests",
-        payload,
-      )
+      .post<{ request: LeaveRequest }>("/leave/requests", payload)
       .then((r) => r.data.request),
 
   decide: (
@@ -435,26 +351,47 @@ export const LeaveApi = {
 
   cancel: (id: string) =>
     api
-      .post<{ request: LeaveRequest }>(
-        `/leave/requests/${id}/cancel`,
-      )
+      .post<{ request: LeaveRequest }>(`/leave/requests/${id}/cancel`)
       .then((r) => r.data.request),
 
-  calendar: (
-    month?: number,
-    year?: number,
-  ) =>
+  calendar: (month?: number, year?: number) =>
     api
-      .get<{ entries: any[] }>(
-        "/leave/calendar",
-        {
-          params: { month, year },
-        },
-      )
+      .get<{ entries: any[] }>("/leave/calendar", {
+        params: { month, year },
+      })
       .then((r) => r.data.entries),
 };
 
 // --- Recruitment -------------------------------------------------------------
+export interface RecruitmentCandidateSearchParams {
+  jobPostingId?: string;
+  stage?: string;
+  finalResult?: "PENDING" | "SELECTED" | "REJECTED";
+  minJobFitScore?: number;
+  source?: string;
+  query?: string;
+}
+
+export interface RecruitmentCandidateCreatePayload extends Record<
+  string,
+  unknown
+> {
+  applicationAnswers?: Record<string, string>;
+  resumeText?: string;
+  resumeUrl?: string | null;
+  education?: string;
+}
+
+export interface RecruitmentCandidateUpdatePayload extends Record<
+  string,
+  unknown
+> {
+  applicationAnswers?: Record<string, string>;
+  resumeText?: string | null;
+  resumeUrl?: string | null;
+  education?: string | null;
+}
+
 export const RecruitmentApi = {
   jobs: (status?: string) =>
     api
@@ -465,119 +402,120 @@ export const RecruitmentApi = {
 
   job: (id: string) =>
     api
-      .get<{ job: JobPosting }>(
-        `/recruitment/jobs/${id}`,
-      )
+      .get<{ job: JobPosting }>(`/recruitment/jobs/${id}`)
       .then((r) => r.data.job),
 
-  createJob: (
-    payload: Record<string, unknown>,
-  ) =>
+  createJob: (payload: Record<string, unknown>) =>
     api
-      .post<{ job: JobPosting }>(
-        "/recruitment/jobs",
-        payload,
-      )
+      .post<{ job: JobPosting }>("/recruitment/jobs", payload)
       .then((r) => r.data.job),
 
-  updateJobStatus: (
-    id: string,
-    status: string,
-  ) =>
+  updateJob: (id: string, payload: Record<string, unknown>) =>
     api
-      .patch<{ job: JobPosting }>(
-        `/recruitment/jobs/${id}/status`,
-        { status },
-      )
+      .patch<{ job: JobPosting }>(`/recruitment/jobs/${id}`, payload)
       .then((r) => r.data.job),
 
-  candidates: (
-    jobPostingId?: string,
-  ) =>
+  updateJobStatus: (id: string, status: "OPEN" | "ON_HOLD" | "CLOSED") =>
     api
-      .get<{ candidates: Candidate[] }>(
-        "/recruitment/candidates",
-        {
-          params: { jobPostingId },
-        },
-      )
+      .patch<{ job: JobPosting }>(`/recruitment/jobs/${id}/status`, { status })
+      .then((r) => r.data.job),
+
+  candidates: (jobPostingId?: string) =>
+    api
+      .get<{ candidates: Candidate[] }>("/recruitment/candidates", {
+        params: { jobPostingId },
+      })
+      .then((r) => r.data.candidates),
+
+  searchCandidates: (params: RecruitmentCandidateSearchParams = {}) =>
+    api
+      .get<{
+        candidates: Candidate[];
+      }>("/recruitment/candidates/search", { params })
       .then((r) => r.data.candidates),
 
   candidate: (id: string) =>
     api
-      .get<{ candidate: Candidate }>(
-        `/recruitment/candidates/${id}`,
-      )
+      .get<{ candidate: Candidate }>(`/recruitment/candidates/${id}`)
       .then((r) => r.data.candidate),
 
-  createCandidate: (
-    payload: Record<string, unknown>,
-  ) =>
+  createCandidate: (payload: RecruitmentCandidateCreatePayload) =>
     api
-      .post<{ candidate: Candidate }>(
-        "/recruitment/candidates",
-        payload,
-      )
+      .post<{ candidate: Candidate }>("/recruitment/candidates", payload)
       .then((r) => r.data.candidate),
 
-  moveStage: (
-    id: string,
-    stage: string,
-  ) =>
+  updateCandidate: (id: string, payload: RecruitmentCandidateUpdatePayload) =>
     api
-      .patch<{ candidate: Candidate }>(
-        `/recruitment/candidates/${id}/stage`,
-        { stage },
-      )
+      .patch<{ candidate: Candidate }>(`/recruitment/candidates/${id}`, payload)
       .then((r) => r.data.candidate),
 
-  rate: (
-    id: string,
-    rating: number,
-  ) =>
-    api
-      .patch<{ candidate: Candidate }>(
-        `/recruitment/candidates/${id}/rating`,
-        { rating },
-      )
-      .then((r) => r.data.candidate),
+  deleteCandidate: (id: string) => api.delete(`/recruitment/candidates/${id}`),
 
- screenCandidate: (
-  id: string,
-  resumeText?: string | null,
-) =>
-  api
-    .post<{
-      candidate: Candidate;
-      message: string;
-    }>(
-      `/recruitment/candidates/${id}/screen`,
-      resumeText?.trim()
-        ? { resumeText: resumeText.trim() }
-        : {},
-    )
-    .then((r) => r.data.candidate),
+  uploadResume: (id: string, file: File) => {
+    const form = new FormData();
+    form.append("resume", file);
 
-  interviews: (
-    candidateId?: string,
-  ) =>
-    api
-      .get<{ interviews: Interview[] }>(
-        "/recruitment/interviews",
-        {
-          params: { candidateId },
+    return api
+      .post<{
+        message: string;
+        resumeUrl: string;
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/resume/upload`, form, {
+        headers: {
+          "Content-Type": "multipart/form-data",
         },
+      })
+      .then((r) => r.data);
+  },
+
+  parseResume: (id: string) =>
+    api
+      .post<{
+        message: string;
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/resume/parse`)
+      .then((r) => r.data.candidate),
+
+  moveStage: (id: string, stage: string) =>
+    api
+      .patch<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/stage`, { stage })
+      .then((r) => r.data.candidate),
+
+  selectCandidate: (id: string) =>
+    api
+      .post<{ candidate: Candidate }>(`/recruitment/candidates/${id}/select`)
+      .then((r) => r.data.candidate),
+
+  rate: (id: string, rating: number) =>
+    api
+      .patch<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/rating`, { rating })
+      .then((r) => r.data.candidate),
+
+  screenCandidate: (id: string, resumeText?: string | null) =>
+    api
+      .post<{
+        candidate: Candidate;
+        message: string;
+      }>(
+        `/recruitment/candidates/${id}/screen`,
+        resumeText?.trim() ? { resumeText: resumeText.trim() } : {},
       )
+      .then((r) => r.data.candidate),
+
+  interviews: (candidateId?: string) =>
+    api
+      .get<{ interviews: Interview[] }>("/recruitment/interviews", {
+        params: { candidateId },
+      })
       .then((r) => r.data.interviews),
 
-  scheduleInterview: (
-    payload: Record<string, unknown>,
-  ) =>
+  scheduleInterview: (payload: Record<string, unknown>) =>
     api
-      .post<{ interview: Interview }>(
-        "/recruitment/interviews",
-        payload,
-      )
+      .post<{ interview: Interview }>("/recruitment/interviews", payload)
       .then((r) => r.data.interview),
 
   submitFeedback: (
@@ -612,41 +550,31 @@ export const RecruitmentApi = {
     },
   ) =>
     api
-      .post<{ candidate: Candidate }>(
-        `/recruitment/candidates/${id}/offer`,
-        payload,
-      )
+      .post<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/offer`, payload)
       .then((r) => r.data.candidate),
 
-  respondToOffer: (
-    id: string,
-    status: "ACCEPTED" | "DECLINED",
-  ) =>
+  respondToOffer: (id: string, status: "ACCEPTED" | "DECLINED") =>
     api
-      .patch<{ candidate: Candidate }>(
-        `/recruitment/candidates/${id}/offer/response`,
-        { status },
-      )
+      .patch<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/offer/response`, { status })
       .then((r) => r.data.candidate),
 
   updateBackgroundVerification: (
     id: string,
     payload: {
-      status:
-        | "NOT_STARTED"
-        | "IN_PROGRESS"
-        | "VERIFIED"
-        | "FAILED";
+      status: "NOT_STARTED" | "IN_PROGRESS" | "VERIFIED" | "FAILED";
       provider?: string;
       reference?: string;
       notes?: string;
     },
   ) =>
     api
-      .patch<{ candidate: Candidate }>(
-        `/recruitment/candidates/${id}/background-verification`,
-        payload,
-      )
+      .patch<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/background-verification`, payload)
       .then((r) => r.data.candidate),
 
   addPreboardingDocument: (
@@ -657,20 +585,16 @@ export const RecruitmentApi = {
     },
   ) =>
     api
-      .post<{ candidate: Candidate }>(
-        `/recruitment/candidates/${id}/preboarding/documents`,
-        payload,
-      )
+      .post<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/preboarding/documents`, payload)
       .then((r) => r.data.candidate),
 
-  verifyPreboardingDocument: (
-    id: string,
-    index: number,
-  ) =>
+  verifyPreboardingDocument: (id: string, index: number) =>
     api
-      .patch<{ candidate: Candidate }>(
-        `/recruitment/candidates/${id}/preboarding/documents/${index}/verify`,
-      )
+      .patch<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/preboarding/documents/${index}/verify`)
       .then((r) => r.data.candidate),
 
   hireCandidate: (
@@ -684,10 +608,9 @@ export const RecruitmentApi = {
       | "HR_ADMIN" = "EMPLOYEE",
   ) =>
     api
-      .post<{ candidate: Candidate }>(
-        `/recruitment/candidates/${id}/hire`,
-        { role },
-      )
+      .post<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/hire`, { role })
       .then((r) => r.data.candidate),
 
   pipelineSummary: () =>
@@ -702,9 +625,7 @@ export const RecruitmentApi = {
 
   openRoles: () =>
     api
-      .get<{ count: number }>(
-        "/recruitment/analytics/open-roles",
-      )
+      .get<{ count: number }>("/recruitment/analytics/open-roles")
       .then((r) => r.data.count),
 
   metrics: () =>
@@ -727,19 +648,12 @@ export const RecruitmentApi = {
 export const PerformanceApi = {
   cycles: () =>
     api
-      .get<{ cycles: PerformanceCycle[] }>(
-        "/performance/cycles",
-      )
+      .get<{ cycles: PerformanceCycle[] }>("/performance/cycles")
       .then((r) => r.data.cycles),
 
-  createCycle: (
-    payload: Record<string, unknown>,
-  ) =>
+  createCycle: (payload: Record<string, unknown>) =>
     api
-      .post<{ cycle: PerformanceCycle }>(
-        "/performance/cycles",
-        payload,
-      )
+      .post<{ cycle: PerformanceCycle }>("/performance/cycles", payload)
       .then((r) => r.data.cycle),
 
   reviews: (
@@ -750,10 +664,7 @@ export const PerformanceApi = {
     } = {},
   ) =>
     api
-      .get<{ reviews: PerformanceReview[] }>(
-        "/performance/reviews",
-        { params },
-      )
+      .get<{ reviews: PerformanceReview[] }>("/performance/reviews", { params })
       .then((r) => r.data.reviews),
 
   myReview: () =>
@@ -769,10 +680,7 @@ export const PerformanceApi = {
     reviewerId: string;
   }) =>
     api
-      .post<{ review: PerformanceReview }>(
-        "/performance/reviews",
-        payload,
-      )
+      .post<{ review: PerformanceReview }>("/performance/reviews", payload)
       .then((r) => r.data.review),
 
   submitSelf: (
@@ -791,11 +699,7 @@ export const PerformanceApi = {
       })
       .then((r) => r.data.review),
 
-  submitManager: (
-    id: string,
-    managerRating: number,
-    managerComments: string,
-  ) =>
+  submitManager: (id: string, managerRating: number, managerComments: string) =>
     api
       .post<{
         review: PerformanceReview;
@@ -807,12 +711,9 @@ export const PerformanceApi = {
 
   goals: (employeeId?: string) =>
     api
-      .get<{ goals: Goal[] }>(
-        "/performance/goals",
-        {
-          params: { employeeId },
-        },
-      )
+      .get<{ goals: Goal[] }>("/performance/goals", {
+        params: { employeeId },
+      })
       .then((r) => r.data.goals),
 
   createGoal: (payload: {
@@ -821,21 +722,12 @@ export const PerformanceApi = {
     dueDate: string;
   }) =>
     api
-      .post<{ goal: Goal }>(
-        "/performance/goals",
-        payload,
-      )
+      .post<{ goal: Goal }>("/performance/goals", payload)
       .then((r) => r.data.goal),
 
-  updateGoalProgress: (
-    id: string,
-    progress: number,
-  ) =>
+  updateGoalProgress: (id: string, progress: number) =>
     api
-      .patch<{ goal: Goal }>(
-        `/performance/goals/${id}/progress`,
-        { progress },
-      )
+      .patch<{ goal: Goal }>(`/performance/goals/${id}/progress`, { progress })
       .then((r) => r.data.goal),
 
   ratingByDepartment: () =>
@@ -851,78 +743,49 @@ export const PerformanceApi = {
 
 // --- Payroll -----------------------------------------------------------------
 export const PayrollApi = {
-  getSalaryStructure: (
-    employeeId: string,
-  ) =>
+  getSalaryStructure: (employeeId: string) =>
     api
       .get<{
         structure: SalaryStructure | null;
       }>(`/payroll/salary-structure/${employeeId}`)
       .then((r) => r.data.structure),
 
-  upsertSalaryStructure: (
-    payload: Record<string, unknown>,
-  ) =>
+  upsertSalaryStructure: (payload: Record<string, unknown>) =>
     api
-      .put<{ structure: SalaryStructure }>(
-        "/payroll/salary-structure",
-        payload,
-      )
+      .put<{ structure: SalaryStructure }>("/payroll/salary-structure", payload)
       .then((r) => r.data.structure),
 
   runs: () =>
-    api
-      .get<{ runs: PayrollRun[] }>("/payroll/runs")
-      .then((r) => r.data.runs),
+    api.get<{ runs: PayrollRun[] }>("/payroll/runs").then((r) => r.data.runs),
 
-  process: (
-    month: number,
-    year: number,
-  ) =>
+  process: (month: number, year: number) =>
     api
-      .post<{ run: PayrollRun }>(
-        "/payroll/runs/process",
-        { month, year },
-      )
+      .post<{ run: PayrollRun }>("/payroll/runs/process", { month, year })
       .then((r) => r.data.run),
 
   markPaid: (id: string) =>
     api
-      .post<{ run: PayrollRun }>(
-        `/payroll/runs/${id}/mark-paid`,
-      )
+      .post<{ run: PayrollRun }>(`/payroll/runs/${id}/mark-paid`)
       .then((r) => r.data.run),
 
-  payslipsForRun: (
-    runId: string,
-  ) =>
+  payslipsForRun: (runId: string) =>
     api
-      .get<{ payslips: Payslip[] }>(
-        `/payroll/runs/${runId}/payslips`,
-      )
+      .get<{ payslips: Payslip[] }>(`/payroll/runs/${runId}/payslips`)
       .then((r) => r.data.payslips),
 
   myPayslips: () =>
     api
-      .get<{ payslips: Payslip[] }>(
-        "/payroll/payslips/mine",
-      )
+      .get<{ payslips: Payslip[] }>("/payroll/payslips/mine")
       .then((r) => r.data.payslips),
 
-  payslipsForEmployee: (
-    employeeId: string,
-  ) =>
+  payslipsForEmployee: (employeeId: string) =>
     api
-      .get<{ payslips: Payslip[] }>(
-        `/payroll/payslips/employee/${employeeId}`,
-      )
+      .get<{ payslips: Payslip[] }>(`/payroll/payslips/employee/${employeeId}`)
       .then((r) => r.data.payslips),
 
   payslip: (id: string) =>
     api
-      .get<{ payslip: Payslip }>(
-        `/payroll/payslips/${id}`,
-      )
+      .get<{ payslip: Payslip }>(`/payroll/payslips/${id}`)
       .then((r) => r.data.payslip),
 
   costTrend: (months = 6) =>
@@ -938,9 +801,7 @@ export const PayrollApi = {
       })
       .then((r) => r.data.data),
 
-  createPayslipRequest: (
-    period: PayslipRequestPeriod,
-  ) =>
+  createPayslipRequest: (period: PayslipRequestPeriod) =>
     api
       .post<{
         request: PayslipRequest;
@@ -990,11 +851,9 @@ export const NotificationsApi = {
       })
       .then((r) => r.data),
 
-  markRead: (id: string) =>
-    api.post(`/notifications/${id}/read`),
+  markRead: (id: string) => api.post(`/notifications/${id}/read`),
 
-  markAllRead: () =>
-    api.post("/notifications/read-all"),
+  markAllRead: () => api.post("/notifications/read-all"),
 
   announcements: () =>
     api
@@ -1003,9 +862,7 @@ export const NotificationsApi = {
       }>("/notifications/announcements")
       .then((r) => r.data.announcements),
 
-  createAnnouncement: (
-    payload: Record<string, unknown>,
-  ) =>
+  createAnnouncement: (payload: Record<string, unknown>) =>
     api
       .post<{
         announcement: Announcement;
@@ -1017,47 +874,29 @@ export const NotificationsApi = {
 export const AnnouncementsApi = {
   list: () =>
     api
-      .get<{ announcements: Announcement[] }>(
-        "/announcements",
-      )
+      .get<{ announcements: Announcement[] }>("/announcements")
       .then((r) => r.data.announcements),
 
   get: (id: string) =>
     api
-      .get<{ announcement: Announcement }>(
-        `/announcements/${id}`,
-      )
+      .get<{ announcement: Announcement }>(`/announcements/${id}`)
       .then((r) => r.data.announcement),
 
-  create: (
-    payload: FormData | Record<string, unknown>,
-  ) =>
+  create: (payload: FormData | Record<string, unknown>) =>
     api
-      .post<{ announcement: Announcement }>(
-        "/announcements",
-        payload,
-      )
+      .post<{ announcement: Announcement }>("/announcements", payload)
       .then((r) => r.data.announcement),
 
-  update: (
-    id: string,
-    payload: FormData | Record<string, unknown>,
-  ) =>
+  update: (id: string, payload: FormData | Record<string, unknown>) =>
     api
-      .patch<{ announcement: Announcement }>(
-        `/announcements/${id}`,
-        payload,
-      )
+      .patch<{ announcement: Announcement }>(`/announcements/${id}`, payload)
       .then((r) => r.data.announcement),
 
-  delete: (id: string) =>
-    api.delete(`/announcements/${id}`),
+  delete: (id: string) => api.delete(`/announcements/${id}`),
 
-  markRead: (id: string) =>
-    api.post(`/announcements/${id}/read`),
+  markRead: (id: string) => api.post(`/announcements/${id}/read`),
 
-  acknowledge: (id: string) =>
-    api.post(`/announcements/${id}/acknowledge`),
+  acknowledge: (id: string) => api.post(`/announcements/${id}/acknowledge`),
 
   status: (id: string) =>
     api
@@ -1099,9 +938,7 @@ export type CompanyIssuedDocType =
 export const DocumentsApi = {
   list: (employeeId: string) =>
     api
-      .get<{ documents: any[] }>(
-        `/documents/employee/${employeeId}`,
-      )
+      .get<{ documents: any[] }>(`/documents/employee/${employeeId}`)
       .then((r) => r.data.documents),
 
   upload: (
@@ -1120,15 +957,11 @@ export const DocumentsApi = {
     }
 
     return api
-      .post(
-        `/documents/employee/${employeeId}`,
-        form,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
+      .post(`/documents/employee/${employeeId}`, form, {
+        headers: {
+          "Content-Type": "multipart/form-data",
         },
-      )
+      })
       .then((r) => r.data.document);
   },
 
@@ -1138,10 +971,7 @@ export const DocumentsApi = {
     note?: string;
   }) =>
     api
-      .post<{ request: any }>(
-        "/documents/requests",
-        payload,
-      )
+      .post<{ request: any }>("/documents/requests", payload)
       .then((r) => r.data.request),
 
   requestCompanyDocument: (payload: {
@@ -1149,71 +979,41 @@ export const DocumentsApi = {
     note?: string;
   }) =>
     api
-      .post<{ request: any }>(
-        "/documents/requests",
-        payload,
-      )
+      .post<{ request: any }>("/documents/requests", payload)
       .then((r) => r.data.request),
 
-  listDocumentRequests: (
-    employeeId: string,
-  ) =>
+  listDocumentRequests: (employeeId: string) =>
     api
-      .get<{ requests: any[] }>(
-        `/documents/requests/employee/${employeeId}`,
-      )
+      .get<{ requests: any[] }>(`/documents/requests/employee/${employeeId}`)
       .then((r) => r.data.requests),
 
-  listCompanyDocumentRequests: (
-    status?: string,
-  ) =>
+  listCompanyDocumentRequests: (status?: string) =>
     api
-      .get<{ requests: any[] }>(
-        "/documents/requests/company",
-        {
-          params: { status },
-        },
-      )
+      .get<{ requests: any[] }>("/documents/requests/company", {
+        params: { status },
+      })
       .then((r) => r.data.requests),
 
-  delete: (id: string) =>
-    api.delete(`/documents/${id}`),
+  delete: (id: string) => api.delete(`/documents/${id}`),
 
   allAssets: () =>
     api
-      .get<{ assets: Asset[] }>(
-        "/documents/assets/all",
-      )
+      .get<{ assets: Asset[] }>("/documents/assets/all")
       .then((r) => r.data.assets),
 
-  assetsForEmployee: (
-    employeeId: string,
-  ) =>
+  assetsForEmployee: (employeeId: string) =>
     api
-      .get<{ assets: Asset[] }>(
-        `/documents/assets/employee/${employeeId}`,
-      )
+      .get<{ assets: Asset[] }>(`/documents/assets/employee/${employeeId}`)
       .then((r) => r.data.assets),
 
-  assignAsset: (
-    payload: Record<string, unknown>,
-  ) =>
+  assignAsset: (payload: Record<string, unknown>) =>
     api
-      .post<{ asset: Asset }>(
-        "/documents/assets",
-        payload,
-      )
+      .post<{ asset: Asset }>("/documents/assets", payload)
       .then((r) => r.data.asset),
 
-  updateAssetStatus: (
-    id: string,
-    status: string,
-  ) =>
+  updateAssetStatus: (id: string, status: string) =>
     api
-      .patch<{ asset: Asset }>(
-        `/documents/assets/${id}/status`,
-        { status },
-      )
+      .patch<{ asset: Asset }>(`/documents/assets/${id}/status`, { status })
       .then((r) => r.data.asset),
 };
 
@@ -1270,7 +1070,5 @@ export interface DashboardOverview {
 
 export const DashboardApi = {
   overview: () =>
-    api
-      .get<DashboardOverview>("/dashboard/overview")
-      .then((r) => r.data),
+    api.get<DashboardOverview>("/dashboard/overview").then((r) => r.data),
 };

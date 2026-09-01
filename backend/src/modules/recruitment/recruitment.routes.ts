@@ -8,8 +8,10 @@ import {
 } from "@/middleware/rbac";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
+import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 
 import * as repo from "./recruitment.repository";
+import { parseResumeFile } from "./resumeParser";
 
 export const recruitmentRouter = Router();
 
@@ -80,21 +82,21 @@ const jobSchema = z.object({
     .enum(["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"])
     .optional(),
 
-  experienceMin: z.coerce.number().int().min(0).optional(),
+  experienceMin: z.number().int().min(0).optional(),
 
-  experienceMax: z.coerce.number().int().min(0).optional(),
+  experienceMax: z.number().int().min(0).optional(),
 
   // The repository can generate the description from the selected
   // role template, so description must be optional at the route layer.
   description: z.string().min(10, "Add a fuller job description.").optional(),
 
-  openings: z.coerce.number().int().min(1).optional(),
+  openings: z.number().int().min(1).optional(),
 
-  headcount: z.coerce.number().int().min(1).optional(),
+  headcount: z.number().int().min(1).optional(),
 
-  budgetCtc: z.coerce.number().min(0).optional(),
+  budgetCtc: z.number().min(0).optional(),
 
-  approvalLevelRequired: z.coerce.number().int().min(1).max(10).optional(),
+  approvalLevelRequired: z.number().int().min(1).max(10).optional(),
 
   postingChannels: z.array(z.string()).optional(),
 
@@ -137,15 +139,10 @@ const jobSchema = z.object({
   // createJobPosting() and later by screenCandidate().
   shortlistingCriteria: z
     .object({
-      enabled: z.coerce.boolean().optional().default(false),
-      minimumJobFitScore: z.coerce
-        .number()
-        .min(0)
-        .max(100)
-        .optional()
-        .default(60),
+      enabled: z.boolean().optional().default(false),
+      minimumJobFitScore: z.number().min(0).max(100).optional().default(60),
       requiredSkills: z.array(z.string()).optional().default([]),
-      minimumExperience: z.coerce.number().min(0).optional().default(0),
+      minimumExperience: z.number().min(0).optional().default(0),
     })
     .optional(),
 });
@@ -162,23 +159,6 @@ recruitmentRouter.post(
 
       const job = await repo.createJobPosting({
         ...req.body,
-        location: req.body.location?.trim() || "Bengaluru, India",
-        employmentType: req.body.employmentType ?? "FULL_TIME",
-        experienceMin: req.body.experienceMin ?? 0,
-        experienceMax: req.body.experienceMax ?? req.body.experienceMin ?? 0,
-        openings: req.body.openings ?? req.body.headcount ?? 1,
-        headcount: req.body.headcount ?? req.body.openings ?? 1,
-        postingChannels: req.body.postingChannels?.length
-          ? req.body.postingChannels
-          : ["CAREERS"],
-        screeningQuestions: req.body.screeningQuestions ?? [],
-        skills: req.body.skills ?? [],
-        shortlistingCriteria: req.body.shortlistingCriteria ?? {
-          enabled: false,
-          minimumJobFitScore: 60,
-          requiredSkills: [],
-          minimumExperience: 0,
-        },
         requestedById: req.user.userId,
       });
 
@@ -576,6 +556,97 @@ const candidateResumeSchema = z.object({
   resumeUrl: z.string().url().nullable().optional(),
   resumeText: z.string().nullable().optional(),
 });
+
+// Upload a candidate resume as multipart/form-data.
+// The frontend/Postman must send the file in the "resume" field.
+recruitmentRouter.post(
+  "/candidates/:id/resume/upload",
+  isAdminOrRecruiter,
+  upload.single("resume"),
+  async (req, res, next) => {
+    try {
+      if (!req.file) {
+        throw AppError.badRequest("Resume file is required.");
+      }
+
+      const resumeUrl = `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`;
+      const candidate = await repo.setCandidateResume(req.params.id, {
+        resumeUrl,
+      });
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      res.status(201).json({
+        message: "Candidate resume uploaded successfully.",
+        resumeUrl,
+        candidate,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Parse the uploaded resume and persist extracted resume data.
+recruitmentRouter.post(
+  "/candidates/:id/resume/parse",
+  isAdminOrRecruiter,
+  async (req, res, next) => {
+    try {
+      const candidate = await repo.getCandidate(req.params.id);
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      if (!candidate.resumeUrl) {
+        throw AppError.badRequest("Upload a resume before parsing it.");
+      }
+
+      const parsingCandidate = await repo.updateResumeParsingStatus(
+        req.params.id,
+        { status: "PARSING" },
+      );
+
+      if (!parsingCandidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      try {
+        const parsed = await parseResumeFile(candidate.resumeUrl);
+
+        const updated = await repo.updateParsedResume(req.params.id, {
+          resumeText: parsed.text,
+          extractedSkills: parsed.skills,
+          extractedExperience: parsed.experience,
+          extractedEducation: parsed.education,
+        });
+
+        if (!updated) {
+          throw AppError.notFound("Candidate not found.");
+        }
+
+        res.json({
+          message: "Resume parsed successfully.",
+          candidate: updated,
+        });
+      } catch (parseError) {
+        await repo.updateResumeParsingStatus(req.params.id, {
+          status: "FAILED",
+          error:
+            parseError instanceof Error
+              ? parseError.message
+              : "Resume parsing failed.",
+        });
+        throw parseError;
+      }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 recruitmentRouter.patch(
   "/candidates/:id/resume",

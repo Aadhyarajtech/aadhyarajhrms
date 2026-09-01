@@ -1311,6 +1311,10 @@ export interface JobPostingDoc {
   postingChannels: string[];
   screeningQuestions: string[];
 
+  // Public job posting / application configuration
+  publishedAt: string | null;
+  closedAt: string | null;
+
   hiringMode: HiringMode;
 
   skills: string[];
@@ -1565,6 +1569,16 @@ const jobPostingSchema = new Schema<JobPostingDoc>(
       default: [],
     },
 
+    publishedAt: {
+      type: String,
+      default: null,
+    },
+
+    closedAt: {
+      type: String,
+      default: null,
+    },
+
     hiringMode: {
       type: String,
       enum: ["STANDARD", "WALK_IN", "CAMPUS"],
@@ -1717,6 +1731,29 @@ export interface PreboardingDoc {
   completedAt: string | null;
 }
 
+export interface CandidateResumeExperience {
+  company: string | null;
+  position: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  description: string | null;
+}
+
+export interface CandidateResumeEducation {
+  degree: string | null;
+  institution: string | null;
+  fieldOfStudy: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  grade: string | null;
+}
+
+export type ResumeParsingStatus =
+  | "NOT_PARSED"
+  | "PARSING"
+  | "PARSED"
+  | "FAILED";
+
 export interface CandidateDoc {
   _id: string;
   jobPostingId: string;
@@ -1729,7 +1766,13 @@ export interface CandidateDoc {
   resumeUrl: string | null;
   resumeText: string | null;
 
+  // Automatic resume parsing
+  resumeParsingStatus: ResumeParsingStatus;
+  resumeParsingError: string | null;
+  resumeParsedAt: string | null;
   extractedSkills: string[];
+  extractedExperience: CandidateResumeExperience[];
+  extractedEducation: CandidateResumeEducation[];
 
   jobFitScore: number | null;
   screeningSummary: string | null;
@@ -1737,6 +1780,24 @@ export interface CandidateDoc {
   autoShortlisted: boolean;
 
   shortlistingResult: "PENDING" | "SHORTLISTED" | "NOT_SHORTLISTED";
+
+  finalResult: "PENDING" | "SELECTED" | "REJECTED";
+
+  screeningRecommendation:
+    | "PENDING"
+    | "STRONG_FIT"
+    | "GOOD_FIT"
+    | "WEAK_FIT"
+    | "NOT_RECOMMENDED";
+
+  // Answers to role-specific application/screening questions.
+  applicationAnswers: Record<string, string>;
+
+  // Duplicate/spam protection
+  duplicateStatus: "NOT_CHECKED" | "UNIQUE" | "DUPLICATE";
+  duplicateOfCandidateId: string | null;
+  spamFlag: boolean;
+  spamReason: string | null;
 
   stage: "APPLIED" | "SCREENING" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED";
 
@@ -1899,6 +1960,29 @@ const preboardingSchema = new Schema<PreboardingDoc>(
   },
 );
 
+const candidateResumeExperienceSchema = new Schema<CandidateResumeExperience>(
+  {
+    company: { type: String, default: null },
+    position: { type: String, default: null },
+    startDate: { type: String, default: null },
+    endDate: { type: String, default: null },
+    description: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const candidateResumeEducationSchema = new Schema<CandidateResumeEducation>(
+  {
+    degree: { type: String, default: null },
+    institution: { type: String, default: null },
+    fieldOfStudy: { type: String, default: null },
+    startDate: { type: String, default: null },
+    endDate: { type: String, default: null },
+    grade: { type: String, default: null },
+  },
+  { _id: false },
+);
+
 const candidateSchema = new Schema<CandidateDoc>(
   {
     _id: idField("cand"),
@@ -1940,8 +2024,34 @@ const candidateSchema = new Schema<CandidateDoc>(
       default: null,
     },
 
+    resumeParsingStatus: {
+      type: String,
+      enum: ["NOT_PARSED", "PARSING", "PARSED", "FAILED"],
+      default: "NOT_PARSED",
+    },
+
+    resumeParsingError: {
+      type: String,
+      default: null,
+    },
+
+    resumeParsedAt: {
+      type: String,
+      default: null,
+    },
+
     extractedSkills: {
       type: [String],
+      default: [],
+    },
+
+    extractedExperience: {
+      type: [candidateResumeExperienceSchema],
+      default: [],
+    },
+
+    extractedEducation: {
+      type: [candidateResumeEducationSchema],
       default: [],
     },
 
@@ -1962,6 +2072,50 @@ const candidateSchema = new Schema<CandidateDoc>(
     shortlistingResult: {
       type: String,
       enum: ["PENDING", "SHORTLISTED", "NOT_SHORTLISTED"],
+      default: "PENDING",
+    },
+
+    screeningRecommendation: {
+      type: String,
+      enum: [
+        "PENDING",
+        "STRONG_FIT",
+        "GOOD_FIT",
+        "WEAK_FIT",
+        "NOT_RECOMMENDED",
+      ],
+      default: "PENDING",
+    },
+
+    applicationAnswers: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+
+    duplicateStatus: {
+      type: String,
+      enum: ["NOT_CHECKED", "UNIQUE", "DUPLICATE"],
+      default: "NOT_CHECKED",
+    },
+
+    duplicateOfCandidateId: {
+      type: String,
+      default: null,
+    },
+
+    spamFlag: {
+      type: Boolean,
+      default: false,
+    },
+
+    spamReason: {
+      type: String,
+      default: null,
+    },
+
+    finalResult: {
+      type: String,
+      enum: ["PENDING", "SELECTED", "REJECTED"],
       default: "PENDING",
     },
 
@@ -2032,6 +2186,14 @@ const candidateSchema = new Schema<CandidateDoc>(
 
 candidateSchema.index({
   stage: 1,
+});
+
+candidateSchema.index({
+  duplicateStatus: 1,
+});
+
+candidateSchema.index({
+  spamFlag: 1,
 });
 
 candidateSchema.index(

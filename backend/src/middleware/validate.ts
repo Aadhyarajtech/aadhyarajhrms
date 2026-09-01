@@ -11,11 +11,11 @@ export function validate(schema: ZodSchema, target: Target = "body") {
       return next(
         AppError.badRequest(
           "Some of the information you submitted isn't valid.",
-          result.error.flatten().fieldErrors
-        )
+          result.error.flatten().fieldErrors,
+        ),
       );
     }
-    (req as any)[target] = result.data;
+    Object.assign(req, { [target]: result.data });
     next();
   };
 }

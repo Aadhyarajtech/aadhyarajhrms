@@ -370,6 +370,22 @@ export const RecruitmentApi = {
       })
       .then((r) => r.data.candidates),
 
+  searchCandidates: (
+    params: {
+      jobPostingId?: string;
+      stage?: string;
+      finalResult?: string;
+      minJobFitScore?: number;
+      source?: string;
+      query?: string;
+    } = {},
+  ) =>
+    api
+      .get<{ candidates: Candidate[] }>("/recruitment/candidates/search", {
+        params,
+      })
+      .then((r) => r.data.candidates),
+
   candidate: (id: string) =>
     api
       .get<{ candidate: Candidate }>(`/recruitment/candidates/${id}`)
@@ -421,6 +437,13 @@ export const RecruitmentApi = {
       }>(`/recruitment/candidates/${id}/stage`, { stage })
       .then((r) => r.data.candidate),
 
+  selectCandidate: (id: string) =>
+    api
+      .post<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/select`)
+      .then((r) => r.data.candidate),
+
   rate: (id: string, rating: number) =>
     api
       .patch<{
@@ -433,6 +456,14 @@ export const RecruitmentApi = {
         candidate: Candidate;
         message: string;
       }>(`/recruitment/candidates/${id}/screen`, { resumeText })
+      .then((r) => r.data.candidate),
+
+  parseResume: (id: string) =>
+    api
+      .post<{
+        candidate: Candidate;
+        message: string;
+      }>(`/recruitment/candidates/${id}/resume/parse`)
       .then((r) => r.data.candidate),
 
   interviews: (candidateId?: string) =>
