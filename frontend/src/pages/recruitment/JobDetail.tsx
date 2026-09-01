@@ -30,6 +30,7 @@ import {
   SlidersHorizontal,
   Copy,
   AlertTriangle,
+  X,
 } from "lucide-react";
 
 import { RecruitmentApi, EmployeesApi } from "@/lib/endpoints";
@@ -70,10 +71,17 @@ const candidateSchema = z.object({
   phone: z.string().optional(),
   expectedCtc: z.coerce.number().optional(),
   source: z.string().optional(),
-  resumeText: z.string().optional(),
 });
 
 type CandidateForm = z.infer<typeof candidateSchema>;
+
+const MAX_RESUME_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_RESUME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+const ALLOWED_RESUME_EXTENSIONS = [".pdf", ".doc", ".docx"];
 
 type ScreeningCandidate = Candidate & {
   resumeText?: string;
@@ -83,6 +91,7 @@ type ScreeningCandidate = Candidate & {
   experience?: number;
   autoShortlisted?: boolean;
   shortlistingResult?: "PENDING" | "SHORTLISTED" | "NOT_SHORTLISTED";
+  finalResult?: "PENDING" | "SELECTED" | "REJECTED";
   screening?: {
     score: number;
     recommendation: string;
@@ -135,6 +144,14 @@ type RecruitmentJob = {
   approvedAt?: string | null;
   approvedById?: string | null;
   rejectionReason?: string | null;
+  publishedAt?: string | null;
+  closedAt?: string | null;
+  shortlistingCriteria?: {
+    enabled?: boolean;
+    minimumJobFitScore?: number;
+    requiredSkills?: string[];
+    minimumExperience?: number;
+  };
 };
 
 /* =========================================================
@@ -206,6 +223,15 @@ export default function JobDetail() {
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
+  const selectCandidateMutation = useMutation({
+    mutationFn: (id: string) => RecruitmentApi.selectCandidate(id),
+    onSuccess: () => {
+      refreshCandidates();
+      showToast("Candidate selected. Offer stage is now available.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
   const rateMutation = useMutation({
     mutationFn: ({ id, rating }: { id: string; rating: number }) =>
       RecruitmentApi.rate(id, rating),
@@ -220,8 +246,7 @@ export default function JobDetail() {
   });
 
   const screenMutation = useMutation({
-    mutationFn: ({ id, resumeText }: { id: string; resumeText?: string }) =>
-      RecruitmentApi.screenCandidate(id, resumeText),
+    mutationFn: ({ id }: { id: string }) => RecruitmentApi.screenCandidate(id),
 
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -629,165 +654,220 @@ export default function JobDetail() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-6">
-          <div className="relative lg:col-span-2">
-            <Search
-              size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint"
-            />
-            <input
-              value={screeningSearch}
-              onChange={(e) => setScreeningSearch(e.target.value)}
-              placeholder="Search candidate, email or source..."
-              className="h-9 w-full rounded-xl border border-line bg-white pl-9 pr-3 text-[12px] text-ink outline-none focus:border-brand-500"
-            />
+        <div className="mt-4 rounded-2xl border border-line/60 bg-ink/[0.015] p-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12">
+            <div className="relative xl:col-span-4">
+              <label
+                htmlFor="candidate-screening-search"
+                className="mb-2 block text-[12px] font-semibold text-ink"
+              >
+                Search candidates
+              </label>
+              <div className="relative">
+                <Search
+                  size={18}
+                  strokeWidth={2}
+                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-faint"
+                />
+                <input
+                  id="candidate-screening-search"
+                  type="search"
+                  value={screeningSearch}
+                  onChange={(e) => setScreeningSearch(e.target.value)}
+                  placeholder="Name, email or source"
+                  className="h-10 w-full rounded-xl border border-line bg-white pl-10 pr-10 text-[13px] font-medium text-ink shadow-sm outline-none transition-all placeholder:text-ink-faint hover:border-ink/20 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
+                />
+                {screeningSearch.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setScreeningSearch("")}
+                    aria-label="Clear candidate search"
+                    className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-ink-faint transition hover:bg-ink/5 hover:text-ink"
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="xl:col-span-2">
+              <SelectField
+                label="Stage"
+                value={screeningStage}
+                onChange={(e) =>
+                  setScreeningStage(
+                    e.target.value as "ALL" | Candidate["stage"],
+                  )
+                }
+              >
+                <option value="ALL">All stages</option>
+                {STAGES.map((stage) => (
+                  <option key={stage.key} value={stage.key}>
+                    {stage.label}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+
+            <div className="xl:col-span-2">
+              <SelectField
+                label="Source"
+                value={screeningSource}
+                onChange={(e) => setScreeningSource(e.target.value)}
+              >
+                <option value="ALL">All sources</option>
+                {Array.from(
+                  new Set(
+                    (candidates ?? [])
+                      .map((candidate) => candidate.source)
+                      .filter(Boolean),
+                  ),
+                ).map((source) => (
+                  <option key={source} value={source}>
+                    {source}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+
+            <div className="xl:col-span-2">
+              <SelectField
+                label="AI Recommendation"
+                value={screeningRecommendation}
+                onChange={(e) => setScreeningRecommendation(e.target.value)}
+              >
+                <option value="ALL">All recommendations</option>
+                <option value="STRONG_YES">Strong Yes</option>
+                <option value="YES">Yes</option>
+                <option value="NO">No</option>
+                <option value="STRONG_NO">Strong No</option>
+              </SelectField>
+            </div>
+
+            <div className="xl:col-span-2">
+              <SelectField
+                label="Skill"
+                value={screeningSkill}
+                onChange={(e) => setScreeningSkill(e.target.value)}
+              >
+                <option value="ALL">All skills</option>
+                {availableSkills.map((skill) => (
+                  <option key={skill} value={skill}>
+                    {skill}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+
+            <div className="xl:col-span-3">
+              <SelectField
+                label="Experience"
+                value={String(minimumExperience)}
+                onChange={(e) => setMinimumExperience(Number(e.target.value))}
+              >
+                <option value="0">Any experience</option>
+                <option value="1">1+ years</option>
+                <option value="2">2+ years</option>
+                <option value="3">3+ years</option>
+                <option value="5">5+ years</option>
+                <option value="7">7+ years</option>
+                <option value="10">10+ years</option>
+              </SelectField>
+            </div>
+
+            <div className="xl:col-span-3">
+              <SelectField
+                label="Rating"
+                value={String(minimumRating)}
+                onChange={(e) => setMinimumRating(Number(e.target.value))}
+              >
+                <option value="0">Any rating</option>
+                <option value="1">1+ stars</option>
+                <option value="2">2+ stars</option>
+                <option value="3">3+ stars</option>
+                <option value="4">4+ stars</option>
+                <option value="5">5 stars</option>
+              </SelectField>
+            </div>
+
+            <div className="xl:col-span-3">
+              <SelectField
+                label="Shortlist"
+                value={shortlistFilter}
+                onChange={(e) => setShortlistFilter(e.target.value)}
+              >
+                <option value="ALL">All candidates</option>
+                <option value="SHORTLISTED">Shortlisted only</option>
+                <option value="NOT_SHORTLISTED">Not shortlisted</option>
+              </SelectField>
+            </div>
           </div>
-          <SelectField
-            label="Stage"
-            value={screeningStage}
-            onChange={(e) =>
-              setScreeningStage(e.target.value as "ALL" | Candidate["stage"])
-            }
-          >
-            <option value="ALL">All stages</option>
-            {STAGES.map((stage) => (
-              <option key={stage.key} value={stage.key}>
-                {stage.label}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
-            label="Source"
-            value={screeningSource}
-            onChange={(e) => setScreeningSource(e.target.value)}
-          >
-            <option value="ALL">All sources</option>
-            {Array.from(
-              new Set(
-                (candidates ?? [])
-                  .map((candidate) => candidate.source)
-                  .filter(Boolean),
-              ),
-            ).map((source) => (
-              <option key={source} value={source}>
-                {source}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
-            label="AI recommendation"
-            value={screeningRecommendation}
-            onChange={(e) => setScreeningRecommendation(e.target.value)}
-          >
-            <option value="ALL">All recommendations</option>
-            <option value="STRONG_YES">Strong Yes</option>
-            <option value="YES">Yes</option>
-            <option value="NO">No</option>
-            <option value="STRONG_NO">Strong No</option>
-          </SelectField>
-          <SelectField
-            label="Skill"
-            value={screeningSkill}
-            onChange={(e) => setScreeningSkill(e.target.value)}
-          >
-            <option value="ALL">All skills</option>
-            {availableSkills.map((skill) => (
-              <option key={skill} value={skill}>
-                {skill}
-              </option>
-            ))}
-          </SelectField>
-
-          <SelectField
-            label="Experience"
-            value={String(minimumExperience)}
-            onChange={(e) => setMinimumExperience(Number(e.target.value))}
-          >
-            <option value="0">Any experience</option>
-            <option value="1">1+ years</option>
-            <option value="2">2+ years</option>
-            <option value="3">3+ years</option>
-            <option value="5">5+ years</option>
-            <option value="7">7+ years</option>
-            <option value="10">10+ years</option>
-          </SelectField>
-
-          <SelectField
-            label="Rating"
-            value={String(minimumRating)}
-            onChange={(e) => setMinimumRating(Number(e.target.value))}
-          >
-            <option value="0">Any rating</option>
-            <option value="1">1+ stars</option>
-            <option value="2">2+ stars</option>
-            <option value="3">3+ stars</option>
-            <option value="4">4+ stars</option>
-            <option value="5">5 stars</option>
-          </SelectField>
-
-          <SelectField
-            label="Shortlist"
-            value={shortlistFilter}
-            onChange={(e) => setShortlistFilter(e.target.value)}
-          >
-            <option value="ALL">All candidates</option>
-            <option value="SHORTLISTED">Shortlisted only</option>
-            <option value="NOT_SHORTLISTED">Not shortlisted</option>
-          </SelectField>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-[11.5px] text-ink-soft">
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={10}
-              value={minimumFit}
-              onChange={(e) => setMinimumFit(Number(e.target.value))}
-            />
-            Minimum AI fit:{" "}
-            <span className="font-semibold text-ink">{minimumFit}%</span>
-          </label>
-          <label className="flex items-center gap-2 text-[11.5px] text-ink-soft">
-            <input
-              type="checkbox"
-              checked={hideDuplicates}
-              onChange={(e) => setHideDuplicates(e.target.checked)}
-            />
-            Hide duplicates
-          </label>
-          <label className="flex items-center gap-2 text-[11.5px] text-ink-soft">
-            <input
-              type="checkbox"
-              checked={hideSpam}
-              onChange={(e) => setHideSpam(e.target.checked)}
-            />
-            Hide suspicious applications
-          </label>
-          <button
-            type="button"
-            onClick={() => {
-              setScreeningSearch("");
-              setScreeningStage("ALL");
-              setScreeningSource("ALL");
-              setScreeningRecommendation("ALL");
-              setScreeningSkill("ALL");
-              setMinimumFit(0);
-              setMinimumExperience(0);
-              setMinimumRating(0);
-              setShortlistFilter("ALL");
-              setHideDuplicates(false);
-              setHideSpam(false);
-            }}
-            className="text-[11px] font-medium text-brand-600 hover:underline"
-          >
-            Clear filters
-          </button>
-          <span className="ml-auto flex items-center gap-1 text-[11px] text-ink-faint">
-            <Filter size={12} /> Showing {filteredCandidates.length} of{" "}
-            {screeningTotal}
-          </span>
+        <div className="mt-3 rounded-2xl border border-line/60 bg-white p-3">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+            <label className="flex min-w-[240px] flex-1 items-center gap-2 text-[11.5px] text-ink-soft">
+              <span className="whitespace-nowrap">Minimum AI fit</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={10}
+                value={minimumFit}
+                onChange={(e) => setMinimumFit(Number(e.target.value))}
+                className="min-w-[100px] flex-1 accent-brand-600"
+              />
+              <span className="w-9 text-right font-semibold text-ink">
+                {minimumFit}%
+              </span>
+            </label>
+
+            <label className="flex items-center gap-2 text-[11.5px] text-ink-soft">
+              <input
+                type="checkbox"
+                checked={hideDuplicates}
+                onChange={(e) => setHideDuplicates(e.target.checked)}
+                className="h-4 w-4 rounded border-line accent-brand-600"
+              />
+              Hide duplicates
+            </label>
+
+            <label className="flex items-center gap-2 text-[11.5px] text-ink-soft">
+              <input
+                type="checkbox"
+                checked={hideSpam}
+                onChange={(e) => setHideSpam(e.target.checked)}
+                className="h-4 w-4 rounded border-line accent-brand-600"
+              />
+              Hide suspicious applications
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line/60 pt-3">
+            <button
+              type="button"
+              onClick={() => {
+                setScreeningSearch("");
+                setScreeningStage("ALL");
+                setScreeningSource("ALL");
+                setScreeningRecommendation("ALL");
+                setScreeningSkill("ALL");
+                setMinimumFit(0);
+                setMinimumExperience(0);
+                setMinimumRating(0);
+                setShortlistFilter("ALL");
+                setHideDuplicates(false);
+                setHideSpam(false);
+              }}
+              className="text-[11px] font-medium text-brand-600 transition hover:text-brand-700 hover:underline"
+            >
+              Clear filters
+            </button>
+            <span className="flex items-center gap-1.5 rounded-full bg-ink/[0.035] px-2.5 py-1 text-[11px] text-ink-faint">
+              <Filter size={12} />
+              Showing {filteredCandidates.length} of {screeningTotal}
+            </span>
+          </div>
         </div>
       </Card>
 
@@ -1020,7 +1100,7 @@ export default function JobDetail() {
                               {screeningStatus === "SCREENED" && (
                                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                   <span className="text-[10.5px] text-ink-faint">
-                                    Result:
+                                    AI Screening Result:
                                   </span>
                                   <Badge
                                     tone={
@@ -1032,6 +1112,30 @@ export default function JobDetail() {
                                     }
                                   >
                                     {shortlistStatus.replaceAll("_", " ")}
+                                  </Badge>
+                                </div>
+                              )}
+
+                              {screeningCandidate.finalResult && (
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                  <span className="text-[10.5px] text-ink-faint">
+                                    Final Result:
+                                  </span>
+                                  <Badge
+                                    tone={
+                                      screeningCandidate.finalResult ===
+                                      "SELECTED"
+                                        ? "success"
+                                        : screeningCandidate.finalResult ===
+                                            "REJECTED"
+                                          ? "warning"
+                                          : "neutral"
+                                    }
+                                  >
+                                    {screeningCandidate.finalResult.replaceAll(
+                                      "_",
+                                      " ",
+                                    )}
                                   </Badge>
                                 </div>
                               )}
@@ -1102,7 +1206,6 @@ export default function JobDetail() {
                                 onClick={() =>
                                   screenMutation.mutate({
                                     id: candidate.id,
-                                    resumeText: screeningCandidate.resumeText,
                                   })
                                 }
                               >
@@ -1117,6 +1220,24 @@ export default function JobDetail() {
                         <div className="mt-2.5">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex min-w-0 items-center gap-3">
+                              {candidate.stage === "INTERVIEW" &&
+                                (screeningCandidate.finalResult ??
+                                  "PENDING") === "PENDING" && (
+                                  <button
+                                    type="button"
+                                    disabled={selectCandidateMutation.isPending}
+                                    onClick={() =>
+                                      selectCandidateMutation.mutate(
+                                        candidate.id,
+                                      )
+                                    }
+                                    className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:underline disabled:opacity-50"
+                                  >
+                                    <UserCheck size={12} />
+                                    Select
+                                  </button>
+                                )}
+
                               <button
                                 type="button"
                                 onClick={() => setScheduleFor(candidate)}
@@ -1616,6 +1737,7 @@ function AddCandidateModal({
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
 
   const {
     register,
@@ -1627,15 +1749,62 @@ function AddCandidateModal({
   });
 
   useEffect(() => {
-    if (!open) reset();
+    if (!open) {
+      reset();
+      setResumeFile(null);
+    }
   }, [open, reset]);
 
   const mutation = useMutation({
-    mutationFn: (values: CandidateForm) =>
-      RecruitmentApi.createCandidate({
+    mutationFn: async (values: CandidateForm) => {
+      if (resumeFile) {
+        const fileName = resumeFile.name.toLowerCase();
+        const hasAllowedExtension = ALLOWED_RESUME_EXTENSIONS.some((ext) =>
+          fileName.endsWith(ext),
+        );
+
+        if (
+          !hasAllowedExtension ||
+          !ALLOWED_RESUME_TYPES.has(resumeFile.type)
+        ) {
+          throw new Error("Resume must be a PDF, DOC or DOCX file.");
+        }
+
+        if (resumeFile.size > MAX_RESUME_SIZE_BYTES) {
+          throw new Error("Resume size must not exceed 5 MB.");
+        }
+      }
+
+      // Create the candidate first so we have a candidate ID for the
+      // dedicated resume-upload endpoint.
+      const candidate = await RecruitmentApi.createCandidate({
         jobPostingId: jobId,
         ...values,
-      }),
+      });
+
+      if (resumeFile) {
+        const formData = new FormData();
+        formData.append("resume", resumeFile);
+
+        try {
+          await api.post(
+            `/recruitment/candidates/${candidate.id}/resume/upload`,
+            formData,
+            {
+              headers: {
+                "Content-Type": "multipart/form-data",
+              },
+            },
+          );
+        } catch (error) {
+          throw new Error(
+            `Candidate was added, but the resume could not be uploaded. ${getErrorMessage(error)}`,
+          );
+        }
+      }
+
+      return candidate;
+    },
 
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -1646,9 +1815,14 @@ function AddCandidateModal({
         queryKey: ["recruitment", "pipeline"],
       });
 
-      showToast("Candidate added.");
+      showToast(
+        resumeFile
+          ? "Candidate added and resume uploaded."
+          : "Candidate added.",
+      );
 
       reset();
+      setResumeFile(null);
       onClose();
     },
 
@@ -1662,7 +1836,11 @@ function AddCandidateModal({
       title="Add candidate"
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={mutation.isPending}
+          >
             Cancel
           </Button>
 
@@ -1724,19 +1902,43 @@ function AddCandidateModal({
 
         <div className="sm:col-span-2">
           <label className="mb-1.5 block text-[12px] font-medium text-ink">
-            Resume Text for AI Screening
+            Resume
           </label>
 
-          <textarea
-            rows={6}
-            placeholder="Paste candidate skills, experience and qualifications..."
-            className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[12.5px] text-ink outline-none focus:border-brand-500"
-            {...register("resumeText")}
-          />
+          <div className="rounded-xl border border-dashed border-line bg-surface/40 p-3">
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              disabled={mutation.isPending}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setResumeFile(file);
+              }}
+              className="block w-full text-[12px] text-ink-faint file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-[11px] file:font-medium file:text-brand-700 hover:file:bg-brand-100"
+            />
 
-          <p className="mt-1 text-[10.5px] text-ink-faint">
-            Used for AI-assisted skill matching and job-fit scoring.
-          </p>
+            <p className="mt-1.5 text-[10.5px] text-ink-faint">
+              Upload the candidate's resume. PDF, DOC and DOCX files are
+              supported.
+            </p>
+
+            {resumeFile && (
+              <div className="mt-2 flex items-center gap-2 rounded-lg bg-white px-2.5 py-2 text-[11px] text-ink">
+                <FileText size={13} className="shrink-0 text-brand-600" />
+                <span className="min-w-0 flex-1 truncate">
+                  {resumeFile.name}
+                </span>
+                <button
+                  type="button"
+                  disabled={mutation.isPending}
+                  onClick={() => setResumeFile(null)}
+                  className="shrink-0 font-medium text-red-600 hover:underline disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </Modal>
@@ -2018,7 +2220,6 @@ function EditCandidateModal({
       phone: candidate.phone ?? "",
       expectedCtc: candidate.expectedCtc ?? undefined,
       source: candidate.source ?? "",
-      resumeText: (candidate as ScreeningCandidate).resumeText ?? "",
     },
   });
 
@@ -2079,16 +2280,6 @@ function EditCandidateModal({
           <option value="Campus">Campus</option>
           <option value="Job Board">Job Board</option>
         </SelectField>
-        <div className="sm:col-span-2">
-          <label className="mb-1.5 block text-[12px] font-medium text-ink">
-            Resume Text for AI Screening
-          </label>
-          <textarea
-            rows={6}
-            className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[12.5px] text-ink outline-none focus:border-brand-500"
-            {...register("resumeText")}
-          />
-        </div>
       </div>
     </Modal>
   );
@@ -2538,6 +2729,11 @@ function CandidateLifecycleModal({
       if (!joiningDate) {
         throw new Error("Joining date is required.");
       }
+      if (current.finalResult !== "SELECTED") {
+        throw new Error(
+          "Select the candidate after completing an interview before generating an offer.",
+        );
+      }
       return RecruitmentApi.generateOffer(candidate.id, {
         annualCtc: ctc,
         joiningDate,
@@ -2669,34 +2865,41 @@ function CandidateLifecycleModal({
             complete={offerAccepted}
           >
             {offerStatus === "NOT_SENT" || offerStatus === "DECLINED" ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <TextField
-                  label="Annual CTC"
-                  type="number"
-                  value={annualCtc}
-                  onChange={(e) => setAnnualCtc(e.target.value)}
-                />
+              current.finalResult !== "SELECTED" ? (
+                <p className="text-[12px] text-ink-faint">
+                  Complete at least one interview and select the candidate
+                  before generating an offer.
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <TextField
+                    label="Annual CTC"
+                    type="number"
+                    value={annualCtc}
+                    onChange={(e) => setAnnualCtc(e.target.value)}
+                  />
 
-                <TextField
-                  label="Joining date"
-                  type="date"
-                  value={joiningDate}
-                  onChange={(e) => setJoiningDate(e.target.value)}
-                />
+                  <TextField
+                    label="Joining date"
+                    type="date"
+                    value={joiningDate}
+                    onChange={(e) => setJoiningDate(e.target.value)}
+                  />
 
-                <div className="sm:col-span-2">
-                  <Button
-                    size="sm"
-                    isLoading={offerMutation.isPending}
-                    disabled={!joiningDate || Number(annualCtc) <= 0}
-                    onClick={() => offerMutation.mutate()}
-                  >
-                    {offerStatus === "DECLINED"
-                      ? "Generate new offer"
-                      : "Generate offer"}
-                  </Button>
+                  <div className="sm:col-span-2">
+                    <Button
+                      size="sm"
+                      isLoading={offerMutation.isPending}
+                      disabled={!joiningDate || Number(annualCtc) <= 0}
+                      onClick={() => offerMutation.mutate()}
+                    >
+                      {offerStatus === "DECLINED"
+                        ? "Generate new offer"
+                        : "Generate offer"}
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )
             ) : (
               <div className="space-y-3">
                 <p className="text-[12px] text-ink-soft">

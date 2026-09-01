@@ -160,13 +160,10 @@ const jobSchema = z
     walkInCoordinatorName: z.string().optional(),
     walkInCoordinatorContact: z.string().optional(),
     walkInRegistrationDeadline: z.string().optional(),
-    walkInExpectedCandidates: z.preprocess((value) => {
-      if (value === "" || value === null || value === undefined) {
-        return undefined;
-      }
-      const numberValue = Number(value);
-      return Number.isNaN(numberValue) ? undefined : numberValue;
-    }, z.number().int().min(0).optional()),
+    walkInExpectedCandidates: z.preprocess(
+      (value) => (value === "" ? undefined : Number(value)),
+      z.number().int().min(0).optional(),
+    ),
 
     campusCollegeName: z.string().optional(),
     campusLocation: z.string().optional(),
@@ -175,21 +172,17 @@ const jobSchema = z
     campusEndTime: z.string().optional(),
     campusPlacementCoordinator: z.string().optional(),
     campusCoordinatorContact: z.string().optional(),
-    campusExpectedCandidates: z.preprocess((value) => {
-      if (value === "" || value === null || value === undefined) {
-        return undefined;
-      }
-      const numberValue = Number(value);
-      return Number.isNaN(numberValue) ? undefined : numberValue;
-    }, z.number().int().min(0).optional()),
+    campusExpectedCandidates: z.preprocess(
+      (value) => (value === "" ? undefined : Number(value)),
+      z.number().int().min(0).optional(),
+    ),
 
     skillsText: z.string().optional(),
 
-    description: z.preprocess((value) => {
-      if (typeof value !== "string") return value;
-      const trimmed = value.trim();
-      return trimmed === "" ? undefined : trimmed;
-    }, z.string().min(10, "Job description must contain at least 10 characters").optional()),
+    description: z
+      .string()
+      .min(10, "Job description must contain at least 10 characters")
+      .optional(),
 
     shortlistingCriteria: z.object({
       enabled: z.boolean().default(false),
@@ -878,7 +871,6 @@ function PostJobModal({
       skills,
     };
 
-    if (mutation.isPending) return;
     mutation.mutate(payload as any);
   };
 
@@ -899,19 +891,8 @@ function PostJobModal({
           </Button>
 
           <Button
-            type="button"
-            onClick={handleSubmit(submitJob, (validationErrors) => {
-              console.error(
-                "Create requisition validation failed:",
-                validationErrors,
-              );
-              showToast(
-                "Please fix the highlighted fields before submitting.",
-                "error",
-              );
-            })}
+            onClick={handleSubmit(submitJob)}
             isLoading={mutation.isPending}
-            disabled={mutation.isPending}
           >
             Submit Requisition
           </Button>
@@ -919,18 +900,8 @@ function PostJobModal({
       }
     >
       <form
-        id="create-job-requisition-form"
         className="grid gap-5 sm:grid-cols-2"
-        onSubmit={handleSubmit(submitJob, (validationErrors) => {
-          console.error(
-            "Create requisition validation failed:",
-            validationErrors,
-          );
-          showToast(
-            "Please fix the highlighted fields before submitting.",
-            "error",
-          );
-        })}
+        onSubmit={handleSubmit(submitJob)}
       >
         <div className="sm:col-span-2">
           <p className="mb-1 text-sm font-semibold text-ink">
