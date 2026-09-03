@@ -5,39 +5,33 @@ import { env } from "@/config/env";
    SMTP CONFIGURATION
 ========================================================= */
 
-const emailConfigured =
-  Boolean(
-    env.smtpHost &&
-      env.smtpUser &&
-      env.smtpPass &&
-      env.smtpFrom &&
-      !env.smtpUser.includes(
-        "your-email",
-      ) &&
-      !env.smtpPass.includes(
-        "your-gmail-app-password",
-      ),
-  );
+const emailConfigured = Boolean(
+  env.smtpHost &&
+  env.smtpUser &&
+  env.smtpPass &&
+  env.smtpFrom &&
+  !env.smtpUser.includes("your-email") &&
+  !env.smtpPass.includes("your-gmail-app-password"),
+);
 
 /* =========================================================
    TRANSPORTER
 ========================================================= */
 
-const transporter =
-  emailConfigured
-    ? nodemailer.createTransport({
-        host: env.smtpHost,
+const transporter = emailConfigured
+  ? nodemailer.createTransport({
+      host: env.smtpHost,
 
-        port: env.smtpPort,
+      port: env.smtpPort,
 
-        secure: env.smtpSecure,
+      secure: env.smtpSecure,
 
-        auth: {
-          user: env.smtpUser,
-          pass: env.smtpPass,
-        },
-      })
-    : null;
+      auth: {
+        user: env.smtpUser,
+        pass: env.smtpPass,
+      },
+    })
+  : null;
 
 /* =========================================================
    SEND EMAIL
@@ -50,9 +44,7 @@ export async function sendEmail(input: {
   html?: string;
 }) {
   if (!transporter) {
-    console.warn(
-      "[Email] SMTP is not configured. Email skipped.",
-    );
+    console.warn("[Email] SMTP is not configured. Email skipped.");
 
     return {
       sent: false,
@@ -61,51 +53,34 @@ export async function sendEmail(input: {
   }
 
   try {
-    const info =
-      await transporter.sendMail({
-        from: env.smtpFrom,
+    const info = await transporter.sendMail({
+      from: env.smtpFrom,
 
-        to: input.to,
+      to: input.to,
 
-        subject:
-          input.subject,
+      subject: input.subject,
 
-        text:
-          input.text,
+      text: input.text,
 
-        html:
-          input.html ??
-          `<p>${escapeHtml(
-            input.text,
-          ).replace(
-            /\n/g,
-            "<br />",
-          )}</p>`,
-      });
+      html:
+        input.html ??
+        `<p>${escapeHtml(input.text).replace(/\n/g, "<br />")}</p>`,
+    });
 
-    console.log(
-      `[Email] Sent to ${input.to}. Message ID: ${info.messageId}`,
-    );
+    console.log(`[Email] Sent to ${input.to}. Message ID: ${info.messageId}`);
 
     return {
       sent: true,
       skipped: false,
-      messageId:
-        info.messageId,
+      messageId: info.messageId,
     };
   } catch (error) {
-    console.error(
-      `[Email] Failed to send to ${input.to}:`,
-      error,
-    );
+    console.error(`[Email] Failed to send to ${input.to}:`, error);
 
     return {
       sent: false,
       skipped: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : String(error),
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -114,27 +89,19 @@ export async function sendEmail(input: {
    SEND ANNOUNCEMENT EMAIL
 ========================================================= */
 
-export async function sendAnnouncementEmail(
-  input: {
-    to: string;
-    title: string;
-    body: string;
-  },
-) {
-  const title =
-    escapeHtml(input.title);
+export async function sendAnnouncementEmail(input: {
+  to: string;
+  title: string;
+  body: string;
+}) {
+  const title = escapeHtml(input.title);
 
-  const body =
-    escapeHtml(input.body).replace(
-      /\n/g,
-      "<br />",
-    );
+  const body = escapeHtml(input.body).replace(/\n/g, "<br />");
 
   return sendEmail({
     to: input.to,
 
-    subject:
-      `[Aadhyaraj HRMS] ${input.title}`,
+    subject: `[Aadhyaraj HRMS] ${input.title}`,
 
     text:
       `${input.title}\n\n` +
@@ -222,14 +189,30 @@ export async function sendAnnouncementEmail(
 }
 
 /* =========================================================
+   RECRUITMENT EMAIL
+========================================================= */
+
+export async function sendRecruitmentEmail(input: {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+}) {
+  return sendEmail({
+    to: input.to,
+    subject: `[AadhyaRaj HRMS] ${input.subject}`,
+    text: input.text,
+    html: input.html,
+  });
+}
+
+/* =========================================================
    VERIFY SMTP CONNECTION
 ========================================================= */
 
 export async function verifyEmailConnection() {
   if (!transporter) {
-    console.warn(
-      "[Email] SMTP is not configured.",
-    );
+    console.warn("[Email] SMTP is not configured.");
 
     return false;
   }
@@ -237,16 +220,11 @@ export async function verifyEmailConnection() {
   try {
     await transporter.verify();
 
-    console.log(
-      "[Email] SMTP connection verified successfully.",
-    );
+    console.log("[Email] SMTP connection verified successfully.");
 
     return true;
   } catch (error) {
-    console.error(
-      "[Email] SMTP connection failed:",
-      error,
-    );
+    console.error("[Email] SMTP connection failed:", error);
 
     return false;
   }
@@ -256,28 +234,11 @@ export async function verifyEmailConnection() {
    HTML ESCAPE
 ========================================================= */
 
-function escapeHtml(
-  value: string,
-) {
+function escapeHtml(value: string) {
   return value
-    .replace(
-      /&/g,
-      "&amp;",
-    )
-    .replace(
-      /</g,
-      "&lt;",
-    )
-    .replace(
-      />/g,
-      "&gt;",
-    )
-    .replace(
-      /"/g,
-      "&quot;",
-    )
-    .replace(
-      /'/g,
-      "&#039;",
-    );
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }

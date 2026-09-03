@@ -718,12 +718,86 @@ const stageSchema = z.object({
   ]),
 });
 
+recruitmentRouter.post(
+  "/candidates/:id/select",
+  isAdminOrRecruiter,
+  async (req, res, next) => {
+    try {
+      const candidate = await repo.getCandidate(req.params.id);
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      if (candidate.stage !== "INTERVIEW") {
+        throw AppError.badRequest(
+          "Candidate must be in the Interview stage before selection.",
+        );
+      }
+
+      const selectedCandidate = await repo.selectCandidate(req.params.id);
+
+      if (!selectedCandidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      res.json({
+        message: "Candidate selected for offer.",
+        candidate: selectedCandidate,
+      });
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        err.message ===
+          "Complete at least one interview before selecting the candidate."
+      ) {
+        next(AppError.badRequest(err.message));
+        return;
+      }
+
+      next(err);
+    }
+  },
+);
+
 recruitmentRouter.patch(
   "/candidates/:id/stage",
   isAdminOrRecruiter,
   validate(stageSchema),
   async (req, res, next) => {
     try {
+      // Hired is a valid pipeline stage, but it must use the dedicated
+      // hiring workflow so the employee account is created and all
+      // offer/BGV/pre-boarding prerequisites are enforced.
+      if (req.body.stage === "HIRED") {
+        try {
+          const candidate = await repo.hireCandidate(req.params.id, "EMPLOYEE");
+
+          if (!candidate) {
+            throw AppError.notFound("Candidate not found.");
+          }
+
+          res.json({ candidate });
+          return;
+        } catch (err) {
+          if (err instanceof Error) {
+            const hiringBusinessMessages = new Set([
+              "Candidate must accept the offer before joining.",
+              "Background verification must be verified before joining.",
+              "Pre-boarding must be completed before joining.",
+              "No available headcount for this job posting.",
+            ]);
+
+            if (hiringBusinessMessages.has(err.message)) {
+              next(AppError.badRequest(err.message));
+              return;
+            }
+          }
+
+          throw err;
+        }
+      }
+
       const candidate = await repo.moveCandidateStage(
         req.params.id,
         req.body.stage,
@@ -735,6 +809,18 @@ recruitmentRouter.patch(
 
       res.json({ candidate });
     } catch (err) {
+      if (err instanceof Error) {
+        const businessMessages = new Set([
+          "A candidate must be selected after an interview before entering the offer stage.",
+          "A candidate must be selected after an interview before moving the candidate to the offer stage.",
+        ]);
+
+        if (businessMessages.has(err.message)) {
+          next(AppError.badRequest(err.message));
+          return;
+        }
+      }
+
       next(err);
     }
   },
@@ -870,6 +956,28 @@ const feedbackSchema = z.object({
     )
     .optional(),
 });
+
+const interviewRecordingSchema = z.object({
+  recordingUrl: z.string().url().nullable(),
+});
+
+recruitmentRouter.patch(
+  "/interviews/:id/recording",
+  isAdminOrRecruiterOrManager,
+  validate(interviewRecordingSchema),
+  async (req, res, next) => {
+    try {
+      const interview = await repo.updateInterviewRecording(
+        req.params.id,
+        req.body.recordingUrl,
+      );
+      if (!interview) throw AppError.notFound("Interview not found.");
+      res.json({ message: "Interview recording updated.", interview });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 recruitmentRouter.post(
   "/interviews/:id/feedback",
@@ -1101,6 +1209,35 @@ const preboardingDocumentSchema = z.object({
   url: z.string().min(1),
 });
 
+const preboardingUploadSchema = z.object({
+  type: z.string().min(2),
+});
+
+recruitmentRouter.post(
+  "/candidates/:id/preboarding/documents/upload",
+  isAdminOrRecruiter,
+  upload.single("document"),
+  validate(preboardingUploadSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.file)
+        throw AppError.badRequest("Pre-boarding document is required.");
+      const url = `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`;
+      const candidate = await repo.addPreboardingDocument(
+        req.params.id,
+        req.body.type,
+        url,
+      );
+      if (!candidate) throw AppError.notFound("Candidate not found.");
+      res
+        .status(201)
+        .json({ message: "Pre-boarding document uploaded.", candidate });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 recruitmentRouter.post(
   "/candidates/:id/preboarding/documents",
   isAdminOrRecruiter,
@@ -1160,6 +1297,28 @@ recruitmentRouter.patch(
 // ============================================================================
 // HIRING / EMPLOYEE HANDOFF
 // ============================================================================
+
+const referralBonusSchema = z.object({
+  status: z.enum(["NOT_APPLICABLE", "PENDING", "APPROVED", "PAID"]),
+});
+
+recruitmentRouter.patch(
+  "/candidates/:id/referral-bonus",
+  isAdminOrRecruiter,
+  validate(referralBonusSchema),
+  async (req, res, next) => {
+    try {
+      const candidate = await repo.updateReferralBonusStatus(
+        req.params.id,
+        req.body.status,
+      );
+      if (!candidate) throw AppError.notFound("Candidate not found.");
+      res.json({ message: "Referral bonus status updated.", candidate });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 const hireCandidateSchema = z.object({
   role: z

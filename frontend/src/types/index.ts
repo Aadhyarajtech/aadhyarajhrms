@@ -397,6 +397,7 @@ export interface Interview {
   mode?: "VIDEO" | "IN_PERSON" | "PHONE";
 
   meetingLink?: string | null;
+  recordingUrl?: string | null;
 
   feedback: string | null;
 

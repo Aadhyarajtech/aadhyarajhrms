@@ -2228,6 +2228,7 @@ export interface InterviewDoc {
   mode: "VIDEO" | "IN_PERSON" | "PHONE";
 
   meetingLink: string | null;
+  recordingUrl: string | null;
   feedback: string | null;
   recommendation: string | null;
 
@@ -2289,6 +2290,11 @@ const interviewSchema = new Schema<InterviewDoc>(
     },
 
     meetingLink: {
+      type: String,
+      default: null,
+    },
+
+    recordingUrl: {
       type: String,
       default: null,
     },
