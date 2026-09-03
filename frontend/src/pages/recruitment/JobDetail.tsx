@@ -90,7 +90,11 @@ type ScreeningCandidate = Candidate & {
   screeningSummary?: string;
   experience?: number;
   autoShortlisted?: boolean;
-  shortlistingResult?: "PENDING" | "SHORTLISTED" | "NOT_SHORTLISTED";
+  shortlistingResult?:
+    | "PENDING"
+    | "SHORTLISTED"
+    | "NOT_SHORTLISTED"
+    | "NOT_CONFIGURED";
   finalResult?: "PENDING" | "SELECTED" | "REJECTED";
   screening?: {
     score: number;
@@ -168,6 +172,7 @@ export default function JobDetail() {
   const [scheduleFor, setScheduleFor] = useState<Candidate | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [lifecycleFor, setLifecycleFor] = useState<Candidate | null>(null);
+  const [offerLetterFor, setOfferLetterFor] = useState<Candidate | null>(null);
   const [editCandidateFor, setEditCandidateFor] = useState<Candidate | null>(
     null,
   );
@@ -225,7 +230,25 @@ export default function JobDetail() {
 
   const selectCandidateMutation = useMutation({
     mutationFn: (id: string) => RecruitmentApi.selectCandidate(id),
-    onSuccess: () => {
+    onSuccess: (_response, selectedId) => {
+      queryClient.setQueryData<Candidate | undefined>(
+        ["candidate", selectedId],
+        (existing) =>
+          existing
+            ? { ...existing, stage: "OFFER", finalResult: "SELECTED" }
+            : existing,
+      );
+
+      queryClient.setQueryData<Candidate[] | undefined>(
+        ["candidates", jobId],
+        (existing) =>
+          existing?.map((item) =>
+            item.id === selectedId
+              ? { ...item, stage: "OFFER", finalResult: "SELECTED" }
+              : item,
+          ),
+      );
+
       refreshCandidates();
       showToast("Candidate selected. Offer stage is now available.");
     },
@@ -1027,7 +1050,7 @@ export default function JobDetail() {
                             screeningCandidate.shortlistingResult ??
                             (screeningCandidate.autoShortlisted
                               ? "SHORTLISTED"
-                              : "PENDING");
+                              : "NOT_CONFIGURED");
 
                           return (
                             <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/40 p-2.5">
@@ -1100,7 +1123,7 @@ export default function JobDetail() {
                               {screeningStatus === "SCREENED" && (
                                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                   <span className="text-[10.5px] text-ink-faint">
-                                    AI Screening Result:
+                                    AI Shortlisting Result:
                                   </span>
                                   <Badge
                                     tone={
@@ -1111,7 +1134,9 @@ export default function JobDetail() {
                                           : "neutral"
                                     }
                                   >
-                                    {shortlistStatus.replaceAll("_", " ")}
+                                    {shortlistStatus === "NOT_CONFIGURED"
+                                      ? "MANUAL REVIEW"
+                                      : shortlistStatus.replaceAll("_", " ")}
                                   </Badge>
                                 </div>
                               )}
@@ -1247,6 +1272,18 @@ export default function JobDetail() {
                                 Interview
                               </button>
 
+                              {(candidate.finalResult === "SELECTED" ||
+                                candidate.stage === "OFFER") && (
+                                <button
+                                  type="button"
+                                  onClick={() => setOfferLetterFor(candidate)}
+                                  className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:underline"
+                                >
+                                  <FileText size={12} />
+                                  Offer Letter
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={() => setLifecycleFor(candidate)}
@@ -1305,6 +1342,14 @@ export default function JobDetail() {
         <ScheduleInterviewModal
           candidate={scheduleFor}
           onClose={() => setScheduleFor(null)}
+        />
+      )}
+
+      {offerLetterFor && (
+        <OfferLetterModal
+          candidate={offerLetterFor}
+          job={job}
+          onClose={() => setOfferLetterFor(null)}
         />
       )}
 
@@ -1796,9 +1841,13 @@ function AddCandidateModal({
               },
             },
           );
+
+          // Parse the uploaded resume immediately so screening can use the
+          // extracted resume text and skills.
+          await RecruitmentApi.parseResume(candidate.id);
         } catch (error) {
           throw new Error(
-            `Candidate was added, but the resume could not be uploaded. ${getErrorMessage(error)}`,
+            `Candidate was added, but the resume could not be uploaded or parsed. ${getErrorMessage(error)}`,
           );
         }
       }
@@ -2375,6 +2424,21 @@ function ScheduleInterviewModal({
     "STRONG_YES" | "YES" | "NO" | "STRONG_NO"
   >("YES");
 
+  const [recordingFor, setRecordingFor] = useState<string | null>(null);
+  const [recordingUrl, setRecordingUrl] = useState("");
+
+  const recordingMutation = useMutation({
+    mutationFn: (input: { id: string; url: string | null }) =>
+      RecruitmentApi.updateInterviewRecording(input.id, input.url),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["interviews", candidate.id] });
+      showToast("Interview recording updated.");
+      setRecordingFor(null);
+      setRecordingUrl("");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
   const scheduleMutation = useMutation({
     mutationFn: (values: {
       interviewerId: string;
@@ -2464,6 +2528,16 @@ function ScheduleInterviewModal({
                     <p className="text-[12px] text-ink-faint">
                       {formatDate(interview.scheduledAt)}
                     </p>
+                    {interview.meetingLink && (
+                      <a
+                        href={interview.meetingLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 inline-block text-[11px] font-medium text-brand-600 hover:underline"
+                      >
+                        Open video interview
+                      </a>
+                    )}
                   </div>
 
                   {interview.completed ? (
@@ -2487,6 +2561,55 @@ function ScheduleInterviewModal({
                     </p>
                   </div>
                 )}
+
+                {interview.recordingUrl && (
+                  <a
+                    href={interview.recordingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-block text-[11px] font-medium text-brand-600 hover:underline"
+                  >
+                    Open interview recording
+                  </a>
+                )}
+
+                <div className="mt-2">
+                  {recordingFor === interview.id ? (
+                    <div className="flex gap-2">
+                      <TextField
+                        label="Recording URL"
+                        value={recordingUrl}
+                        onChange={(e) => setRecordingUrl(e.target.value)}
+                        placeholder="https://..."
+                      />
+                      <Button
+                        size="sm"
+                        isLoading={recordingMutation.isPending}
+                        onClick={() =>
+                          recordingMutation.mutate({
+                            id: interview.id,
+                            url: recordingUrl.trim() || null,
+                          })
+                        }
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-[11px] font-medium text-brand-600 hover:underline"
+                      onClick={() => {
+                        setRecordingFor(interview.id);
+                        setRecordingUrl(interview.recordingUrl ?? "");
+                      }}
+                    >
+                      {interview.recordingUrl
+                        ? "Update recording"
+                        : "Add recording"}
+                    </button>
+                  )}
+                </div>
 
                 {!interview.completed && (
                   <div className="mt-3">
@@ -2654,7 +2777,157 @@ type LifecycleCandidate = Candidate & {
   };
 
   hiredEmployeeId?: string | null;
+  referredById?: string | null;
+  referralBonusStatus?: "NOT_APPLICABLE" | "PENDING" | "APPROVED" | "PAID";
 };
+
+function OfferLetterModal({
+  candidate,
+  job,
+  onClose,
+}: {
+  candidate: Candidate;
+  job?: RecruitmentJob;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: rawCandidate, isLoading } = useQuery({
+    queryKey: ["candidate", candidate.id],
+    queryFn: () => RecruitmentApi.candidate(candidate.id),
+  });
+
+  const current = (rawCandidate ?? candidate) as LifecycleCandidate;
+  const [annualCtc, setAnnualCtc] = useState(
+    String(current.expectedCtc ?? job?.budgetCtc ?? 0),
+  );
+  const [joiningDate, setJoiningDate] = useState("");
+
+  useEffect(() => {
+    if (!rawCandidate) return;
+    const loaded = rawCandidate as LifecycleCandidate;
+    setAnnualCtc(
+      String(
+        loaded.offer?.annualCtc ?? loaded.expectedCtc ?? job?.budgetCtc ?? 0,
+      ),
+    );
+    setJoiningDate(loaded.offer?.joiningDate ?? "");
+  }, [rawCandidate, job?.budgetCtc]);
+
+  const refreshCandidate = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["candidate", candidate.id],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["candidates", job?.id] });
+    void queryClient.invalidateQueries({ queryKey: ["recruitment"] });
+  };
+
+  const offerMutation = useMutation({
+    mutationFn: () => {
+      const ctc = Number(annualCtc);
+      if (!Number.isFinite(ctc) || ctc <= 0) {
+        throw new Error("Annual CTC must be greater than 0.");
+      }
+      if (!joiningDate) {
+        throw new Error("Joining date is required.");
+      }
+      if (current.finalResult !== "SELECTED" && current.stage !== "OFFER") {
+        throw new Error(
+          "Select the candidate after completing an interview before generating an offer letter.",
+        );
+      }
+      return RecruitmentApi.generateOffer(candidate.id, {
+        annualCtc: ctc,
+        joiningDate,
+      });
+    },
+    onSuccess: () => {
+      refreshCandidate();
+      showToast("Offer letter generated successfully.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const offerStatus = current.offer?.status ?? "NOT_SENT";
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Offer Letter — ${current.firstName} ${current.lastName}`}
+      size="md"
+    >
+      {isLoading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-16 rounded-2xl" />
+          <Skeleton className="h-32 rounded-2xl" />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-line/70 bg-ink/[0.02] p-4">
+            <p className="font-medium text-ink">
+              {current.firstName} {current.lastName}
+            </p>
+            <p className="text-[12px] text-ink-faint">{current.email}</p>
+          </div>
+
+          {current.offer?.offerUrl ? (
+            <div className="rounded-2xl border border-line/70 p-4">
+              <p className="text-[13px] font-semibold text-ink">
+                Offer letter generated
+              </p>
+              <p className="mt-1 text-[12px] text-ink-faint">
+                CTC:{" "}
+                {current.offer?.annualCtc != null
+                  ? formatCurrencyINR(current.offer.annualCtc)
+                  : "—"}
+                {" • "}
+                Joining: {current.offer?.joiningDate ?? "—"}
+              </p>
+              <a
+                href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex text-[12px] font-medium text-brand-600 hover:underline"
+              >
+                Open generated offer letter
+              </a>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextField
+                label="Annual CTC"
+                type="number"
+                value={annualCtc}
+                onChange={(e) => setAnnualCtc(e.target.value)}
+              />
+              <TextField
+                label="Joining date"
+                type="date"
+                value={joiningDate}
+                onChange={(e) => setJoiningDate(e.target.value)}
+              />
+              <div className="sm:col-span-2 flex items-center justify-between gap-3">
+                <p className="text-[11.5px] text-ink-faint">
+                  Status: {offerStatus.replaceAll("_", " ")}
+                </p>
+                <Button
+                  size="sm"
+                  isLoading={offerMutation.isPending}
+                  disabled={!joiningDate || Number(annualCtc) <= 0}
+                  onClick={() => offerMutation.mutate()}
+                >
+                  Generate Offer Letter
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
 
 function CandidateLifecycleModal({
   candidate,
@@ -2675,12 +2948,6 @@ function CandidateLifecycleModal({
 
   const current = (rawCandidate ?? candidate) as LifecycleCandidate;
 
-  const [annualCtc, setAnnualCtc] = useState(
-    String(current.expectedCtc ?? job?.budgetCtc ?? 0),
-  );
-
-  const [joiningDate, setJoiningDate] = useState("");
-
   const [bgvStatus, setBgvStatus] = useState<
     "NOT_STARTED" | "IN_PROGRESS" | "VERIFIED" | "FAILED"
   >("IN_PROGRESS");
@@ -2695,15 +2962,18 @@ function CandidateLifecycleModal({
 
   const [documentUrl, setDocumentUrl] = useState("");
 
+  const [referralBonusStatus, setReferralBonusStatus] = useState<
+    "NOT_APPLICABLE" | "PENDING" | "APPROVED" | "PAID"
+  >(current.referralBonusStatus ?? "NOT_APPLICABLE");
+
   useEffect(() => {
     if (!rawCandidate) return;
     const loaded = rawCandidate as LifecycleCandidate;
-    setAnnualCtc(String(loaded.expectedCtc ?? job?.budgetCtc ?? 0));
-    setJoiningDate(loaded.offer?.joiningDate ?? "");
     setBgvStatus(loaded.backgroundVerification?.status ?? "IN_PROGRESS");
     setBgvProvider(loaded.backgroundVerification?.provider ?? "");
     setBgvReference(loaded.backgroundVerification?.reference ?? "");
     setBgvNotes(loaded.backgroundVerification?.notes ?? "");
+    setReferralBonusStatus(loaded.referralBonusStatus ?? "NOT_APPLICABLE");
   }, [rawCandidate, job?.budgetCtc]);
 
   const refreshCandidate = () => {
@@ -2719,34 +2989,6 @@ function CandidateLifecycleModal({
       queryKey: ["recruitment"],
     });
   };
-
-  const offerMutation = useMutation({
-    mutationFn: () => {
-      const ctc = Number(annualCtc);
-      if (!Number.isFinite(ctc) || ctc <= 0) {
-        throw new Error("Annual CTC must be greater than 0.");
-      }
-      if (!joiningDate) {
-        throw new Error("Joining date is required.");
-      }
-      if (current.finalResult !== "SELECTED") {
-        throw new Error(
-          "Select the candidate after completing an interview before generating an offer.",
-        );
-      }
-      return RecruitmentApi.generateOffer(candidate.id, {
-        annualCtc: ctc,
-        joiningDate,
-      });
-    },
-
-    onSuccess: () => {
-      refreshCandidate();
-      showToast("Offer generated successfully.");
-    },
-
-    onError: (err) => showToast(getErrorMessage(err), "error"),
-  });
 
   const offerResponseMutation = useMutation({
     mutationFn: (status: "ACCEPTED" | "DECLINED") =>
@@ -2802,6 +3044,22 @@ function CandidateLifecycleModal({
       showToast("Pre-boarding document verified.");
     },
 
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const referralBonusMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.patch<{ candidate: Candidate }>(
+        `/recruitment/candidates/${candidate.id}/referral-bonus`,
+        { status: referralBonusStatus },
+      );
+
+      return response.data.candidate;
+    },
+    onSuccess: () => {
+      refreshCandidate();
+      showToast("Referral bonus status updated.");
+    },
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
@@ -2864,42 +3122,11 @@ function CandidateLifecycleModal({
             status={offerStatus}
             complete={offerAccepted}
           >
-            {offerStatus === "NOT_SENT" || offerStatus === "DECLINED" ? (
-              current.finalResult !== "SELECTED" ? (
-                <p className="text-[12px] text-ink-faint">
-                  Complete at least one interview and select the candidate
-                  before generating an offer.
-                </p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <TextField
-                    label="Annual CTC"
-                    type="number"
-                    value={annualCtc}
-                    onChange={(e) => setAnnualCtc(e.target.value)}
-                  />
-
-                  <TextField
-                    label="Joining date"
-                    type="date"
-                    value={joiningDate}
-                    onChange={(e) => setJoiningDate(e.target.value)}
-                  />
-
-                  <div className="sm:col-span-2">
-                    <Button
-                      size="sm"
-                      isLoading={offerMutation.isPending}
-                      disabled={!joiningDate || Number(annualCtc) <= 0}
-                      onClick={() => offerMutation.mutate()}
-                    >
-                      {offerStatus === "DECLINED"
-                        ? "Generate new offer"
-                        : "Generate offer"}
-                    </Button>
-                  </div>
-                </div>
-              )
+            {offerStatus === "NOT_SENT" ? (
+              <p className="text-[12px] text-ink-faint">
+                Offer has not been generated yet. Use the Offer Letter action on
+                the candidate card to create the offer letter.
+              </p>
             ) : (
               <div className="space-y-3">
                 <p className="text-[12px] text-ink-soft">
@@ -2933,6 +3160,10 @@ function CandidateLifecycleModal({
 
                 {offerStatus === "ACCEPTED" && (
                   <Badge tone="success">Offer accepted</Badge>
+                )}
+
+                {offerStatus === "DECLINED" && (
+                  <Badge tone="warning">Offer declined</Badge>
                 )}
 
                 {current.offer?.offerUrl && (
@@ -3093,9 +3324,57 @@ function CandidateLifecycleModal({
             )}
           </LifecycleSection>
 
-          {/* 4. HIRE */}
+          {/* 4. REFERRAL BONUS */}
           <LifecycleSection
             number="4"
+            title="Employee Referral"
+            status={current.referralBonusStatus ?? "NOT_APPLICABLE"}
+            complete={
+              !current.referredById || current.referralBonusStatus === "PAID"
+            }
+          >
+            {!current.referredById ? (
+              <p className="text-[12px] text-ink-faint">
+                This candidate was not submitted through an employee referral.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[12px] text-ink-soft">
+                  Referrer: {current.referredById}
+                </p>
+                <SelectField
+                  label="Referral bonus status"
+                  value={referralBonusStatus}
+                  onChange={(e) =>
+                    setReferralBonusStatus(
+                      e.target.value as
+                        | "NOT_APPLICABLE"
+                        | "PENDING"
+                        | "APPROVED"
+                        | "PAID",
+                    )
+                  }
+                >
+                  <option value="PENDING">Pending</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="PAID">Paid</option>
+                  <option value="NOT_APPLICABLE">Not applicable</option>
+                </SelectField>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  isLoading={referralBonusMutation.isPending}
+                  onClick={() => referralBonusMutation.mutate()}
+                >
+                  Update referral bonus
+                </Button>
+              </div>
+            )}
+          </LifecycleSection>
+
+          {/* 5. HIRE */}
+          <LifecycleSection
+            number="5"
             title="Hire / Employee Handoff"
             status={hired ? "COMPLETED" : "PENDING"}
             complete={hired}

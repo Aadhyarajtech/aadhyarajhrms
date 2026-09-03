@@ -13,6 +13,7 @@ import {
   UserCircle2,
   Receipt,
   ClipboardList,
+  BarChart3,
   X,
 } from "lucide-react";
 
@@ -139,6 +140,17 @@ const NAV_ITEMS: NavItem[] = [
     label: "My Team",
     icon: Users,
     roles: ["MANAGER"],
+  },
+
+  /* -------------------------------------------------------
+     REPORTS & ANALYTICS
+  ------------------------------------------------------- */
+
+  {
+    to: "/app/reports",
+    label: "Reports & Analytics",
+    icon: BarChart3,
+    roles: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"],
   },
 
   /* -------------------------------------------------------

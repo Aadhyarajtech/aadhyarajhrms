@@ -11,6 +11,8 @@ import {
   User,
 } from "@/db/models";
 import { nowIso } from "../../db/connection";
+import { notify } from "@/modules/notifications/notifications.repository";
+import { sendRecruitmentEmail } from "@/services/email.service";
 
 type AnyDoc = Record<string, any>;
 
@@ -23,6 +25,62 @@ function toApiDoc(doc: AnyDoc | null | undefined) {
     id: _id,
     ...rest,
   };
+}
+
+async function notifyRecruitmentTeam(input: {
+  title: string;
+  message: string;
+  link?: string;
+}) {
+  const users = await User.find({
+    role: { $in: ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER"] },
+    isActive: true,
+  })
+    .select("_id")
+    .lean();
+
+  await Promise.all(
+    users.map((user) =>
+      notify({
+        userId: user._id,
+        type: "RECRUITMENT",
+        title: input.title,
+        message: input.message,
+        link: input.link,
+      }),
+    ),
+  );
+}
+
+async function notifyCandidateEmail(
+  candidate: AnyDoc | null | undefined,
+  subject: string,
+  message: string,
+) {
+  if (!candidate?.email) return;
+  await sendRecruitmentEmail({
+    to: candidate.email,
+    subject,
+    text: message,
+  });
+}
+
+async function notifyEmployeeUser(
+  employeeId: string | null | undefined,
+  title: string,
+  message: string,
+  link?: string,
+) {
+  if (!employeeId) return;
+  const employee = await Employee.findById(employeeId).select("userId").lean();
+  if (!employee?.userId) return;
+  await notify({
+    userId: employee.userId,
+    type: "RECRUITMENT",
+    title,
+    message,
+    link,
+  });
 }
 
 // ===========================================================================
@@ -727,7 +785,13 @@ export async function createJobPosting(input: CreateJobInput) {
     seniorRole,
   });
 
-  return getJobPosting(doc._id);
+  const createdJob = await getJobPosting(doc._id);
+  await notifyRecruitmentTeam({
+    title: "New recruitment requisition",
+    message: `Requisition "${input.title.trim()}" has been submitted for approval.`,
+    link: `/recruitment/jobs/${doc._id}`,
+  });
+  return createdJob;
 }
 
 export async function approveJob(
@@ -764,7 +828,11 @@ export async function approveJob(
     (job as AnyDoc).closedAt = null;
 
     await job.save();
-
+    await notifyRecruitmentTeam({
+      title: "Requisition approved",
+      message: `The requisition "${job.title}" is approved and open for recruitment.`,
+      link: `/recruitment/jobs/${id}`,
+    });
     return getJobPosting(id);
   }
 
@@ -794,6 +862,11 @@ export async function approveJob(
       (job as AnyDoc).closedAt = null;
 
       await job.save();
+      await notifyRecruitmentTeam({
+        title: "Requisition approved",
+        message: `The requisition "${job.title}" is approved and open for recruitment.`,
+        link: `/recruitment/jobs/${id}`,
+      });
     }
 
     return getJobPosting(id);
@@ -825,6 +898,13 @@ export async function approveJob(
   }
 
   await job.save();
+  if (allApproved) {
+    await notifyRecruitmentTeam({
+      title: "Requisition approved",
+      message: `The requisition "${job.title}" is approved and open for recruitment.`,
+      link: `/recruitment/jobs/${id}`,
+    });
+  }
 
   return getJobPosting(id);
 }
@@ -1024,6 +1104,11 @@ export async function updateJobStatus(
   }
 
   await JobPosting.updateOne({ _id: id }, { $set: updates });
+  await notifyRecruitmentTeam({
+    title: `Job ${status.replace("_", " ").toLowerCase()}`,
+    message: `Job "${job.title}" status changed to ${status.replace("_", " ")}.`,
+    link: `/recruitment/jobs/${id}`,
+  });
   return getJobPosting(id);
 }
 
@@ -1212,7 +1297,18 @@ export async function createCandidate(input: CreateCandidateInput) {
     appliedAt: nowIso(),
   });
 
-  return getCandidate(doc._id);
+  const createdCandidate = await getCandidate(doc._id);
+  await notifyRecruitmentTeam({
+    title: "New candidate application",
+    message: `${firstName} ${lastName} applied for ${job.title}.`,
+    link: `/recruitment/candidates/${doc._id}`,
+  });
+  await notifyCandidateEmail(
+    createdCandidate,
+    `Application received - ${job.title}`,
+    `Dear ${firstName} ${lastName},\n\nYour application for ${job.title} has been received successfully. We will contact you as your application progresses.\n\nThank you,\nAadhyaRaj HRMS`,
+  );
+  return createdCandidate;
 }
 
 export async function moveCandidateStage(id: string, stage: string) {
@@ -1240,8 +1336,32 @@ export async function moveCandidateStage(id: string, stage: string) {
     );
   }
 
+  if (stage === "OFFER" && candidate.finalResult !== "SELECTED") {
+    const completedInterview = await Interview.exists({
+      candidateId: id,
+      completed: true,
+      recommendation: { $not: /^reject/i },
+    });
+
+    if (!completedInterview) {
+      throw new Error(
+        "Complete at least one interview before moving the candidate to the offer stage.",
+      );
+    }
+
+    // Moving a candidate to OFFER from the pipeline is the selection action.
+    // Keep the candidate marked as SELECTED so offer generation can proceed.
+    candidate.finalResult = "SELECTED";
+  }
+
+  if (stage === "HIRED") {
+    throw new Error(
+      "Use the hiring action after offer acceptance, background verification and pre-boarding are complete.",
+    );
+  }
+
   const finalResult =
-    stage === "HIRED"
+    stage === "OFFER" || stage === "HIRED"
       ? "SELECTED"
       : stage === "REJECTED"
         ? "REJECTED"
@@ -1524,6 +1644,43 @@ function normalizeTokens(text: string) {
   );
 }
 
+const SCREENING_SKILL_ALIASES: Record<string, string[]> = {
+  mern: ["MongoDB", "Express", "React", "Node.js"],
+  "mern stack": ["MongoDB", "Express", "React", "Node.js"],
+  mean: ["MongoDB", "Express", "Angular", "Node.js"],
+  "mean stack": ["MongoDB", "Express", "Angular", "Node.js"],
+  "full stack": ["React", "Node.js", "Express", "MongoDB"],
+  "full stack developer": ["React", "Node.js", "Express", "MongoDB"],
+  "frontend developer": ["HTML", "CSS", "JavaScript", "React"],
+  "front end developer": ["HTML", "CSS", "JavaScript", "React"],
+  "backend developer": ["Node.js", "Express", "REST API", "SQL"],
+  "back end developer": ["Node.js", "Express", "REST API", "SQL"],
+  "data engineer": ["Python", "SQL"],
+  "devops engineer": ["Linux", "Docker", "Kubernetes", "Jenkins", "Terraform"],
+};
+
+function normalizeSkillText(value: string) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/node\s*js/g, "node.js")
+    .replace(/react\s*js/g, "react")
+    .replace(/next\s*js/g, "next.js")
+    .replace(/express\s*js/g, "express")
+    .replace(/mongo\s*db/g, "mongodb")
+    .replace(/[^a-z0-9+#.]+/g, " ")
+    .trim();
+}
+
+function screeningSkillVariants(skill: string) {
+  const normalized = skill.trim().toLowerCase();
+  const directAliases = SCREENING_SKILL_ALIASES[normalized] ?? [];
+
+  const variants = new Set<string>([skill]);
+  directAliases.forEach((alias) => variants.add(alias));
+
+  return [...variants];
+}
+
 export async function screenCandidate(id: string, resumeText?: string) {
   const candidate = await Candidate.findById(id);
   if (!candidate) return undefined;
@@ -1538,6 +1695,12 @@ export async function screenCandidate(id: string, resumeText?: string) {
   const job = await JobPosting.findById(candidate.jobPostingId);
   if (!job) throw new Error("Job posting not found.");
 
+  const extractedSkills = uniqueStrings(
+    ((candidate as AnyDoc).extractedSkills ?? []).map((skill: string) =>
+      String(skill),
+    ),
+  );
+
   const screeningText = String(
     candidate.resumeText?.trim() ||
       [
@@ -1551,29 +1714,54 @@ export async function screenCandidate(id: string, resumeText?: string) {
         .join(" "),
   );
 
-  const normalizeSkill = (value: string) =>
-    String(value ?? "")
-      .toLowerCase()
-      .replace(/[^a-z0-9+#.]+/g, " ")
-      .trim();
+  const normalizedResume = normalizeSkillText(screeningText);
 
   const skillMatchesResume = (skill: string) => {
-    const normalizedSkill = normalizeSkill(skill);
-    if (!normalizedSkill) return false;
+    const variants = screeningSkillVariants(skill);
 
-    const normalizedResume = normalizeSkill(screeningText);
-    if (normalizedResume.includes(normalizedSkill)) return true;
+    return variants.some((variant) => {
+      const normalizedSkill = normalizeSkillText(variant);
+      if (!normalizedSkill) return false;
 
-    const skillTokens = normalizedSkill.split(/\s+/).filter(Boolean);
-    const resumeTokens = new Set(
-      normalizedResume.split(/\s+/).filter((value) => value.length > 1),
-    );
+      // Prefer parser-extracted skills when available. This makes matching
+      // robust to common resume formatting variations.
+      if (
+        extractedSkills.some(
+          (extractedSkill) =>
+            normalizeSkillText(extractedSkill) === normalizedSkill,
+        )
+      ) {
+        return true;
+      }
 
-    return skillTokens.every((token) => resumeTokens.has(token));
+      if (normalizedResume.includes(normalizedSkill)) return true;
+
+      const skillTokens = normalizedSkill.split(/\s+/).filter(Boolean);
+      const resumeTokens = new Set(
+        normalizedResume.split(/\s+/).filter((value) => value.length > 1),
+      );
+
+      return skillTokens.every((token) => resumeTokens.has(token));
+    });
   };
 
-  const jobSkills = uniqueStrings(
+  const explicitJobSkills = uniqueStrings(
     (job.skills ?? []).map((skill: string) => String(skill)),
+  );
+
+  // Generic role templates may contain broad engineering skills. When the
+  // job title identifies a concrete technology stack, evaluate that stack
+  // instead of scoring only against generic template labels.
+  const roleText = `${job.title ?? ""} ${
+    (job as AnyDoc).designationTitle ?? ""
+  }`.toLowerCase();
+
+  const inferredRoleSkills = Object.entries(SCREENING_SKILL_ALIASES)
+    .filter(([role]) => roleText.includes(role))
+    .flatMap(([, skills]) => skills);
+
+  const jobSkills = uniqueStrings(
+    inferredRoleSkills.length ? inferredRoleSkills : explicitJobSkills,
   );
 
   const matchedSkills = jobSkills.filter((skill) => skillMatchesResume(skill));
@@ -1592,8 +1780,8 @@ export async function screenCandidate(id: string, resumeText?: string) {
 
   const criteria = (job as AnyDoc).shortlistingCriteria;
   if (criteria?.enabled) {
-    const requiredSkills = (criteria.requiredSkills ?? []).map(
-      (skill: string) => String(skill),
+    const requiredSkills = uniqueStrings(
+      (criteria.requiredSkills ?? []).map((skill: string) => String(skill)),
     );
     const matchedRequiredSkills = requiredSkills.filter((skill: string) =>
       skillMatchesResume(skill),
@@ -1794,6 +1982,22 @@ export async function scheduleInterview(input: {
   return toApiDoc((await Interview.findById(doc._id).lean())!);
 }
 
+export async function updateInterviewRecording(
+  id: string,
+  recordingUrl: string | null,
+) {
+  const interview = await Interview.findById(id);
+  if (!interview) return undefined;
+
+  if (recordingUrl !== null && !/^https?:\/\//i.test(recordingUrl.trim())) {
+    throw new Error("Recording URL must be a valid HTTP(S) URL.");
+  }
+
+  (interview as AnyDoc).recordingUrl = recordingUrl?.trim() || null;
+  await interview.save();
+  return toApiDoc((await Interview.findById(id).lean())!);
+}
+
 export async function submitInterviewFeedback(
   id: string,
   feedback: string,
@@ -1823,7 +2027,16 @@ export async function submitInterviewFeedback(
     await candidate.save();
   }
 
-  return toApiDoc((await Interview.findById(id).lean())!);
+  const updatedInterview = toApiDoc((await Interview.findById(id).lean())!);
+  const candidateAfterFeedback = await Candidate.findById(
+    interview.candidateId,
+  ).lean();
+  await notifyRecruitmentTeam({
+    title: "Interview feedback submitted",
+    message: `Interview feedback was submitted for ${candidateAfterFeedback?.firstName ?? "candidate"} ${candidateAfterFeedback?.lastName ?? ""}.`,
+    link: `/recruitment/candidates/${interview.candidateId}`,
+  });
+  return updatedInterview;
 }
 
 // ===========================================================================
@@ -1952,7 +2165,18 @@ export async function respondToOffer(
 
   await candidate.save();
 
-  return getCandidate(id);
+  const updatedCandidate = await getCandidate(id);
+  await notifyRecruitmentTeam({
+    title: `Offer ${status.toLowerCase()}`,
+    message: `${candidate.firstName} ${candidate.lastName} ${status === "ACCEPTED" ? "accepted" : "declined"} the offer.`,
+    link: `/recruitment/candidates/${id}`,
+  });
+  await notifyCandidateEmail(
+    updatedCandidate,
+    `Offer ${status === "ACCEPTED" ? "accepted" : "declined"}`,
+    `Dear ${candidate.firstName} ${candidate.lastName},\n\nYour offer response has been recorded as ${status}.\n\nThank you,\nAadhyaRaj HRMS`,
+  );
+  return updatedCandidate;
 }
 
 // ===========================================================================
@@ -2020,7 +2244,18 @@ export async function updateBackgroundVerification(
 
   await candidate.save();
 
-  return getCandidate(id);
+  const updatedCandidate = await getCandidate(id);
+  await notifyRecruitmentTeam({
+    title: "Background verification updated",
+    message: `Background verification for ${candidate.firstName} ${candidate.lastName} is ${input.status}.`,
+    link: `/recruitment/candidates/${id}`,
+  });
+  await notifyCandidateEmail(
+    updatedCandidate,
+    "Background verification update",
+    `Dear ${candidate.firstName} ${candidate.lastName},\n\nYour background verification status is now ${input.status.replace("_", " ")}.\n\nThank you,\nAadhyaRaj HRMS`,
+  );
+  return updatedCandidate;
 }
 
 // ===========================================================================
@@ -2266,6 +2501,17 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
 
   await candidate.save();
 
+  await notifyRecruitmentTeam({
+    title: "Candidate hired",
+    message: `${candidate.firstName} ${candidate.lastName} has been converted to employee ${employeeCode}.`,
+    link: `/employees/${employee._id}`,
+  });
+  await notifyCandidateEmail(
+    candidate,
+    "Welcome to AadhyaRaj Technologies",
+    `Dear ${candidate.firstName} ${candidate.lastName},\n\nCongratulations. Your recruitment process is complete and your employee account has been created.\nEmployee ID: ${employeeCode}\nJoining date: ${candidate.offer.joiningDate}\n\nPlease use the credentials shared through the secure onboarding process and reset your temporary password at first login.\n\nWelcome to the team!\nAadhyaRaj HRMS`,
+  );
+
   return {
     ...(await getCandidate(id)),
 
@@ -2279,6 +2525,47 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
 
     designationTitle: designation?.title ?? null,
   };
+}
+
+// ===========================================================================
+// REFERRAL BONUS LIFECYCLE
+// ===========================================================================
+
+export async function updateReferralBonusStatus(
+  id: string,
+  status: "NOT_APPLICABLE" | "PENDING" | "APPROVED" | "PAID",
+) {
+  const candidate = await Candidate.findById(id);
+  if (!candidate) return undefined;
+
+  if (!candidate.referredById && status !== "NOT_APPLICABLE") {
+    throw new Error(
+      "Referral bonus cannot be assigned to a candidate without a referrer.",
+    );
+  }
+
+  if (status === "PAID" && candidate.stage !== "HIRED") {
+    throw new Error(
+      "Referral bonus can be marked PAID only after the candidate is hired.",
+    );
+  }
+
+  if (status === "APPROVED" && !["HIRED", "OFFER"].includes(candidate.stage)) {
+    throw new Error(
+      "Referral bonus can be approved only after an offer or hiring decision.",
+    );
+  }
+
+  candidate.referralBonusStatus = status as any;
+  await candidate.save();
+
+  await notifyRecruitmentTeam({
+    title: "Referral bonus updated",
+    message: `Referral bonus for ${candidate.firstName} ${candidate.lastName} is now ${status}.`,
+    link: `/recruitment/candidates/${id}`,
+  });
+
+  return getCandidate(id);
 }
 
 // ===========================================================================
@@ -2345,6 +2632,34 @@ export async function getRecruitmentMetrics() {
     getOpenRolesCount(),
   ]);
 
+  const rejected = await Candidate.countDocuments({ stage: "REJECTED" });
+  const pendingOffer = await Candidate.countDocuments({
+    "offer.status": "SENT",
+  });
+
+  const hiredCandidates = await Candidate.find({
+    stage: "HIRED",
+  })
+    .select("appliedAt offer.joiningDate")
+    .lean();
+
+  const timeToHireDays =
+    hiredCandidates.length > 0
+      ? Number(
+          (
+            hiredCandidates.reduce((sum, item: AnyDoc) => {
+              const start = Date.parse(item.appliedAt);
+              const end = Date.parse(item.offer?.joiningDate ?? item.appliedAt);
+              const days =
+                Number.isFinite(start) && Number.isFinite(end)
+                  ? Math.max(0, (end - start) / 86400000)
+                  : 0;
+              return sum + days;
+            }, 0) / hiredCandidates.length
+          ).toFixed(1),
+        )
+      : 0;
+
   return {
     applications,
     screening,
@@ -2352,7 +2667,14 @@ export async function getRecruitmentMetrics() {
     offers,
     accepted,
     hired,
+    rejected,
+    pendingOffer,
     openRoles,
+    offerAcceptanceRate:
+      offers > 0 ? Number(((accepted / offers) * 100).toFixed(1)) : 0,
+    hireConversionRate:
+      applications > 0 ? Number(((hired / applications) * 100).toFixed(1)) : 0,
+    timeToHireDays,
   };
 }
 

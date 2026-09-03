@@ -585,6 +585,23 @@ export const RecruitmentApi = {
       .get<{ count: number }>("/recruitment/analytics/open-roles")
       .then((r) => r.data.count),
 
+  updateInterviewRecording: (id: string, recordingUrl: string | null) =>
+    api
+      .patch<{
+        interview: Interview;
+      }>(`/recruitment/interviews/${id}/recording`, { recordingUrl })
+      .then((r) => r.data.interview),
+
+  updateReferralBonus: (
+    id: string,
+    status: "PENDING" | "APPROVED" | "PAID" | "REJECTED",
+  ) =>
+    api
+      .patch<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/referral-bonus`, { status })
+      .then((r) => r.data.candidate),
+
   metrics: () =>
     api
       .get<{
@@ -596,6 +613,11 @@ export const RecruitmentApi = {
           accepted: number;
           hired: number;
           openRoles: number;
+          rejected?: number;
+          pendingOffer?: number;
+          offerAcceptanceRate?: number;
+          hireConversionRate?: number;
+          averageTimeToHireDays?: number;
         };
       }>("/recruitment/analytics/metrics")
       .then((r) => r.data.data),
@@ -987,6 +1009,92 @@ export const DocumentsApi = {
     api
       .patch<{ asset: Asset }>(`/documents/assets/${id}/status`, { status })
       .then((r) => r.data.asset),
+};
+
+// --- Reports & Analytics -----------------------------------------------------
+export interface ReportsFilters {
+  from?: string;
+  to?: string;
+  departmentId?: string;
+}
+
+export interface ReportBucket {
+  label: string;
+  value: number;
+  days?: number;
+}
+
+export interface ReportsOverview {
+  scope: "ORGANIZATION" | "TEAM";
+  filters: ReportsFilters;
+  workforce: {
+    total: number;
+    active: number;
+    recentHires: number;
+    exits: number;
+    byStatus: ReportBucket[];
+    byDepartment: ReportBucket[];
+    byEmploymentType: ReportBucket[];
+  };
+  attendance: {
+    total: number;
+    present: number;
+    attendanceRate: number;
+    regularized: number;
+    totalWorkHours: number;
+    averageWorkHours: number;
+    byStatus: ReportBucket[];
+  };
+  leave: {
+    total: number;
+    totalDays: number;
+    byStatus: ReportBucket[];
+    byType: ReportBucket[];
+  };
+  payroll: {
+    runs: number;
+    totalGross: number;
+    totalDeductions: number;
+    totalNet: number;
+    totalLop: number;
+    payslipCount: number;
+    byRun: { label: string; gross: number; net: number; headcount: number }[];
+  };
+  recruitment: {
+    applications: number;
+    openRoles: number;
+    offersAccepted: number;
+    hired: number;
+    offerAcceptanceRate: number;
+    byStage: ReportBucket[];
+    bySource: ReportBucket[];
+  } | null;
+  performance: {
+    reviews: number;
+    averageRating: number;
+    ratingDistribution: ReportBucket[];
+    outcomes: ReportBucket[];
+  };
+  tickets: {
+    total: number;
+    byStatus: ReportBucket[];
+    byPriority: ReportBucket[];
+    byCategory: ReportBucket[];
+  };
+  documents: {
+    total: number;
+    verified: number;
+    pending: number;
+    requests: number;
+    assignedAssets: number;
+  };
+}
+
+export const ReportsApi = {
+  overview: (filters: ReportsFilters = {}) =>
+    api
+      .get<ReportsOverview>("/reports/overview", { params: filters })
+      .then((r) => r.data),
 };
 
 // --- Dashboard -----------------------------------------------------------------------

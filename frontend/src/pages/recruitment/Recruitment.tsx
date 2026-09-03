@@ -160,10 +160,13 @@ const jobSchema = z
     walkInCoordinatorName: z.string().optional(),
     walkInCoordinatorContact: z.string().optional(),
     walkInRegistrationDeadline: z.string().optional(),
-    walkInExpectedCandidates: z.preprocess(
-      (value) => (value === "" ? undefined : Number(value)),
-      z.number().int().min(0).optional(),
-    ),
+    walkInExpectedCandidates: z.preprocess((value) => {
+      if (value === "" || value === null || value === undefined) {
+        return undefined;
+      }
+      const numberValue = Number(value);
+      return Number.isNaN(numberValue) ? undefined : numberValue;
+    }, z.number().int().min(0).optional()),
 
     campusCollegeName: z.string().optional(),
     campusLocation: z.string().optional(),
@@ -172,17 +175,22 @@ const jobSchema = z
     campusEndTime: z.string().optional(),
     campusPlacementCoordinator: z.string().optional(),
     campusCoordinatorContact: z.string().optional(),
-    campusExpectedCandidates: z.preprocess(
-      (value) => (value === "" ? undefined : Number(value)),
-      z.number().int().min(0).optional(),
-    ),
+    campusExpectedCandidates: z.preprocess((value) => {
+      if (value === "" || value === null || value === undefined) {
+        return undefined;
+      }
+      const numberValue = Number(value);
+      return Number.isNaN(numberValue) ? undefined : numberValue;
+    }, z.number().int().min(0).optional()),
 
     skillsText: z.string().optional(),
 
-    description: z
-      .string()
-      .min(10, "Job description must contain at least 10 characters")
-      .optional(),
+    description: z.preprocess((value) => {
+      if (typeof value === "string" && value.trim() === "") {
+        return undefined;
+      }
+      return value;
+    }, z.string().min(10, "Job description must contain at least 10 characters").optional()),
 
     shortlistingCriteria: z.object({
       enabled: z.boolean().default(false),
@@ -891,7 +899,8 @@ function PostJobModal({
           </Button>
 
           <Button
-            onClick={handleSubmit(submitJob)}
+            type="submit"
+            form="create-job-requisition-form"
             isLoading={mutation.isPending}
           >
             Submit Requisition
@@ -900,8 +909,29 @@ function PostJobModal({
       }
     >
       <form
+        id="create-job-requisition-form"
         className="grid gap-5 sm:grid-cols-2"
-        onSubmit={handleSubmit(submitJob)}
+        onSubmit={handleSubmit(submitJob, (validationErrors) => {
+          const firstError = Object.entries(validationErrors).find(
+            ([, error]) => Boolean(error),
+          );
+
+          if (firstError) {
+            const [fieldName, fieldError] = firstError;
+            const message =
+              typeof fieldError === "object" &&
+              fieldError &&
+              "message" in fieldError
+                ? String(
+                    (fieldError as { message?: unknown }).message ??
+                      "Please check this field.",
+                  )
+                : "Please check this field.";
+            showToast(`${fieldName}: ${message}`, "error");
+          } else {
+            showToast("Please check the requisition fields.", "error");
+          }
+        })}
       >
         <div className="sm:col-span-2">
           <p className="mb-1 text-sm font-semibold text-ink">

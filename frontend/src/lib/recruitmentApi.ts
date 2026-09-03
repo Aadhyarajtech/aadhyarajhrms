@@ -82,7 +82,7 @@ export const RecruitmentApi = {
 
     return Array.isArray(response.data)
       ? response.data
-      : response.data.data ?? [];
+      : (response.data.data ?? []);
   },
 
   async pipelineSummary(): Promise<PipelineItem[]> {
@@ -92,19 +92,17 @@ export const RecruitmentApi = {
 
     return Array.isArray(response.data)
       ? response.data
-      : response.data.data ?? [];
+      : (response.data.data ?? []);
   },
 
-  async candidates(
-    jobId: string,
-  ): Promise<Candidate[]> {
+  async candidates(jobId: string): Promise<Candidate[]> {
     const response = await api.get<
       RecruitmentApiResponse<Candidate[]> | Candidate[]
     >(`/recruitment/jobs/${jobId}/candidates`);
 
     return Array.isArray(response.data)
       ? response.data
-      : response.data.data ?? [];
+      : (response.data.data ?? []);
   },
 
   async getSourceAnalytics(): Promise<SourceAnalytics[]> {
@@ -114,7 +112,7 @@ export const RecruitmentApi = {
 
     return Array.isArray(response.data)
       ? response.data
-      : response.data.data ?? [];
+      : (response.data.data ?? []);
   },
 
   async getReferralAnalytics(): Promise<ReferralAnalytics> {
@@ -122,9 +120,35 @@ export const RecruitmentApi = {
       RecruitmentApiResponse<ReferralAnalytics> | ReferralAnalytics
     >("/recruitment/analytics/referrals");
 
+    return "data" in response.data ? response.data.data : response.data;
+  },
+
+  async selectCandidate(id: string): Promise<Candidate> {
+    const response = await api.post<
+      RecruitmentApiResponse<Candidate> | { candidate: Candidate }
+    >(`/recruitment/candidates/${id}/select`);
     return "data" in response.data
       ? response.data.data
-      : response.data;
+      : response.data.candidate;
+  },
+
+  async updateReferralBonusStatus(
+    id: string,
+    status: "NOT_APPLICABLE" | "PENDING" | "APPROVED" | "PAID",
+  ): Promise<Candidate> {
+    const response = await api.patch<{ candidate: Candidate }>(
+      `/recruitment/candidates/${id}/referral-bonus`,
+      { status },
+    );
+    return response.data.candidate;
+  },
+
+  async updateInterviewRecording(id: string, recordingUrl: string | null) {
+    const response = await api.patch<{ interview: unknown }>(
+      `/recruitment/interviews/${id}/recording`,
+      { recordingUrl },
+    );
+    return response.data.interview;
   },
 
   async getVolumeHiringAnalytics(): Promise<VolumeHiringAnalytics> {
@@ -132,8 +156,6 @@ export const RecruitmentApi = {
       RecruitmentApiResponse<VolumeHiringAnalytics> | VolumeHiringAnalytics
     >("/recruitment/analytics/volume-hiring");
 
-    return "data" in response.data
-      ? response.data.data
-      : response.data;
+    return "data" in response.data ? response.data.data : response.data;
   },
 };
