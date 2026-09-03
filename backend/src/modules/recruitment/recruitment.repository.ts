@@ -2403,9 +2403,19 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
     _id: { $ne: candidate._id },
   });
 
-  if (hiredCount >= Number(job.headcount ?? job.openings ?? 1)) {
+  /*
+   * Headcount is the approved hiring capacity for the requisition.
+   * Prefer the explicit headcount value, while falling back to openings
+   * for older requisitions that may not have headcount populated.
+   */
+  const approvedHeadcount = Math.max(
+    1,
+    Number(job.headcount ?? job.openings ?? 1),
+  );
+
+  if (hiredCount >= approvedHeadcount) {
     throw new Error(
-      "The approved headcount for this requisition has already been filled.",
+      `Hiring capacity reached: ${hiredCount} of ${approvedHeadcount} approved position(s) for this requisition are already filled.`,
     );
   }
 
