@@ -1353,6 +1353,21 @@ recruitmentRouter.post(
         candidate,
       });
     } catch (err) {
+      if (err instanceof Error) {
+        const hiringBusinessMessages = new Set([
+          "Candidate must accept the offer before joining.",
+          "Background verification must be verified before joining.",
+          "Pre-boarding must be completed before joining.",
+          "No available headcount for this job posting.",
+          "Hiring capacity reached: 1 of 1 approved position(s) for this requisition are already filled.",
+        ]);
+
+        if (hiringBusinessMessages.has(err.message)) {
+          next(AppError.badRequest(err.message));
+          return;
+        }
+      }
+
       next(err);
     }
   },
