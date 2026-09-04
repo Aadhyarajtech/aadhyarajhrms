@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Target, Star, CheckCircle2, ClipboardList, Award, MessageSquare, TrendingUp } from "lucide-react";
+import { Plus, Target, Star, CheckCircle2, ClipboardList, Award, MessageSquare, TrendingUp, ShieldCheck } from "lucide-react";
 import { PerformanceApi, EmployeesApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -25,7 +25,10 @@ const goalSchema = z.object({
   title: z.string().min(2, "Required"),
   description: z.string().optional(),
   dueDate: z.string().min(1, "Required"),
-  category: z.string().optional(), targetValue: z.string().optional(), milestones: z.string().optional(),
+  category: z.string().optional(),
+  targetValue: z.string().optional(),
+  currentValue: z.string().optional(),
+  milestones: z.string().optional(),
 });
 type GoalForm = z.infer<typeof goalSchema>;
 
@@ -43,6 +46,7 @@ export default function Performance() {
     { key: "mine", label: "My Performance" },
     { key: "feedback", label: "360 Feedback" },
     ...(isManager ? [{ key: "team", label: "Team Reviews" }] : []),
+    ...(isManager ? [{ key: "pip", label: "PIP Management" }] : []),
   ];
 
   return (
@@ -56,16 +60,17 @@ export default function Performance() {
         }
       />
       <Tabs tabs={tabs} active={tab} onChange={setTab} className="mb-6 w-fit" />
-      {tab === "mine" && <MyPerformance />}
+      {tab === "mine" && <MyPerformance activeCycleId={activeCycle?.id} />}
       {tab === "feedback" && <FeedbackRequests />}
       {tab === "team" && isManager && (
         <TeamReviews activeCycleId={activeCycle?.id} />
       )}
+      {tab === "pip" && isManager && <PipManagement />}
     </div>
   );
 }
 
-function MyPerformance() {
+function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [goalOpen, setGoalOpen] = useState(false);
@@ -79,10 +84,28 @@ function MyPerformance() {
     queryKey: ["performance", "goals", "mine"],
     queryFn: () => PerformanceApi.goals(),
   });
-  const { data: trend } = useQuery({ queryKey: ["performance", "goal-trend"], queryFn: PerformanceApi.goalTrend });
+  const { data: trend } = useQuery({
+    queryKey: ["performance", "goal-trend"],
+    queryFn: () => PerformanceApi.goalTrend(),
+  });
   const { data: outcome } = useQuery({ queryKey: ["performance", "outcome", review?.id], queryFn: () => PerformanceApi.outcome(review!.id), enabled: !!review?.id && review.status === "COMPLETED" });
   const { data: feedback } = useQuery({ queryKey: ["performance", "feedback-summary", review?.id], queryFn: () => PerformanceApi.feedbackSummary(review!.id), enabled: !!review?.id });
 
+  const currentValueMutation = useMutation({
+    mutationFn: ({ id, currentValue }: { id: string; currentValue: number }) =>
+      PerformanceApi.updateGoalCurrentValue(id, currentValue),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "goals", "mine"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "goal-trend"],
+      });
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  // Kept for goals that do not have a numeric KPI target.
   const progressMutation = useMutation({
     mutationFn: ({ id, progress }: { id: string; progress: number }) =>
       PerformanceApi.updateGoalProgress(id, progress),
@@ -184,62 +207,160 @@ function MyPerformance() {
           />
         ) : (
           <div className="space-y-5">
-            {goals.map((g) => (
-              <div key={g.id}>
-                <div className="flex items-center justify-between text-[13px]">
-                  <p className="font-medium text-ink">{g.title}</p>
-                  <Badge
-                    tone={
-                      g.status === "AT_RISK"
-                        ? "warning"
-                        : g.status === "COMPLETED"
-                          ? "success"
-                          : "neutral"
-                    }
-                  >
-                    {g.status.replace("_", " ")}
-                  </Badge>
-                </div>
-                {g.description && (
-                  <p className="mt-0.5 text-[12px] text-ink-faint">
-                    {g.description}
+            {goals.map((g) => {
+              const goal = g as any;
+              return (
+                <div key={g.id} className="rounded-2xl border border-line/60 p-4">
+                  <div className="flex items-start justify-between gap-3 text-[13px]">
+                    <div className="min-w-0">
+                      <p className="font-medium text-ink">{g.title}</p>
+                      {g.description && (
+                        <p className="mt-0.5 text-[12px] text-ink-faint">
+                          {g.description}
+                        </p>
+                      )}
+                    </div>
+                    <Badge
+                      tone={
+                        g.status === "AT_RISK"
+                          ? "warning"
+                          : g.status === "COMPLETED"
+                            ? "success"
+                            : "neutral"
+                      }
+                    >
+                      {g.status.replace("_", " ")}
+                    </Badge>
+                  </div>
+
+                  {(goal.category || goal.targetValue !== null || goal.currentValue !== null) && (
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-ink-faint">
+                      {goal.category && <span>KPI: {goal.category}</span>}
+                      {goal.targetValue !== null && <span>Target: {goal.targetValue}</span>}
+                      {goal.currentValue !== null && <span>Current: {goal.currentValue}</span>}
+                    </div>
+                  )}
+
+                  {typeof goal.targetValue === "number" && goal.targetValue > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-end gap-3">
+                        <div className="flex-1">
+                          <label
+                            htmlFor={`goal-current-${g.id}`}
+                            className="text-[11.5px] font-medium text-ink-faint"
+                          >
+                            Current value
+                          </label>
+                          <input
+                            id={`goal-current-${g.id}`}
+                            type="number"
+                            min={0}
+                            step="any"
+                            value={goal.currentValue ?? 0}
+                            onChange={(e) => {
+                              const value = Number(e.target.value);
+                              if (!Number.isFinite(value) || value < 0) return;
+                              if (value === Number(goal.currentValue ?? 0)) return;
+                              currentValueMutation.mutate({
+                                id: g.id,
+                                currentValue: value,
+                              });
+                            }}
+                            disabled={currentValueMutation.isPending}
+                            aria-label={`Update current value for ${g.title}`}
+                            className="mt-1 w-full rounded-xl border border-line/70 bg-white px-3 py-2 text-[13px] text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                        </div>
+                        <div className="pb-2 text-[12px] text-ink-faint">
+                          / {goal.targetValue}
+                        </div>
+                        <span className="w-12 pb-2 text-right text-[12px] font-medium text-ink">
+                          {g.progress}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-ink/[0.08]">
+                        <div
+                          className="h-full rounded-full bg-brand-500 transition-all"
+                          style={{ width: `${Math.min(100, Math.max(0, g.progress))}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-ink-faint">
+                        Progress is calculated automatically from current value and target.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={g.progress}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          if (next === g.progress) return;
+                          progressMutation.mutate({ id: g.id, progress: next });
+                        }}
+                        disabled={progressMutation.isPending}
+                        aria-label={`Update progress for ${g.title}`}
+                        className="h-1.5 flex-1 cursor-pointer accent-brand-500 disabled:cursor-not-allowed"
+                      />
+                      <span className="w-10 text-right text-[12px] font-medium text-ink">
+                        {g.progress}%
+                      </span>
+                    </div>
+                  )}
+
+                  {goal.milestones?.length ? (
+                    <div className="mt-3">
+                      <p className="text-[11.5px] font-medium text-ink-faint">
+                        Milestones
+                      </p>
+                      <div className="mt-1.5 space-y-1">
+                        {goal.milestones.map((milestone: any, index: number) => (
+                          <div
+                            key={`${milestone.title}-${index}`}
+                            className="flex items-center gap-2 text-[12px] text-ink-soft"
+                          >
+                            <CheckCircle2
+                              size={14}
+                              className={
+                                milestone.completed
+                                  ? "text-brand-600"
+                                  : "text-line"
+                              }
+                            />
+                            <span
+                              className={
+                                milestone.completed
+                                  ? "line-through opacity-70"
+                                  : ""
+                              }
+                            >
+                              {milestone.title}
+                            </span>
+                            {milestone.targetDate && (
+                              <span className="text-ink-faint">
+                                · {formatDate(milestone.targetDate)}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <p className="mt-3 text-[11.5px] text-ink-faint">
+                    Due {formatDate(g.dueDate)}
                   </p>
-                )}
-                <div className="mt-2 flex items-center gap-3">
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={5}
-                    defaultValue={g.progress}
-                    onMouseUp={(e) =>
-                      progressMutation.mutate({
-                        id: g.id,
-                        progress: Number((e.target as HTMLInputElement).value),
-                      })
-                    }
-                    onTouchEnd={(e) =>
-                      progressMutation.mutate({
-                        id: g.id,
-                        progress: Number((e.target as HTMLInputElement).value),
-                      })
-                    }
-                    className="h-1.5 flex-1 cursor-pointer accent-brand-500"
-                  />
-                  <span className="w-10 text-right text-[12px] text-ink-faint">
-                    {g.progress}%
-                  </span>
                 </div>
-                <p className="mt-1 text-[11.5px] text-ink-faint">
-                  Due {formatDate(g.dueDate)}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
 
-      <AddGoalModal open={goalOpen} onClose={() => setGoalOpen(false)} />
+      <AddGoalModal open={goalOpen} onClose={() => setGoalOpen(false)} cycleId={activeCycleId} />
       {review && (
         <SelfReviewModal
           open={selfOpen}
@@ -251,11 +372,348 @@ function MyPerformance() {
   );
 }
 
+function PipManagement() {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedPip, setSelectedPip] = useState<any | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [checkInOpen, setCheckInOpen] = useState(false);
+
+  const { data: pips, isLoading } = useQuery({
+    queryKey: ["performance", "pips"],
+    queryFn: PerformanceApi.pips,
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status, finalOutcome }: { id: string; status: "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED"; finalOutcome?: string }) =>
+      PerformanceApi.updatePipStatus(id, status, finalOutcome),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["performance", "pips"] });
+      if (selectedPip) {
+        queryClient.invalidateQueries({ queryKey: ["performance", "pip", selectedPip.id] });
+      }
+      showToast("PIP status updated.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const detailQuery = useQuery({
+    queryKey: ["performance", "pip", selectedPip?.id],
+    queryFn: () => PerformanceApi.pip(selectedPip.id),
+    enabled: !!selectedPip?.id,
+  });
+
+  if (isLoading) return <Skeleton className="h-64 rounded-3xl" />;
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title="Performance Improvement Plans"
+          subtitle="Manage active and completed PIPs for employees."
+          action={
+            <Button size="sm" leftIcon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>
+              Create PIP
+            </Button>
+          }
+        />
+
+        {!pips?.length ? (
+          <EmptyState
+            icon={ShieldCheck}
+            title="No PIPs yet"
+            description="Create a Performance Improvement Plan for an employee who needs structured performance support."
+          />
+        ) : (
+          <div className="space-y-2">
+            {pips.map((pip: any) => (
+              <button
+                key={pip.id}
+                type="button"
+                onClick={() => setSelectedPip(pip)}
+                className="w-full rounded-2xl border border-line/60 px-4 py-3 text-left transition hover:bg-ink/[0.02]"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[13px] font-medium text-ink">
+                      {pip.employeeName ?? pip.employeeId}
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-ink-faint">
+                      {formatDate(pip.startDate)} – {formatDate(pip.endDate)}
+                    </p>
+                  </div>
+                  <StatusBadge status={pip.status} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[12px] text-ink-faint">
+                  <span>{pip.objectives?.length ?? 0} objective{pip.objectives?.length === 1 ? "" : "s"}</span>
+                  <span>{pip.checkIns?.length ?? 0} check-in{pip.checkIns?.length === 1 ? "" : "s"}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {selectedPip && (
+        <Modal
+          open
+          onClose={() => setSelectedPip(null)}
+          title="PIP Details"
+          footer={
+            <Button variant="outline" onClick={() => setSelectedPip(null)}>
+              Close
+            </Button>
+          }
+        >
+          {detailQuery.isLoading ? (
+            <Skeleton className="h-48 rounded-2xl" />
+          ) : detailQuery.data ? (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[12px] text-ink-faint">Employee</p>
+                  <p className="text-[14px] font-medium text-ink">
+                    {detailQuery.data.employeeName ?? detailQuery.data.employeeId}
+                  </p>
+                </div>
+                <StatusBadge status={detailQuery.data.status} />
+              </div>
+
+              <div>
+                <p className="text-[12px] font-medium text-ink-faint">Objectives</p>
+                <div className="mt-2 space-y-3">
+                  {(detailQuery.data.objectives ?? []).map((objective: any, index: number) => (
+                    <div key={`${objective.title}-${index}`} className="rounded-2xl bg-ink/[0.03] p-4">
+                      <p className="text-[13px] font-medium text-ink">{objective.title}</p>
+                      {objective.description && <p className="mt-1 text-[12px] text-ink-soft">{objective.description}</p>}
+                      {objective.target && <p className="mt-1 text-[12px] text-ink-faint">Target: {objective.target}</p>}
+                      <div className="mt-2 flex items-center justify-between text-[12px]">
+                        <span>{objective.progress ?? 0}% complete</span>
+                        <span>{objective.status?.replace("_", " ")}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[12px] font-medium text-ink-faint">Check-ins</p>
+                {!detailQuery.data.checkIns?.length ? (
+                  <p className="mt-2 text-[13px] text-ink-faint">No check-ins recorded.</p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {detailQuery.data.checkIns.map((checkIn: any, index: number) => (
+                      <div key={`${checkIn.date}-${index}`} className="rounded-2xl border border-line/60 p-3">
+                        <div className="flex justify-between text-[12px]">
+                          <span>{formatDate(checkIn.date)}</span>
+                          <span>{checkIn.progress ?? 0}%</span>
+                        </div>
+                        {checkIn.managerComments && <p className="mt-1 text-[12px] text-ink-soft">{checkIn.managerComments}</p>}
+                        {checkIn.nextSteps && <p className="mt-1 text-[12px] text-ink-faint">Next: {checkIn.nextSteps}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => setCheckInOpen(true)}>
+                  Add check-in
+                </Button>
+                {detailQuery.data.status !== "COMPLETED" && (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      statusMutation.mutate({
+                        id: detailQuery.data.id,
+                        status: "COMPLETED",
+                        finalOutcome: "PIP completed successfully.",
+                      })
+                    }
+                    isLoading={statusMutation.isPending}
+                  >
+                    Complete PIP
+                  </Button>
+                )}
+              </div>
+
+              {checkInOpen && (
+                <PipCheckInModal
+                  pipId={detailQuery.data.id}
+                  onClose={() => setCheckInOpen(false)}
+                />
+              )}
+            </div>
+          ) : (
+            <EmptyState icon={ShieldCheck} title="PIP not found" />
+          )}
+        </Modal>
+      )}
+
+      <CreatePipModal open={createOpen} onClose={() => setCreateOpen(false)} />
+    </div>
+  );
+}
+
+function CreatePipModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: reviews } = useQuery({
+    queryKey: ["performance", "reviews", "pip-source"],
+    queryFn: () => PerformanceApi.reviews(),
+  });
+
+  const form = useForm({
+    defaultValues: {
+      reviewId: "",
+      employeeId: "",
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: "",
+      title: "",
+      description: "",
+      target: "",
+      dueDate: "",
+      checkInFrequency: "WEEKLY",
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: (value: any) =>
+      PerformanceApi.createPip({
+        reviewId: value.reviewId,
+        employeeId: value.employeeId,
+        startDate: value.startDate,
+        endDate: value.endDate,
+        checkInFrequency: value.checkInFrequency,
+        objectives: [{
+          title: value.title,
+          description: value.description || undefined,
+          target: value.target || undefined,
+          dueDate: value.dueDate,
+          progress: 0,
+          status: "NOT_STARTED",
+        }],
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["performance", "pips"] });
+      showToast("PIP created.");
+      form.reset();
+      onClose();
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const completedReviews = (reviews ?? []).filter((review: any) => review.status === "COMPLETED");
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Create Performance Improvement Plan"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={form.handleSubmit((value) => mutation.mutate(value))} isLoading={mutation.isPending}>
+            Create PIP
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <SelectField label="Completed review" {...form.register("reviewId")} onChange={(event) => {
+          const review = completedReviews.find((item: any) => item.id === event.target.value);
+          form.setValue("reviewId", event.target.value);
+          if (review) form.setValue("employeeId", review.revieweeId);
+        }}>
+          <option value="">Select review</option>
+          {completedReviews.map((review: any) => (
+            <option key={review.id} value={review.id}>
+              {review.revieweeFirstName} {review.revieweeLastName} — {review.finalRating}/5
+            </option>
+          ))}
+        </SelectField>
+
+        <div className="grid grid-cols-2 gap-4">
+          <TextField label="Start date" type="date" required {...form.register("startDate")} />
+          <TextField label="End date" type="date" required {...form.register("endDate")} />
+        </div>
+
+        <TextField label="Objective title" required {...form.register("title")} />
+        <TextareaField label="Objective description" {...form.register("description")} />
+        <TextField label="Target" {...form.register("target")} />
+        <TextField label="Objective due date" type="date" required {...form.register("dueDate")} />
+
+        <SelectField label="Check-in frequency" {...form.register("checkInFrequency")}>
+          <option value="WEEKLY">Weekly</option>
+          <option value="BIWEEKLY">Biweekly</option>
+          <option value="MONTHLY">Monthly</option>
+        </SelectField>
+      </div>
+    </Modal>
+  );
+}
+
+function PipCheckInModal({ pipId, onClose }: { pipId: string; onClose: () => void }) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const form = useForm({
+    defaultValues: {
+      progress: 0,
+      managerComments: "",
+      hrComments: "",
+      nextSteps: "",
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: (value: any) => PerformanceApi.addPipCheckIn(pipId, {
+      progress: Number(value.progress),
+      managerComments: value.managerComments || undefined,
+      hrComments: value.hrComments || undefined,
+      nextSteps: value.nextSteps || undefined,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["performance", "pip", pipId] });
+      queryClient.invalidateQueries({ queryKey: ["performance", "pips"] });
+      showToast("Check-in added.");
+      onClose();
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add PIP check-in"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={form.handleSubmit((value) => mutation.mutate(value))} isLoading={mutation.isPending}>
+            Save check-in
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <TextField label="Progress" type="number" min="0" max="100" {...form.register("progress")} />
+        <TextareaField label="Manager comments" {...form.register("managerComments")} />
+        <TextareaField label="HR comments" {...form.register("hrComments")} />
+        <TextareaField label="Next steps" {...form.register("nextSteps")} />
+      </div>
+    </Modal>
+  );
+}
+
 function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
   const { user } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [managerReviewOpen, setManagerReviewOpen] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [outcomeFor, setOutcomeFor] = useState<{
     id: string;
     name: string;
   } | null>(null);
@@ -332,35 +790,63 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">{!review ? (
+              <div className="flex items-center gap-2">
+                {!review ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => ensureMutation.mutate(emp.id)}
+                    isLoading={ensureMutation.isPending}
+                  >
+                    Start review
+                  </Button>
+                ) : review.status === "COMPLETED" ? (
+                  <>
+                    <span className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+                      <Star size={14} className="fill-gold-500 text-gold-500" />{" "}
+                      {review.finalRating}/5
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setOutcomeFor({
+                          id: review.id,
+                          name: `${emp.firstName} ${emp.lastName}`,
+                        })
+                      }
+                    >
+                      Outcome
+                    </Button>
+                  </>
+                ) : review.status === "MANAGER_REVIEW" ? (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      setManagerReviewOpen({
+                        id: review.id,
+                        name: `${emp.firstName} ${emp.lastName}`,
+                      })
+                    }
+                  >
+                    Submit review
+                  </Button>
+                ) : (
+                  <Badge tone="neutral">Awaiting self-review</Badge>
+                )}
                 <Button
                   size="sm"
-                  variant="outline"
-                  onClick={() => ensureMutation.mutate(emp.id)}
-                  isLoading={ensureMutation.isPending}
-                >
-                  Start review
-                </Button>
-              ) : review.status === "COMPLETED" ? (
-                <span className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
-                  <Star size={14} className="fill-gold-500 text-gold-500" />{" "}
-                  {review.finalRating}/5
-                </span>
-              ) : review.status === "MANAGER_REVIEW" ? (
-                <Button
-                  size="sm"
+                  variant="ghost"
                   onClick={() =>
-                    setManagerReviewOpen({
-                      id: review.id,
+                    setGoalFor({
+                      id: emp.id,
                       name: `${emp.firstName} ${emp.lastName}`,
                     })
                   }
                 >
-                  Submit review
+                  Assign goal
                 </Button>
-              ) : (
-                <Badge tone="neutral">Awaiting self-review</Badge>
-              )}<Button size="sm" variant="ghost" onClick={() => setGoalFor({ id: emp.id, name: `${emp.firstName} ${emp.lastName}` })}>Assign goal</Button></div>
+              </div>
             </div>
           );
         })}
@@ -372,8 +858,194 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
           onClose={() => setManagerReviewOpen(null)}
         />
       )}
-      {goalFor && <AddGoalModal open onClose={() => setGoalFor(null)} employeeId={goalFor.id} employeeName={goalFor.name} />}
+      {outcomeFor && (
+        <PerformanceOutcomeModal
+          reviewId={outcomeFor.id}
+          employeeName={outcomeFor.name}
+          onClose={() => setOutcomeFor(null)}
+        />
+      )}
+      {goalFor && (
+        <AddGoalModal
+          open
+          onClose={() => setGoalFor(null)}
+          employeeId={goalFor.id}
+          employeeName={goalFor.name}
+          cycleId={activeCycleId}
+        />
+      )}
     </Card>
+  );
+}
+
+function PerformanceOutcomeModal({
+  reviewId,
+  employeeName,
+  onClose,
+}: {
+  reviewId: string;
+  employeeName: string;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [incrementRecommendation, setIncrementRecommendation] = useState<
+    "MAXIMUM" | "STANDARD" | "NONE" | "PIP"
+  >("STANDARD");
+  const [promotionEligible, setPromotionEligible] = useState(false);
+  const [pipRecommended, setPipRecommended] = useState(false);
+  const [fastTrackEligible, setFastTrackEligible] = useState(false);
+  const [trainingNeeds, setTrainingNeeds] = useState("");
+
+  const { data: outcome, isLoading } = useQuery({
+    queryKey: ["performance", "outcome", reviewId],
+    queryFn: () => PerformanceApi.outcome(reviewId),
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      PerformanceApi.updateOutcome(reviewId, {
+        incrementRecommendation,
+        promotionEligible,
+        trainingNeeds: trainingNeeds
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
+        pipRecommended,
+        fastTrackEligible,
+      }),
+    onSuccess: (updatedOutcome) => {
+      queryClient.setQueryData(
+        ["performance", "outcome", reviewId],
+        updatedOutcome,
+      );
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "my-review"],
+      });
+      showToast("Performance outcome updated.");
+      onClose();
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  useEffect(() => {
+    if (!outcome) return;
+    setIncrementRecommendation(outcome.incrementRecommendation);
+    setPromotionEligible(outcome.promotionEligible);
+    setPipRecommended(outcome.pipRecommended);
+    setFastTrackEligible(outcome.fastTrackEligible);
+    setTrainingNeeds(outcome.trainingNeeds.join(", "));
+  }, [outcome]);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Performance Outcome — ${employeeName}`}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            isLoading={mutation.isPending}
+            disabled={isLoading}
+          >
+            Save outcome
+          </Button>
+        </>
+      }
+    >
+      {isLoading ? (
+        <Skeleton className="h-64 rounded-2xl" />
+      ) : (
+        <div className="space-y-5">
+          <div className="rounded-2xl bg-ink/[0.03] p-4">
+            <p className="text-[12px] font-medium text-ink-faint">
+              Performance outcome actions
+            </p>
+            <p className="mt-1 text-[12px] text-ink-soft">
+              These decisions are recorded against the completed performance review.
+            </p>
+          </div>
+
+          <SelectField
+            label="Increment recommendation"
+            value={incrementRecommendation}
+            onChange={(event) =>
+              setIncrementRecommendation(
+                event.target.value as "MAXIMUM" | "STANDARD" | "NONE" | "PIP",
+              )
+            }
+          >
+            <option value="MAXIMUM">Maximum</option>
+            <option value="STANDARD">Standard</option>
+            <option value="NONE">None</option>
+            <option value="PIP">PIP</option>
+          </SelectField>
+
+          <TextareaField
+            label="Training / development needs"
+            hint="Separate multiple needs with commas"
+            value={trainingNeeds}
+            onChange={(event) => setTrainingNeeds(event.target.value)}
+          />
+
+          <div className="space-y-3">
+            <label className="flex cursor-pointer items-center gap-3 text-[13px] text-ink">
+              <input
+                type="checkbox"
+                checked={promotionEligible}
+                onChange={(event) => setPromotionEligible(event.target.checked)}
+                className="h-4 w-4 rounded border-line accent-brand-500"
+              />
+              Promotion eligible
+            </label>
+
+            <label className="flex cursor-pointer items-center gap-3 text-[13px] text-ink">
+              <input
+                type="checkbox"
+                checked={pipRecommended}
+                onChange={(event) => setPipRecommended(event.target.checked)}
+                className="h-4 w-4 rounded border-line accent-brand-500"
+              />
+              PIP recommended
+            </label>
+
+            <label className="flex cursor-pointer items-center gap-3 text-[13px] text-ink">
+              <input
+                type="checkbox"
+                checked={fastTrackEligible}
+                onChange={(event) => setFastTrackEligible(event.target.checked)}
+                className="h-4 w-4 rounded border-line accent-brand-500"
+              />
+              Fast-track eligible
+            </label>
+          </div>
+
+          {outcome && (
+            <div className="rounded-2xl border border-line/60 p-4">
+              <p className="text-[12px] font-medium text-ink-faint">
+                Current outcome
+              </p>
+              <div className="mt-2 grid gap-2 text-[12px] text-ink-soft sm:grid-cols-2">
+                <span>Increment: {outcome.incrementRecommendation}</span>
+                <span>
+                  Promotion: {outcome.promotionEligible ? "Eligible" : "Not eligible"}
+                </span>
+                <span>
+                  PIP: {outcome.pipRecommended ? "Recommended" : "Not recommended"}
+                </span>
+                <span>
+                  Fast-track: {outcome.fastTrackEligible ? "Eligible" : "Not eligible"}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -396,11 +1068,13 @@ function AddGoalModal({
   onClose,
   employeeId,
   employeeName,
+  cycleId,
 }: {
   open: boolean;
   onClose: () => void;
   employeeId?: string;
   employeeName?: string;
+  cycleId?: string;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -409,15 +1083,68 @@ function AddGoalModal({
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<GoalForm>({ resolver: zodResolver(goalSchema) });
+  } = useForm<GoalForm>({
+    resolver: zodResolver(goalSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      dueDate: "",
+      category: "",
+      targetValue: "",
+      currentValue: "",
+      milestones: "",
+    },
+  });
 
   const mutation = useMutation({
-    mutationFn: (value: GoalForm) => PerformanceApi.createGoal({ title: value.title, description: value.description, dueDate: value.dueDate, employeeId, category: value.category || undefined, targetValue: value.targetValue ? Number(value.targetValue) : null, milestones: value.milestones?.split(",").map((title) => title.trim()).filter(Boolean).map((title) => ({ title })) ?? [] }),
+    mutationFn: async (value: GoalForm) => {
+      const targetValue =
+        value.targetValue?.trim() ? Number(value.targetValue) : null;
+      const currentValue =
+        value.currentValue?.trim() ? Number(value.currentValue) : null;
+
+      if (
+        targetValue !== null &&
+        (!Number.isFinite(targetValue) || targetValue < 0)
+      ) {
+        throw new Error("Target value must be a valid non-negative number.");
+      }
+
+      if (
+        currentValue !== null &&
+        (!Number.isFinite(currentValue) || currentValue < 0)
+      ) {
+        throw new Error("Current value must be a valid non-negative number.");
+      }
+
+      const goal = await PerformanceApi.createGoal({
+        title: value.title,
+        description: value.description || undefined,
+        dueDate: value.dueDate,
+        employeeId,
+        cycleId: cycleId ?? null,
+        category: value.category?.trim() || undefined,
+        targetValue,
+        currentValue,
+        milestones:
+          value.milestones
+            ?.split(",")
+            .map((title) => title.trim())
+            .filter(Boolean)
+            .map((title) => ({ title, completed: false })) ?? [],
+      });
+
+      // The backend calculates KPI progress and status from targetValue/currentValue.
+      return goal;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["performance", "goals", "mine"],
       });
-      showToast("Goal added.");
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "goal-trend"],
+      });
+      showToast(employeeName ? "Goal assigned." : "Goal added.");
       reset();
       onClose();
     },
@@ -438,7 +1165,7 @@ function AddGoalModal({
             onClick={handleSubmit((v) => mutation.mutate(v))}
             isLoading={mutation.isPending}
           >
-            Add goal
+            {employeeName ? "Assign goal" : "Add goal"}
           </Button>
         </>
       }
@@ -450,9 +1177,37 @@ function AddGoalModal({
           error={errors.title?.message}
           {...register("title")}
         />
-        <TextareaField label="Description" {...register("description")} />
-        <div className="grid grid-cols-2 gap-4"><TextField label="KPI category" placeholder="e.g. Delivery" {...register("category")} /><TextField label="Target value" type="number" min="0" {...register("targetValue")} /></div>
-        <TextareaField label="Milestones" hint="Separate milestones with commas" {...register("milestones")} />
+        <TextareaField
+          label="Description"
+          {...register("description")}
+        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <TextField
+            label="KPI category"
+            placeholder="e.g. Delivery"
+            {...register("category")}
+          />
+          <TextField
+            label="Target value"
+            type="number"
+            min="0"
+            placeholder="e.g. 100"
+            {...register("targetValue")}
+          />
+        </div>
+        <TextField
+          label="Current value"
+          type="number"
+          min="0"
+          placeholder="e.g. 40"
+          hint="Used with the target to calculate initial progress."
+          {...register("currentValue")}
+        />
+        <TextareaField
+          label="Milestones"
+          hint="Separate milestones with commas"
+          {...register("milestones")}
+        />
         <TextField
           label="Due date"
           type="date"
