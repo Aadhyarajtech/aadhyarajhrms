@@ -623,8 +623,111 @@ export const RecruitmentApi = {
       .then((r) => r.data.data),
 };
 
+// --- Performance Improvement Plans (PIP) -------------------------------------
+export type PipStatus = "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+export type PipCheckInFrequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+export type PipObjectiveStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+
+export interface PipObjective {
+  title: string;
+  description?: string | null;
+  target?: string | null;
+  progress: number;
+  status: PipObjectiveStatus;
+  dueDate: string;
+}
+
+export interface PipCheckIn {
+  date: string;
+  progress: number;
+  managerComments?: string | null;
+  hrComments?: string | null;
+  nextSteps?: string | null;
+  managerId?: string | null;
+  addedByRole?: string | null;
+}
+
+export interface PerformancePip {
+  id: string;
+  reviewId: string;
+  employeeId: string;
+  status: PipStatus;
+  startDate: string;
+  endDate: string;
+  objectives: PipObjective[];
+  checkInFrequency: PipCheckInFrequency;
+  createdAt: string;
+  createdBy?: string | null;
+  managerId?: string | null;
+  checkIns: PipCheckIn[];
+  completedAt?: string | null;
+  finalOutcome?: string | null;
+  employeeName?: string;
+  employeeFirstName?: string;
+  employeeLastName?: string;
+}
+
 // --- Performance ----------------------------------------------------------------
 export const PerformanceApi = {
+  // PIP Management
+  pips: () =>
+    api
+      .get<{ pips: PerformancePip[] }>("/performance/pips")
+      .then((r) => r.data.pips),
+
+  pip: (id: string) =>
+    api
+      .get<{ pip: PerformancePip }>(`/performance/pips/${id}`)
+      .then((r) => r.data.pip),
+
+  createPip: (payload: {
+    reviewId: string;
+    employeeId: string;
+    startDate: string;
+    endDate: string;
+    objectives: PipObjective[];
+    checkInFrequency: PipCheckInFrequency;
+  }) =>
+    api
+      .post<{ pip: PerformancePip }>("/performance/pips", payload)
+      .then((r) => r.data.pip),
+
+  updatePipObjectives: (id: string, objectives: PipObjective[]) =>
+    api
+      .patch<{ pip: PerformancePip }>(
+        `/performance/pips/${id}/objectives`,
+        { objectives },
+      )
+      .then((r) => r.data.pip),
+
+  addPipCheckIn: (
+    id: string,
+    payload: {
+      progress: number;
+      managerComments?: string;
+      hrComments?: string;
+      nextSteps?: string;
+    },
+  ) =>
+    api
+      .post<{ pip: PerformancePip }>(
+        `/performance/pips/${id}/check-ins`,
+        payload,
+      )
+      .then((r) => r.data.pip),
+
+  updatePipStatus: (
+    id: string,
+    status: PipStatus,
+    finalOutcome?: string,
+  ) =>
+    api
+      .patch<{ pip: PerformancePip }>(
+        `/performance/pips/${id}/status`,
+        { status, finalOutcome },
+      )
+      .then((r) => r.data.pip),
+
   cycles: () =>
     api
       .get<{ cycles: PerformanceCycle[] }>("/performance/cycles")
@@ -709,7 +812,7 @@ export const PerformanceApi = {
     api
       .post<{ goal: Goal }>("/performance/goals", payload)
       .then((r) => r.data.goal),
-  goalTrend: () =>
+  goalTrend: (employeeId?: string) =>
     api
       .get<{
         data: {
@@ -717,45 +820,69 @@ export const PerformanceApi = {
           cycleName: string;
           achievementPercentage: number;
         }[];
-      }>("/performance/goals/trend")
+      }>("/performance/goals/trend", { params: { employeeId } })
       .then((r) => r.data.data),
-  feedbackRequests: () =>
+  feedbackRequests: () => api.get<{ reviews: PerformanceReview[] }>("/performance/feedback-requests").then((r) => r.data.reviews),
+  submitFeedback: (id: string, payload: { type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) => api.post(`/performance/reviews/${id}/feedback`, payload).then((r) => r.data.feedback),
+  feedbackSummary: (id: string) => api.get<{ summary: FeedbackSummary }>(`/performance/reviews/${id}/feedback-summary`).then((r) => r.data.summary),
+  outcome: (id: string) =>
     api
-      .get<{ reviews: PerformanceReview[] }>("/performance/feedback-requests")
-      .then((r) => r.data.reviews),
-  submitFeedback: (
+      .get<{ outcome: PerformanceOutcome | null }>(
+        `/performance/reviews/${id}/outcome`,
+      )
+      .then((r) => r.data.outcome),
+
+  updateOutcome: (
     id: string,
     payload: {
-      type: "PEER" | "SUBORDINATE";
-      competencyRatings: { competency: string; rating: number }[];
-      comments?: string;
+      incrementRecommendation: "MAXIMUM" | "STANDARD" | "NONE" | "PIP";
+      promotionEligible?: boolean;
+      trainingNeeds?: string[];
+      pipRecommended?: boolean;
+      fastTrackEligible?: boolean;
     },
   ) =>
     api
-      .post(`/performance/reviews/${id}/feedback`, payload)
-      .then((r) => r.data.feedback),
-  feedbackSummary: (id: string) =>
-    api
-      .get<{
-        summary: FeedbackSummary;
-      }>(`/performance/reviews/${id}/feedback-summary`)
-      .then((r) => r.data.summary),
-  outcome: (id: string) =>
-    api
-      .get<{
-        outcome: PerformanceOutcome | null;
-      }>(`/performance/reviews/${id}/outcome`)
+      .patch<{ outcome: PerformanceOutcome }>(
+        `/performance/reviews/${id}/outcome`,
+        payload,
+      )
       .then((r) => r.data.outcome),
   updateGoalProgress: (id: string, progress: number) =>
     api
       .patch<{ goal: Goal }>(`/performance/goals/${id}/progress`, { progress })
       .then((r) => r.data.goal),
+
+  // KPI goals: update the actual current value.
+  // The backend calculates progress and status from currentValue / targetValue.
+  updateGoalCurrentValue: (id: string, currentValue: number) =>
+    api
+      .patch<{ goal: Goal }>(
+        `/performance/goals/${id}/current-value`,
+        { currentValue },
+      )
+      .then((r) => r.data.goal),
+
   ratingByDepartment: () =>
     api
       .get<{
         data: { department: string; avgRating: number }[];
       }>("/performance/analytics/rating-by-department")
       .then((r) => r.data.data),
+
+  // Performance analytics summary.
+  analyticsSummary: () =>
+    api
+      .get<{
+        reviewCompletionPercentage: number;
+        averagePerformanceRating: number;
+        totalGoals: number;
+        averageKpiAchievement: number;
+        goalCompletionPercentage: number;
+        totalPips: number;
+        activePips: number;
+      }>("/performance/analytics/summary")
+      .then((r) => r.data),
 };
 
 // --- Payroll -----------------------------------------------------------------------
