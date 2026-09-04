@@ -259,6 +259,8 @@ export interface CandidateOffer {
   joiningDate: string;
   generatedAt: string | null;
   respondedAt: string | null;
+  accessTokenExpiresAt?: string | null;
+  viewedAt?: string | null;
 }
 
 export interface BackgroundVerification {

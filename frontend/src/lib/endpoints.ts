@@ -515,13 +515,6 @@ export const RecruitmentApi = {
       }>(`/recruitment/candidates/${id}/offer`, payload)
       .then((r) => r.data.candidate),
 
-  respondToOffer: (id: string, status: "ACCEPTED" | "DECLINED") =>
-    api
-      .patch<{
-        candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/offer/response`, { status })
-      .then((r) => r.data.candidate),
-
   updateBackgroundVerification: (
     id: string,
     payload: {
@@ -1043,13 +1036,37 @@ export interface ReportsOverview {
     regularized: number;
     totalWorkHours: number;
     averageWorkHours: number;
+    estimatedOvertimeHours: number;
     byStatus: ReportBucket[];
+    daily: {
+      label: string;
+      value: number;
+      total: number;
+      present: number;
+      absent: number;
+      halfDay: number;
+      workHours: number;
+      overtimeHours: number;
+      attendanceRate: number;
+    }[];
+    employeeSummary: {
+      employeeId: string;
+      records: number;
+      present: number;
+      absent: number;
+      halfDay: number;
+      leave: number;
+      attendanceRate: number;
+      workHours: number;
+      overtimeHours: number;
+    }[];
   };
   leave: {
     total: number;
     totalDays: number;
     byStatus: ReportBucket[];
     byType: ReportBucket[];
+    monthly: { label: string; value: number; requests: number; days: number }[];
   };
   payroll: {
     runs: number;
@@ -1058,16 +1075,47 @@ export interface ReportsOverview {
     totalNet: number;
     totalLop: number;
     payslipCount: number;
-    byRun: { label: string; gross: number; net: number; headcount: number }[];
+    byRun: {
+      label: string;
+      gross: number;
+      deductions: number;
+      net: number;
+      lop: number;
+      headcount: number;
+    }[];
+    byDepartment: {
+      label: string;
+      value: number;
+      gross: number;
+      deductions: number;
+      net: number;
+      headcount: number;
+    }[];
+  };
+  audit: {
+    total: number;
+    byAction: ReportBucket[];
+    byEntity: ReportBucket[];
+    recent: {
+      action: string;
+      entity: string;
+      entityId: string | null;
+      userId: string | null;
+      ipAddress: string | null;
+      createdAt: string;
+      metadata: string | null;
+    }[];
   };
   recruitment: {
     applications: number;
     openRoles: number;
     offersAccepted: number;
     hired: number;
+    offersSent: number;
     offerAcceptanceRate: number;
     byStage: ReportBucket[];
     bySource: ReportBucket[];
+    funnel: ReportBucket[];
   } | null;
   performance: {
     reviews: number;
@@ -1080,6 +1128,8 @@ export interface ReportsOverview {
     byStatus: ReportBucket[];
     byPriority: ReportBucket[];
     byCategory: ReportBucket[];
+    resolved: number;
+    averageResolutionHours: number;
   };
   documents: {
     total: number;
@@ -1095,6 +1145,26 @@ export const ReportsApi = {
     api
       .get<ReportsOverview>("/reports/overview", { params: filters })
       .then((r) => r.data),
+
+  export: async (format: "xlsx" | "pdf", filters: ReportsFilters = {}) => {
+    const response = await api.get<Blob>(`/reports/export/${format}`, {
+      params: filters,
+      responseType: "blob",
+    });
+    const contentType =
+      format === "xlsx"
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : "application/pdf";
+    const blob = new Blob([response.data], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `hrms-report-${filters.from ?? "all"}-to-${filters.to ?? "all"}.${format}`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // --- Dashboard -----------------------------------------------------------------------

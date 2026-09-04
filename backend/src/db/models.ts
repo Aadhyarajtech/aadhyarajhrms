@@ -1707,6 +1707,9 @@ export interface OfferDoc {
   joiningDate: string;
   generatedAt: string | null;
   respondedAt: string | null;
+  accessTokenHash: string | null;
+  accessTokenExpiresAt: string | null;
+  viewedAt: string | null;
 }
 
 export interface BackgroundVerificationDoc {
@@ -1863,6 +1866,21 @@ const offerSchema = new Schema<OfferDoc>(
     },
 
     respondedAt: {
+      type: String,
+      default: null,
+    },
+
+    accessTokenHash: {
+      type: String,
+      default: null,
+    },
+
+    accessTokenExpiresAt: {
+      type: String,
+      default: null,
+    },
+
+    viewedAt: {
       type: String,
       default: null,
     },
