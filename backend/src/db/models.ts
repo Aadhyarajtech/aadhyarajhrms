@@ -2352,30 +2352,50 @@ export interface PerformanceCycleDoc {
   startDate: string;
   endDate: string;
   isActive: boolean;
+  type:
+    | "PROBATION"
+    | "QUARTERLY"
+    | "HALF_YEARLY"
+    | "ANNUAL"
+    | "THREE_SIXTY"
+    | "PIP";
+  purpose: string | null;
 }
 
 const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
   {
     _id: idField("cyc"),
-
     name: {
       type: String,
       required: true,
     },
-
     startDate: {
       type: String,
       required: true,
     },
-
     endDate: {
       type: String,
       required: true,
     },
-
     isActive: {
       type: Boolean,
       default: true,
+    },
+    type: {
+      type: String,
+      enum: [
+        "PROBATION",
+        "QUARTERLY",
+        "HALF_YEARLY",
+        "ANNUAL",
+        "THREE_SIXTY",
+        "PIP",
+      ],
+      default: "ANNUAL",
+    },
+    purpose: {
+      type: String,
+      default: null,
     },
   },
   baseOptions,
@@ -2507,6 +2527,26 @@ export interface GoalDoc {
   assignedBy: string | null;
 }
 
+const goalMilestoneSchema = new Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+    },
+    targetDate: {
+      type: String,
+      default: null,
+    },
+    completed: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  {
+    _id: false,
+  },
+);
+
 const goalSchema = new Schema<GoalDoc>(
   {
     _id: idField("goal"),
@@ -2545,22 +2585,41 @@ const goalSchema = new Schema<GoalDoc>(
     createdAt: {
       type: String,
       required: true,
-      cycleId: { type: String, default: null },
-      parentGoalId: { type: String, default: null },
-      category: { type: String, default: null },
-      targetValue: { type: Number, default: null },
-      currentValue: { type: Number, default: null },
-      milestones: {
-        type: [
-          {
-            title: String,
-            targetDate: { type: String, default: null },
-            completed: Boolean,
-          },
-        ],
-        default: [],
-      },
-      assignedBy: { type: String, default: null },
+    },
+
+    cycleId: {
+      type: String,
+      default: null,
+    },
+
+    parentGoalId: {
+      type: String,
+      default: null,
+    },
+
+    category: {
+      type: String,
+      default: null,
+    },
+
+    targetValue: {
+      type: Number,
+      default: null,
+    },
+
+    currentValue: {
+      type: Number,
+      default: null,
+    },
+
+    milestones: {
+      type: [goalMilestoneSchema],
+      default: [],
+    },
+
+    assignedBy: {
+      type: String,
+      default: null,
     },
   },
   baseOptions,

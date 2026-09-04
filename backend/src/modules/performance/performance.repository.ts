@@ -212,31 +212,77 @@ export async function submitManagerReview(
 
   const rating = Math.round(finalRating);
 
+
+  // Feed KPI/goal achievement into the automatic outcome decision.
+  // The review rating remains the primary performance signal, while KPI
+  // achievement is used as an objective goal-attainment check.
+  const cycleGoals = await Goal.find({
+    employeeId: review.revieweeId,
+    cycleId: review.cycleId,
+  }).lean();
+
+  const goalProgressValues = cycleGoals
+    .map((goal: any) =>
+      calculateGoalProgress(goal.targetValue, goal.currentValue) ??
+      (typeof goal.progress === "number" ? goal.progress : null),
+    )
+    .filter((value): value is number => typeof value === "number");
+
+  const kpiAchievementPercentage = goalProgressValues.length
+    ? Math.round(
+        goalProgressValues.reduce((sum, value) => sum + value, 0) /
+          goalProgressValues.length,
+      )
+    : null;
+
+  const kpiSupportsPromotion =
+    kpiAchievementPercentage === null || kpiAchievementPercentage >= 80;
+  const kpiSupportsFastTrack =
+    kpiAchievementPercentage === null || kpiAchievementPercentage >= 100;
+  const kpiNeedsImprovement =
+    kpiAchievementPercentage !== null && kpiAchievementPercentage < 50;
+
+  const pipRecommended = rating <= 2 || kpiNeedsImprovement;
+  const fastTrackEligible =
+    rating >= 5 && kpiSupportsFastTrack && !pipRecommended;
+  const promotionEligible =
+    rating >= 4 && kpiSupportsPromotion && !pipRecommended;
+
+  const incrementRecommendation = fastTrackEligible
+    ? "MAXIMUM"
+    : pipRecommended
+      ? "PIP"
+      : rating >= 3
+        ? "STANDARD"
+        : "NONE";
+
+  const trainingNeeds =
+    (rating <= 3 || kpiNeedsImprovement) && review.improvements
+      ? [review.improvements]
+      : [];
+
+
   await PerformanceOutcome.findOneAndUpdate(
     { reviewId: id },
     {
       $set: {
         reviewId: id,
-        incrementRecommendation:
-          rating >= 5
-            ? "MAXIMUM"
-            : rating >= 3
-              ? "STANDARD"
-              : rating === 2
-                ? "PIP"
-                : "NONE",
-        promotionEligible: rating >= 4,
-        fastTrackEligible: rating >= 5,
-        pipRecommended: rating <= 2,
-        trainingNeeds:
-          rating <= 3 && review.improvements ? [review.improvements] : [],
+
+        incrementRecommendation,
+        promotionEligible,
+        fastTrackEligible,
+        pipRecommended,
+        trainingNeeds,
+
         createdAt: nowIso(),
       },
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 
-  if (rating <= 2) {
+
+  if (pipRecommended) {
+
     const start = new Date();
     const end = new Date(start);
     end.setMonth(end.getMonth() + 3);
@@ -264,9 +310,58 @@ export async function submitManagerReview(
   return getReview(id);
 }
 
+function calculateGoalProgress(
+  targetValue?: number | null,
+  currentValue?: number | null,
+) {
+  if (
+    typeof targetValue !== "number" ||
+    targetValue <= 0 ||
+    typeof currentValue !== "number"
+  ) {
+    return null;
+  }
+
+  return Math.min(
+    100,
+    Math.max(0, Math.round((currentValue / targetValue) * 100)),
+  );
+}
+
+function calculateGoalStatus(progress: number) {
+  return progress >= 100
+    ? "COMPLETED"
+    : progress > 0
+      ? "IN_PROGRESS"
+      : "NOT_STARTED";
+}
+
+function normalizeGoal(row: any) {
+  const goal = toApiDoc(row) as any;
+  if (!goal) return goal;
+
+  const calculatedProgress = calculateGoalProgress(
+    goal.targetValue,
+    goal.currentValue,
+  );
+
+  // KPI goals use Current Value as the source of truth. For legacy goals
+  // without a target/current pair, preserve their existing manual progress.
+  const progress =
+    calculatedProgress === null
+      ? Math.min(100, Math.max(0, Number(goal.progress ?? 0)))
+      : calculatedProgress;
+
+  return {
+    ...goal,
+    progress,
+    status: calculateGoalStatus(progress),
+  };
+}
+
 export async function listGoals(employeeId: string) {
   const rows = await Goal.find({ employeeId }).sort({ dueDate: 1 }).lean();
-  return rows.map(toApiDoc);
+  return rows.map(normalizeGoal);
 }
 
 export async function createGoal(input: {
@@ -286,19 +381,40 @@ export async function createGoal(input: {
   }[];
   assignedBy?: string | null;
 }) {
+
+  const targetValue = input.targetValue ?? null;
+  const currentValue = input.currentValue ?? null;
+
+  // When a KPI target and current value are supplied, start the goal at the
+  // corresponding achievement percentage instead of resetting it to zero.
+  const progress =
+    typeof targetValue === "number" &&
+    targetValue > 0 &&
+    typeof currentValue === "number"
+      ? Math.min(100, Math.max(0, Math.round((currentValue / targetValue) * 100)))
+      : 0;
+
+
+  const status =
+    progress >= 100
+      ? "COMPLETED"
+      : progress > 0
+        ? "IN_PROGRESS"
+        : "NOT_STARTED";
+
   const doc = await Goal.create({
     employeeId: input.employeeId,
     title: input.title,
     description: input.description ?? null,
     dueDate: input.dueDate,
-    status: "NOT_STARTED",
-    progress: 0,
+    status,
+    progress,
     createdAt: nowIso(),
     cycleId: input.cycleId ?? null,
     parentGoalId: input.parentGoalId ?? null,
     category: input.category ?? null,
-    targetValue: input.targetValue ?? null,
-    currentValue: input.currentValue ?? null,
+    targetValue,
+    currentValue,
     milestones: (input.milestones ?? []).map((milestone) => ({
       title: milestone.title,
       targetDate: milestone.targetDate ?? null,
@@ -306,87 +422,470 @@ export async function createGoal(input: {
     })),
     assignedBy: input.assignedBy ?? null,
   });
-  return toApiDoc((await Goal.findById(doc._id).lean())!);
+
+  return normalizeGoal(await Goal.findById(doc._id).lean());
 }
 
+
 export async function updateGoalProgress(id: string, progress: number) {
-  const status =
-    progress >= 100
-      ? "COMPLETED"
-      : progress > 0
-        ? "IN_PROGRESS"
-        : "NOT_STARTED";
-  await Goal.updateOne({ _id: id }, { $set: { progress, status } });
-  return toApiDoc((await Goal.findById(id).lean())!);
+  const goal = await Goal.findById(id).lean();
+  if (!goal) return undefined;
+
+  const safeProgress = Math.min(100, Math.max(0, Math.round(progress)));
+
+  // For KPI goals, keep Current Value and Progress synchronized. The existing
+  // API still accepts a progress percentage so older frontend clients remain
+  // compatible, but the stored KPI values remain internally consistent.
+  const targetValue = (goal as any).targetValue;
+  const currentValue = (goal as any).currentValue;
+
+  if (
+    typeof targetValue === "number" &&
+    targetValue > 0 &&
+    typeof currentValue === "number"
+  ) {
+    const nextCurrentValue = Math.min(
+      targetValue,
+      Math.max(0, Math.round((targetValue * safeProgress) / 100)),
+    );
+    const calculatedProgress = calculateGoalProgress(
+      targetValue,
+      nextCurrentValue,
+    ) ?? 0;
+
+    await Goal.updateOne(
+      { _id: id },
+      {
+        $set: {
+          currentValue: nextCurrentValue,
+          progress: calculatedProgress,
+          status: calculateGoalStatus(calculatedProgress),
+        },
+      },
+    );
+  } else {
+    await Goal.updateOne(
+      { _id: id },
+      {
+        $set: {
+          progress: safeProgress,
+          status: calculateGoalStatus(safeProgress),
+        },
+      },
+    );
+  }
+
+  return normalizeGoal(await Goal.findById(id).lean());
+}
+
+export async function updateGoalCurrentValue(
+  id: string,
+  currentValue: number,
+) {
+  const goal = await Goal.findById(id).lean();
+  if (!goal) return undefined;
+
+  const targetValue = (goal as any).targetValue;
+
+  if (typeof targetValue !== "number" || targetValue <= 0) {
+    throw new Error(
+      "A positive target value is required before updating the KPI current value.",
+    );
+  }
+
+  const safeCurrentValue = Math.max(0, currentValue);
+  const progress = calculateGoalProgress(targetValue, safeCurrentValue) ?? 0;
+
+  await Goal.updateOne(
+    { _id: id },
+    {
+      $set: {
+        currentValue: safeCurrentValue,
+        progress,
+        status: calculateGoalStatus(progress),
+      },
+    },
+  );
+
+  return normalizeGoal(await Goal.findById(id).lean());
 }
 
 export async function getGoal(id: string) {
-  return toApiDoc(await Goal.findById(id).lean());
+  return normalizeGoal(await Goal.findById(id).lean());
 }
+
 export async function getGoalTrend(employeeId: string) {
   const goals = await Goal.find({ employeeId }).lean();
   const values = new Map<string, { total: number; count: number }>();
+
   for (const goal of goals) {
+    const normalized = normalizeGoal(goal);
     const key = goal.cycleId ?? "unassigned";
     const entry = values.get(key) ?? { total: 0, count: 0 };
-    entry.total += goal.progress;
+    entry.total += normalized.progress;
     entry.count++;
     values.set(key, entry);
   }
+
+
   const cycles = await PerformanceCycle.find({
     _id: { $in: [...values.keys()].filter((key) => key !== "unassigned") },
   }).lean();
   const names = new Map(cycles.map((cycle) => [cycle._id, cycle.name]));
+
+
+
   return [...values].map(([cycleId, value]) => ({
     cycleId: cycleId === "unassigned" ? null : cycleId,
     cycleName: names.get(cycleId) ?? "Unassigned goals",
     achievementPercentage: Math.round(value.total / value.count),
   }));
 }
-export async function submitFeedback(input: {
-  reviewId: string;
-  reviewerEmployeeId: string;
-  type: "PEER" | "SUBORDINATE";
-  competencyRatings: { competency: string; rating: number }[];
-  comments?: string;
-}) {
-  const doc = await PerformanceFeedback.findOneAndUpdate(
-    { reviewId: input.reviewId, reviewerEmployeeId: input.reviewerEmployeeId },
+
+export async function submitFeedback(input: { reviewId: string; reviewerEmployeeId: string; type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) { const doc = await PerformanceFeedback.findOneAndUpdate({ reviewId: input.reviewId, reviewerEmployeeId: input.reviewerEmployeeId }, { $set: { ...input, comments: input.comments ?? null, submittedAt: nowIso() } }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean(); return toApiDoc(doc); }
+export async function getFeedbackSummary(reviewId: string) { const feedback = await PerformanceFeedback.find({ reviewId }).lean(); const ratings = new Map<string, number[]>(); for (const entry of feedback) for (const item of entry.competencyRatings) { const values = ratings.get(item.competency) ?? []; values.push(item.rating); ratings.set(item.competency, values); } return { responseCount: feedback.length, competencies: [...ratings].map(([competency, values]) => ({ competency, averageRating: Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100 })), comments: feedback.map((entry) => entry.comments).filter(Boolean) }; }
+export async function getOutcome(reviewId: string) { return toApiDoc(await PerformanceOutcome.findOne({ reviewId }).lean()); }
+
+
+export type PerformanceOutcomeInput = {
+  incrementRecommendation: "MAXIMUM" | "STANDARD" | "NONE" | "PIP";
+  promotionEligible?: boolean;
+  trainingNeeds?: string[];
+  pipRecommended?: boolean;
+  fastTrackEligible?: boolean;
+};
+
+export async function upsertOutcome(
+  reviewId: string,
+  input: PerformanceOutcomeInput,
+) {
+  const review = await PerformanceReview.findById(reviewId).lean();
+
+  if (!review) {
+    return undefined;
+  }
+
+  const outcome = await PerformanceOutcome.findOneAndUpdate(
+    { reviewId },
     {
       $set: {
-        ...input,
-        comments: input.comments ?? null,
-        submittedAt: nowIso(),
+        reviewId,
+        incrementRecommendation: input.incrementRecommendation,
+        promotionEligible: input.promotionEligible ?? false,
+        trainingNeeds: input.trainingNeeds ?? [],
+        pipRecommended: input.pipRecommended ?? false,
+        fastTrackEligible: input.fastTrackEligible ?? false,
+        createdAt: nowIso(),
       },
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    },
   ).lean();
-  return toApiDoc(doc);
+
+  return toApiDoc(outcome);
 }
-export async function getFeedbackSummary(reviewId: string) {
-  const feedback = await PerformanceFeedback.find({ reviewId }).lean();
-  const ratings = new Map<string, number[]>();
-  for (const entry of feedback)
-    for (const item of entry.competencyRatings) {
-      const values = ratings.get(item.competency) ?? [];
-      values.push(item.rating);
-      ratings.set(item.competency, values);
-    }
+
+
+/* -------------------------------------------------------------------------- */
+/*                         PERFORMANCE IMPROVEMENT PLAN                        */
+/* -------------------------------------------------------------------------- */
+
+type PipObjectiveInput = {
+  title: string;
+  description?: string;
+  target?: string;
+  progress?: number;
+  status?: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+  dueDate: string;
+};
+
+type PipCheckInInput = {
+  date?: string;
+  progress?: number;
+  managerComments?: string;
+  hrComments?: string;
+  nextSteps?: string;
+  managerId?: string | null;
+  addedByRole?: string;
+};
+
+function normalizePipObjective(input: PipObjectiveInput) {
   return {
-    responseCount: feedback.length,
-    competencies: [...ratings].map(([competency, values]) => ({
-      competency,
-      averageRating:
-        Math.round(
-          (values.reduce((sum, value) => sum + value, 0) / values.length) * 100,
-        ) / 100,
-    })),
-    comments: feedback.map((entry) => entry.comments).filter(Boolean),
+    title: input.title,
+    description: input.description ?? null,
+    target: input.target ?? null,
+    progress: input.progress ?? 0,
+    status: input.status ?? "NOT_STARTED",
+    dueDate: input.dueDate,
   };
 }
-export async function getOutcome(reviewId: string) {
-  return toApiDoc(await PerformanceOutcome.findOne({ reviewId }).lean());
+
+function toPipApiDoc(doc: any, managerId: string | null = null) {
+  if (!doc) return undefined;
+
+  const plain = toApiDoc(doc) as any;
+
+  // Newer PIPs store structured objectives/frequency in expanded fields while
+  // retaining the legacy fields for backward compatibility.
+  const storedObjectives = Array.isArray(plain.pipObjectives)
+    ? plain.pipObjectives
+    : plain.objectives;
+
+  const objectives = Array.isArray(storedObjectives)
+    ? storedObjectives.map((objective: any) =>
+        typeof objective === "string"
+          ? {
+              title: objective,
+              description: null,
+              target: null,
+              progress: 0,
+              status: "NOT_STARTED",
+              dueDate: plain.endDate,
+            }
+          : {
+              title: objective.title,
+              description: objective.description ?? null,
+              target: objective.target ?? null,
+              progress: objective.progress ?? 0,
+              status: objective.status ?? "NOT_STARTED",
+              dueDate: objective.dueDate ?? plain.endDate,
+            },
+      )
+    : [];
+
+  return {
+    ...plain,
+    managerId: plain.managerId ?? managerId,
+    objectives,
+    checkInFrequency:
+      plain.pipCheckInFrequency ?? plain.checkInFrequency ?? "MONTHLY",
+    checkIns: Array.isArray(plain.checkIns) ? plain.checkIns : [],
+    finalOutcome: plain.finalOutcome ?? null,
+  };
 }
+
+
+export async function listPips(filters: {
+  employeeId?: string;
+  managerId?: string;
+  status?: string;
+}) {
+  const query: Record<string, any> = {};
+
+  if (filters.employeeId) {
+    query.employeeId = filters.employeeId;
+  }
+
+  if (filters.status) {
+    query.status = filters.status === "DRAFT" ? "ACTIVE" : filters.status;
+  }
+
+  if (filters.managerId) {
+    const reports = await Employee.find({
+      managerId: filters.managerId,
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const reportIds = reports.map((employee) => employee._id);
+    query.employeeId = query.employeeId
+      ? query.employeeId
+      : { $in: reportIds };
+  }
+
+  const rows = await PerformanceImprovementPlan.find(query)
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const employeeIds = [...new Set(rows.map((row) => row.employeeId))];
+  const employees = employeeIds.length
+    ? await Employee.find({ _id: { $in: employeeIds } }).lean()
+    : [];
+  const managerMap = new Map(
+    employees.map((employee) => [employee._id, employee.managerId ?? null]),
+  );
+
+  return rows.map((row) => toPipApiDoc(row, managerMap.get(row.employeeId) ?? null));
+}
+
+export async function getPip(id: string) {
+  const row = await PerformanceImprovementPlan.findById(id).lean();
+  if (!row) return undefined;
+
+  const employee = await Employee.findById(row.employeeId).lean();
+  return toPipApiDoc(row, employee?.managerId ?? null);
+}
+
+export async function createPip(input: {
+  reviewId: string;
+  employeeId: string;
+  managerId?: string;
+  createdBy?: string;
+  status?: "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+  startDate: string;
+  endDate: string;
+  objectives: PipObjectiveInput[];
+  checkInFrequency?: "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+}) {
+  const existing = await PerformanceImprovementPlan.findOne({
+    reviewId: input.reviewId,
+  }).lean();
+
+  if (existing) {
+    return getPip(existing._id);
+  }
+
+  const employee = await Employee.findById(input.employeeId).lean();
+
+  const objectives = input.objectives.map(normalizePipObjective);
+  const frequency = input.checkInFrequency ?? "MONTHLY";
+  const status =
+    input.status === "COMPLETED" || input.status === "CANCELLED"
+      ? input.status
+      : "ACTIVE";
+
+  // Keep the legacy model-compatible fields populated, while storing the
+  // complete structured PIP data separately. This allows WEEKLY/BIWEEKLY
+  // frequencies and objective metadata to survive until the DB model is
+  // migrated to the expanded schema.
+  const legacyObjectives = objectives.map((objective) => objective.title);
+
+  const doc = await PerformanceImprovementPlan.create({
+    reviewId: input.reviewId,
+    employeeId: input.employeeId,
+    status,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    objectives: legacyObjectives,
+    checkInFrequency: frequency === "WEEKLY" || frequency === "BIWEEKLY"
+      ? "MONTHLY"
+      : frequency,
+    createdAt: nowIso(),
+  });
+
+  await PerformanceImprovementPlan.updateOne(
+    { _id: doc._id },
+    {
+      $set: {
+        managerId: input.managerId ?? employee?.managerId ?? null,
+        createdBy: input.createdBy ?? null,
+        pipObjectives: objectives,
+        pipCheckInFrequency: frequency,
+      },
+    } as any,
+    { strict: false } as any,
+  );
+
+  return getPip(doc._id);
+}
+
+
+export async function updatePipObjectives(
+  id: string,
+  objectives: PipObjectiveInput[],
+) {
+  const row = await PerformanceImprovementPlan.findById(id).lean();
+  if (!row) return undefined;
+
+  const normalizedObjectives = objectives.map(normalizePipObjective);
+
+  await PerformanceImprovementPlan.updateOne(
+    { _id: id },
+    {
+      $set: {
+        objectives: normalizedObjectives.map((objective) => objective.title),
+        pipObjectives: normalizedObjectives,
+      },
+    } as any,
+    { strict: false } as any,
+  );
+
+  return getPip(id);
+}
+
+
+export async function addPipCheckIn(
+  id: string,
+  checkIn: PipCheckInInput,
+) {
+  const row = await PerformanceImprovementPlan.findById(id).lean();
+  if (!row) return undefined;
+
+  const existingCheckIns = Array.isArray((row as any).checkIns)
+    ? (row as any).checkIns
+    : [];
+
+  const newCheckIn = {
+    date: checkIn.date ?? nowIso(),
+    progress: checkIn.progress ?? 0,
+    managerComments: checkIn.managerComments ?? null,
+    hrComments: checkIn.hrComments ?? null,
+    nextSteps: checkIn.nextSteps ?? null,
+    managerId: checkIn.managerId ?? null,
+    addedByRole: checkIn.addedByRole ?? null,
+  };
+
+  // Use an explicit update object so this function is ready for the expanded
+  // PIP schema. With the current basic schema, checkIns requires that model
+  // field to be added before this data can be persisted.
+  const nextCheckIns = [...existingCheckIns, newCheckIn];
+
+  await PerformanceImprovementPlan.updateOne(
+    { _id: id },
+    {
+      $set: {
+        checkIns: nextCheckIns,
+        latestCheckInProgress: newCheckIn.progress,
+      },
+    } as any,
+    { strict: false } as any,
+  );
+
+  const updated = await PerformanceImprovementPlan.findById(id).lean();
+  const employee = updated
+    ? await Employee.findById(updated.employeeId).lean()
+    : null;
+
+  return toPipApiDoc(updated, employee?.managerId ?? null);
+}
+
+export async function updatePipStatus(
+  id: string,
+  status: "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED",
+  finalOutcome?: string,
+) {
+  const row = await PerformanceImprovementPlan.findById(id).lean();
+  if (!row) return undefined;
+
+  const set: Record<string, any> = {
+    // Preserve the requested status. DRAFT is a valid persisted PIP state.
+    status,
+  };
+
+  if (status === "COMPLETED") {
+    set.completedAt = nowIso();
+  }
+
+  if (status === "CANCELLED") {
+    set.cancelledAt = nowIso();
+  }
+
+  if (finalOutcome !== undefined) {
+    set.finalOutcome = finalOutcome;
+  }
+
+  await PerformanceImprovementPlan.updateOne(
+    { _id: id },
+    { $set: set } as any,
+    { strict: false } as any,
+  );
+
+  return getPip(id);
+}
+
 
 export async function getAverageRatingByDepartment() {
   const reviews = await PerformanceReview.find({
