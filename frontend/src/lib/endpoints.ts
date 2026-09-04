@@ -687,10 +687,9 @@ export const PerformanceApi = {
 
   updatePipObjectives: (id: string, objectives: PipObjective[]) =>
     api
-      .patch<{ pip: PerformancePip }>(
-        `/performance/pips/${id}/objectives`,
-        { objectives },
-      )
+      .patch<{
+        pip: PerformancePip;
+      }>(`/performance/pips/${id}/objectives`, { objectives })
       .then((r) => r.data.pip),
 
   addPipCheckIn: (
@@ -703,22 +702,16 @@ export const PerformanceApi = {
     },
   ) =>
     api
-      .post<{ pip: PerformancePip }>(
-        `/performance/pips/${id}/check-ins`,
-        payload,
-      )
+      .post<{
+        pip: PerformancePip;
+      }>(`/performance/pips/${id}/check-ins`, payload)
       .then((r) => r.data.pip),
 
-  updatePipStatus: (
-    id: string,
-    status: PipStatus,
-    finalOutcome?: string,
-  ) =>
+  updatePipStatus: (id: string, status: PipStatus, finalOutcome?: string) =>
     api
-      .patch<{ pip: PerformancePip }>(
-        `/performance/pips/${id}/status`,
-        { status, finalOutcome },
-      )
+      .patch<{
+        pip: PerformancePip;
+      }>(`/performance/pips/${id}/status`, { status, finalOutcome })
       .then((r) => r.data.pip),
 
   cycles: () =>
@@ -815,14 +808,32 @@ export const PerformanceApi = {
         }[];
       }>("/performance/goals/trend", { params: { employeeId } })
       .then((r) => r.data.data),
-  feedbackRequests: () => api.get<{ reviews: PerformanceReview[] }>("/performance/feedback-requests").then((r) => r.data.reviews),
-  submitFeedback: (id: string, payload: { type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) => api.post(`/performance/reviews/${id}/feedback`, payload).then((r) => r.data.feedback),
-  feedbackSummary: (id: string) => api.get<{ summary: FeedbackSummary }>(`/performance/reviews/${id}/feedback-summary`).then((r) => r.data.summary),
+  feedbackRequests: () =>
+    api
+      .get<{ reviews: PerformanceReview[] }>("/performance/feedback-requests")
+      .then((r) => r.data.reviews),
+  submitFeedback: (
+    id: string,
+    payload: {
+      type: "PEER" | "SUBORDINATE";
+      competencyRatings: { competency: string; rating: number }[];
+      comments?: string;
+    },
+  ) =>
+    api
+      .post(`/performance/reviews/${id}/feedback`, payload)
+      .then((r) => r.data.feedback),
+  feedbackSummary: (id: string) =>
+    api
+      .get<{
+        summary: FeedbackSummary;
+      }>(`/performance/reviews/${id}/feedback-summary`)
+      .then((r) => r.data.summary),
   outcome: (id: string) =>
     api
-      .get<{ outcome: PerformanceOutcome | null }>(
-        `/performance/reviews/${id}/outcome`,
-      )
+      .get<{
+        outcome: PerformanceOutcome | null;
+      }>(`/performance/reviews/${id}/outcome`)
       .then((r) => r.data.outcome),
 
   updateOutcome: (
@@ -836,10 +847,9 @@ export const PerformanceApi = {
     },
   ) =>
     api
-      .patch<{ outcome: PerformanceOutcome }>(
-        `/performance/reviews/${id}/outcome`,
-        payload,
-      )
+      .patch<{
+        outcome: PerformanceOutcome;
+      }>(`/performance/reviews/${id}/outcome`, payload)
       .then((r) => r.data.outcome),
   updateGoalProgress: (id: string, progress: number) =>
     api
@@ -850,10 +860,9 @@ export const PerformanceApi = {
   // The backend calculates progress and status from currentValue / targetValue.
   updateGoalCurrentValue: (id: string, currentValue: number) =>
     api
-      .patch<{ goal: Goal }>(
-        `/performance/goals/${id}/current-value`,
-        { currentValue },
-      )
+      .patch<{
+        goal: Goal;
+      }>(`/performance/goals/${id}/current-value`, { currentValue })
       .then((r) => r.data.goal),
 
   ratingByDepartment: () =>
@@ -1155,6 +1164,11 @@ export interface ReportsOverview {
     byStatus: ReportBucket[];
     byDepartment: ReportBucket[];
     byEmploymentType: ReportBucket[];
+    headcountTrend: {
+      label: string;
+      hires: number;
+      exits: number;
+    }[];
   };
   attendance: {
     total: number;
@@ -1267,15 +1281,39 @@ export interface ReportsOverview {
   };
 }
 
+export type ReportExportSection =
+  | "overview"
+  | "workforce"
+  | "attendance"
+  | "leave"
+  | "payroll"
+  | "recruitment"
+  | "performance"
+  | "tickets"
+  | "documents"
+  | "audit"
+  | "custom";
+
 export const ReportsApi = {
   overview: (filters: ReportsFilters = {}) =>
     api
       .get<ReportsOverview>("/reports/overview", { params: filters })
       .then((r) => r.data),
 
-  export: async (format: "xlsx" | "pdf", filters: ReportsFilters = {}) => {
+  export: async (
+    format: "xlsx" | "pdf",
+    filters: ReportsFilters = {},
+    section: ReportExportSection = "overview",
+    customSections: string[] = [],
+  ) => {
     const response = await api.get<Blob>(`/reports/export/${format}`, {
-      params: filters,
+      params: {
+        ...filters,
+        section,
+        ...(section === "custom" && customSections.length > 0
+          ? { customSections: customSections.join(",") }
+          : {}),
+      },
       responseType: "blob",
     });
     const contentType =
@@ -1286,7 +1324,7 @@ export const ReportsApi = {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `hrms-report-${filters.from ?? "all"}-to-${filters.to ?? "all"}.${format}`;
+    anchor.download = `hrms-${section}-report-${filters.from ?? "all"}-to-${filters.to ?? "all"}.${format}`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

@@ -96,11 +96,52 @@ async function workforce(filters: ReportFilters, employeeIds?: string[]) {
   const departments = await Department.find().select("_id name").lean();
   const names = new Map(departments.map((d) => [d._id, d.name]));
 
+  const trendStart =
+    filters.from ??
+    new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
+  const trendEnd = filters.to ?? new Date().toISOString().slice(0, 10);
+  const joiningRows = await Employee.aggregate([
+    {
+      $match: { ...query, dateOfJoining: { $gte: trendStart, $lte: trendEnd } },
+    },
+    {
+      $group: {
+        _id: { $substr: ["$dateOfJoining", 0, 7] },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+  const exitRows = await Employee.aggregate([
+    {
+      $match: {
+        ...query,
+        dateOfExit: { $ne: null, $gte: trendStart, $lte: trendEnd },
+      },
+    },
+    { $group: { _id: { $substr: ["$dateOfExit", 0, 7] }, count: { $sum: 1 } } },
+    { $sort: { _id: 1 } },
+  ]);
+  const monthKeys = [
+    ...new Set([
+      ...joiningRows.map((x) => x._id),
+      ...exitRows.map((x) => x._id),
+    ]),
+  ].sort();
+  const hireMap = new Map(joiningRows.map((x) => [x._id, x.count]));
+  const exitMap = new Map(exitRows.map((x) => [x._id, x.count]));
+  const headcountTrend = monthKeys.map((month) => ({
+    label: month,
+    hires: hireMap.get(month) ?? 0,
+    exits: exitMap.get(month) ?? 0,
+  }));
+
   return {
     total,
     active,
     recentHires,
     exits,
+    headcountTrend,
     byStatus: byStatus.map((x) => ({ label: x._id, value: x.count })),
     byDepartment: byDepartment.map((x) => ({
       label: names.get(x._id) ?? x._id,
