@@ -129,7 +129,23 @@ export default function Reports() {
   const exportReport = async (format: "xlsx" | "pdf") => {
     try {
       setExporting(format);
-      await ReportsApi.export(format, filters);
+      const exportSection = tab === "custom" ? "custom" : tab;
+      const exportSections = tab === "custom" ? customSections : undefined;
+
+      // Keep the existing ReportsApi call shape compatible until the endpoint
+      // layer is updated to accept the selected report section(s).
+      await (
+        ReportsApi.export as unknown as (
+          format: "xlsx" | "pdf",
+          filters: {
+            from: string;
+            to: string;
+            departmentId?: string;
+          },
+          section?: string,
+          sections?: string[],
+        ) => Promise<void>
+      )(format, filters, exportSection, exportSections);
     } finally {
       setExporting(null);
     }
@@ -347,6 +363,20 @@ export default function Reports() {
                 <Card>
                   <CardHeader title="Employment type" />
                   <Chart data={data.workforce.byEmploymentType} />
+                </Card>
+                <Card>
+                  <CardHeader title="Hiring trend" />
+                  <Chart
+                    data={data.workforce.headcountTrend ?? []}
+                    dataKey="hires"
+                  />
+                </Card>
+                <Card>
+                  <CardHeader title="Exit trend" />
+                  <Chart
+                    data={data.workforce.headcountTrend ?? []}
+                    dataKey="exits"
+                  />
                 </Card>
               </div>
             </Section>
@@ -875,6 +905,31 @@ function CustomReport({
     ],
   };
 
+  const downloadCustomReport = () => {
+    if (sections.length === 0) return;
+
+    const rows: (string | number)[][] = [["Report", "Metric", "Value"]];
+
+    sections.forEach((section) => {
+      (metrics[section] ?? []).forEach(([metric, value]) => {
+        rows.push([section, metric, value]);
+      });
+    });
+
+    const csv = rows
+      .map((row) =>
+        row
+          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+          .join(","),
+      )
+      .join("\n");
+
+    downloadBlob(
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+      `hrms-custom-report-${new Date().toISOString().slice(0, 10)}.csv`,
+    );
+  };
+
   return (
     <Section title="Custom report builder" icon={<FileText size={18} />}>
       <Card>
@@ -895,6 +950,27 @@ function CustomReport({
           ))}
         </div>
       </Card>
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+          <div>
+            <p className="text-[13px] font-semibold text-ink">
+              Download custom report
+            </p>
+            <p className="text-[11px] text-ink-faint">
+              Downloads only the sections selected above using the current
+              report filters.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={downloadCustomReport}
+            disabled={sections.length === 0}
+            leftIcon={<Download size={14} />}
+          >
+            Download Custom Report
+          </Button>
+        </div>
+      </Card>
       <DataTable
         title="Selected report metrics"
         columns={[
@@ -912,8 +988,8 @@ function CustomReport({
       />
       <p className="text-[11px] text-ink-faint">
         The custom report uses the same role-scoped and date/department-filtered
-        data as the standard reports. Excel and PDF exports contain the full
-        report dataset.
+        data as the standard reports. The custom download contains only the
+        sections selected above.
       </p>
     </Section>
   );
