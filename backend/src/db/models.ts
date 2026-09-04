@@ -1137,37 +1137,22 @@ export interface PerformanceCycleDoc {
   purpose: string | null;
 }
 
-const performanceCycleSchema =
-  new Schema<PerformanceCycleDoc>(
-    {
-      _id: idField("cyc"),
-      name: { type: String, required: true },
-      startDate: { type: String, required: true },
-      endDate: { type: String, required: true },
-      isActive: { type: Boolean, default: true },
-      type: {
-        type: String,
-        enum: [
-          "PROBATION",
-          "QUARTERLY",
-          "HALF_YEARLY",
-          "ANNUAL",
-          "THREE_SIXTY",
-          "PIP",
-        ],
-        default: "ANNUAL",
-      },
-      purpose: { type: String, default: null },
-    },
-    baseOptions,
-  );
-
-export const PerformanceCycle =
-  model<PerformanceCycleDoc>(
-    "PerformanceCycle",
-    performanceCycleSchema,
-  );
-
+const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
+  {
+    _id: idField("cyc"),
+    name: { type: String, required: true },
+    startDate: { type: String, required: true },
+    endDate: { type: String, required: true },
+    isActive: { type: Boolean, default: true },
+    type: { type: String, enum: ["PROBATION", "QUARTERLY", "HALF_YEARLY", "ANNUAL", "THREE_SIXTY", "PIP"], default: "ANNUAL" },
+    purpose: { type: String, default: null },
+  },
+  baseOptions,
+);
+export const PerformanceCycle = model<PerformanceCycleDoc>(
+  "PerformanceCycle",
+  performanceCycleSchema,
+);
 export interface PerformanceReviewDoc {
   _id: string;
   cycleId: string;
