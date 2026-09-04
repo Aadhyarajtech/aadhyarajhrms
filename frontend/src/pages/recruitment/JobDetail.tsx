@@ -1051,6 +1051,13 @@ export default function JobDetail() {
                             (screeningCandidate.autoShortlisted
                               ? "SHORTLISTED"
                               : "NOT_CONFIGURED");
+                          const shortlistDisplayStatus =
+                            shortlistStatus === "PENDING" &&
+                            (screeningCandidate.finalResult === "SELECTED" ||
+                              screeningCandidate.stage === "OFFER" ||
+                              screeningCandidate.stage === "HIRED")
+                              ? "NOT_CONFIGURED"
+                              : shortlistStatus;
 
                           return (
                             <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/40 p-2.5">
@@ -1127,16 +1134,20 @@ export default function JobDetail() {
                                   </span>
                                   <Badge
                                     tone={
-                                      shortlistStatus === "SHORTLISTED"
+                                      shortlistDisplayStatus === "SHORTLISTED"
                                         ? "success"
-                                        : shortlistStatus === "NOT_SHORTLISTED"
+                                        : shortlistDisplayStatus ===
+                                            "NOT_SHORTLISTED"
                                           ? "warning"
                                           : "neutral"
                                     }
                                   >
-                                    {shortlistStatus === "NOT_CONFIGURED"
+                                    {shortlistDisplayStatus === "NOT_CONFIGURED"
                                       ? "MANUAL REVIEW"
-                                      : shortlistStatus.replaceAll("_", " ")}
+                                      : shortlistDisplayStatus.replaceAll(
+                                          "_",
+                                          " ",
+                                        )}
                                   </Badge>
                                 </div>
                               )}
@@ -1238,6 +1249,21 @@ export default function JobDetail() {
                                   ? "Re-screen with AI"
                                   : "AI Screen Candidate"}
                               </Button>
+
+                              {(candidate.finalResult === "SELECTED" ||
+                                candidate.stage === "OFFER") && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="mt-2 w-full"
+                                  leftIcon={<FileText size={12} />}
+                                  onClick={() => setOfferLetterFor(candidate)}
+                                >
+                                  {candidate.offer?.offerUrl
+                                    ? "View / Manage Offer Letter"
+                                    : "Generate Offer Letter"}
+                                </Button>
+                              )}
                             </div>
                           );
                         })()}
@@ -1271,18 +1297,6 @@ export default function JobDetail() {
                                 <Calendar size={12} />
                                 Interview
                               </button>
-
-                              {(candidate.finalResult === "SELECTED" ||
-                                candidate.stage === "OFFER") && (
-                                <button
-                                  type="button"
-                                  onClick={() => setOfferLetterFor(candidate)}
-                                  className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:underline"
-                                >
-                                  <FileText size={12} />
-                                  Offer Letter
-                                </button>
-                              )}
 
                               <button
                                 type="button"
@@ -2990,18 +3004,6 @@ function CandidateLifecycleModal({
     });
   };
 
-  const offerResponseMutation = useMutation({
-    mutationFn: (status: "ACCEPTED" | "DECLINED") =>
-      RecruitmentApi.respondToOffer(candidate.id, status),
-
-    onSuccess: (_, status) => {
-      refreshCandidate();
-      showToast(`Offer ${status.toLowerCase()}.`);
-    },
-
-    onError: (err) => showToast(getErrorMessage(err), "error"),
-  });
-
   const bgvMutation = useMutation({
     mutationFn: () =>
       RecruitmentApi.updateBackgroundVerification(candidate.id, {
@@ -3138,23 +3140,9 @@ function CandidateLifecycleModal({
                 </p>
 
                 {offerStatus === "SENT" && (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      isLoading={offerResponseMutation.isPending}
-                      onClick={() => offerResponseMutation.mutate("ACCEPTED")}
-                    >
-                      Accept offer
-                    </Button>
-
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      isLoading={offerResponseMutation.isPending}
-                      onClick={() => offerResponseMutation.mutate("DECLINED")}
-                    >
-                      Decline offer
-                    </Button>
+                  <div className="rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2 text-[12px] text-brand-800">
+                    Offer sent. The candidate must review and accept or decline
+                    it through the secure candidate portal.
                   </div>
                 )}
 

@@ -1131,34 +1131,9 @@ recruitmentRouter.post(
   },
 );
 
-const offerResponseSchema = z.object({
-  status: z.enum(["ACCEPTED", "DECLINED"]),
-});
-
-recruitmentRouter.patch(
-  "/candidates/:id/offer/response",
-  isAdminOrRecruiter,
-  validate(offerResponseSchema),
-  async (req, res, next) => {
-    try {
-      const candidate = await repo.respondToOffer(
-        req.params.id,
-        req.body.status,
-      );
-
-      if (!candidate) {
-        throw AppError.notFound("Candidate not found.");
-      }
-
-      res.json({
-        message: `Offer ${req.body.status.toLowerCase()}.`,
-        candidate,
-      });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
+// Offer acceptance/decline is intentionally handled only through the
+// candidate portal. HR/Admin/Recruiter can generate and view the offer,
+// while the candidate submits the legally meaningful response.
 
 // ============================================================================
 // BACKGROUND VERIFICATION

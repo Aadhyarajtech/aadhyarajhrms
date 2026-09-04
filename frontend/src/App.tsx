@@ -13,6 +13,8 @@ const Landing = lazy(() => import("@/pages/Landing"));
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
 
+const CandidateOffer = lazy(() => import("@/pages/recruitment/candidateOffer"));
+
 // =========================================================
 // MAIN PAGES
 // =========================================================
@@ -116,6 +118,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
 
         <Route path="/register" element={<Register />} />
+
+        <Route path="/candidate/offer/:token" element={<CandidateOffer />} />
 
         {/* =====================================================
             PROTECTED APPLICATION

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import {
   JobPosting,
@@ -13,6 +14,7 @@ import {
 import { nowIso } from "../../db/connection";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { sendRecruitmentEmail } from "@/services/email.service";
+import { env } from "@/config/env";
 
 type AnyDoc = Record<string, any>;
 
@@ -1112,6 +1114,100 @@ export async function updateJobStatus(
   return getJobPosting(id);
 }
 
+export async function listPublicJobPostings() {
+  const rows = (await JobPosting.find({
+    requisitionStatus: "APPROVED",
+    status: "OPEN",
+  })
+    .select(
+      "title departmentId designationId location employmentType experienceMin experienceMax description openings postedAt postingChannels screeningQuestions hiringMode skills budgetCtc",
+    )
+    .sort({ postedAt: -1 })
+    .lean()) as AnyDoc[];
+
+  if (!rows.length) return [];
+
+  const departmentIds = [...new Set(rows.map((row) => row.departmentId))];
+  const designationIds = [...new Set(rows.map((row) => row.designationId))];
+
+  const [departments, designations] = await Promise.all([
+    Department.find({ _id: { $in: departmentIds } })
+      .select("title")
+      .lean(),
+    Designation.find({ _id: { $in: designationIds } })
+      .select("title")
+      .lean(),
+  ]);
+
+  const departmentMap = new Map(
+    departments.map((item: AnyDoc) => [item._id, item.title]),
+  );
+  const designationMap = new Map(
+    designations.map((item: AnyDoc) => [item._id, item.title]),
+  );
+
+  return rows.map((row) => ({
+    id: row._id,
+    title: row.title,
+    departmentId: row.departmentId,
+    departmentName: departmentMap.get(row.departmentId) ?? "",
+    designationId: row.designationId,
+    designationTitle: designationMap.get(row.designationId) ?? "",
+    location: row.location,
+    employmentType: row.employmentType,
+    experienceMin: row.experienceMin,
+    experienceMax: row.experienceMax,
+    description: row.description,
+    openings: row.openings,
+    postedAt: row.postedAt,
+    postingChannels: row.postingChannels ?? [],
+    screeningQuestions: row.screeningQuestions ?? [],
+    hiringMode: row.hiringMode,
+    skills: row.skills ?? [],
+    budgetCtc: row.budgetCtc ?? null,
+  }));
+}
+
+export async function getPublicJobPosting(id: string) {
+  const job = (await JobPosting.findOne({
+    _id: id,
+    requisitionStatus: "APPROVED",
+    status: "OPEN",
+  })
+    .select(
+      "title departmentId designationId location employmentType experienceMin experienceMax description openings postedAt postingChannels screeningQuestions hiringMode skills budgetCtc",
+    )
+    .lean()) as AnyDoc | null;
+
+  if (!job) return undefined;
+
+  const [department, designation] = await Promise.all([
+    Department.findById(job.departmentId).select("title").lean(),
+    Designation.findById(job.designationId).select("title").lean(),
+  ]);
+
+  return {
+    id: job._id,
+    title: job.title,
+    departmentId: job.departmentId,
+    departmentName: (department as AnyDoc | null)?.title ?? "",
+    designationId: job.designationId,
+    designationTitle: (designation as AnyDoc | null)?.title ?? "",
+    location: job.location,
+    employmentType: job.employmentType,
+    experienceMin: job.experienceMin,
+    experienceMax: job.experienceMax,
+    description: job.description,
+    openings: job.openings,
+    postedAt: job.postedAt,
+    postingChannels: job.postingChannels ?? [],
+    screeningQuestions: job.screeningQuestions ?? [],
+    hiringMode: job.hiringMode,
+    skills: job.skills ?? [],
+    budgetCtc: job.budgetCtc ?? null,
+  };
+}
+
 // ===========================================================================
 // CANDIDATES
 // ===========================================================================
@@ -1225,6 +1321,7 @@ export interface CreateCandidateInput {
   referredById?: string;
   notes?: string;
   resumeText?: string;
+  resumeUrl?: string | null;
   applicationAnswers?: Record<string, string>;
 }
 
@@ -1286,6 +1383,8 @@ export async function createCandidate(input: CreateCandidateInput) {
     referralBonusStatus: input.referredById ? "PENDING" : "NOT_APPLICABLE",
 
     notes: input.notes ?? null,
+
+    resumeUrl: input.resumeUrl ?? null,
 
     resumeText: input.resumeText?.trim() || null,
     resumeParsingStatus: input.resumeText?.trim() ? "PARSED" : "NOT_PARSED",
@@ -2055,15 +2154,10 @@ export async function generateOffer(
 ) {
   const candidate = await Candidate.findById(id).lean();
 
-  if (!candidate) {
-    return undefined;
-  }
+  if (!candidate) return undefined;
 
   const job = await JobPosting.findById(candidate.jobPostingId).lean();
-
-  if (!job) {
-    throw new Error("Job posting not found.");
-  }
+  if (!job) throw new Error("Job posting not found.");
 
   if (candidate.finalResult !== "SELECTED") {
     throw new Error("Select the candidate before generating an offer.");
@@ -2077,12 +2171,8 @@ export async function generateOffer(
     throw new Error("A valid joining date is required.");
   }
 
-  const now = nowIso();
-
   const basic = input.basic ?? Math.round(input.annualCtc * 0.4);
-
   const hra = input.hra ?? Math.round(input.annualCtc * 0.2);
-
   const specialAllowance =
     input.specialAllowance ?? Math.max(0, input.annualCtc - basic - hra);
 
@@ -2096,22 +2186,112 @@ export async function generateOffer(
     throw new Error("Basic, HRA and special allowance must equal annual CTC.");
   }
 
-  const uploads = path.join(process.cwd(), "uploads");
+  const now = nowIso();
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const tokenExpiresAt = new Date(
+    Date.now() + 30 * 24 * 60 * 60 * 1000,
+  ).toISOString();
 
-  fs.mkdirSync(uploads, {
-    recursive: true,
-  });
+  const uploads = path.join(process.cwd(), "uploads");
+  fs.mkdirSync(uploads, { recursive: true });
 
   const filename = `offer-${candidate._id}-${Date.now()}.html`;
+  const escapeHtml = (value: unknown) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Offer Letter</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;line-height:1.6}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:10px;text-align:left}</style></head><body><h1>Employment Offer</h1><p>Dear ${candidate.firstName} ${candidate.lastName},</p><p>We are pleased to offer you the position of <b>${job.title}</b>.</p><h3>Compensation</h3><table><tr><th>Component</th><th>Annual Amount</th></tr><tr><td>Basic</td><td>₹${basic.toLocaleString("en-IN")}</td></tr><tr><td>HRA</td><td>₹${hra.toLocaleString("en-IN")}</td></tr><tr><td>Special Allowance</td><td>₹${specialAllowance.toLocaleString("en-IN")}</td></tr><tr><th>Total CTC</th><th>₹${input.annualCtc.toLocaleString("en-IN")}</th></tr></table><p>Proposed joining date: <b>${input.joiningDate}</b></p><p>This is a digitally generated offer document from SmartHR Pro.</p></body></html>`;
+  const candidateName = `${escapeHtml(candidate.firstName)} ${escapeHtml(candidate.lastName)}`;
+  const jobTitle = escapeHtml(job.title);
+  const joiningDate = escapeHtml(input.joiningDate);
+  const offerLink = `${env.clientOrigins[0]}/candidate/offer/${rawToken}`;
+  const formatInr = (value: number) =>
+    `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Employment Offer — ${jobTitle}</title>
+<style>
+  body{margin:0;background:#f4f7fb;color:#172033;font-family:Inter,Arial,Helvetica,sans-serif;line-height:1.55}
+  .page{max-width:820px;margin:32px auto;padding:20px}
+  .sheet{background:#fff;border:1px solid #e3e8f0;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px rgba(20,35,60,.08)}
+  .header{padding:30px 34px;background:linear-gradient(135deg,#242f8f,#4c5bd4);color:#fff}
+  .brand{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.85}
+  h1{margin:8px 0 4px;font-size:30px;line-height:1.15}
+  .subtitle{margin:0;color:rgba(255,255,255,.82);font-size:14px}
+  .content{padding:34px}
+  .date{text-align:right;color:#697386;font-size:13px;margin-bottom:28px}
+  p{font-size:14px;margin:0 0 15px}
+  .card{margin:24px 0;padding:20px;border:1px solid #e5eaf2;border-radius:16px;background:#fafbfe}
+  .card-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#4c5bd4;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:12px 10px;border-bottom:1px solid #e9edf4;text-align:left}
+  th:last-child,td:last-child{text-align:right}
+  tr:last-child td{border-bottom:0;font-weight:700}
+  .cta{margin:28px 0;padding:22px;border-radius:16px;background:#f1f4ff;border:1px solid #dbe2ff}
+  .cta a{display:inline-block;margin-top:12px;padding:12px 18px;border-radius:10px;background:#4c5bd4;color:#fff;text-decoration:none;font-weight:700;font-size:13px}
+  .note{font-size:12px;color:#6b7280}
+  .footer{padding:20px 34px;background:#fafbfe;border-top:1px solid #edf0f5;color:#7b8494;font-size:11px}
+</style>
+</head>
+<body>
+<div class="page"><div class="sheet">
+  <div class="header">
+    <div class="brand">AadhyaRaj Technologies</div>
+    <h1>Employment Offer</h1>
+    <p class="subtitle">Digital offer letter generated through AadhyaRaj HRMS</p>
+  </div>
+  <div class="content">
+    <div class="date">Issued: ${escapeHtml(new Date(now).toLocaleDateString("en-IN"))}</div>
+    <p>Dear <strong>${candidateName}</strong>,</p>
+    <p>We are pleased to offer you the position of <strong>${jobTitle}</strong> with AadhyaRaj Technologies.</p>
+    <p>We look forward to welcoming you and are pleased to present the following compensation and joining details.</p>
+
+    <div class="card">
+      <div class="card-title">Offer summary</div>
+      <table>
+        <tr><th>Position</th><td>${jobTitle}</td></tr>
+        <tr><th>Candidate</th><td>${candidateName}</td></tr>
+        <tr><th>Proposed joining date</th><td>${joiningDate}</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Annual compensation</div>
+      <table>
+        <tr><th>Basic Salary</th><td>${formatInr(basic)}</td></tr>
+        <tr><th>House Rent Allowance (HRA)</th><td>${formatInr(hra)}</td></tr>
+        <tr><th>Special Allowance</th><td>${formatInr(specialAllowance)}</td></tr>
+        <tr><th>Total Annual CTC</th><td>${formatInr(input.annualCtc)}</td></tr>
+      </table>
+    </div>
+
+    <div class="cta">
+      <strong>Action required</strong>
+      <p style="margin-top:8px">Please review this offer and submit your acceptance or decline decision through the secure candidate portal.</p>
+      <a href="${offerLink}">Review &amp; Respond to Offer</a>
+      <p class="note" style="margin-top:12px">This secure link is valid for 30 days and is intended only for the candidate named above.</p>
+    </div>
+
+    <p class="note">This document is digitally generated. The candidate's response is recorded in the recruitment system and is not entered by HR, an administrator, or a recruiter.</p>
+    <p>Regards,<br/><strong>AadhyaRaj Technologies — Recruitment Team</strong></p>
+  </div>
+  <div class="footer">SmartHR Pro / AadhyaRaj HRMS • Confidential recruitment document</div>
+</div></div>
+</body>
+</html>`;
 
   fs.writeFileSync(path.join(uploads, filename), html, "utf8");
 
   await Candidate.updateOne(
-    {
-      _id: id,
-    },
+    { _id: id },
     {
       $set: {
         stage: "OFFER",
@@ -2125,12 +2305,35 @@ export async function generateOffer(
           joiningDate: input.joiningDate,
           generatedAt: now,
           respondedAt: null,
+          accessTokenHash: tokenHash,
+          accessTokenExpiresAt: tokenExpiresAt,
+          viewedAt: null,
         },
       },
     },
   );
 
-  return getCandidate(id);
+  const updatedCandidate = await getCandidate(id);
+  await notifyRecruitmentTeam({
+    title: "Offer letter generated",
+    message: `Offer letter generated for ${candidate.firstName} ${candidate.lastName}.`,
+    link: `/recruitment/candidates/${id}`,
+  });
+
+  if (updatedCandidate?.email) {
+    await sendRecruitmentEmail({
+      to: updatedCandidate.email,
+      subject: `Offer letter — ${job.title}`,
+      text:
+        `Dear ${candidate.firstName} ${candidate.lastName},\n\n` +
+        `Your offer letter for ${job.title} is ready.\n\n` +
+        `Review and respond securely here:\n${offerLink}\n\n` +
+        `The link is valid for 30 days.\n\n` +
+        `Thank you,\nAadhyaRaj Technologies — Recruitment Team`,
+    });
+  }
+
+  return updatedCandidate;
 }
 
 export async function respondToOffer(
