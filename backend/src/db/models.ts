@@ -262,13 +262,14 @@ export interface EmployeeDoc {
 
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
 
-  status:
-    | "ACTIVE"
-    | "ON_LEAVE"
-    | "NOTICE_PERIOD"
-    | "TERMINATED"
-    | "RESIGNED"
-    | "INACTIVE";
+ status:
+  | "ONBOARDING"
+  | "ACTIVE"
+  | "ON_LEAVE"
+  | "NOTICE_PERIOD"
+  | "TERMINATED"
+  | "RESIGNED"
+  | "INACTIVE";
 
   dateOfJoining: string;
   dateOfExit: string | null;
@@ -285,6 +286,32 @@ export interface EmployeeDoc {
   probationStartDate: string | null;
   probationEndDate: string | null;
   probationReminderSentAt: string | null;
+  probationExtensionDetails: {
+  extensionDays: number;
+  extendedFrom: string | null;
+  extendedTo: string;
+  remarks: string | null;
+  extendedAt: string;
+} | null;
+
+  // Notice period
+noticeStartDate: string | null;
+lastWorkingDate: string | null;
+noticeDays: number | null;
+
+resignationDetails: {
+  resignationDate: string;
+  resignationReason: string;
+  employeeRemarks: string | null;
+  hrRemarks: string | null;
+} | null;
+
+terminationDetails: {
+  terminationDate: string;
+  terminationReason: string;
+  employeeRemarks: string | null;
+  hrRemarks: string | null;
+} | null;
 
   // Employee profile
   education: EmployeeEducation[];
@@ -295,7 +322,13 @@ export interface EmployeeDoc {
   // Archive / offboarding
   isArchived: boolean;
   archivedAt: string | null;
-  offboardingChecklist: EmployeeOffboardingItem[];
+  offboardingChecklist: {
+  assetReturn: boolean;
+  accessRevoked: boolean;
+  exitInterview: boolean;
+  finalSettlement: boolean;
+  completedAt: string | null;
+} | null;
 
   createdAt: string;
   updatedAt: string;
@@ -530,14 +563,16 @@ const employeeSchema = new Schema<EmployeeDoc>(
 
     status: {
       type: String,
-      enum: [
-        "ACTIVE",
-        "ON_LEAVE",
-        "NOTICE_PERIOD",
-        "TERMINATED",
-        "RESIGNED",
-        "INACTIVE",
-      ],
+     enum: [
+  "ONBOARDING",
+  "ACTIVE",
+  "ON_LEAVE",
+  "NOTICE_PERIOD",
+  "TERMINATED",
+  "RESIGNED",
+  "INACTIVE",
+],
+
       default: "ACTIVE",
     },
 
@@ -600,6 +635,90 @@ const employeeSchema = new Schema<EmployeeDoc>(
       default: null,
     },
 
+    probationExtensionDetails: {
+  extensionDays: {
+    type: Number,
+    default: null,
+  },
+
+  extendedFrom: {
+    type: String,
+    default: null,
+  },
+
+  extendedTo: {
+    type: String,
+    default: null,
+  },
+
+  remarks: {
+    type: String,
+    default: null,
+  },
+
+  extendedAt: {
+    type: String,
+    default: null,
+  },
+},
+
+    // -----------------------------------------------------------------------
+// Notice period
+// -----------------------------------------------------------------------
+
+noticeStartDate: {
+  type: String,
+  default: null,
+},
+
+lastWorkingDate: {
+  type: String,
+  default: null,
+},
+
+noticeDays: {
+  type: Number,
+  default: null,
+},
+
+resignationDetails: {
+  resignationDate: {
+    type: String,
+    default: null,
+  },
+  resignationReason: {
+    type: String,
+    default: null,
+  },
+  employeeRemarks: {
+    type: String,
+    default: null,
+  },
+  hrRemarks: {
+    type: String,
+    default: null,
+  },
+},
+
+terminationDetails: {
+  terminationDate: {
+    type: String,
+    default: null,
+  },
+  terminationReason: {
+    type: String,
+    default: null,
+  },
+  employeeRemarks: {
+    type: String,
+    default: null,
+  },
+  hrRemarks: {
+    type: String,
+    default: null,
+  },
+},
+
     // -----------------------------------------------------------------------
     // Employee profile
     // -----------------------------------------------------------------------
@@ -639,9 +758,27 @@ const employeeSchema = new Schema<EmployeeDoc>(
     },
 
     offboardingChecklist: {
-      type: [employeeOffboardingItemSchema],
-      default: [],
-    },
+  assetReturn: {
+    type: Boolean,
+    default: false,
+  },
+  accessRevoked: {
+    type: Boolean,
+    default: false,
+  },
+  exitInterview: {
+    type: Boolean,
+    default: false,
+  },
+  finalSettlement: {
+    type: Boolean,
+    default: false,
+  },
+  completedAt: {
+    type: String,
+    default: null,
+  },
+},
 
     createdAt: {
       type: String,

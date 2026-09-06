@@ -96,10 +96,61 @@ export const EmployeesApi = {
     api
       .patch<{ employee: Employee }>(`/employees/${id}`, payload)
       .then((r) => r.data.employee),
-  updateMe: (payload: Record<string, unknown>) =>
+    updateMe: (payload: Record<string, unknown>) =>
     api
       .patch<{ employee: Employee }>("/employees/me", payload)
       .then((r) => r.data.employee),
+ completeOnboarding: (id: string) =>
+  api
+    .post<{ employee: Employee }>(`/employees/${id}/complete-onboarding`)
+    .then((r) => r.data.employee),
+
+startNoticePeriod: (id: string, noticeDays: number) =>
+  api
+    .post<{ employee: Employee }>(
+      `/employees/${id}/start-notice-period`,
+      { noticeDays },
+    )
+    .then((r) => r.data.employee),
+      confirmProbation: (id: string) =>
+  api
+    .post(`/employees/${id}/confirm-probation`)
+    .then((r) => r.data.employee),
+
+    extendProbation: (
+  id: string,
+  data: {
+    extensionDays: number;
+    remarks?: string;
+  },
+) =>
+  api
+    .post<{
+      success: boolean;
+      message: string;
+      employee: Employee;
+    }>(`/employees/${id}/extend-probation`, data)
+    .then((r) => r.data.employee),
+
+    
+
+    completeOffboarding: (id: string) =>
+  api.post(`/employees/${id}/complete-offboarding`),
+
+    updateOffboardingChecklist: (
+  id: string,
+  payload: {
+    assetReturn?: boolean;
+    accessRevoked?: boolean;
+    exitInterview?: boolean;
+    finalSettlement?: boolean;
+  },
+) =>
+  api
+    .patch(`/employees/${id}/offboarding-checklist`, payload)
+    .then((r) => r.data),
+
+
   headcountByDepartment: () =>
     api
       .get<{
@@ -140,6 +191,8 @@ export const EmployeesApi = {
       .then((r) => r.data);
   },
 };
+
+
 
 // --- Organization (departments, designations, holidays) ----------------------
 export const OrganizationApi = {
@@ -1364,3 +1417,4 @@ export const DashboardApi = {
   overview: () =>
     api.get<DashboardOverview>("/dashboard/overview").then((r) => r.data),
 };
+

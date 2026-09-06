@@ -13,7 +13,7 @@ const Landing = lazy(() => import("@/pages/Landing"));
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
 
-const CandidateOffer = lazy(() => import("@/pages/recruitment/candidateOffer"));
+const CandidateOffer = lazy(() => import("@/pages/recruitment/CandidateOffer"));
 
 // =========================================================
 // MAIN PAGES

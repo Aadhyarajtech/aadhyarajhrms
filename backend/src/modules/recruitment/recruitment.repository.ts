@@ -2689,7 +2689,7 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
 
     employmentType: job.employmentType,
 
-    status: "ACTIVE",
+    status: "ONBOARDING",
 
     dateOfJoining: candidate.offer.joiningDate ?? now,
 

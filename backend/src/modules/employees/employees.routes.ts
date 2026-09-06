@@ -281,18 +281,27 @@ const updateEmployeeSchema = z.object({
   grade: z.string().nullable().optional(),
   workLocation: z.string().nullable().optional(),
   probationPeriodMonths: z.coerce.number().int().min(0).nullable().optional(),
-  probationStartDate: z.string().nullable().optional(),
-  probationEndDate: z.string().nullable().optional(),
-  status: z
-    .enum([
-      "ACTIVE",
-      "ON_PROBATION",
-      "ON_LEAVE",
-      "NOTICE_PERIOD",
-      "INACTIVE",
-      "ON_HOLD",
-    ])
-    .optional(),
+
+ probationStartDate: z.string().nullable().optional(),
+probationEndDate: z.string().nullable().optional(),
+
+noticeStartDate: z.string().nullable().optional(),
+lastWorkingDate: z.string().nullable().optional(),
+noticeDays: z.coerce.number().int().min(0).nullable().optional(),
+
+status: z
+  .enum([
+    "ONBOARDING",
+    "ACTIVE",
+    "ON_PROBATION",
+    "ON_LEAVE",
+    "NOTICE_PERIOD",
+    "TERMINATED",
+    "RESIGNED",
+    "INACTIVE",
+    "ON_HOLD",
+  ])
+  .optional(),
   phone: z.string().optional(),
   personalEmail: z.string().email().or(z.literal("")).optional(),
   address: z.string().optional(),
@@ -439,7 +448,41 @@ employeesRouter.patch(
             avatarUrl: req.body.avatarUrl,
           };
 
-      const employee = await repo.updateEmployee(req.params.id, body);
+      const updateBody: any = { ...body };
+
+if (
+  isPrivileged &&
+  req.body.status === "ON_PROBATION" &&
+  target.status !== "ON_PROBATION"
+) {
+  const probationStartDate =
+    req.body.probationStartDate ||
+    target.probationStartDate ||
+    target.dateOfJoining ||
+    new Date().toISOString();
+
+  updateBody.probationStartDate = probationStartDate;
+
+  if (!req.body.probationEndDate) {
+    const probationMonths = Number(
+      req.body.probationPeriodMonths ??
+        target.probationPeriodMonths ??
+        3,
+    );
+
+    const probationEndDate = new Date(probationStartDate);
+    probationEndDate.setMonth(
+      probationEndDate.getMonth() + probationMonths,
+    );
+
+    updateBody.probationEndDate = probationEndDate.toISOString();
+  }
+}
+
+const employee = await repo.updateEmployee(
+  req.params.id,
+  updateBody,
+);
 
       if (
         isPrivileged &&
@@ -520,6 +563,407 @@ employeesRouter.patch(
       res.json({
         employee: updated,
         offboardingChecklist: checklist,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+employeesRouter.post(
+  "/:id/complete-onboarding",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+      const employee = await repo.getEmployeeById(req.params.id);
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      if (employee.status !== "ONBOARDING") {
+        throw AppError.badRequest(
+          "Only employees with ONBOARDING status can complete onboarding.",
+        );
+      }
+
+      // Change employee lifecycle status
+      const probationStartDate = new Date().toISOString();
+
+const probationEndDate = new Date(probationStartDate);
+probationEndDate.setMonth(probationEndDate.getMonth() + 3);
+
+const updatedEmployee = await repo.updateEmployee(req.params.id, {
+  status: "ON_PROBATION",
+  probationStartDate,
+  probationEndDate: probationEndDate.toISOString(),
+});
+
+      // Activate employee user account
+      await repo.updateUserActiveStatus(employee.userId, true);
+
+      // Notify employee
+      await notify({
+        userId: employee.userId,
+        type: "SYSTEM",
+        title: "Onboarding completed",
+        message:
+          "Congratulations! Your onboarding has been completed and your employee account is now active.",
+        link: `/employees/${req.params.id}`,
+      });
+
+      res.json({
+        success: true,
+        message: "Employee onboarding completed successfully.",
+        employee: updatedEmployee,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+
+employeesRouter.post(
+  "/:id/confirm-probation",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+      const employee = await repo.getEmployeeById(req.params.id);
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      if (employee.status !== "ON_PROBATION") {
+        throw AppError.badRequest(
+          "Only employees currently on probation can be confirmed.",
+        );
+      }
+
+      const updatedEmployee = await repo.updateEmployee(req.params.id, {
+        status: "ACTIVE",
+        probationEndDate:
+          employee.probationEndDate ?? new Date().toISOString(),
+      });
+
+      await repo.updateUserActiveStatus(employee.userId, true);
+
+      await notify({
+        userId: employee.userId,
+        type: "SYSTEM",
+        title: "Probation completed",
+        message:
+          "Congratulations! Your probation period has been successfully completed and your employment has been confirmed.",
+        link: `/employees/${req.params.id}`,
+      });
+
+      res.json({
+        success: true,
+        message: "Employee probation confirmed successfully.",
+        employee: updatedEmployee,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+employeesRouter.post(
+  "/:id/extend-probation",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+      const employee = await repo.getEmployeeById(req.params.id);
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      if (employee.status !== "ON_PROBATION") {
+        throw AppError.badRequest(
+          "Only employees on probation can have their probation extended.",
+        );
+      }
+
+      const { extensionDays, remarks } = req.body;
+
+      if (
+        !Number.isInteger(extensionDays) ||
+        extensionDays < 1
+      ) {
+        throw AppError.badRequest(
+          "Extension days must be a valid number of at least 1 day.",
+        );
+      }
+
+      const currentEndDate = employee.probationEndDate
+        ? new Date(employee.probationEndDate)
+        : new Date();
+
+      currentEndDate.setDate(
+        currentEndDate.getDate() + extensionDays,
+      );
+
+      const updatedEmployee = await repo.updateEmployee(req.params.id, {
+        status: "ON_PROBATION",
+        probationEndDate: currentEndDate.toISOString(),
+        probationExtensionDetails: {
+          extensionDays,
+          extendedFrom: employee.probationEndDate ?? null,
+          extendedTo: currentEndDate.toISOString(),
+          remarks:
+            typeof remarks === "string"
+              ? remarks.trim() || null
+              : null,
+          extendedAt: new Date().toISOString(),
+        },
+      });
+
+      await notify({
+        userId: employee.userId,
+        type: "SYSTEM",
+        title: "Probation extended",
+        message: `Your probation period has been extended by ${extensionDays} day(s).`,
+        link: `/employees/${req.params.id}`,
+      });
+
+      res.json({
+        success: true,
+        message: "Employee probation extended successfully.",
+        employee: updatedEmployee,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+employeesRouter.post(
+  "/:id/start-notice-period",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+      const employee = await repo.getEmployeeById(req.params.id);
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      if (
+        employee.status !== "ACTIVE" &&
+        employee.status !== "ON_PROBATION"
+      ) {
+        throw AppError.badRequest(
+          "Only active or probation employees can start the notice period.",
+        );
+      }
+
+      const noticeStartDate = new Date().toISOString();
+
+     const {
+  noticeDays: noticeDaysInput = 30,
+  resignationDate,
+  resignationReason,
+  employeeRemarks,
+  hrRemarks,
+} = req.body;
+
+const noticeDays = Number(noticeDaysInput);
+
+      if (!Number.isInteger(noticeDays) || noticeDays < 1) {
+        throw AppError.badRequest(
+          "Notice period must be at least 1 day.",
+        );
+      }
+
+     if (!resignationDate) {
+  throw AppError.badRequest("Resignation date is required.");
+}
+
+if (
+  typeof resignationReason !== "string" ||
+  !resignationReason.trim()
+) {
+  throw AppError.badRequest("Resignation reason is required.");
+}
+
+      const lastWorkingDate = new Date(noticeStartDate);
+      lastWorkingDate.setDate(
+        lastWorkingDate.getDate() + noticeDays,
+      );
+
+   const updatedEmployee = await repo.updateEmployee(req.params.id, {
+  status: "NOTICE_PERIOD",
+  noticeStartDate,
+  lastWorkingDate: lastWorkingDate.toISOString(),
+  noticeDays,
+
+  resignationDetails: {
+    resignationDate,
+    resignationReason: resignationReason.trim(),
+    employeeRemarks:
+      typeof employeeRemarks === "string" && employeeRemarks.trim()
+        ? employeeRemarks.trim()
+        : null,
+    hrRemarks:
+      typeof hrRemarks === "string" && hrRemarks.trim()
+        ? hrRemarks.trim()
+        : null,
+  },
+});    
+
+      await notify({
+        userId: employee.userId,
+        type: "SYSTEM",
+        title: "Notice period started",
+        message: `Your notice period has started. Your last working date is ${lastWorkingDate.toLocaleDateString()}.`,
+        link: `/employees/${req.params.id}`,
+      });
+
+      res.json({
+        success: true,
+        message: "Notice period started successfully.",
+        employee: updatedEmployee,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+employeesRouter.post(
+  "/:id/complete-offboarding",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+      const employee = await repo.getEmployeeById(req.params.id);
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      if (employee.status !== "NOTICE_PERIOD") {
+        throw AppError.badRequest(
+          "Only employees in notice period can complete offboarding.",
+        );
+      }
+
+      const checklist = employee.offboardingChecklist;
+
+      if (
+        !checklist?.assetReturn ||
+        !checklist?.accessRevoked ||
+        !checklist?.exitInterview ||
+        !checklist?.finalSettlement
+      ) {
+        throw AppError.badRequest(
+          "Complete all offboarding checklist items before completing offboarding.",
+        );
+      }
+
+      const updatedEmployee = await repo.updateEmployee(req.params.id, {
+        status: "RESIGNED",
+        offboardingChecklist: {
+          ...checklist,
+          completedAt:
+            checklist.completedAt ?? new Date().toISOString(),
+        },
+      });
+
+      await repo.updateUserActiveStatus(employee.userId, false);
+
+      await notify({
+        userId: employee.userId,
+        type: "SYSTEM",
+        title: "Offboarding completed",
+        message:
+          "Your offboarding has been completed and your employment status is now RESIGNED.",
+        link: `/employees/${req.params.id}`,
+      });
+
+      res.json({
+        success: true,
+        message: "Employee offboarding completed successfully.",
+        employee: updatedEmployee,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+
+employeesRouter.post(
+  "/:id/terminate",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+      const employee = await repo.getEmployeeById(req.params.id);
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      if (
+        employee.status !== "ACTIVE" &&
+        employee.status !== "ON_PROBATION"
+      ) {
+        throw AppError.badRequest(
+          "Only active or probation employees can be terminated.",
+        );
+      }
+
+      const {
+        terminationDate,
+        terminationReason,
+        employeeRemarks,
+        hrRemarks,
+      } = req.body;
+
+      if (!terminationDate) {
+        throw AppError.badRequest("Termination date is required.");
+      }
+
+      if (
+        !terminationReason ||
+        typeof terminationReason !== "string" ||
+        !terminationReason.trim()
+      ) {
+        throw AppError.badRequest("Termination reason is required.");
+      }
+
+      const updatedEmployee = await repo.updateEmployee(req.params.id, {
+        status: "TERMINATED",
+        terminationDetails: {
+          terminationDate,
+          terminationReason: terminationReason.trim(),
+          employeeRemarks:
+            typeof employeeRemarks === "string"
+              ? employeeRemarks.trim() || null
+              : null,
+          hrRemarks:
+            typeof hrRemarks === "string"
+              ? hrRemarks.trim() || null
+              : null,
+        },
+      });
+
+      await repo.updateUserActiveStatus(employee.userId, false);
+
+      await notify({
+        userId: employee.userId,
+        type: "SYSTEM",
+        title: "Employment terminated",
+        message:
+          "Your employment has been terminated. Please contact HR for further information.",
+        link: `/employees/${req.params.id}`,
+      });
+
+      res.json({
+        success: true,
+        message: "Employee terminated successfully.",
+        employee: updatedEmployee,
       });
     } catch (err) {
       next(err);
