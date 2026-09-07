@@ -814,13 +814,19 @@ export async function addPipCheckIn(
   const row = await PerformanceImprovementPlan.findById(id).lean();
   if (!row) return undefined;
 
+  if (row.status === "COMPLETED" || row.status === "CANCELLED") {
+    throw new Error("Check-ins cannot be added to a completed or cancelled PIP.");
+  }
+
+  const progress = Math.min(100, Math.max(0, Math.round(checkIn.progress ?? 0)));
+
   const existingCheckIns = Array.isArray((row as any).checkIns)
     ? (row as any).checkIns
     : [];
 
   const newCheckIn = {
     date: checkIn.date ?? nowIso(),
-    progress: checkIn.progress ?? 0,
+    progress,
     managerComments: checkIn.managerComments ?? null,
     hrComments: checkIn.hrComments ?? null,
     nextSteps: checkIn.nextSteps ?? null,
@@ -828,17 +834,45 @@ export async function addPipCheckIn(
     addedByRole: checkIn.addedByRole ?? null,
   };
 
-  // Use an explicit update object so this function is ready for the expanded
-  // PIP schema. With the current basic schema, checkIns requires that model
-  // field to be added before this data can be persisted.
   const nextCheckIns = [...existingCheckIns, newCheckIn];
+
+  // A check-in is the source of truth for the current PIP progress. Keep the
+  // structured objectives synchronized with the latest check-in so the UI
+  // never shows 0% while the PIP has recorded measurable progress.
+  const existingObjectives = Array.isArray((row as any).pipObjectives)
+    ? (row as any).pipObjectives
+    : Array.isArray((row as any).objectives)
+      ? (row as any).objectives.map((objective: any) =>
+          typeof objective === "string"
+            ? {
+                title: objective,
+                description: null,
+                target: null,
+                progress: 0,
+                status: "NOT_STARTED",
+                dueDate: row.endDate,
+              }
+            : objective,
+        )
+      : [];
+
+  const updatedObjectives = existingObjectives.map((objective: any) => ({
+    title: objective.title,
+    description: objective.description ?? null,
+    target: objective.target ?? null,
+    progress,
+    status: progress >= 100 ? "COMPLETED" : progress > 0 ? "IN_PROGRESS" : "NOT_STARTED",
+    dueDate: objective.dueDate ?? row.endDate,
+  }));
 
   await PerformanceImprovementPlan.updateOne(
     { _id: id },
     {
       $set: {
         checkIns: nextCheckIns,
-        latestCheckInProgress: newCheckIn.progress,
+        latestCheckInProgress: progress,
+        pipObjectives: updatedObjectives,
+        objectives: updatedObjectives.map((objective: any) => objective.title),
       },
     } as any,
     { strict: false } as any,
@@ -860,21 +894,57 @@ export async function updatePipStatus(
   const row = await PerformanceImprovementPlan.findById(id).lean();
   if (!row) return undefined;
 
-  const set: Record<string, any> = {
-    // Preserve the requested status. DRAFT is a valid persisted PIP state.
-    status,
-  };
+  if (row.status === "CANCELLED" && status !== "CANCELLED") {
+    throw new Error("A cancelled PIP cannot be reopened.");
+  }
+
+  if (row.status === "COMPLETED" && status !== "COMPLETED") {
+    throw new Error("A completed PIP cannot be moved to another status.");
+  }
+
+  if (status === "COMPLETED") {
+    const rawObjectives = Array.isArray((row as any).pipObjectives)
+      ? (row as any).pipObjectives
+      : Array.isArray((row as any).objectives)
+        ? (row as any).objectives.map((objective: any) =>
+            typeof objective === "string"
+              ? { progress: 0, status: "NOT_STARTED" }
+              : objective,
+          )
+        : [];
+
+    if (rawObjectives.length === 0) {
+      throw new Error("A PIP must have at least one objective before it can be completed.");
+    }
+
+    const incompleteObjective = rawObjectives.find((objective: any) => {
+      const progress = typeof objective.progress === "number" ? objective.progress : 0;
+      return progress < 100 || objective.status !== "COMPLETED";
+    });
+
+    if (incompleteObjective) {
+      throw new Error(
+        "PIP cannot be completed until all objectives reach 100% and are marked COMPLETED.",
+      );
+    }
+  }
+
+  const set: Record<string, any> = { status };
 
   if (status === "COMPLETED") {
     set.completedAt = nowIso();
+  } else if ((row as any).completedAt) {
+    set.completedAt = null;
   }
 
   if (status === "CANCELLED") {
     set.cancelledAt = nowIso();
+  } else if ((row as any).cancelledAt) {
+    set.cancelledAt = null;
   }
 
   if (finalOutcome !== undefined) {
-    set.finalOutcome = finalOutcome;
+    set.finalOutcome = finalOutcome.trim() || null;
   }
 
   await PerformanceImprovementPlan.updateOne(
