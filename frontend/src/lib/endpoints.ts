@@ -37,14 +37,34 @@ export const AuthApi = {
         user: AuthUser;
       }>("/auth/login", { email, password })
       .then((r) => r.data),
-  register: (email: string, password: string, confirmPassword: string) =>
+
+  register: (
+    email: string,
+    password: string,
+    confirmPassword: string,
+  ) =>
     api
-      .post("/auth/register", { email, password, confirmPassword })
+      .post("/auth/register", {
+        email,
+        password,
+        confirmPassword,
+      })
       .then((r) => r.data),
-  me: () => api.get<{ user: AuthUser }>("/auth/me").then((r) => r.data.user),
-  changePassword: (currentPassword: string, newPassword: string) =>
+
+  me: () =>
     api
-      .post("/auth/change-password", { currentPassword, newPassword })
+      .get<{ user: AuthUser }>("/auth/me")
+      .then((r) => r.data.user),
+
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) =>
+    api
+      .post("/auth/change-password", {
+        currentPassword,
+        newPassword,
+      })
       .then((r) => r.data),
 };
 
@@ -57,6 +77,7 @@ export interface EmployeeListParams {
   page?: number;
   pageSize?: number;
 }
+
 export const EmployeesApi = {
   list: (params: EmployeeListParams = {}) =>
     api
@@ -67,14 +88,19 @@ export const EmployeesApi = {
         pageSize: number;
       }>("/employees", { params })
       .then((r) => r.data),
+
   get: (id: string) =>
     api
       .get<{ employee: Employee }>(`/employees/${id}`)
       .then((r) => r.data.employee),
+
   directReports: (id: string) =>
     api
-      .get<{ employees: Employee[] }>(`/employees/${id}/direct-reports`)
+      .get<{ employees: Employee[] }>(
+        `/employees/${id}/direct-reports`,
+      )
       .then((r) => r.data.employees),
+
   managers: () =>
     api
       .get<{
@@ -86,46 +112,82 @@ export const EmployeesApi = {
         }[];
       }>("/employees/managers")
       .then((r) => r.data.managers),
+
   orgChart: () =>
-    api.get<{ chart: any[] }>("/employees/org-chart").then((r) => r.data.chart),
+    api
+      .get<{ chart: any[] }>("/employees/org-chart")
+      .then((r) => r.data.chart),
+
   create: (payload: Record<string, unknown>) =>
     api
       .post<{ employee: Employee }>("/employees", payload)
       .then((r) => r.data.employee),
-  update: (id: string, payload: Record<string, unknown>) =>
+
+  update: (
+    id: string,
+    payload: Record<string, unknown>,
+  ) =>
     api
-      .patch<{ employee: Employee }>(`/employees/${id}`, payload)
+      .patch<{ employee: Employee }>(
+        `/employees/${id}`,
+        payload,
+      )
       .then((r) => r.data.employee),
+
   updateMe: (payload: Record<string, unknown>) =>
     api
-      .patch<{ employee: Employee }>("/employees/me", payload)
+      .patch<{ employee: Employee }>(
+        "/employees/me",
+        payload,
+      )
       .then((r) => r.data.employee),
+
   headcountByDepartment: () =>
     api
       .get<{
-        data: { department: string; color: string; count: number }[];
+        data: {
+          department: string;
+          color: string;
+          count: number;
+        }[];
       }>("/employees/analytics/headcount-by-department")
       .then((r) => r.data.data),
+
   genderDiversity: () =>
     api
       .get<{
-        data: { gender: string; count: number }[];
+        data: {
+          gender: string;
+          count: number;
+        }[];
       }>("/employees/analytics/gender-diversity")
       .then((r) => r.data.data),
+
   employmentType: () =>
     api
       .get<{
-        data: { type: string; count: number }[];
+        data: {
+          type: string;
+          count: number;
+        }[];
       }>("/employees/analytics/employment-type")
       .then((r) => r.data.data),
+
   headcountTrend: (months = 6) =>
     api
       .get<{
-        data: { month: string; headcount: number }[];
-      }>("/employees/analytics/headcount-trend", { params: { months } })
+        data: {
+          month: string;
+          headcount: number;
+        }[];
+      }>("/employees/analytics/headcount-trend", {
+        params: { months },
+      })
       .then((r) => r.data.data),
+
   uploadAvatar: (id: string, file: File) => {
     const form = new FormData();
+
     form.append("avatar", file);
 
     return api
@@ -141,75 +203,220 @@ export const EmployeesApi = {
   },
 };
 
-// --- Organization (departments, designations, holidays) ----------------------
+// --- Organization ------------------------------------------------------------
 export const OrganizationApi = {
   departments: () =>
     api
-      .get<{ departments: Department[] }>("/organization/departments")
+      .get<{
+        departments: Department[];
+      }>("/organization/departments")
       .then((r) => r.data.departments),
-  createDepartment: (payload: Record<string, unknown>) =>
+
+  createDepartment: (
+    payload: Record<string, unknown>,
+  ) =>
     api
-      .post<{ department: Department }>("/organization/departments", payload)
+      .post<{
+        department: Department;
+      }>("/organization/departments", payload)
       .then((r) => r.data.department),
-  updateDepartment: (id: string, payload: Record<string, unknown>) =>
+
+  updateDepartment: (
+    id: string,
+    payload: Record<string, unknown>,
+  ) =>
     api
       .patch<{
         department: Department;
-      }>(`/organization/departments/${id}`, payload)
+      }>(
+        `/organization/departments/${id}`,
+        payload,
+      )
       .then((r) => r.data.department),
+
   designations: (departmentId?: string) =>
     api
       .get<{
         designations: Designation[];
-      }>("/organization/designations", { params: { departmentId } })
+      }>("/organization/designations", {
+        params: { departmentId },
+      })
       .then((r) => r.data.designations),
-  createDesignation: (payload: Record<string, unknown>) =>
+
+  createDesignation: (
+    payload: Record<string, unknown>,
+  ) =>
     api
-      .post<{ designation: Designation }>("/organization/designations", payload)
+      .post<{
+        designation: Designation;
+      }>("/organization/designations", payload)
       .then((r) => r.data.designation),
+
   holidays: (year?: number) =>
     api
       .get<{
         holidays: Holiday[];
-      }>("/organization/holidays", { params: { year } })
+      }>("/organization/holidays", {
+        params: { year },
+      })
       .then((r) => r.data.holidays),
-  createHoliday: (payload: Record<string, unknown>) =>
+
+  createHoliday: (
+    payload: Record<string, unknown>,
+  ) =>
     api
-      .post<{ holiday: Holiday }>("/organization/holidays", payload)
+      .post<{
+        holiday: Holiday;
+      }>("/organization/holidays", payload)
       .then((r) => r.data.holiday),
-  deleteHoliday: (id: string) => api.delete(`/organization/holidays/${id}`),
+
+  deleteHoliday: (id: string) =>
+    api.delete(`/organization/holidays/${id}`),
 };
 
-// --- Attendance ----------------------------------------------------------------
+// --- Attendance --------------------------------------------------------------
+export interface AttendanceAiInsights {
+  period: {
+    start: string;
+    end: string;
+    daysAnalyzed: number;
+  };
+
+  summary: {
+    attendanceRate: number;
+    presentDays: number;
+    wfhDays: number;
+    leaveDays: number;
+    absentDays: number;
+    halfDays: number;
+    averageWorkHours: number;
+    regularizedDays: number;
+  };
+
+  timing: {
+    lateCheckIns: number;
+    lateCheckInRate: number;
+    earlyCheckOuts: number;
+    earlyCheckoutRate: number;
+    missingCheckoutDays: number;
+  };
+
+  trend: {
+    direction:
+      | "IMPROVING"
+      | "DECLINING"
+      | "STABLE";
+    change: number;
+    recentRate: number;
+    previousRate: number;
+  };
+
+  patterns: {
+    type:
+      | "POSITIVE"
+      | "WARNING"
+      | "INFO";
+    title: string;
+    description: string;
+  }[];
+
+  recommendations: string[];
+}
+
 export const AttendanceApi = {
   today: () =>
     api
-      .get<{ record: AttendanceRecord | null }>("/attendance/today")
+      .get<{
+        record: AttendanceRecord | null;
+      }>("/attendance/today")
       .then((r) => r.data.record),
+
   checkIn: () =>
     api
-      .post<{ record: AttendanceRecord }>("/attendance/check-in")
+      .post<{
+        record: AttendanceRecord;
+      }>("/attendance/check-in")
       .then((r) => r.data.record),
+
   checkOut: () =>
     api
-      .post<{ record: AttendanceRecord }>("/attendance/check-out")
+      .post<{
+        record: AttendanceRecord;
+      }>("/attendance/check-out")
       .then((r) => r.data.record),
-  mine: (month?: number, year?: number) =>
+
+  mine: (
+    month?: number,
+    year?: number,
+  ) =>
     api
       .get<{
         records: AttendanceRecord[];
-      }>("/attendance/me", { params: { month, year } })
+      }>("/attendance/me", {
+        params: {
+          month,
+          year,
+        },
+      })
       .then((r) => r.data.records),
-  forEmployee: (employeeId: string, month?: number, year?: number) =>
+
+
+aiForecast: async (
+  months = 6,
+  employeeId?: string,
+) => {
+  const response = await api.get("/attendance/ai-forecast", {
+    params: {
+      months,
+      employeeId,
+    },
+  });
+
+  return response.data;
+},
+smartRegularization: async (
+  date: string,
+  employeeId?: string,
+) => {
+  const response = await api.get(
+    "/attendance/smart-regularization",
+    {
+      params: {
+        date,
+        employeeId,
+      },
+    },
+  );
+
+  return response.data;
+},
+
+  forEmployee: (
+    employeeId: string,
+    month?: number,
+    year?: number,
+  ) =>
     api
       .get<{
         records: AttendanceRecord[];
-      }>(`/attendance/employee/${employeeId}`, { params: { month, year } })
+      }>(
+        `/attendance/employee/${employeeId}`,
+        {
+          params: {
+            month,
+            year,
+          },
+        },
+      )
       .then((r) => r.data.records),
+
   byDate: (date: string) =>
     api
-      .get<{ records: any[] }>(`/attendance/by-date/${date}`)
+      .get<{
+        records: any[];
+      }>(`/attendance/by-date/${date}`)
       .then((r) => r.data.records),
+
   summaryToday: () =>
     api
       .get<{
@@ -219,20 +426,127 @@ export const AttendanceApi = {
         isToday: boolean;
       }>("/attendance/summary/today")
       .then((r) => r.data),
+
   trend: (months = 6) =>
     api
       .get<{
-        data: { month: string; presentRate: number }[];
-      }>("/attendance/analytics/trend", { params: { months } })
+        data: {
+          month: string;
+          presentRate: number;
+        }[];
+      }>("/attendance/analytics/trend", {
+        params: { months },
+      })
       .then((r) => r.data.data),
-  regularize: (date: string, note: string) =>
-    api
-      .post<{
-        record: AttendanceRecord;
-      }>("/attendance/regularize", { date, note })
-      .then((r) => r.data.record),
 
-  teamRegularizationRequests: (status = "PENDING") =>
+  // ========================================================================
+  // AI ATTENDANCE INSIGHTS
+  // ========================================================================
+  //
+  // The selected startDate and endDate are sent to the backend.
+  //
+  // Example:
+  // AttendanceApi.aiInsights("2026-09-04", "2026-09-04")
+  //
+  // Request:
+  // GET /attendance/ai-insights
+  //     ?startDate=2026-09-04
+  //     &endDate=2026-09-04
+  //
+  // ========================================================================
+
+  aiInsights: (
+  startDate: string,
+  endDate: string,
+  employeeId?: string,
+) =>
+  api
+    .get<{
+      insights: AttendanceAiInsights;
+    }>("/attendance/ai-insights", {
+      params: {
+        startDate,
+        endDate,
+        employeeId,
+      },
+    })
+    .then((r) => r.data.insights),
+  askAI: async (
+  question: string,
+  employeeId?: string,
+) => {
+  const response = await api.post(
+    "/attendance/ask-ai",
+    {
+      question,
+      employeeId,
+    },
+  );
+
+  return response.data.answer;
+},
+  
+  aiAnomalies: async (
+  month?: number,
+  year?: number,
+  employeeId?: string,
+) => {
+  const params = new URLSearchParams();
+
+  if (month !== undefined) {
+    params.set("month", String(month));
+  }
+
+  if (year !== undefined) {
+    params.set("year", String(year));
+  }
+
+  if (employeeId) {
+    params.set("employeeId", employeeId);
+  }
+
+  const query = params.toString();
+
+  const response = await api.get(
+    `/attendance/ai-anomalies${query ? `?${query}` : ""}`,
+  );
+
+  return response.data;
+},
+aiPatterns: async (
+  months = 6,
+  employeeId?: string,
+) => {
+  const response = await api.get(
+    "/attendance/ai-patterns",
+    {
+      params: {
+        months,
+        employeeId,
+      },
+    },
+  );
+
+  return response.data;
+},
+ regularize: (
+  date: string,
+  note: string,
+  // employeeId?: string,
+) =>
+  api
+    .post<{
+      record: AttendanceRecord;
+    }>("/attendance/regularize", {
+      date,
+      note,
+      // employeeId,
+    })
+    .then((r) => r.data.record),
+
+  teamRegularizationRequests: (
+    status = "PENDING",
+  ) =>
     api
       .get<{
         requests: Array<{
@@ -244,7 +558,11 @@ export const AttendanceApi = {
           requestedCheckOut: string | null;
           requestedStatus: string;
           reason: string;
-          status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+          status:
+            | "PENDING"
+            | "APPROVED"
+            | "REJECTED"
+            | "CANCELLED";
           approverId: string | null;
           decisionNote: string | null;
           requestedAt: string;
@@ -258,7 +576,10 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.requests),
 
-  approveRegularization: (requestId: string, decisionNote = "") =>
+  approveRegularization: (
+    requestId: string,
+    decisionNote = "",
+  ) =>
     api
       .post<{
         result: {
@@ -266,40 +587,70 @@ export const AttendanceApi = {
           attendance: AttendanceRecord;
         };
         message: string;
-      }>(`/attendance/regularization/${requestId}/approve`, {
-        decisionNote,
-      })
+      }>(
+        `/attendance/regularization/${requestId}/approve`,
+        {
+          decisionNote,
+        },
+      )
       .then((r) => r.data.result),
 
-  rejectRegularization: (requestId: string, decisionNote: string) =>
+  rejectRegularization: (
+    requestId: string,
+    decisionNote: string,
+  ) =>
     api
       .post<{
         request: any;
         message: string;
-      }>(`/attendance/regularization/${requestId}/reject`, {
-        decisionNote,
-      })
+      }>(
+        `/attendance/regularization/${requestId}/reject`,
+        {
+          decisionNote,
+        },
+      )
       .then((r) => r.data.request),
 };
 
-// --- Leave ----------------------------------------------------------------------
+// --- Leave ------------------------------------------------------------------
 export const LeaveApi = {
   types: () =>
     api
-      .get<{ leaveTypes: LeaveType[] }>("/leave/types")
+      .get<{
+        leaveTypes: LeaveType[];
+      }>("/leave/types")
       .then((r) => r.data.leaveTypes),
-  balances: (employeeId?: string, year?: number) =>
+
+  balances: (
+    employeeId?: string,
+    year?: number,
+  ) =>
     api
       .get<{
         balances: LeaveBalance[];
-      }>("/leave/balances", { params: { employeeId, year } })
+      }>("/leave/balances", {
+        params: {
+          employeeId,
+          year,
+        },
+      })
       .then((r) => r.data.balances),
+
   requests: (
-    params: { status?: string; scope?: "team"; employeeId?: string } = {},
+    params: {
+      status?: string;
+      scope?: "team";
+      employeeId?: string;
+    } = {},
   ) =>
     api
-      .get<{ requests: LeaveRequest[] }>("/leave/requests", { params })
+      .get<{
+        requests: LeaveRequest[];
+      }>("/leave/requests", {
+        params,
+      })
       .then((r) => r.data.requests),
+
   apply: (payload: {
     leaveTypeId: string;
     startDate: string;
@@ -307,8 +658,11 @@ export const LeaveApi = {
     reason: string;
   }) =>
     api
-      .post<{ request: LeaveRequest }>("/leave/requests", payload)
+      .post<{
+        request: LeaveRequest;
+      }>("/leave/requests", payload)
       .then((r) => r.data.request),
+
   decide: (
     id: string,
     status: "APPROVED" | "REJECTED",
@@ -317,55 +671,102 @@ export const LeaveApi = {
     api
       .post<{
         request: LeaveRequest;
-      }>(`/leave/requests/${id}/decide`, { status, decisionNote })
+      }>(
+        `/leave/requests/${id}/decide`,
+        {
+          status,
+          decisionNote,
+        },
+      )
       .then((r) => r.data.request),
+
   cancel: (id: string) =>
     api
-      .post<{ request: LeaveRequest }>(`/leave/requests/${id}/cancel`)
+      .post<{
+        request: LeaveRequest;
+      }>(`/leave/requests/${id}/cancel`)
       .then((r) => r.data.request),
-  calendar: (month?: number, year?: number) =>
+
+  calendar: (
+    month?: number,
+    year?: number,
+  ) =>
     api
-      .get<{ entries: any[] }>("/leave/calendar", { params: { month, year } })
+      .get<{
+        entries: any[];
+      }>("/leave/calendar", {
+        params: {
+          month,
+          year,
+        },
+      })
       .then((r) => r.data.entries),
 };
 
-// --- Recruitment ------------------------------------------------------------------
+// --- Recruitment -------------------------------------------------------------
 export const RecruitmentApi = {
   jobs: (status?: string) =>
     api
-      .get<{ jobs: JobPosting[] }>("/recruitment/jobs", {
+      .get<{
+        jobs: JobPosting[];
+      }>("/recruitment/jobs", {
         params: { status },
       })
       .then((r) => r.data.jobs),
 
   job: (id: string) =>
     api
-      .get<{ job: JobPosting }>(`/recruitment/jobs/${id}`)
+      .get<{
+        job: JobPosting;
+      }>(`/recruitment/jobs/${id}`)
       .then((r) => r.data.job),
 
   createJob: (payload: Record<string, unknown>) =>
     api
-      .post<{ job: JobPosting }>("/recruitment/jobs", payload)
+      .post<{
+        job: JobPosting;
+      }>("/recruitment/jobs", payload)
       .then((r) => r.data.job),
 
-  updateJob: (id: string, payload: Record<string, unknown>) =>
+  updateJob: (
+    id: string,
+    payload: Record<string, unknown>,
+  ) =>
     api
-      .patch<{ job: JobPosting }>(`/recruitment/jobs/${id}`, payload)
+      .patch<{
+        job: JobPosting;
+      }>(
+        `/recruitment/jobs/${id}`,
+        payload,
+      )
       .then((r) => r.data.job),
 
   deleteJob: (id: string) =>
     api
-      .delete<{ id: string; deleted: boolean }>(`/recruitment/jobs/${id}`)
+      .delete<{
+        id: string;
+        deleted: boolean;
+      }>(`/recruitment/jobs/${id}`)
       .then((r) => r.data),
 
-  updateJobStatus: (id: string, status: string) =>
+  updateJobStatus: (
+    id: string,
+    status: string,
+  ) =>
     api
-      .patch<{ job: JobPosting }>(`/recruitment/jobs/${id}/status`, { status })
+      .patch<{
+        job: JobPosting;
+      }>(
+        `/recruitment/jobs/${id}/status`,
+        { status },
+      )
       .then((r) => r.data.job),
 
   candidates: (jobPostingId?: string) =>
     api
-      .get<{ candidates: Candidate[] }>("/recruitment/candidates", {
+      .get<{
+        candidates: Candidate[];
+      }>("/recruitment/candidates", {
         params: { jobPostingId },
       })
       .then((r) => r.data.candidates),
@@ -381,35 +782,52 @@ export const RecruitmentApi = {
     } = {},
   ) =>
     api
-      .get<{ candidates: Candidate[] }>("/recruitment/candidates/search", {
+      .get<{
+        candidates: Candidate[];
+      }>("/recruitment/candidates/search", {
         params,
       })
       .then((r) => r.data.candidates),
 
   candidate: (id: string) =>
     api
-      .get<{ candidate: Candidate }>(`/recruitment/candidates/${id}`)
+      .get<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}`)
       .then((r) => r.data.candidate),
 
-  createCandidate: (payload: Record<string, unknown>) =>
+  createCandidate: (
+    payload: Record<string, unknown>,
+  ) =>
     api
-      .post<{ candidate: Candidate }>("/recruitment/candidates", payload)
+      .post<{
+        candidate: Candidate;
+      }>("/recruitment/candidates", payload)
       .then((r) => r.data.candidate),
 
-  uploadResume: (id: string, file: File) => {
+  uploadResume: (
+    id: string,
+    file: File,
+  ) => {
     const form = new FormData();
+
     form.append("resume", file);
 
     return api
       .post<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/resume/upload`, form, {
-        headers: {
-          "Content-Type": "multipart/form-data",
+      }>(
+        `/recruitment/candidates/${id}/resume/upload`,
+        form,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
         },
-      })
+      )
       .then((r) => r.data.candidate);
   },
+
   updateCandidate: (
     id: string,
     payload: {
@@ -422,40 +840,69 @@ export const RecruitmentApi = {
     },
   ) =>
     api
-      .patch<{ candidate: Candidate }>(`/recruitment/candidates/${id}`, payload)
+      .patch<{
+        candidate: Candidate;
+      }>(
+        `/recruitment/candidates/${id}`,
+        payload,
+      )
       .then((r) => r.data.candidate),
 
   deleteCandidate: (id: string) =>
     api
-      .delete<{ id: string; deleted: boolean }>(`/recruitment/candidates/${id}`)
+      .delete<{
+        id: string;
+        deleted: boolean;
+      }>(`/recruitment/candidates/${id}`)
       .then((r) => r.data),
 
-  moveStage: (id: string, stage: string) =>
+  moveStage: (
+    id: string,
+    stage: string,
+  ) =>
     api
       .patch<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/stage`, { stage })
+      }>(
+        `/recruitment/candidates/${id}/stage`,
+        { stage },
+      )
       .then((r) => r.data.candidate),
 
   selectCandidate: (id: string) =>
     api
       .post<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/select`)
+      }>(
+        `/recruitment/candidates/${id}/select`,
+      )
       .then((r) => r.data.candidate),
 
-  rate: (id: string, rating: number) =>
+  rate: (
+    id: string,
+    rating: number,
+  ) =>
     api
       .patch<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/rating`, { rating })
+      }>(
+        `/recruitment/candidates/${id}/rating`,
+        { rating },
+      )
       .then((r) => r.data.candidate),
-  screenCandidate: (id: string, resumeText?: string) =>
+
+  screenCandidate: (
+    id: string,
+    resumeText?: string,
+  ) =>
     api
       .post<{
         candidate: Candidate;
         message: string;
-      }>(`/recruitment/candidates/${id}/screen`, { resumeText })
+      }>(
+        `/recruitment/candidates/${id}/screen`,
+        { resumeText },
+      )
       .then((r) => r.data.candidate),
 
   parseResume: (id: string) =>
@@ -463,19 +910,30 @@ export const RecruitmentApi = {
       .post<{
         candidate: Candidate;
         message: string;
-      }>(`/recruitment/candidates/${id}/resume/parse`)
+      }>(
+        `/recruitment/candidates/${id}/resume/parse`,
+      )
       .then((r) => r.data.candidate),
 
   interviews: (candidateId?: string) =>
     api
-      .get<{ interviews: Interview[] }>("/recruitment/interviews", {
+      .get<{
+        interviews: Interview[];
+      }>("/recruitment/interviews", {
         params: { candidateId },
       })
       .then((r) => r.data.interviews),
 
-  scheduleInterview: (payload: Record<string, unknown>) =>
+  scheduleInterview: (
+    payload: Record<string, unknown>,
+  ) =>
     api
-      .post<{ interview: Interview }>("/recruitment/interviews", payload)
+      .post<{
+        interview: Interview;
+      }>(
+        "/recruitment/interviews",
+        payload,
+      )
       .then((r) => r.data.interview),
 
   submitFeedback: (
@@ -489,7 +947,9 @@ export const RecruitmentApi = {
     }> = [],
   ) =>
     api
-      .post<{ interview: Interview }>(
+      .post<{
+        interview: Interview;
+      }>(
         `/recruitment/interviews/${id}/feedback`,
         {
           feedback,
@@ -512,20 +972,33 @@ export const RecruitmentApi = {
     api
       .post<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/offer`, payload)
+      }>(
+        `/recruitment/candidates/${id}/offer`,
+        payload,
+      )
       .then((r) => r.data.candidate),
 
-  respondToOffer: (id: string, status: "ACCEPTED" | "DECLINED") =>
+  respondToOffer: (
+    id: string,
+    status: "ACCEPTED" | "DECLINED",
+  ) =>
     api
       .patch<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/offer/response`, { status })
+      }>(
+        `/recruitment/candidates/${id}/offer/response`,
+        { status },
+      )
       .then((r) => r.data.candidate),
 
   updateBackgroundVerification: (
     id: string,
     payload: {
-      status: "NOT_STARTED" | "IN_PROGRESS" | "VERIFIED" | "FAILED";
+      status:
+        | "NOT_STARTED"
+        | "IN_PROGRESS"
+        | "VERIFIED"
+        | "FAILED";
       provider?: string;
       reference?: string;
       notes?: string;
@@ -534,7 +1007,10 @@ export const RecruitmentApi = {
     api
       .patch<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/background-verification`, payload)
+      }>(
+        `/recruitment/candidates/${id}/background-verification`,
+        payload,
+      )
       .then((r) => r.data.candidate),
 
   addPreboardingDocument: (
@@ -547,14 +1023,22 @@ export const RecruitmentApi = {
     api
       .post<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/preboarding/documents`, payload)
+      }>(
+        `/recruitment/candidates/${id}/preboarding/documents`,
+        payload,
+      )
       .then((r) => r.data.candidate),
 
-  verifyPreboardingDocument: (id: string, index: number) =>
+  verifyPreboardingDocument: (
+    id: string,
+    index: number,
+  ) =>
     api
       .patch<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/preboarding/documents/${index}/verify`)
+      }>(
+        `/recruitment/candidates/${id}/preboarding/documents/${index}/verify`,
+      )
       .then((r) => r.data.candidate),
 
   hireCandidate: (
@@ -570,36 +1054,57 @@ export const RecruitmentApi = {
     api
       .post<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/hire`, { role })
+      }>(
+        `/recruitment/candidates/${id}/hire`,
+        { role },
+      )
       .then((r) => r.data.candidate),
 
   pipelineSummary: () =>
     api
       .get<{
-        data: { stage: string; count: number }[];
+        data: {
+          stage: string;
+          count: number;
+        }[];
       }>("/recruitment/analytics/pipeline")
       .then((r) => r.data.data),
 
   openRoles: () =>
     api
-      .get<{ count: number }>("/recruitment/analytics/open-roles")
+      .get<{
+        count: number;
+      }>("/recruitment/analytics/open-roles")
       .then((r) => r.data.count),
 
-  updateInterviewRecording: (id: string, recordingUrl: string | null) =>
+  updateInterviewRecording: (
+    id: string,
+    recordingUrl: string | null,
+  ) =>
     api
       .patch<{
         interview: Interview;
-      }>(`/recruitment/interviews/${id}/recording`, { recordingUrl })
+      }>(
+        `/recruitment/interviews/${id}/recording`,
+        { recordingUrl },
+      )
       .then((r) => r.data.interview),
 
   updateReferralBonus: (
     id: string,
-    status: "PENDING" | "APPROVED" | "PAID" | "REJECTED",
+    status:
+      | "PENDING"
+      | "APPROVED"
+      | "PAID"
+      | "REJECTED",
   ) =>
     api
       .patch<{
         candidate: Candidate;
-      }>(`/recruitment/candidates/${id}/referral-bonus`, { status })
+      }>(
+        `/recruitment/candidates/${id}/referral-bonus`,
+        { status },
+      )
       .then((r) => r.data.candidate),
 
   metrics: () =>
@@ -623,34 +1128,57 @@ export const RecruitmentApi = {
       .then((r) => r.data.data),
 };
 
-// --- Performance ----------------------------------------------------------------
+// --- Performance -------------------------------------------------------------
 export const PerformanceApi = {
   cycles: () =>
     api
-      .get<{ cycles: PerformanceCycle[] }>("/performance/cycles")
+      .get<{
+        cycles: PerformanceCycle[];
+      }>("/performance/cycles")
       .then((r) => r.data.cycles),
-  createCycle: (payload: Record<string, unknown>) =>
-    api
-      .post<{ cycle: PerformanceCycle }>("/performance/cycles", payload)
-      .then((r) => r.data.cycle),
-  reviews: (
-    params: { cycleId?: string; scope?: "team"; revieweeId?: string } = {},
+
+  createCycle: (
+    payload: Record<string, unknown>,
   ) =>
     api
-      .get<{ reviews: PerformanceReview[] }>("/performance/reviews", { params })
+      .post<{
+        cycle: PerformanceCycle;
+      }>("/performance/cycles", payload)
+      .then((r) => r.data.cycle),
+
+  reviews: (
+    params: {
+      cycleId?: string;
+      scope?: "team";
+      revieweeId?: string;
+    } = {},
+  ) =>
+    api
+      .get<{
+        reviews: PerformanceReview[];
+      }>("/performance/reviews", {
+        params,
+      })
       .then((r) => r.data.reviews),
+
   myReview: () =>
     api
-      .get<{ review: PerformanceReview | null }>("/performance/reviews/mine")
+      .get<{
+        review: PerformanceReview | null;
+      }>("/performance/reviews/mine")
       .then((r) => r.data.review),
+
   ensureReview: (payload: {
     cycleId: string;
     revieweeId: string;
     reviewerId: string;
   }) =>
     api
-      .post<{ review: PerformanceReview }>("/performance/reviews", payload)
+      .post<{
+        review: PerformanceReview;
+      }>("/performance/reviews", payload)
       .then((r) => r.data.review),
+
   submitSelf: (
     id: string,
     selfRating: number,
@@ -660,12 +1188,16 @@ export const PerformanceApi = {
     api
       .post<{
         review: PerformanceReview;
-      }>(`/performance/reviews/${id}/self`, {
-        selfRating,
-        strengths,
-        improvements,
-      })
+      }>(
+        `/performance/reviews/${id}/self`,
+        {
+          selfRating,
+          strengths,
+          improvements,
+        },
+      )
       .then((r) => r.data.review),
+
   submitManager: (
     id: string,
     managerRating: number,
@@ -675,7 +1207,9 @@ export const PerformanceApi = {
     managerBehaviorRating: number,
   ) =>
     api
-      .post<{ review: PerformanceReview }>(
+      .post<{
+        review: PerformanceReview;
+      }>(
         `/performance/reviews/${id}/manager`,
         {
           managerRating,
@@ -686,10 +1220,16 @@ export const PerformanceApi = {
         },
       )
       .then((r) => r.data.review),
+
   goals: (employeeId?: string) =>
     api
-      .get<{ goals: Goal[] }>("/performance/goals", { params: { employeeId } })
+      .get<{
+        goals: Goal[];
+      }>("/performance/goals", {
+        params: { employeeId },
+      })
       .then((r) => r.data.goals),
+
   createGoal: (payload: {
     title: string;
     description?: string;
@@ -707,8 +1247,11 @@ export const PerformanceApi = {
     }[];
   }) =>
     api
-      .post<{ goal: Goal }>("/performance/goals", payload)
+      .post<{
+        goal: Goal;
+      }>("/performance/goals", payload)
       .then((r) => r.data.goal),
+
   goalTrend: () =>
     api
       .get<{
@@ -719,168 +1262,304 @@ export const PerformanceApi = {
         }[];
       }>("/performance/goals/trend")
       .then((r) => r.data.data),
+
   feedbackRequests: () =>
     api
-      .get<{ reviews: PerformanceReview[] }>("/performance/feedback-requests")
+      .get<{
+        reviews: PerformanceReview[];
+      }>("/performance/feedback-requests")
       .then((r) => r.data.reviews),
+
   submitFeedback: (
     id: string,
     payload: {
       type: "PEER" | "SUBORDINATE";
-      competencyRatings: { competency: string; rating: number }[];
+      competencyRatings: {
+        competency: string;
+        rating: number;
+      }[];
       comments?: string;
     },
   ) =>
     api
-      .post(`/performance/reviews/${id}/feedback`, payload)
+      .post(
+        `/performance/reviews/${id}/feedback`,
+        payload,
+      )
       .then((r) => r.data.feedback),
+
   feedbackSummary: (id: string) =>
     api
       .get<{
         summary: FeedbackSummary;
-      }>(`/performance/reviews/${id}/feedback-summary`)
+      }>(
+        `/performance/reviews/${id}/feedback-summary`,
+      )
       .then((r) => r.data.summary),
+
   outcome: (id: string) =>
     api
       .get<{
         outcome: PerformanceOutcome | null;
-      }>(`/performance/reviews/${id}/outcome`)
+      }>(
+        `/performance/reviews/${id}/outcome`,
+      )
       .then((r) => r.data.outcome),
-  updateGoalProgress: (id: string, progress: number) =>
+
+  updateGoalProgress: (
+    id: string,
+    progress: number,
+  ) =>
     api
-      .patch<{ goal: Goal }>(`/performance/goals/${id}/progress`, { progress })
+      .patch<{
+        goal: Goal;
+      }>(
+        `/performance/goals/${id}/progress`,
+        { progress },
+      )
       .then((r) => r.data.goal),
+
   ratingByDepartment: () =>
     api
       .get<{
-        data: { department: string; avgRating: number }[];
-      }>("/performance/analytics/rating-by-department")
+        data: {
+          department: string;
+          avgRating: number;
+        }[];
+      }>(
+        "/performance/analytics/rating-by-department",
+      )
       .then((r) => r.data.data),
 };
 
-// --- Payroll -----------------------------------------------------------------------
+// --- Payroll ----------------------------------------------------------------
 export const PayrollApi = {
-  getSalaryStructure: (employeeId: string) =>
+  getSalaryStructure: (
+    employeeId: string,
+  ) =>
     api
       .get<{
         structure: SalaryStructure | null;
-      }>(`/payroll/salary-structure/${employeeId}`)
+      }>(
+        `/payroll/salary-structure/${employeeId}`,
+      )
       .then((r) => r.data.structure),
-  upsertSalaryStructure: (payload: Record<string, unknown>) =>
+
+  upsertSalaryStructure: (
+    payload: Record<string, unknown>,
+  ) =>
     api
-      .put<{ structure: SalaryStructure }>("/payroll/salary-structure", payload)
+      .put<{
+        structure: SalaryStructure;
+      }>(
+        "/payroll/salary-structure",
+        payload,
+      )
       .then((r) => r.data.structure),
+
   runs: () =>
-    api.get<{ runs: PayrollRun[] }>("/payroll/runs").then((r) => r.data.runs),
-  process: (month: number, year: number) =>
     api
-      .post<{ run: PayrollRun }>("/payroll/runs/process", { month, year })
+      .get<{
+        runs: PayrollRun[];
+      }>("/payroll/runs")
+      .then((r) => r.data.runs),
+
+  process: (
+    month: number,
+    year: number,
+  ) =>
+    api
+      .post<{
+        run: PayrollRun;
+      }>("/payroll/runs/process", {
+        month,
+        year,
+      })
       .then((r) => r.data.run),
+
   markPaid: (id: string) =>
     api
-      .post<{ run: PayrollRun }>(`/payroll/runs/${id}/mark-paid`)
+      .post<{
+        run: PayrollRun;
+      }>(`/payroll/runs/${id}/mark-paid`)
       .then((r) => r.data.run),
+
   payslipsForRun: (runId: string) =>
     api
-      .get<{ payslips: Payslip[] }>(`/payroll/runs/${runId}/payslips`)
+      .get<{
+        payslips: Payslip[];
+      }>(
+        `/payroll/runs/${runId}/payslips`,
+      )
       .then((r) => r.data.payslips),
+
   myPayslips: () =>
     api
-      .get<{ payslips: Payslip[] }>("/payroll/payslips/mine")
+      .get<{
+        payslips: Payslip[];
+      }>("/payroll/payslips/mine")
       .then((r) => r.data.payslips),
-  payslipsForEmployee: (employeeId: string) =>
+
+  payslipsForEmployee: (
+    employeeId: string,
+  ) =>
     api
-      .get<{ payslips: Payslip[] }>(`/payroll/payslips/employee/${employeeId}`)
+      .get<{
+        payslips: Payslip[];
+      }>(
+        `/payroll/payslips/employee/${employeeId}`,
+      )
       .then((r) => r.data.payslips),
+
   payslip: (id: string) =>
     api
-      .get<{ payslip: Payslip }>(`/payroll/payslips/${id}`)
+      .get<{
+        payslip: Payslip;
+      }>(`/payroll/payslips/${id}`)
       .then((r) => r.data.payslip),
+
   costTrend: (months = 6) =>
     api
       .get<{
-        data: { month: number; year: number; totalNet: number }[];
-      }>("/payroll/analytics/cost-trend", { params: { months } })
+        data: {
+          month: number;
+          year: number;
+          totalNet: number;
+        }[];
+      }>("/payroll/analytics/cost-trend", {
+        params: { months },
+      })
       .then((r) => r.data.data),
-  createPayslipRequest: (period: PayslipRequestPeriod) =>
+
+  createPayslipRequest: (
+    period: PayslipRequestPeriod,
+  ) =>
     api
       .post<{
         request: PayslipRequest;
-      }>("/payroll/payslip-requests", { period })
+      }>(
+        "/payroll/payslip-requests",
+        { period },
+      )
       .then((r) => r.data.request),
+
   myPayslipRequests: () =>
     api
-      .get<{ requests: PayslipRequest[] }>("/payroll/payslip-requests/mine")
+      .get<{
+        requests: PayslipRequest[];
+      }>("/payroll/payslip-requests/mine")
       .then((r) => r.data.requests),
+
   payslipRequests: () =>
     api
-      .get<{ requests: PayslipRequest[] }>("/payroll/payslip-requests")
+      .get<{
+        requests: PayslipRequest[];
+      }>("/payroll/payslip-requests")
       .then((r) => r.data.requests),
+
   payslipRequest: (id: string) =>
     api
-      .get<{ request: PayslipRequest }>(`/payroll/payslip-requests/${id}`)
+      .get<{
+        request: PayslipRequest;
+      }>(
+        `/payroll/payslip-requests/${id}`,
+      )
       .then((r) => r.data.request),
+
   sendPayslipRequest: (id: string) =>
     api
-      .post<{ request: PayslipRequest }>(`/payroll/payslip-requests/${id}/send`)
+      .post<{
+        request: PayslipRequest;
+      }>(
+        `/payroll/payslip-requests/${id}/send`,
+      )
       .then((r) => r.data.request),
 };
 
-// --- Notifications ---------------------------------------------------------------
+// --- Notifications -----------------------------------------------------------
 export const NotificationsApi = {
   list: (unreadOnly = false) =>
     api
       .get<{
         notifications: Notification[];
         unreadCount: number;
-      }>("/notifications", { params: { unreadOnly } })
+      }>("/notifications", {
+        params: { unreadOnly },
+      })
       .then((r) => r.data),
 
-  markRead: (id: string) => api.post(`/notifications/${id}/read`),
+  markRead: (id: string) =>
+    api.post(`/notifications/${id}/read`),
 
-  markAllRead: () => api.post("/notifications/read-all"),
+  markAllRead: () =>
+    api.post("/notifications/read-all"),
 
-  // Backward-compatible announcement methods.
   announcements: () =>
     api
-      .get<{ announcements: Announcement[] }>("/notifications/announcements")
+      .get<{
+        announcements: Announcement[];
+      }>("/notifications/announcements")
       .then((r) => r.data.announcements),
 
-  createAnnouncement: (payload: Record<string, unknown>) =>
+  createAnnouncement: (
+    payload: Record<string, unknown>,
+  ) =>
     api
       .post<{
         announcement: Announcement;
-      }>("/notifications/announcements", payload)
+      }>(
+        "/notifications/announcements",
+        payload,
+      )
       .then((r) => r.data.announcement),
 };
 
-// --- Dedicated Announcements -------------------------------------------------------
+// --- Dedicated Announcements -------------------------------------------------
 export const AnnouncementsApi = {
   list: () =>
     api
-      .get<{ announcements: Announcement[] }>("/announcements")
+      .get<{
+        announcements: Announcement[];
+      }>("/announcements")
       .then((r) => r.data.announcements),
 
   get: (id: string) =>
     api
-      .get<{ announcement: Announcement }>(`/announcements/${id}`)
+      .get<{
+        announcement: Announcement;
+      }>(`/announcements/${id}`)
       .then((r) => r.data.announcement),
 
-  create: (payload: FormData | Record<string, unknown>) =>
+  create: (
+    payload: FormData | Record<string, unknown>,
+  ) =>
     api
-      .post<{ announcement: Announcement }>("/announcements", payload)
+      .post<{
+        announcement: Announcement;
+      }>("/announcements", payload)
       .then((r) => r.data.announcement),
 
-  update: (id: string, payload: FormData | Record<string, unknown>) =>
+  update: (
+    id: string,
+    payload: FormData | Record<string, unknown>,
+  ) =>
     api
-      .patch<{ announcement: Announcement }>(`/announcements/${id}`, payload)
+      .patch<{
+        announcement: Announcement;
+      }>(
+        `/announcements/${id}`,
+        payload,
+      )
       .then((r) => r.data.announcement),
 
-  delete: (id: string) => api.delete(`/announcements/${id}`),
+  delete: (id: string) =>
+    api.delete(`/announcements/${id}`),
 
-  markRead: (id: string) => api.post(`/announcements/${id}/read`),
+  markRead: (id: string) =>
+    api.post(`/announcements/${id}/read`),
 
-  acknowledge: (id: string) => api.post(`/announcements/${id}/acknowledge`),
+  acknowledge: (id: string) =>
+    api.post(`/announcements/${id}/acknowledge`),
 
   status: (id: string) =>
     api
@@ -902,8 +1581,7 @@ export const AnnouncementsApi = {
       .then((r) => r.data.receipt),
 };
 
-// --- Documents & Assets -------------------------------------------------------------
-// Document types an employee can be asked to provide (COMPANY_TO_EMPLOYEE).
+// --- Documents & Assets ------------------------------------------------------
 export type EmployeeProvidedDocType =
   | "ID_PROOF"
   | "ADDRESS_PROOF"
@@ -911,7 +1589,6 @@ export type EmployeeProvidedDocType =
   | "CONTRACT"
   | "OTHER";
 
-// Company-issued document types an employee can request (EMPLOYEE_TO_COMPANY).
 export type CompanyIssuedDocType =
   | "OFFER_LETTER"
   | "APPOINTMENT_LETTER"
@@ -924,7 +1601,11 @@ export type CompanyIssuedDocType =
 export const DocumentsApi = {
   list: (employeeId: string) =>
     api
-      .get<{ documents: any[] }>(`/documents/employee/${employeeId}`)
+      .get<{
+        documents: any[];
+      }>(
+        `/documents/employee/${employeeId}`,
+      )
       .then((r) => r.data.documents),
 
   upload: (
@@ -943,71 +1624,102 @@ export const DocumentsApi = {
     }
 
     return api
-      .post(`/documents/employee/${employeeId}`, form, {
-        headers: {
-          "Content-Type": "multipart/form-data",
+      .post(
+        `/documents/employee/${employeeId}`,
+        form,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
         },
-      })
+      )
       .then((r) => r.data.document);
   },
 
-  // COMPANY_TO_EMPLOYEE: SUPER_ADMIN/HR_ADMIN/MANAGER requests a document
-  // from an employee.
   requestDocument: (payload: {
     employeeId: string;
     type: EmployeeProvidedDocType;
     note?: string;
   }) =>
     api
-      .post<{ request: any }>("/documents/requests", payload)
+      .post<{
+        request: any;
+      }>("/documents/requests", payload)
       .then((r) => r.data.request),
 
-  // EMPLOYEE_TO_COMPANY: an employee requests a company-issued document for
-  // themselves. The backend derives the employee from the session, so no
-  // employeeId is sent here.
   requestCompanyDocument: (payload: {
     type: CompanyIssuedDocType;
     note?: string;
   }) =>
     api
-      .post<{ request: any }>("/documents/requests", payload)
+      .post<{
+        request: any;
+      }>("/documents/requests", payload)
       .then((r) => r.data.request),
 
-  // All requests (both directions) that concern a given employee.
-  listDocumentRequests: (employeeId: string) =>
+  listDocumentRequests: (
+    employeeId: string,
+  ) =>
     api
-      .get<{ requests: any[] }>(`/documents/requests/employee/${employeeId}`)
+      .get<{
+        requests: any[];
+      }>(
+        `/documents/requests/employee/${employeeId}`,
+      )
       .then((r) => r.data.requests),
 
-  // Employee-originated (EMPLOYEE_TO_COMPANY) requests, for HR/company users
-  // to process.
-  listCompanyDocumentRequests: (status?: string) =>
+  listCompanyDocumentRequests: (
+    status?: string,
+  ) =>
     api
-      .get<{ requests: any[] }>("/documents/requests/company", {
+      .get<{
+        requests: any[];
+      }>("/documents/requests/company", {
         params: { status },
       })
       .then((r) => r.data.requests),
 
-  delete: (id: string) => api.delete(`/documents/${id}`),
+  delete: (id: string) =>
+    api.delete(`/documents/${id}`),
 
   allAssets: () =>
     api
-      .get<{ assets: Asset[] }>("/documents/assets/all")
+      .get<{
+        assets: Asset[];
+      }>("/documents/assets/all")
       .then((r) => r.data.assets),
 
-  assetsForEmployee: (employeeId: string) =>
+  assetsForEmployee: (
+    employeeId: string,
+  ) =>
     api
-      .get<{ assets: Asset[] }>(`/documents/assets/employee/${employeeId}`)
+      .get<{
+        assets: Asset[];
+      }>(
+        `/documents/assets/employee/${employeeId}`,
+      )
       .then((r) => r.data.assets),
 
-  assignAsset: (payload: Record<string, unknown>) =>
+  assignAsset: (
+    payload: Record<string, unknown>,
+  ) =>
     api
-      .post<{ asset: Asset }>("/documents/assets", payload)
+      .post<{
+        asset: Asset;
+      }>("/documents/assets", payload)
       .then((r) => r.data.asset),
 
-  updateAssetStatus: (id: string, status: string) =>
+  updateAssetStatus: (
+    id: string,
+    status: string,
+  ) =>
     api
-      .patch<{ asset: Asset }>(`/documents/assets/${id}/status`, { status })
+      .patch<{
+        asset: Asset;
+      }>(
+        `/documents/assets/${id}/status`,
+        { status },
+      )
       .then((r) => r.data.asset),
 };
 
@@ -1027,6 +1739,7 @@ export interface ReportBucket {
 export interface ReportsOverview {
   scope: "ORGANIZATION" | "TEAM";
   filters: ReportsFilters;
+
   workforce: {
     total: number;
     active: number;
@@ -1036,6 +1749,7 @@ export interface ReportsOverview {
     byDepartment: ReportBucket[];
     byEmploymentType: ReportBucket[];
   };
+
   attendance: {
     total: number;
     present: number;
@@ -1045,12 +1759,14 @@ export interface ReportsOverview {
     averageWorkHours: number;
     byStatus: ReportBucket[];
   };
+
   leave: {
     total: number;
     totalDays: number;
     byStatus: ReportBucket[];
     byType: ReportBucket[];
   };
+
   payroll: {
     runs: number;
     totalGross: number;
@@ -1058,8 +1774,14 @@ export interface ReportsOverview {
     totalNet: number;
     totalLop: number;
     payslipCount: number;
-    byRun: { label: string; gross: number; net: number; headcount: number }[];
+    byRun: {
+      label: string;
+      gross: number;
+      net: number;
+      headcount: number;
+    }[];
   };
+
   recruitment: {
     applications: number;
     openRoles: number;
@@ -1069,18 +1791,21 @@ export interface ReportsOverview {
     byStage: ReportBucket[];
     bySource: ReportBucket[];
   } | null;
+
   performance: {
     reviews: number;
     averageRating: number;
     ratingDistribution: ReportBucket[];
     outcomes: ReportBucket[];
   };
+
   tickets: {
     total: number;
     byStatus: ReportBucket[];
     byPriority: ReportBucket[];
     byCategory: ReportBucket[];
   };
+
   documents: {
     total: number;
     verified: number;
@@ -1091,13 +1816,18 @@ export interface ReportsOverview {
 }
 
 export const ReportsApi = {
-  overview: (filters: ReportsFilters = {}) =>
+  overview: (
+    filters: ReportsFilters = {},
+  ) =>
     api
-      .get<ReportsOverview>("/reports/overview", { params: filters })
+      .get<ReportsOverview>(
+        "/reports/overview",
+        { params: filters },
+      )
       .then((r) => r.data),
 };
 
-// --- Dashboard -----------------------------------------------------------------------
+// --- Dashboard ---------------------------------------------------------------
 export interface DashboardOverview {
   kpis: {
     headcount: number;
@@ -1112,20 +1842,58 @@ export interface DashboardOverview {
     attendanceDate: string;
     attendanceIsToday: boolean;
   };
-  headcountByDepartment: { department: string; color: string; count: number }[];
-  headcountTrend: { month: string; headcount: number }[];
-  genderDiversity: { gender: string; count: number }[];
-  employmentType: { type: string; count: number }[];
-  attendanceTrend: { month: string; presentRate: number }[];
-  recruitmentPipeline: { stage: string; count: number }[];
-  costTrend: { month: number; year: number; totalNet: number }[];
+
+  headcountByDepartment: {
+    department: string;
+    color: string;
+    count: number;
+  }[];
+
+  headcountTrend: {
+    month: string;
+    headcount: number;
+  }[];
+
+  genderDiversity: {
+    gender: string;
+    count: number;
+  }[];
+
+  employmentType: {
+    type: string;
+    count: number;
+  }[];
+
+  attendanceTrend: {
+    month: string;
+    presentRate: number;
+  }[];
+
+  recruitmentPipeline: {
+    stage: string;
+    count: number;
+  }[];
+
+  costTrend: {
+    month: number;
+    year: number;
+    totalNet: number;
+  }[];
+
   upcomingBirthdays: any[];
+
   upcomingAnniversaries: any[];
+
   upcomingHolidays: Holiday[];
+
   recentActivity: any[];
 }
 
 export const DashboardApi = {
   overview: () =>
-    api.get<DashboardOverview>("/dashboard/overview").then((r) => r.data),
+    api
+      .get<DashboardOverview>(
+        "/dashboard/overview",
+      )
+      .then((r) => r.data),
 };

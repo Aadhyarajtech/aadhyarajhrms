@@ -20,7 +20,9 @@ export type NotificationType =
   | "SYSTEM"
   | "DOCUMENT_REQUESTED"
   | "DOCUMENT_UPLOADED"
-  | "DOCUMENT_READY";
+  | "DOCUMENT_READY"
+  | "ATTENDANCE_REGULARIZATION_REQUEST"
+  | "ATTENDANCE_REGULARIZATION_DECISION";
 
 /* =========================================================
    API DOCUMENT
@@ -30,6 +32,15 @@ function toApiDoc(doc: any) {
   if (!doc) return undefined;
 
   const { _id, ...rest } = doc;
+
+  // Normalize regularization request notifications.
+  // This also fixes older notifications that were saved
+  // before the Attendance Exceptions deep link was added.
+  if (
+    rest.type === "ATTENDANCE_REGULARIZATION_REQUEST"
+  ) {
+    rest.link = "/app/attendance?tab=exceptions";
+  }
 
   return {
     id: _id,
