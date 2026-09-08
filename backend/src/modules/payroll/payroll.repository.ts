@@ -2,6 +2,7 @@ import {
   SalaryStructure,
   PayrollRun,
   Payslip,
+  Attendance,
   Employee,
   LeaveRequest,
   LeaveType,
@@ -14,6 +15,7 @@ import {
 import { nowIso } from "@/db/connection";
 import { AppError } from "@/utils/errors";
 import { notify } from "@/modules/notifications/notifications.repository";
+import { calculateAnnualTax, type TaxRegime } from "./payroll.tax";
 
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
@@ -33,23 +35,53 @@ export interface SalaryStructureInput {
   conveyance: number;
   medical: number;
   specialAllowance: number;
-  pf: number;
-  professionalTax: number;
-  incomeTax: number;
+  performanceBonus?: number;
+  advanceRecovery?: number;
+  overtimeRate?: number;
+  pf?: number;
+  professionalTax?: number;
+  incomeTax?: number;
+  taxRegime?: TaxRegime;
+  taxYear?: number;
+  taxOtherIncome?: number;
+  taxHraExemption?: number;
+  taxDeduction80C?: number;
+  taxDeduction80D?: number;
+  taxDeduction80CCD1B?: number;
+  taxDeduction80TTA?: number;
+  taxPreviousTds?: number;
 }
 
 export async function upsertSalaryStructure(input: SalaryStructureInput) {
   const now = nowIso();
+  const normalized = {
+    ...input,
+    performanceBonus: Math.max(0, Number(input.performanceBonus ?? 0)),
+    advanceRecovery: Math.max(0, Number(input.advanceRecovery ?? 0)),
+    overtimeRate: Math.max(0, Number(input.overtimeRate ?? 1.5)),
+    pf: 0,
+    professionalTax: Math.max(0, Number(input.professionalTax ?? 0)),
+    incomeTax: 0,
+    taxRegime: input.taxRegime === "OLD" ? "OLD" : "NEW",
+    taxYear: Math.max(2020, Number(input.taxYear ?? 2026)),
+    taxOtherIncome: Math.max(0, Number(input.taxOtherIncome ?? 0)),
+    taxHraExemption: Math.max(0, Number(input.taxHraExemption ?? 0)),
+    taxDeduction80C: Math.max(0, Number(input.taxDeduction80C ?? 0)),
+    taxDeduction80D: Math.max(0, Number(input.taxDeduction80D ?? 0)),
+    taxDeduction80CCD1B: Math.max(0, Number(input.taxDeduction80CCD1B ?? 0)),
+    taxDeduction80TTA: Math.max(0, Number(input.taxDeduction80TTA ?? 0)),
+    taxPreviousTds: Math.max(0, Number(input.taxPreviousTds ?? 0)),
+  };
   const existing = await SalaryStructure.findOne({
     employeeId: input.employeeId,
   }).lean();
   if (existing) {
     await SalaryStructure.updateOne(
       { employeeId: input.employeeId },
-      { $set: { ...input, effectiveFrom: now } },
+      { $set: { ...normalized, effectiveFrom: now } },
     );
   } else {
-    await SalaryStructure.create({ ...input, effectiveFrom: now });
+    await SalaryStructure.create({ ...normalized, effectiveFrom: now });
   }
   return getSalaryStructure(input.employeeId);
 }
@@ -68,10 +100,80 @@ function daysInMonth(month: number, year: number): number {
   return new Date(year, month, 0).getDate();
 }
 
-/** Processes payroll for every active employee with a salary structure. Idempotent per (month, year). */
+function roundMoney(value: number): number {
+  return Math.round(Math.max(0, value) * 100) / 100;
+}
+
+function monthPrefix(month: number, year: number) {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+export async function lockAttendanceForPayroll(month: number, year: number) {
+  let run = await PayrollRun.findOne({ month, year }).lean();
+  const now = nowIso();
+  if (run && run.status !== "DRAFT") {
+    if (run.status === "ATTENDANCE_LOCKED") return getPayrollRun(run._id);
+    throw AppError.badRequest(
+      "This payroll period has already moved past attendance lock.",
+    );
+  }
+  if (!run) {
+    run = await PayrollRun.create({
+      month,
+      year,
+      status: "ATTENDANCE_LOCKED",
+      attendanceLockedAt: now,
+    });
+  } else {
+    await PayrollRun.updateOne(
+      { _id: run._id },
+      { $set: { status: "ATTENDANCE_LOCKED", attendanceLockedAt: now } },
+    );
+  }
+  return getPayrollRun(run._id);
+}
+
+function calculateProfessionalTax(
+  state: string | null | undefined,
+  grossMonthly: number,
+): number {
+  const normalizedState = String(state ?? "")
+    .trim()
+    .toLowerCase();
+  // Common monthly slabs used for the states currently represented by the HRMS employee profile.
+  if (["telangana", "andhra pradesh"].includes(normalizedState)) {
+    if (grossMonthly <= 15000) return 0;
+    if (grossMonthly <= 20000) return 150;
+    return 200;
+  }
+  if (normalizedState === "karnataka") {
+    return grossMonthly > 15000 ? 200 : 0;
+  }
+  if (normalizedState === "maharashtra") {
+    return grossMonthly <= 7500 ? 0 : grossMonthly <= 10000 ? 175 : 200;
+  }
+  // If the employee's state has no configured slab, preserve an explicitly
+  // configured PT amount rather than inventing a state rule.
+  return -1;
+}
+
+/** Processes payroll after attendance is locked. PF and ESI are automatic; TDS remains a declared monthly amount until tax declarations are available. */
 export async function processPayrollRun(month: number, year: number) {
-  const existing = await PayrollRun.findOne({ month, year }).lean();
-  if (existing) return getPayrollRun(existing._id);
+  let run = await PayrollRun.findOne({ month, year }).lean();
+  if (
+    run?.status === "PAID" ||
+    run?.status === "APPROVED" ||
+    run?.status === "HR_REVIEW"
+  )
+    return getPayrollRun(run._id);
+  if (!run || run.status === "DRAFT") {
+    await lockAttendanceForPayroll(month, year);
+    run = await PayrollRun.findOne({ month, year }).lean();
+  }
+  if (!run || run.status !== "ATTENDANCE_LOCKED")
+    throw AppError.badRequest(
+      "Attendance must be locked before payroll processing.",
+    );
 
   const totalDaysInMonth = daysInMonth(month, year);
   const employees = await Employee.find({
@@ -82,62 +184,147 @@ export async function processPayrollRun(month: number, year: number) {
     employeeId: { $in: employeeIds },
   }).lean();
   const structureMap = new Map(structures.map((s) => [s.employeeId, s]));
+  const unpaidLeaveTypes = await LeaveType.find({ isPaid: false })
+    .select("_id")
+    .lean();
+  const unpaidLeaveTypeIds = unpaidLeaveTypes.map((t) => t._id);
+  const prefix = monthPrefix(month, year);
+  const attendanceRows = await Attendance.find({
+    employeeId: { $in: employeeIds },
+    date: { $regex: `^${prefix}-` },
+  }).lean();
+  const attendanceMap = new Map<string, typeof attendanceRows>();
+  for (const row of attendanceRows) {
+    const list = attendanceMap.get(row.employeeId) ?? [];
+    list.push(row);
+    attendanceMap.set(row.employeeId, list);
+  }
 
-  const run = await PayrollRun.create({
-    month,
-    year,
-    status: "PROCESSED",
-    totalGross: 0,
-    totalDeductions: 0,
-    totalNet: 0,
-    headcount: 0,
-  });
-
-  let totalGross = 0;
-  let totalDeductions = 0;
-  let totalNet = 0;
-  let headcount = 0;
-  const pattern = `${year}-${String(month).padStart(2, "0")}`;
+  await Payslip.deleteMany({ payrollRunId: run._id });
+  let totalGross = 0,
+    totalDeductions = 0,
+    totalNet = 0,
+    headcount = 0;
 
   for (const emp of employees) {
     const structure = structureMap.get(emp._id);
     if (!structure) continue;
-    headcount += 1;
-
-    const unpaidLeaveTypes = await LeaveType.find({ isPaid: false })
-      .select("_id")
-      .lean();
-    const unpaidLeaveTypeIds = unpaidLeaveTypes.map((t) => t._id);
+    headcount++;
     const unpaidRequests = await LeaveRequest.find({
       employeeId: emp._id,
       status: "APPROVED",
       leaveTypeId: { $in: unpaidLeaveTypeIds },
       $or: [
-        { startDate: { $regex: `^${pattern}` } },
-        { endDate: { $regex: `^${pattern}` } },
+        { startDate: { $regex: `^${prefix}` } },
+        { endDate: { $regex: `^${prefix}` } },
       ],
     }).lean();
-    const unpaidDays = unpaidRequests.reduce((sum, r) => sum + r.totalDays, 0);
+    const leaveLopDays = unpaidRequests.reduce(
+      (sum, r) => sum + r.totalDays,
+      0,
+    );
+    const attendance = attendanceMap.get(emp._id) ?? [];
+    const absentDays = attendance.filter((a) => a.status === "ABSENT").length;
+    const halfDays = attendance.filter((a) => a.status === "HALF_DAY").length;
+    const attendanceLopDays = absentDays + halfDays * 0.5;
+    const lopDays = Math.max(leaveLopDays, attendanceLopDays);
 
-    const daysPayable = Math.max(totalDaysInMonth - unpaidDays, 0);
-    const perDayGross =
-      (structure.basic +
-        structure.hra +
-        structure.conveyance +
-        structure.medical +
-        structure.specialAllowance) /
-      totalDaysInMonth;
-    const lop = Math.round(perDayGross * unpaidDays * 100) / 100;
-
-    const grossEarnings =
+    const fixedGross =
       structure.basic +
       structure.hra +
       structure.conveyance +
       structure.medical +
       structure.specialAllowance;
-    const deductions =
-      structure.pf + structure.professionalTax + structure.incomeTax + lop;
-    const netPay = Math.round((grossEarnings - deductions) * 100) / 100;
+    const performanceBonus = roundMoney(structure.performanceBonus ?? 0);
+    const overtimeHours = roundMoney(
+      attendance.reduce((sum, a) => sum + Math.max(0, a.overtimeHours || 0), 0),
+    );
+    const overtimeRate = Math.max(0, Number(structure.overtimeRate ?? 1.5));
+    const hourlyBasic = structure.basic / Math.max(totalDaysInMonth, 1) / 8;
+    const overtimeAmount = roundMoney(
+      overtimeHours * hourlyBasic * overtimeRate,
+    );
+    const grossEarnings = roundMoney(
+      fixedGross + performanceBonus + overtimeAmount,
+    );
+    const lop = roundMoney(
+      (fixedGross / Math.max(totalDaysInMonth, 1)) * lopDays,
+    );
+
+    const pf = roundMoney(structure.basic * 0.12);
+    const automaticProfessionalTax = calculateProfessionalTax(
+      emp.state,
+      grossEarnings,
+    );
+    const professionalTax = roundMoney(
+      automaticProfessionalTax >= 0
+        ? automaticProfessionalTax
+        : Number(structure.professionalTax ?? 0),
+    );
+    const monthlyTaxableSalaryBase = roundMoney(
+      fixedGross + performanceBonus + overtimeAmount,
+    );
+    const taxYear = Number(structure.taxYear ?? (month >= 4 ? year : year - 1));
+    const taxRegime = structure.taxRegime === "OLD" ? "OLD" : "NEW";
+    const tax = calculateAnnualTax({
+      taxYear,
+      regime: taxRegime,
+      dateOfBirth: emp.dateOfBirth,
+      monthlySalaryIncome: monthlyTaxableSalaryBase,
+      declarations: {
+        otherIncome: structure.taxOtherIncome,
+        hraExemption: Math.min(
+          Number(structure.taxHraExemption ?? 0),
+          Math.max(0, Number(structure.hra ?? 0)) * 12,
+        ),
+        deduction80C: structure.taxDeduction80C,
+        deduction80D: structure.taxDeduction80D,
+        deduction80CCD1B: structure.taxDeduction80CCD1B,
+        deduction80TTA: structure.taxDeduction80TTA,
+      },
+    });
+    const fyStartMonth = 4;
+    const monthsElapsed =
+      month >= fyStartMonth ? month - fyStartMonth : month + 12 - fyStartMonth;
+    const monthsRemaining = Math.max(1, 12 - monthsElapsed);
+    const priorRunQuery =
+      month >= 4
+        ? { year: taxYear, month: { $gte: 4, $lt: month } }
+        : {
+            $or: [
+              { year: taxYear, month: { $gte: 4 } },
+              { year: taxYear + 1, month: { $lt: month } },
+            ],
+          };
+    const priorRunRows = await PayrollRun.find({
+      _id: { $ne: run._id },
+      ...priorRunQuery,
+    })
+      .select("_id")
+      .lean();
+    const priorRunIds = priorRunRows.map((r) => r._id);
+    const previousPayslips = priorRunIds.length
+      ? await Payslip.find({
+          employeeId: emp._id,
+          payrollRunId: { $in: priorRunIds },
+        }).lean()
+      : [];
+    const previousTdsInTaxYear = previousPayslips
+      .filter((p) => p.taxYear === taxYear)
+      .reduce((sum, p) => sum + Number(p.incomeTax || 0), 0);
+    const priorDeclaredTds = Math.max(0, Number(structure.taxPreviousTds ?? 0));
+    const annualTaxRemaining = Math.max(
+      0,
+      tax.annualTax - previousTdsInTaxYear - priorDeclaredTds,
+    );
+    const incomeTax = roundMoney(annualTaxRemaining / monthsRemaining);
+    const esi = roundMoney(grossEarnings * 0.0075);
+    const advanceRecovery = roundMoney(structure.advanceRecovery ?? 0);
+    const deductions = roundMoney(
+      pf + professionalTax + incomeTax + esi + lop + advanceRecovery,
+    );
+    const netPay = roundMoney(grossEarnings - deductions);
+    const daysPayable = Math.max(totalDaysInMonth - lopDays, 0);
 
     await Payslip.create({
       payrollRunId: run._id,
@@ -147,17 +334,25 @@ export async function processPayrollRun(month: number, year: number) {
       conveyance: structure.conveyance,
       medical: structure.medical,
       specialAllowance: structure.specialAllowance,
+      performanceBonus,
+      overtimeHours,
+      overtimeAmount,
       grossEarnings,
-      pf: structure.pf,
-      professionalTax: structure.professionalTax,
-      incomeTax: structure.incomeTax,
+      pf,
+      professionalTax,
+      incomeTax,
+      taxRegime,
+      taxYear,
+      taxableIncome: tax.taxableIncome,
+      annualTax: tax.annualTax,
+      esi,
       lop,
+      advanceRecovery,
       totalDeductions: deductions,
       netPay,
       daysPayable,
       daysInMonth: totalDaysInMonth,
     });
-
     totalGross += grossEarnings;
     totalDeductions += deductions;
     totalNet += netPay;
@@ -167,30 +362,120 @@ export async function processPayrollRun(month: number, year: number) {
     { _id: run._id },
     {
       $set: {
-        totalGross,
-        totalDeductions,
-        totalNet,
+        status: "PROCESSED",
+        totalGross: roundMoney(totalGross),
+        totalDeductions: roundMoney(totalDeductions),
+        totalNet: roundMoney(totalNet),
         headcount,
         processedAt: nowIso(),
       },
     },
   );
-
   return getPayrollRun(run._id);
 }
 
-export async function markRunPaid(id: string) {
+export async function submitPayrollForReview(id: string, userId: string) {
+  const run = await PayrollRun.findById(id).lean();
+  if (!run) throw AppError.notFound("Payroll run not found.");
+  if (run.status !== "PROCESSED")
+    throw AppError.badRequest(
+      "Only processed payroll can be submitted for HR review.",
+    );
   await PayrollRun.updateOne(
     { _id: id },
-    { $set: { status: "PAID", processedAt: nowIso() } },
+    {
+      $set: {
+        status: "HR_REVIEW",
+        reviewedAt: nowIso(),
+        reviewedByUserId: userId,
+      },
+    },
   );
   return getPayrollRun(id);
 }
 
+export async function approvePayrollRun(id: string, userId: string) {
+  const run = await PayrollRun.findById(id).lean();
+  if (!run) throw AppError.notFound("Payroll run not found.");
+  if (run.status !== "HR_REVIEW")
+    throw AppError.badRequest("Payroll must be in HR review before approval.");
+  await PayrollRun.updateOne(
+    { _id: id },
+    {
+      $set: {
+        status: "APPROVED",
+        approvedAt: nowIso(),
+        approvedByUserId: userId,
+      },
+    },
+  );
+  return getPayrollRun(id);
+}
+
+export async function markRunPaid(id: string, userId?: string) {
+  const run = await PayrollRun.findById(id).lean();
+  if (!run) throw AppError.notFound("Payroll run not found.");
+  if (run.status !== "APPROVED")
+    throw AppError.badRequest(
+      "Payroll must be approved before it can be marked paid.",
+    );
+  await PayrollRun.updateOne(
+    { _id: id },
+    {
+      $set: { status: "PAID", paidAt: nowIso(), paidByUserId: userId ?? null },
+    },
+  );
+  return getPayrollRun(id);
+}
+
+export async function sendPayslipsForRun(id: string, userId: string) {
+  const run = await PayrollRun.findById(id).lean();
+  if (!run) throw AppError.notFound("Payroll run not found.");
+  if (run.status !== "PAID")
+    throw AppError.badRequest(
+      "Payroll must be marked paid before payslips can be sent.",
+    );
+
+  const payslips = await Payslip.find({ payrollRunId: id }).lean();
+  if (!payslips.length)
+    throw AppError.badRequest("No payslips exist for this payroll run.");
+
+  const employees = await Employee.find({
+    _id: { $in: payslips.map((p) => p.employeeId) },
+  }).lean();
+  const employeeMap = new Map(employees.map((e) => [e._id, e]));
+  const sentAt = nowIso();
+
+  await Promise.all(
+    payslips.map(async (payslip) => {
+      const employee = employeeMap.get(payslip.employeeId);
+      if (!employee) return;
+      await notify({
+        userId: employee.userId,
+        type: "PAYROLL",
+        title: "Payslip Available",
+        message: `Your ${monthNameForNotification(run.month)} ${run.year} payslip is now available.`,
+        link: "/payroll",
+      });
+    }),
+  );
+
+  await PayrollRun.updateOne(
+    { _id: id },
+    { $set: { payslipsSentAt: sentAt, payslipsSentByUserId: userId } },
+  );
+  return getPayrollRun(id);
+}
+
+function monthNameForNotification(month: number) {
+  return new Date(2000, month - 1, 1).toLocaleString("en-IN", {
+    month: "long",
+  });
+}
+
 export async function listPayslipsForRun(runId: string) {
   const rows = await Payslip.find({ payrollRunId: runId }).lean();
-  if (rows.length === 0) return [];
-
+  if (!rows.length) return [];
   const employeeIds = [...new Set(rows.map((r) => r.employeeId))];
   const employees = await Employee.find({ _id: { $in: employeeIds } }).lean();
   const empMap = new Map(employees.map((e) => [e._id, e]));
@@ -199,7 +484,6 @@ export async function listPayslipsForRun(runId: string) {
     _id: { $in: departmentIds },
   }).lean();
   const deptMap = new Map(departments.map((d) => [d._id, d]));
-
   return rows
     .map((r) => {
       const emp = empMap.get(r.employeeId);
@@ -218,13 +502,18 @@ export async function listPayslipsForRun(runId: string) {
 }
 
 export async function listPayslipsForEmployee(employeeId: string) {
-  const rows = await Payslip.find({ employeeId }).lean();
-  if (rows.length === 0) return [];
-
+  const paidRuns = await PayrollRun.find({ status: "PAID" })
+    .select("_id")
+    .lean();
+  const paidRunIds = paidRuns.map((r) => r._id);
+  const rows = await Payslip.find({
+    employeeId,
+    payrollRunId: { $in: paidRunIds },
+  }).lean();
+  if (!rows.length) return [];
   const runIds = [...new Set(rows.map((r) => r.payrollRunId))];
   const runs = await PayrollRun.find({ _id: { $in: runIds } }).lean();
   const runMap = new Map(runs.map((r) => [r._id, r]));
-
   return rows
     .map((r) => {
       const run = runMap.get(r.payrollRunId);
@@ -253,7 +542,6 @@ export async function getPayslip(id: string) {
     employee ? Designation.findById(employee.designationId).lean() : null,
     employee ? Department.findById(employee.departmentId).lean() : null,
   ]);
-
   return {
     id: row._id,
     ...row,
@@ -277,22 +565,16 @@ export async function getCostTrend(months = 6) {
   return rows.reverse().map(toApiDoc);
 }
 
-// ---------------------------------------------------------------------------
-// Payslip requests
-// ---------------------------------------------------------------------------
-
 const PAYSLIP_REQUEST_PERIOD_MONTHS: Record<PayslipRequestPeriod, number> = {
   "3_MONTHS": 3,
   "6_MONTHS": 6,
   "12_MONTHS": 12,
 };
-
 const PAYSLIP_REQUEST_PERIOD_LABELS: Record<PayslipRequestPeriod, string> = {
   "3_MONTHS": "the last 3 months",
   "6_MONTHS": "the last 6 months",
   "12_MONTHS": "the last 1 year",
 };
-
 function withEmployeeInfo<T extends { employeeId: string }>(row: T, emp: any) {
   return {
     ...row,
@@ -301,17 +583,15 @@ function withEmployeeInfo<T extends { employeeId: string }>(row: T, emp: any) {
     employeeCode: emp?.employeeCode ?? null,
   };
 }
-
-/** Determines the latest N available payslips for an employee's requested period, newest first. */
 async function resolvePeriodPayslips(
   employeeId: string,
   period: PayslipRequestPeriod,
 ) {
-  const count = PAYSLIP_REQUEST_PERIOD_MONTHS[period];
-  const all = await listPayslipsForEmployee(employeeId);
-  return all.slice(0, count);
+  return (await listPayslipsForEmployee(employeeId)).slice(
+    0,
+    PAYSLIP_REQUEST_PERIOD_MONTHS[period],
+  );
 }
-
 export async function createPayslipRequest(
   employeeId: string,
   requestedByUserId: string,
@@ -324,7 +604,6 @@ export async function createPayslipRequest(
   }).lean();
   if (existing)
     throw AppError.badRequest("A similar payslip request is already pending.");
-
   const now = nowIso();
   const doc = await PayslipRequest.create({
     employeeId,
@@ -336,7 +615,6 @@ export async function createPayslipRequest(
     requestedAt: now,
     completedAt: null,
   });
-
   const employee = await Employee.findById(employeeId).lean();
   const employeeName = employee
     ? `${employee.firstName} ${employee.lastName}`
@@ -358,89 +636,67 @@ export async function createPayslipRequest(
       }),
     ),
   );
-
   return getPayslipRequest(doc._id);
 }
-
 export async function listMyPayslipRequests(employeeId: string) {
   const rows = await PayslipRequest.find({ employeeId })
     .sort({ requestedAt: -1 })
     .lean();
   return rows.map(toApiDoc);
 }
-
 export async function listPayslipRequests() {
   const rows = await PayslipRequest.find({}).sort({ requestedAt: -1 }).lean();
-  if (rows.length === 0) return [];
-
-  const employeeIds = [...new Set(rows.map((r) => r.employeeId))];
-  const employees = await Employee.find({ _id: { $in: employeeIds } }).lean();
-  const empMap = new Map(employees.map((e) => [e._id, e]));
-
-  return rows.map((r) =>
-    withEmployeeInfo(toApiDoc(r)!, empMap.get(r.employeeId)),
-  );
+  if (!rows.length) return [];
+  const ids = [...new Set(rows.map((r) => r.employeeId))];
+  const emps = await Employee.find({ _id: { $in: ids } }).lean();
+  const map = new Map(emps.map((e) => [e._id, e]));
+  return rows.map((r) => withEmployeeInfo(toApiDoc(r)!, map.get(r.employeeId)));
 }
-
 export async function getPayslipRequest(id: string) {
   const row = await PayslipRequest.findById(id).lean();
   if (!row) return undefined;
-
   const employee = await Employee.findById(row.employeeId).lean();
-  const allPayslips = await listPayslipsForEmployee(row.employeeId);
-  const availablePayslips =
+  const all = await listPayslipsForEmployee(row.employeeId);
+  const available =
     row.status === "PENDING"
-      ? allPayslips.slice(
+      ? all.slice(
           0,
           PAYSLIP_REQUEST_PERIOD_MONTHS[row.period as PayslipRequestPeriod],
         )
-      : allPayslips.filter((p) => row.payslipIds.includes(p.id));
-
+      : all.filter((p) => row.payslipIds.includes(p.id));
   return {
     ...withEmployeeInfo(toApiDoc(row)!, employee),
-    availablePayslips,
+    availablePayslips: available,
   };
 }
-
-/** HR/Admin fulfils a pending request: resolves the employee's latest available payslips for the period and marks the request SENT. */
 export async function sendPayslipRequest(id: string, adminUserId: string) {
   const request = await PayslipRequest.findById(id).lean();
   if (!request) throw AppError.notFound("Payslip request not found.");
   if (request.status !== "PENDING")
     throw AppError.badRequest("Request has already been processed.");
-
   const employee = await Employee.findById(request.employeeId).lean();
   if (!employee) throw AppError.notFound("Employee not found.");
-
   const payslips = await resolvePeriodPayslips(
     request.employeeId,
     request.period as PayslipRequestPeriod,
   );
-  if (payslips.length === 0)
+  if (!payslips.length)
     throw AppError.badRequest("No payslips are available for this employee.");
-
-  // Defense in depth: every resolved payslip must belong to the requesting employee.
-  const ownedPayslips = payslips.filter(
-    (p) => p.employeeId === request.employeeId,
-  );
-  if (ownedPayslips.length !== payslips.length) {
+  const owned = payslips.filter((p) => p.employeeId === request.employeeId);
+  if (owned.length !== payslips.length)
     throw AppError.badRequest("Payslip does not belong to this employee.");
-  }
-  const payslipIds = ownedPayslips.map((p) => p.id);
-
   const now = nowIso();
   await PayslipRequest.updateOne(
     { _id: id },
     {
       $set: {
         status: "SENT",
-        payslipIds,
+        payslipIds: owned.map((p) => p.id),
         processedByUserId: adminUserId,
         completedAt: now,
       },
     },
   );
-
   await notify({
     userId: employee.userId,
     type: "PAYROLL",
@@ -448,6 +704,5 @@ export async function sendPayslipRequest(id: string, adminUserId: string) {
     message: "Your requested payslips are now available.",
     link: "/payroll",
   });
-
   return getPayslipRequest(id);
 }

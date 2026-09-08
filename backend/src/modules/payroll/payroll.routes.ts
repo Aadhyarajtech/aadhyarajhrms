@@ -31,9 +31,21 @@ const structureSchema = z.object({
   conveyance: z.number().min(0),
   medical: z.number().min(0),
   specialAllowance: z.number().min(0),
-  pf: z.number().min(0),
-  professionalTax: z.number().min(0),
-  incomeTax: z.number().min(0),
+  performanceBonus: z.number().min(0).optional(),
+  advanceRecovery: z.number().min(0).optional(),
+  overtimeRate: z.number().min(0).optional(),
+  pf: z.number().min(0).optional(),
+  professionalTax: z.number().min(0).optional(),
+  incomeTax: z.number().min(0).optional(),
+  taxRegime: z.enum(["NEW", "OLD"]).optional(),
+  taxYear: z.number().int().min(2020).optional(),
+  taxOtherIncome: z.number().min(0).optional(),
+  taxHraExemption: z.number().min(0).optional(),
+  taxDeduction80C: z.number().min(0).optional(),
+  taxDeduction80D: z.number().min(0).optional(),
+  taxDeduction80CCD1B: z.number().min(0).optional(),
+  taxDeduction80TTA: z.number().min(0).optional(),
+  taxPreviousTds: z.number().min(0).optional(),
 });
 
 payrollRouter.put(
@@ -62,16 +74,57 @@ const processSchema = z.object({
   year: z.number().int().min(2020),
 });
 payrollRouter.post(
+  "/runs/lock-attendance",
+  isAdminOrFinance,
+  validate(processSchema),
+  async (req, res, next) => {
+    try {
+      res.status(201).json({
+        run: await repo.lockAttendanceForPayroll(req.body.month, req.body.year),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
   "/runs/process",
   isAdminOrFinance,
   validate(processSchema),
   async (req, res, next) => {
     try {
-      res
-        .status(201)
-        .json({
-          run: await repo.processPayrollRun(req.body.month, req.body.year),
-        });
+      res.status(201).json({
+        run: await repo.processPayrollRun(req.body.month, req.body.year),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
+  "/runs/:id/submit-review",
+  isAdminOrFinance,
+  async (req, res, next) => {
+    try {
+      res.json({
+        run: await repo.submitPayrollForReview(req.params.id, req.user!.userId),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
+  "/runs/:id/approve",
+  isAdminOrFinance,
+  async (req, res, next) => {
+    try {
+      res.json({
+        run: await repo.approvePayrollRun(req.params.id, req.user!.userId),
+      });
     } catch (err) {
       next(err);
     }
@@ -83,7 +136,23 @@ payrollRouter.post(
   isAdminOrFinance,
   async (req, res, next) => {
     try {
-      res.json({ run: await repo.markRunPaid(req.params.id) });
+      res.json({
+        run: await repo.markRunPaid(req.params.id, req.user!.userId),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
+  "/runs/:id/send-payslips",
+  isAdminOrFinance,
+  async (req, res, next) => {
+    try {
+      res.json({
+        run: await repo.sendPayslipsForRun(req.params.id, req.user!.userId),
+      });
     } catch (err) {
       next(err);
     }
@@ -135,6 +204,8 @@ payrollRouter.get("/payslips/:id", async (req, res, next) => {
     const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
       req.user!.role,
     );
+    if (isOwner && payslip.runStatus !== "PAID" && !isPrivileged)
+      throw AppError.forbidden();
     if (!isOwner && !isPrivileged) throw AppError.forbidden();
     res.json({ payslip });
   } catch (err) {

@@ -4,6 +4,7 @@ import { env } from "@/config/env";
 import { logger } from "@/utils/logger";
 import { startEmployeeLifecycleJobs } from "./jobs/employeeLifecycle.job";
 import { startAnnouncementScheduler } from "@/modules/announcements/announcement.scheduler";
+import { startAttendanceJobs } from "@/modules/attendance/attendance.job";
 
 async function start() {
   /* -------------------------------------------------------
@@ -18,6 +19,7 @@ async function start() {
 
   startEmployeeLifecycleJobs();
   startAnnouncementScheduler();
+  startAttendanceJobs();
 
   /* -------------------------------------------------------
      EXPRESS APP

@@ -200,30 +200,87 @@ export const Designation = model<DesignationDoc>(
 // ===========================================================================
 
 export interface EmployeeEducation {
-  degree?: string;
+  qualification?: string;
   institution?: string;
+  specialization?: string | null;
+  startYear?: number | null;
+  endYear?: number | null;
+  grade?: string | null;
+  // Canonical aliases retained for compatibility with existing records.
+  degree?: string;
   fieldOfStudy?: string;
   startDate?: string;
   endDate?: string;
-  grade?: string;
   description?: string;
 }
 
 export interface EmployeeCertification {
   name?: string;
-  issuingOrganization?: string;
-  issueDate?: string;
+  issuingOrganization?: string | null;
+  issueDate?: string | null;
   expiryDate?: string | null;
-  credentialId?: string;
-  credentialUrl?: string;
+  credentialId?: string | null;
+  credentialUrl?: string | null;
 }
 
 export interface EmployeeWorkHistory {
+  companyName?: string;
+  designation?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  responsibilities?: string | null;
+  // Canonical aliases retained for compatibility with existing records.
   company?: string;
   position?: string;
-  startDate?: string;
-  endDate?: string | null;
   description?: string;
+}
+
+export type EmployeeSkillCompetency =
+  | "BEGINNER"
+  | "INTERMEDIATE"
+  | "ADVANCED"
+  | "EXPERT";
+
+export interface EmployeeSkill {
+  name: string;
+  category: string | null;
+  competencyLevel: EmployeeSkillCompetency;
+}
+
+export interface EmployeeEmergencyContact {
+  name: string | null;
+  phone: string | null;
+  relationship: string | null;
+  email: string | null;
+}
+
+export interface EmployeeOnboardingStage {
+  stage: number;
+  name: string;
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
+  completedAt: string | null;
+  completedBy: string | null;
+  remarks: string | null;
+}
+
+export interface EmployeeOnboarding {
+  currentStage: number;
+  status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+  stages: EmployeeOnboardingStage[];
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface EmployeeSensitiveChangeRequest {
+  _id: string;
+  fields: string[];
+  changes: Record<string, unknown>;
+  requestedBy: string;
+  requestedAt: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewComment: string | null;
 }
 
 export interface EmployeeOffboardingItem {
@@ -244,6 +301,7 @@ export interface EmployeeDoc {
   lastName: string;
 
   avatarUrl: string | null;
+  signature: string | null;
   gender: string | null;
   maritalStatus: string | null;
   dateOfBirth: string | null;
@@ -255,80 +313,95 @@ export interface EmployeeDoc {
   city: string | null;
   state: string | null;
   country: string;
+  workLocation: string | null;
+  grade: string | null;
 
   departmentId: string;
   designationId: string;
   managerId: string | null;
+  shiftId: string | null;
 
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
 
- status:
-  | "ONBOARDING"
-  | "ACTIVE"
-  | "ON_LEAVE"
-  | "NOTICE_PERIOD"
-  | "TERMINATED"
-  | "RESIGNED"
-  | "INACTIVE";
+  status:
+    | "ONBOARDING"
+    | "ACTIVE"
+    | "ON_PROBATION"
+    | "ON_LEAVE"
+    | "NOTICE_PERIOD"
+    | "TERMINATED"
+    | "RESIGNED"
+    | "INACTIVE"
+    | "ON_HOLD";
 
   dateOfJoining: string;
   dateOfExit: string | null;
+
+  probationPeriodMonths: number | null;
+  probationStartDate: string | null;
+  probationEndDate: string | null;
+  probationReminderSentAt: string | null;
+  probationExtensionDetails: {
+    extensionDays: number;
+    extendedFrom: string | null;
+    extendedTo: string;
+    remarks: string | null;
+    extendedAt: string;
+  } | null;
+
+  noticeStartDate: string | null;
+  lastWorkingDate: string | null;
+  noticeDays: number | null;
+
+  resignationDetails: {
+    resignationDate: string;
+    resignationReason: string;
+    employeeRemarks: string | null;
+    hrRemarks: string | null;
+  } | null;
+
+  terminationDetails: {
+    terminationDate: string;
+    terminationReason: string;
+    employeeRemarks: string | null;
+    hrRemarks: string | null;
+  } | null;
 
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   emergencyContactRelationship: string | null;
   emergencyContactEmail: string | null;
+  emergencyContacts: EmployeeEmergencyContact[];
+
+  medicalConditions: string | null;
+  bloodGroup: string | null;
+  insurancePolicyNumber: string | null;
 
   employeeAadhaar: string | null;
   employeePan: string | null;
+  employeeTan: string | null;
+  bankAccountNumber: string | null;
+  bankIfscCode: string | null;
+  bankBranch: string | null;
+  investmentDeclarations: Record<string, unknown>;
 
-  // Lifecycle / probation
-  probationStartDate: string | null;
-  probationEndDate: string | null;
-  probationReminderSentAt: string | null;
-  probationExtensionDetails: {
-  extensionDays: number;
-  extendedFrom: string | null;
-  extendedTo: string;
-  remarks: string | null;
-  extendedAt: string;
-} | null;
-
-  // Notice period
-noticeStartDate: string | null;
-lastWorkingDate: string | null;
-noticeDays: number | null;
-
-resignationDetails: {
-  resignationDate: string;
-  resignationReason: string;
-  employeeRemarks: string | null;
-  hrRemarks: string | null;
-} | null;
-
-terminationDetails: {
-  terminationDate: string;
-  terminationReason: string;
-  employeeRemarks: string | null;
-  hrRemarks: string | null;
-} | null;
-
-  // Employee profile
   education: EmployeeEducation[];
   certifications: EmployeeCertification[];
   workHistory: EmployeeWorkHistory[];
-  skills: string[];
+  skills: EmployeeSkill[];
 
-  // Archive / offboarding
+  onboarding: EmployeeOnboarding;
+  sensitiveChangeRequests: EmployeeSensitiveChangeRequest[];
+
   isArchived: boolean;
   archivedAt: string | null;
   offboardingChecklist: {
-  assetReturn: boolean;
-  accessRevoked: boolean;
-  exitInterview: boolean;
-  finalSettlement: boolean;
-  completedAt: string | null;
-} | null;
+    assetReturn: boolean;
+    accessRevoked: boolean;
+    exitInterview: boolean;
+    finalSettlement: boolean;
+    completedAt: string | null;
+  } | null;
 
   createdAt: string;
   updatedAt: string;
@@ -336,224 +409,181 @@ terminationDetails: {
 
 const employeeEducationSchema = new Schema<EmployeeEducation>(
   {
-    degree: {
-      type: String,
-    },
-
-    institution: {
-      type: String,
-    },
-
-    fieldOfStudy: {
-      type: String,
-    },
-
-    startDate: {
-      type: String,
-    },
-
-    endDate: {
-      type: String,
-    },
-
-    grade: {
-      type: String,
-    },
-
-    description: {
-      type: String,
-    },
+    qualification: { type: String, default: undefined },
+    institution: { type: String, default: undefined },
+    specialization: { type: String, default: null },
+    startYear: { type: Number, default: null },
+    endYear: { type: Number, default: null },
+    grade: { type: String, default: null },
+    degree: { type: String, default: undefined },
+    fieldOfStudy: { type: String, default: undefined },
+    startDate: { type: String, default: undefined },
+    endDate: { type: String, default: undefined },
+    description: { type: String, default: undefined },
   },
-  {
-    _id: false,
-  },
+  { _id: false },
 );
 
 const employeeCertificationSchema = new Schema<EmployeeCertification>(
   {
-    name: {
-      type: String,
-    },
-
-    issuingOrganization: {
-      type: String,
-    },
-
-    issueDate: {
-      type: String,
-    },
-
-    expiryDate: {
-      type: String,
-      default: null,
-    },
-
-    credentialId: {
-      type: String,
-    },
-
-    credentialUrl: {
-      type: String,
-    },
+    name: { type: String, default: undefined },
+    issuingOrganization: { type: String, default: null },
+    issueDate: { type: String, default: null },
+    expiryDate: { type: String, default: null },
+    credentialId: { type: String, default: null },
+    credentialUrl: { type: String, default: null },
   },
-  {
-    _id: false,
-  },
+  { _id: false },
 );
 
 const employeeWorkHistorySchema = new Schema<EmployeeWorkHistory>(
   {
-    company: {
-      type: String,
-    },
-
-    position: {
-      type: String,
-    },
-
-    startDate: {
-      type: String,
-    },
-
-    endDate: {
-      type: String,
-      default: null,
-    },
-
-    description: {
-      type: String,
-    },
+    companyName: { type: String, default: undefined },
+    designation: { type: String, default: null },
+    startDate: { type: String, default: null },
+    endDate: { type: String, default: null },
+    responsibilities: { type: String, default: null },
+    company: { type: String, default: undefined },
+    position: { type: String, default: undefined },
+    description: { type: String, default: undefined },
   },
-  {
-    _id: false,
-  },
+  { _id: false },
 );
+
+const employeeSkillSchema = new Schema<EmployeeSkill>(
+  {
+    name: { type: String, required: true, trim: true },
+    category: { type: String, default: null, trim: true },
+    competencyLevel: {
+      type: String,
+      enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"],
+      default: "BEGINNER",
+    },
+  },
+  { _id: false },
+);
+
+const employeeEmergencyContactSchema = new Schema<EmployeeEmergencyContact>(
+  {
+    name: { type: String, default: null },
+    phone: { type: String, default: null },
+    relationship: { type: String, default: null },
+    email: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const employeeOnboardingStageSchema = new Schema<EmployeeOnboardingStage>(
+  {
+    stage: { type: Number, required: true, min: 1, max: 8 },
+    name: { type: String, required: true, trim: true },
+    status: {
+      type: String,
+      enum: ["PENDING", "IN_PROGRESS", "COMPLETED"],
+      default: "PENDING",
+    },
+    completedAt: { type: String, default: null },
+    completedBy: { type: String, default: null },
+    remarks: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const employeeOnboardingSchema = new Schema<EmployeeOnboarding>(
+  {
+    currentStage: { type: Number, min: 1, max: 8, default: 1 },
+    status: {
+      type: String,
+      enum: ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"],
+      default: "NOT_STARTED",
+    },
+    stages: {
+      type: [employeeOnboardingStageSchema] as any,
+      default: () => [
+        { stage: 1, name: "HR Creates Employee Account in System" },
+        { stage: 2, name: "Personal & Professional Details Entry" },
+        { stage: 3, name: "Document Upload & Verification" },
+        { stage: 4, name: "Department & Role Assignment" },
+        { stage: 5, name: "Payroll Structure Configuration" },
+        { stage: 6, name: "System Login Credentials Issued" },
+        { stage: 7, name: "Employee Orientation & Policy Briefing" },
+        {
+          stage: 8,
+          name: "Profile Activated — Employee Successfully Onboarded",
+        },
+      ],
+    },
+    startedAt: { type: String, default: null },
+    completedAt: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const employeeSensitiveChangeRequestSchema =
+  new Schema<EmployeeSensitiveChangeRequest>(
+    {
+      _id: idField("ecr"),
+      fields: { type: [String], default: [] },
+      changes: { type: Schema.Types.Mixed, default: {} },
+      requestedBy: { type: String, required: true },
+      requestedAt: { type: String, required: true },
+      status: {
+        type: String,
+        enum: ["PENDING", "APPROVED", "REJECTED"],
+        default: "PENDING",
+      },
+      reviewedBy: { type: String, default: null },
+      reviewedAt: { type: String, default: null },
+      reviewComment: { type: String, default: null },
+    },
+    { _id: false },
+  );
 
 const employeeOffboardingItemSchema = new Schema<EmployeeOffboardingItem>(
   {
-    item: {
-      type: String,
-    },
-
-    title: {
-      type: String,
-    },
-
-    description: {
-      type: String,
-    },
-
-    completed: {
-      type: Boolean,
-      default: false,
-    },
-
-    completedAt: {
-      type: String,
-      default: null,
-    },
-
-    completedBy: {
-      type: String,
-      default: null,
-    },
+    item: { type: String, default: undefined },
+    title: { type: String, default: undefined },
+    description: { type: String, default: undefined },
+    completed: { type: Boolean, default: false },
+    completedAt: { type: String, default: null },
+    completedBy: { type: String, default: null },
   },
-  {
-    _id: false,
-  },
+  { _id: false },
 );
 
 const employeeSchema = new Schema<EmployeeDoc>(
   {
     _id: idField("emp"),
+    employeeCode: { type: String, required: true, unique: true, trim: true },
+    userId: { type: String, required: true, unique: true },
 
-    employeeCode: {
-      type: String,
-      required: true,
-      unique: true,
-    },
+    firstName: { type: String, required: true, trim: true },
+    lastName: { type: String, required: true, trim: true },
 
-    userId: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-
-    firstName: {
-      type: String,
-      required: true,
-    },
-
-    lastName: {
-      type: String,
-      required: true,
-    },
-
-    avatarUrl: {
-      type: String,
-      default: null,
-    },
-
-    gender: {
-      type: String,
-      default: null,
-    },
-
+    avatarUrl: { type: String, default: null },
+    signature: { type: String, default: null },
+    gender: { type: String, default: null },
     maritalStatus: {
       type: String,
       enum: ["SINGLE", "MARRIED", "DIVORCED", "WIDOWED", "NOT_LISTED"],
       default: null,
     },
+    dateOfBirth: { type: String, default: null },
 
-    dateOfBirth: {
-      type: String,
-      default: null,
-    },
+    personalEmail: { type: String, default: null, lowercase: true, trim: true },
+    phone: { type: String, default: null, trim: true },
 
-    personalEmail: {
-      type: String,
-      default: null,
-    },
+    address: { type: String, default: null },
+    city: { type: String, default: null },
+    state: { type: String, default: null },
+    country: { type: String, default: "India" },
+    workLocation: { type: String, default: null },
+    grade: { type: String, default: null },
 
-    phone: {
-      type: String,
-      default: null,
-    },
-
-    address: {
-      type: String,
-      default: null,
-    },
-
-    city: {
-      type: String,
-      default: null,
-    },
-
-    state: {
-      type: String,
-      default: null,
-    },
-
-    country: {
-      type: String,
-      default: "India",
-    },
-
-    departmentId: {
-      type: String,
-      required: true,
-    },
-
-    designationId: {
-      type: String,
-      required: true,
-    },
-
-    managerId: {
-      type: String,
-      default: null,
-    },
+    departmentId: { type: String, required: true },
+    designationId: { type: String, required: true },
+    managerId: { type: String, default: null },
+    shiftId: { type: String, default: null },
 
     employmentType: {
       type: String,
@@ -563,251 +593,117 @@ const employeeSchema = new Schema<EmployeeDoc>(
 
     status: {
       type: String,
-     enum: [
-  "ONBOARDING",
-  "ACTIVE",
-  "ON_LEAVE",
-  "NOTICE_PERIOD",
-  "TERMINATED",
-  "RESIGNED",
-  "INACTIVE",
-],
-
+      enum: [
+        "ONBOARDING",
+        "ACTIVE",
+        "ON_PROBATION",
+        "ON_LEAVE",
+        "NOTICE_PERIOD",
+        "TERMINATED",
+        "RESIGNED",
+        "INACTIVE",
+        "ON_HOLD",
+      ],
       default: "ACTIVE",
     },
 
-    dateOfJoining: {
-      type: String,
-      required: true,
-    },
+    dateOfJoining: { type: String, required: true },
+    dateOfExit: { type: String, default: null },
 
-    dateOfExit: {
-      type: String,
-      default: null,
-    },
-
-    emergencyContactName: {
-      type: String,
-      default: null,
-    },
-
-    emergencyContactPhone: {
-      type: String,
-      default: null,
-    },
-
-    emergencyContactRelationship: {
-      type: String,
-      default: null,
-    },
-
-    emergencyContactEmail: {
-      type: String,
-      default: null,
-    },
-
-    employeeAadhaar: {
-      type: String,
-      default: null,
-    },
-
-    employeePan: {
-      type: String,
-      default: null,
-    },
-
-    // -----------------------------------------------------------------------
-    // Probation
-    // -----------------------------------------------------------------------
-
-    probationStartDate: {
-      type: String,
-      default: null,
-    },
-
-    probationEndDate: {
-      type: String,
-      default: null,
-    },
-
-    probationReminderSentAt: {
-      type: String,
-      default: null,
-    },
+    probationPeriodMonths: { type: Number, default: null, min: 0 },
+    probationStartDate: { type: String, default: null },
+    probationEndDate: { type: String, default: null },
+    probationReminderSentAt: { type: String, default: null },
 
     probationExtensionDetails: {
-  extensionDays: {
-    type: Number,
-    default: null,
-  },
+      extensionDays: { type: Number, default: null, min: 1 },
+      extendedFrom: { type: String, default: null },
+      extendedTo: { type: String, default: null },
+      remarks: { type: String, default: null },
+      extendedAt: { type: String, default: null },
+    },
 
-  extendedFrom: {
-    type: String,
-    default: null,
-  },
+    noticeStartDate: { type: String, default: null },
+    lastWorkingDate: { type: String, default: null },
+    noticeDays: { type: Number, default: null, min: 0 },
 
-  extendedTo: {
-    type: String,
-    default: null,
-  },
+    resignationDetails: {
+      resignationDate: { type: String, default: null },
+      resignationReason: { type: String, default: null },
+      employeeRemarks: { type: String, default: null },
+      hrRemarks: { type: String, default: null },
+    },
 
-  remarks: {
-    type: String,
-    default: null,
-  },
+    terminationDetails: {
+      terminationDate: { type: String, default: null },
+      terminationReason: { type: String, default: null },
+      employeeRemarks: { type: String, default: null },
+      hrRemarks: { type: String, default: null },
+    },
 
-  extendedAt: {
-    type: String,
-    default: null,
-  },
-},
-
-    // -----------------------------------------------------------------------
-// Notice period
-// -----------------------------------------------------------------------
-
-noticeStartDate: {
-  type: String,
-  default: null,
-},
-
-lastWorkingDate: {
-  type: String,
-  default: null,
-},
-
-noticeDays: {
-  type: Number,
-  default: null,
-},
-
-resignationDetails: {
-  resignationDate: {
-    type: String,
-    default: null,
-  },
-  resignationReason: {
-    type: String,
-    default: null,
-  },
-  employeeRemarks: {
-    type: String,
-    default: null,
-  },
-  hrRemarks: {
-    type: String,
-    default: null,
-  },
-},
-
-terminationDetails: {
-  terminationDate: {
-    type: String,
-    default: null,
-  },
-  terminationReason: {
-    type: String,
-    default: null,
-  },
-  employeeRemarks: {
-    type: String,
-    default: null,
-  },
-  hrRemarks: {
-    type: String,
-    default: null,
-  },
-},
-
-    // -----------------------------------------------------------------------
-    // Employee profile
-    // -----------------------------------------------------------------------
-
-    education: {
-      type: [employeeEducationSchema],
+    emergencyContactName: { type: String, default: null },
+    emergencyContactPhone: { type: String, default: null },
+    emergencyContactRelationship: { type: String, default: null },
+    emergencyContactEmail: { type: String, default: null },
+    emergencyContacts: {
+      type: [employeeEmergencyContactSchema],
       default: [],
     },
 
-    certifications: {
-      type: [employeeCertificationSchema],
+    medicalConditions: { type: String, default: null },
+    bloodGroup: { type: String, default: null },
+    insurancePolicyNumber: { type: String, default: null },
+
+    employeeAadhaar: { type: String, default: null },
+    employeePan: { type: String, default: null },
+    employeeTan: { type: String, default: null },
+    bankAccountNumber: { type: String, default: null },
+    bankIfscCode: { type: String, default: null, uppercase: true, trim: true },
+    bankBranch: { type: String, default: null },
+    investmentDeclarations: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+
+    education: { type: [employeeEducationSchema], default: [] },
+    certifications: { type: [employeeCertificationSchema], default: [] },
+    workHistory: { type: [employeeWorkHistorySchema], default: [] },
+    skills: { type: [employeeSkillSchema], default: [] },
+
+    onboarding: {
+      type: employeeOnboardingSchema,
+      default: () => ({}),
+    },
+    sensitiveChangeRequests: {
+      type: [employeeSensitiveChangeRequestSchema],
       default: [],
     },
 
-    workHistory: {
-      type: [employeeWorkHistorySchema],
-      default: [],
-    },
-
-    skills: {
-      type: [String],
-      default: [],
-    },
-
-    // -----------------------------------------------------------------------
-    // Archive / offboarding
-    // -----------------------------------------------------------------------
-
-    isArchived: {
-      type: Boolean,
-      default: false,
-    },
-
-    archivedAt: {
-      type: String,
-      default: null,
-    },
+    isArchived: { type: Boolean, default: false },
+    archivedAt: { type: String, default: null },
 
     offboardingChecklist: {
-  assetReturn: {
-    type: Boolean,
-    default: false,
-  },
-  accessRevoked: {
-    type: Boolean,
-    default: false,
-  },
-  exitInterview: {
-    type: Boolean,
-    default: false,
-  },
-  finalSettlement: {
-    type: Boolean,
-    default: false,
-  },
-  completedAt: {
-    type: String,
-    default: null,
-  },
-},
-
-    createdAt: {
-      type: String,
-      required: true,
+      assetReturn: { type: Boolean, default: false },
+      accessRevoked: { type: Boolean, default: false },
+      exitInterview: { type: Boolean, default: false },
+      finalSettlement: { type: Boolean, default: false },
+      completedAt: { type: String, default: null },
     },
 
-    updatedAt: {
-      type: String,
-      required: true,
-    },
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, required: true },
   },
   baseOptions,
 );
 
-employeeSchema.index({
-  departmentId: 1,
-});
-
-employeeSchema.index({
-  managerId: 1,
-});
-
-employeeSchema.index({
-  isArchived: 1,
-});
-
-employeeSchema.index({
-  status: 1,
-});
+employeeSchema.index({ departmentId: 1 });
+employeeSchema.index({ managerId: 1 });
+employeeSchema.index({ isArchived: 1 });
+employeeSchema.index({ status: 1 });
+employeeSchema.index({ workLocation: 1 });
+employeeSchema.index({ grade: 1 });
+employeeSchema.index({ "onboarding.status": 1 });
+employeeSchema.index({ "sensitiveChangeRequests.status": 1 });
 
 export const Employee = model<EmployeeDoc>("Employee", employeeSchema);
 
@@ -815,52 +711,125 @@ export const Employee = model<EmployeeDoc>("Employee", employeeSchema);
 // ATTENDANCE & HOLIDAYS
 // ===========================================================================
 
+export type AttendanceStatus =
+  | "PRESENT"
+  | "ABSENT"
+  | "HALF_DAY"
+  | "WORK_FROM_HOME"
+  | "ON_LEAVE"
+  | "HOLIDAY"
+  | "WEEKEND"
+  | "LATE"
+  | "EARLY_DEPARTURE";
+
+export interface AttendanceBreakDoc {
+  start: string;
+  end: string | null;
+  durationMinutes: number;
+}
+
+export interface AttendanceAuditEntry {
+  action:
+    | "CHECK_IN"
+    | "CHECK_OUT"
+    | "REGULARIZATION_REQUESTED"
+    | "REGULARIZATION_APPROVED"
+    | "REGULARIZATION_REJECTED"
+    | "STATUS_CHANGED"
+    | "BREAK_RECORDED"
+    | "OVERTIME_CREDITED"
+    | "COMP_OFF_CREDITED";
+  actorId: string;
+  actorRole: UserDoc["role"];
+  at: string;
+  note: string | null;
+}
+
 export interface AttendanceDoc {
   _id: string;
   employeeId: string;
   date: string;
+  shiftId: string | null;
 
   checkIn: string | null;
   checkOut: string | null;
 
-  status:
-    | "PRESENT"
-    | "ABSENT"
-    | "HALF_DAY"
-    | "WORK_FROM_HOME"
-    | "ON_LEAVE"
-    | "HOLIDAY"
-    | "WEEKEND";
+  checkInLatitude: number | null;
+  checkInLongitude: number | null;
+  checkInAccuracy: number | null;
+  checkOutLatitude: number | null;
+  checkOutLongitude: number | null;
+  checkOutAccuracy: number | null;
+
+  breaks: AttendanceBreakDoc[];
+  status: AttendanceStatus;
 
   workHours: number | null;
+  effectiveWorkHours: number | null;
+  breakMinutes: number;
+  lateMinutes: number;
+  earlyDepartureMinutes: number;
+  overtimeHours: number;
+  earlyDepartureReason: string | null;
+  overtimeReason: string | null;
+
   isRegularized: boolean;
+  compOffCredited: boolean;
   note: string | null;
+  auditTrail: AttendanceAuditEntry[];
   createdAt: string;
+  updatedAt: string;
 }
+
+const attendanceBreakSchema = new Schema<AttendanceBreakDoc>(
+  {
+    start: { type: String, required: true },
+    end: { type: String, default: null },
+    durationMinutes: { type: Number, required: true, min: 0, default: 0 },
+  },
+  { _id: false },
+);
+
+const attendanceAuditEntrySchema = new Schema<AttendanceAuditEntry>(
+  {
+    action: { type: String, required: true },
+    actorId: { type: String, required: true },
+    actorRole: {
+      type: String,
+      enum: [
+        "SUPER_ADMIN",
+        "HR_ADMIN",
+        "MANAGER",
+        "RECRUITER",
+        "FINANCE",
+        "EMPLOYEE",
+      ],
+      required: true,
+    },
+    at: { type: String, required: true },
+    note: { type: String, default: null, trim: true, maxlength: 1000 },
+  },
+  { _id: false },
+);
 
 const attendanceSchema = new Schema<AttendanceDoc>(
   {
     _id: idField("att"),
+    employeeId: { type: String, required: true },
+    date: { type: String, required: true },
+    shiftId: { type: String, default: null },
 
-    employeeId: {
-      type: String,
-      required: true,
-    },
+    checkIn: { type: String, default: null },
+    checkOut: { type: String, default: null },
 
-    date: {
-      type: String,
-      required: true,
-    },
+    checkInLatitude: { type: Number, default: null, min: -90, max: 90 },
+    checkInLongitude: { type: Number, default: null, min: -180, max: 180 },
+    checkInAccuracy: { type: Number, default: null, min: 0 },
+    checkOutLatitude: { type: Number, default: null, min: -90, max: 90 },
+    checkOutLongitude: { type: Number, default: null, min: -180, max: 180 },
+    checkOutAccuracy: { type: Number, default: null, min: 0 },
 
-    checkIn: {
-      type: String,
-      default: null,
-    },
-
-    checkOut: {
-      type: String,
-      default: null,
-    },
+    breaks: { type: [attendanceBreakSchema], default: [] },
 
     status: {
       type: String,
@@ -872,53 +841,69 @@ const attendanceSchema = new Schema<AttendanceDoc>(
         "ON_LEAVE",
         "HOLIDAY",
         "WEEKEND",
+        "LATE",
+        "EARLY_DEPARTURE",
       ],
       default: "PRESENT",
     },
 
-    workHours: {
-      type: Number,
-      default: null,
-    },
-
-    isRegularized: {
-      type: Boolean,
-      default: false,
-    },
-
-    note: {
+    workHours: { type: Number, default: null, min: 0 },
+    effectiveWorkHours: { type: Number, default: null, min: 0 },
+    breakMinutes: { type: Number, default: 0, min: 0 },
+    lateMinutes: { type: Number, default: 0, min: 0 },
+    earlyDepartureMinutes: { type: Number, default: 0, min: 0 },
+    overtimeHours: { type: Number, default: 0, min: 0 },
+    earlyDepartureReason: {
       type: String,
       default: null,
+      trim: true,
+      maxlength: 1000,
+    },
+    overtimeReason: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 1000,
     },
 
-    createdAt: {
-      type: String,
-      required: true,
-    },
+    isRegularized: { type: Boolean, default: false },
+    compOffCredited: { type: Boolean, default: false },
+    note: { type: String, default: null, trim: true, maxlength: 2000 },
+    auditTrail: { type: [attendanceAuditEntrySchema], default: [] },
+
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, required: true },
   },
   baseOptions,
 );
 
-attendanceSchema.index(
-  {
-    employeeId: 1,
-    date: 1,
-  },
-  {
-    unique: true,
-  },
-);
-
-attendanceSchema.index({
-  date: 1,
-});
+attendanceSchema.index({ employeeId: 1, date: 1 }, { unique: true });
+attendanceSchema.index({ date: 1 });
+attendanceSchema.index({ status: 1, date: 1 });
+attendanceSchema.index({ employeeId: 1, status: 1, date: -1 });
+attendanceSchema.index({ shiftId: 1, date: -1 });
 
 export const Attendance = model<AttendanceDoc>("Attendance", attendanceSchema);
+
 export type AttendanceRegularizationStatus =
   | "PENDING"
   | "APPROVED"
   | "REJECTED"
   | "CANCELLED";
+
+export type AttendanceRegularizationAuditAction =
+  | "REQUESTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED";
+
+export interface AttendanceRegularizationAuditEntry {
+  action: AttendanceRegularizationAuditAction;
+  actorId: string;
+  actorRole: UserDoc["role"];
+  at: string;
+  note: string | null;
+}
 
 export interface AttendanceRegularizationRequestDoc {
   _id: string;
@@ -936,109 +921,202 @@ export interface AttendanceRegularizationRequestDoc {
     | "ON_LEAVE";
 
   reason: string;
-
   status: AttendanceRegularizationStatus;
 
   approverId: string | null;
   decisionNote: string | null;
   requestedAt: string;
   decidedAt: string | null;
+  approvedCheckIn: string | null;
+  approvedCheckOut: string | null;
+  approvedStatus: AttendanceRegularizationRequestDoc["requestedStatus"] | null;
+  auditTrail: AttendanceRegularizationAuditEntry[];
 }
+
+const attendanceRegularizationAuditSchema =
+  new Schema<AttendanceRegularizationAuditEntry>(
+    {
+      action: { type: String, required: true },
+      actorId: { type: String, required: true },
+      actorRole: {
+        type: String,
+        enum: [
+          "SUPER_ADMIN",
+          "HR_ADMIN",
+          "MANAGER",
+          "RECRUITER",
+          "FINANCE",
+          "EMPLOYEE",
+        ],
+        required: true,
+      },
+      at: { type: String, required: true },
+      note: { type: String, default: null, trim: true, maxlength: 1000 },
+    },
+    { _id: false },
+  );
 
 const attendanceRegularizationRequestSchema =
   new Schema<AttendanceRegularizationRequestDoc>(
     {
       _id: idField("areg"),
-
-      employeeId: {
-        type: String,
-        required: true,
-      },
-
-      attendanceId: {
-        type: String,
-        default: null,
-      },
-
-      date: {
-        type: String,
-        required: true,
-      },
-
-      requestedCheckIn: {
-        type: String,
-        default: null,
-      },
-
-      requestedCheckOut: {
-        type: String,
-        default: null,
-      },
-
+      employeeId: { type: String, required: true },
+      attendanceId: { type: String, default: null },
+      date: { type: String, required: true },
+      requestedCheckIn: { type: String, default: null },
+      requestedCheckOut: { type: String, default: null },
       requestedStatus: {
         type: String,
         enum: ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"],
         required: true,
       },
-
-      reason: {
-        type: String,
-        required: true,
-        trim: true,
-        maxlength: 1000,
-      },
-
+      reason: { type: String, required: true, trim: true, maxlength: 1000 },
       status: {
         type: String,
         enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
         default: "PENDING",
       },
-
-      approverId: {
-        type: String,
-        default: null,
-      },
-
+      approverId: { type: String, default: null },
       decisionNote: {
         type: String,
         default: null,
         trim: true,
         maxlength: 1000,
       },
-
-      requestedAt: {
-        type: String,
-        required: true,
-      },
-
-      decidedAt: {
-        type: String,
-        default: null,
-      },
+      requestedAt: { type: String, required: true },
+      decidedAt: { type: String, default: null },
+      approvedCheckIn: { type: String, default: null },
+      approvedCheckOut: { type: String, default: null },
+      approvedStatus: { type: String, default: null },
+      auditTrail: { type: [attendanceRegularizationAuditSchema], default: [] },
     },
     baseOptions,
   );
 
-attendanceRegularizationRequestSchema.index({
-  employeeId: 1,
-  date: 1,
-});
-
-attendanceRegularizationRequestSchema.index({
-  status: 1,
-  requestedAt: -1,
-});
-
-attendanceRegularizationRequestSchema.index({
-  employeeId: 1,
-  status: 1,
-});
+attendanceRegularizationRequestSchema.index({ employeeId: 1, date: 1 });
+attendanceRegularizationRequestSchema.index({ status: 1, requestedAt: -1 });
+attendanceRegularizationRequestSchema.index({ employeeId: 1, status: 1 });
 
 export const AttendanceRegularizationRequest =
   model<AttendanceRegularizationRequestDoc>(
     "AttendanceRegularizationRequest",
     attendanceRegularizationRequestSchema,
   );
+
+export interface AttendanceGeofence {
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+}
+
+export interface AttendanceShiftDoc {
+  _id: string;
+  name: string;
+  code: string;
+  startTime: string;
+  endTime: string;
+  standardHours: number;
+  graceMinutes: number;
+  halfDayHours: number;
+  breakMinutes: number;
+  overtimeAfterHours: number;
+  departmentId: string | null;
+  employeeIds: string[];
+  geofence: AttendanceGeofence | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const attendanceGeofenceSchema = new Schema<AttendanceGeofence>(
+  {
+    latitude: { type: Number, required: true, min: -90, max: 90 },
+    longitude: { type: Number, required: true, min: -180, max: 180 },
+    radiusMeters: { type: Number, required: true, min: 1, max: 100000 },
+  },
+  { _id: false },
+);
+
+const attendanceShiftSchema = new Schema<AttendanceShiftDoc>(
+  {
+    _id: idField("shift"),
+    name: { type: String, required: true, trim: true },
+    code: { type: String, required: true, trim: true, uppercase: true },
+    startTime: { type: String, required: true },
+    endTime: { type: String, required: true },
+    standardHours: { type: Number, required: true, min: 0 },
+    graceMinutes: { type: Number, required: true, min: 0, default: 15 },
+    halfDayHours: { type: Number, required: true, min: 0, default: 4 },
+    breakMinutes: { type: Number, required: true, min: 0, default: 60 },
+    overtimeAfterHours: { type: Number, required: true, min: 0, default: 8 },
+    departmentId: { type: String, default: null },
+    employeeIds: { type: [String], default: [] },
+    geofence: { type: attendanceGeofenceSchema, default: null },
+    isActive: { type: Boolean, default: true },
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, required: true },
+  },
+  baseOptions,
+);
+
+attendanceShiftSchema.index({ code: 1 }, { unique: true });
+attendanceShiftSchema.index({ departmentId: 1, isActive: 1 });
+attendanceShiftSchema.index({ employeeIds: 1 });
+
+export const AttendanceShift = model<AttendanceShiftDoc>(
+  "AttendanceShift",
+  attendanceShiftSchema,
+);
+
+// Compatibility alias used by the attendance shift repository.
+export const Shift = AttendanceShift;
+export type ShiftDoc = AttendanceShiftDoc;
+
+export interface CompOffDoc {
+  _id: string;
+  employeeId: string;
+  attendanceId: string;
+  earnedHours: number;
+  earnedDate: string;
+  expiresAt: string;
+  usedHours: number;
+  remainingHours: number;
+  status: "AVAILABLE" | "PARTIALLY_USED" | "USED" | "EXPIRED";
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  usedDate: string | null;
+  useNote: string | null;
+}
+
+const compOffSchema = new Schema<CompOffDoc>(
+  {
+    _id: idField("coff"),
+    employeeId: { type: String, required: true },
+    attendanceId: { type: String, required: true, unique: true },
+    earnedHours: { type: Number, required: true, min: 0 },
+    earnedDate: { type: String, required: true },
+    expiresAt: { type: String, required: true },
+    usedHours: { type: Number, default: 0, min: 0 },
+    remainingHours: { type: Number, required: true, min: 0 },
+    status: {
+      type: String,
+      enum: ["AVAILABLE", "PARTIALLY_USED", "USED", "EXPIRED"],
+      default: "AVAILABLE",
+    },
+    note: { type: String, default: null, trim: true, maxlength: 1000 },
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, required: true },
+    usedDate: { type: String, default: null },
+    useNote: { type: String, default: null, trim: true, maxlength: 1000 },
+  },
+  baseOptions,
+);
+
+compOffSchema.index({ employeeId: 1, status: 1, expiresAt: 1 });
+compOffSchema.index({ employeeId: 1, earnedDate: -1 });
+
+export const CompOff = model<CompOffDoc>("CompOff", compOffSchema);
 
 export interface HolidayDoc {
   _id: string;
@@ -1050,30 +1128,15 @@ export interface HolidayDoc {
 const holidaySchema = new Schema<HolidayDoc>(
   {
     _id: idField("hol"),
-
-    name: {
-      type: String,
-      required: true,
-    },
-
-    date: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-
-    isOptional: {
-      type: Boolean,
-      default: false,
-    },
+    name: { type: String, required: true },
+    date: { type: String, required: true, unique: true },
+    isOptional: { type: Boolean, default: false },
   },
   baseOptions,
 );
 
 export const Holiday = model<HolidayDoc>("Holiday", holidaySchema);
 
-// ===========================================================================
-// LEAVE
 // ===========================================================================
 
 export interface LeaveTypeDoc {
@@ -2929,10 +2992,22 @@ export interface SalaryStructureDoc {
   conveyance: number;
   medical: number;
   specialAllowance: number;
+  performanceBonus: number;
+  advanceRecovery: number;
+  overtimeRate: number;
 
   pf: number;
   professionalTax: number;
   incomeTax: number;
+  taxRegime: "NEW" | "OLD";
+  taxYear: number;
+  taxOtherIncome: number;
+  taxHraExemption: number;
+  taxDeduction80C: number;
+  taxDeduction80D: number;
+  taxDeduction80CCD1B: number;
+  taxDeduction80TTA: number;
+  taxPreviousTds: number;
 
   effectiveFrom: string;
 }
@@ -2972,20 +3047,38 @@ const salaryStructureSchema = new Schema<SalaryStructureDoc>(
       required: true,
     },
 
+    performanceBonus: { type: Number, default: 0, min: 0 },
+    advanceRecovery: { type: Number, default: 0, min: 0 },
+    overtimeRate: { type: Number, default: 1.5, min: 0 },
+
+    // Statutory deductions are calculated by Payroll. These defaults keep
+    // older salary-structure records valid without requiring a migration.
     pf: {
       type: Number,
-      required: true,
+      default: 0,
+      min: 0,
     },
 
     professionalTax: {
       type: Number,
-      required: true,
+      default: 0,
+      min: 0,
     },
 
     incomeTax: {
       type: Number,
-      required: true,
+      default: 0,
+      min: 0,
     },
+    taxRegime: { type: String, enum: ["NEW", "OLD"], default: "NEW" },
+    taxYear: { type: Number, default: 2026, min: 2020 },
+    taxOtherIncome: { type: Number, default: 0, min: 0 },
+    taxHraExemption: { type: Number, default: 0, min: 0 },
+    taxDeduction80C: { type: Number, default: 0, min: 0 },
+    taxDeduction80D: { type: Number, default: 0, min: 0 },
+    taxDeduction80CCD1B: { type: Number, default: 0, min: 0 },
+    taxDeduction80TTA: { type: Number, default: 0, min: 0 },
+    taxPreviousTds: { type: Number, default: 0, min: 0 },
 
     effectiveFrom: {
       type: String,
@@ -3006,9 +3099,24 @@ export interface PayrollRunDoc {
   month: number;
   year: number;
 
-  status: "DRAFT" | "PROCESSED" | "PAID";
+  status:
+    | "DRAFT"
+    | "ATTENDANCE_LOCKED"
+    | "PROCESSED"
+    | "HR_REVIEW"
+    | "APPROVED"
+    | "PAID";
 
   processedAt: string | null;
+  attendanceLockedAt: string | null;
+  reviewedAt: string | null;
+  reviewedByUserId: string | null;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
+  paidAt: string | null;
+  paidByUserId: string | null;
+  payslipsSentAt: string | null;
+  payslipsSentByUserId: string | null;
 
   totalGross: number;
   totalDeductions: number;
@@ -3033,7 +3141,14 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
 
     status: {
       type: String,
-      enum: ["DRAFT", "PROCESSED", "PAID"],
+      enum: [
+        "DRAFT",
+        "ATTENDANCE_LOCKED",
+        "PROCESSED",
+        "HR_REVIEW",
+        "APPROVED",
+        "PAID",
+      ],
       default: "DRAFT",
     },
 
@@ -3041,6 +3156,15 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
       type: String,
       default: null,
     },
+    attendanceLockedAt: { type: String, default: null },
+    reviewedAt: { type: String, default: null },
+    reviewedByUserId: { type: String, default: null },
+    approvedAt: { type: String, default: null },
+    approvedByUserId: { type: String, default: null },
+    paidAt: { type: String, default: null },
+    paidByUserId: { type: String, default: null },
+    payslipsSentAt: { type: String, default: null },
+    payslipsSentByUserId: { type: String, default: null },
 
     totalGross: {
       type: Number,
@@ -3088,13 +3212,22 @@ export interface PayslipDoc {
   conveyance: number;
   medical: number;
   specialAllowance: number;
+  performanceBonus: number;
+  overtimeHours: number;
+  overtimeAmount: number;
 
   grossEarnings: number;
 
   pf: number;
   professionalTax: number;
   incomeTax: number;
+  taxRegime: "NEW" | "OLD";
+  taxYear: number;
+  taxableIncome: number;
+  annualTax: number;
+  esi: number;
   lop: number;
+  advanceRecovery: number;
 
   totalDeductions: number;
   netPay: number;
@@ -3142,6 +3275,10 @@ const payslipSchema = new Schema<PayslipDoc>(
       required: true,
     },
 
+    performanceBonus: { type: Number, default: 0, min: 0 },
+    overtimeHours: { type: Number, default: 0, min: 0 },
+    overtimeAmount: { type: Number, default: 0, min: 0 },
+
     grossEarnings: {
       type: Number,
       required: true,
@@ -3161,11 +3298,17 @@ const payslipSchema = new Schema<PayslipDoc>(
       type: Number,
       required: true,
     },
+    taxRegime: { type: String, enum: ["NEW", "OLD"], default: "NEW" },
+    taxYear: { type: Number, default: 2026, min: 2020 },
+    taxableIncome: { type: Number, default: 0, min: 0 },
+    annualTax: { type: Number, default: 0, min: 0 },
+    esi: { type: Number, default: 0, min: 0 },
 
     lop: {
       type: Number,
       default: 0,
     },
+    advanceRecovery: { type: Number, default: 0, min: 0 },
 
     totalDeductions: {
       type: Number,
@@ -3385,7 +3528,10 @@ export type NotificationType =
   | "SYSTEM"
   | "DOCUMENT_REQUESTED"
   | "DOCUMENT_UPLOADED"
-  | "DOCUMENT_READY";
+  | "DOCUMENT_READY"
+  | "ATTENDANCE_LATE"
+  | "ATTENDANCE_EARLY_DEPARTURE"
+  | "ATTENDANCE_COMP_OFF";
 
 export interface NotificationDoc {
   _id: string;
@@ -3426,6 +3572,9 @@ const notificationSchema = new Schema<NotificationDoc>(
         "DOCUMENT_REQUESTED",
         "DOCUMENT_UPLOADED",
         "DOCUMENT_READY",
+        "ATTENDANCE_LATE",
+        "ATTENDANCE_EARLY_DEPARTURE",
+        "ATTENDANCE_COMP_OFF",
       ],
       default: "SYSTEM",
     },
