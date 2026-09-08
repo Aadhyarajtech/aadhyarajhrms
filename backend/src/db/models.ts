@@ -262,13 +262,14 @@ export interface EmployeeDoc {
 
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
 
-  status:
-    | "ACTIVE"
-    | "ON_LEAVE"
-    | "NOTICE_PERIOD"
-    | "TERMINATED"
-    | "RESIGNED"
-    | "INACTIVE";
+ status:
+  | "ONBOARDING"
+  | "ACTIVE"
+  | "ON_LEAVE"
+  | "NOTICE_PERIOD"
+  | "TERMINATED"
+  | "RESIGNED"
+  | "INACTIVE";
 
   dateOfJoining: string;
   dateOfExit: string | null;
@@ -285,6 +286,32 @@ export interface EmployeeDoc {
   probationStartDate: string | null;
   probationEndDate: string | null;
   probationReminderSentAt: string | null;
+  probationExtensionDetails: {
+  extensionDays: number;
+  extendedFrom: string | null;
+  extendedTo: string;
+  remarks: string | null;
+  extendedAt: string;
+} | null;
+
+  // Notice period
+noticeStartDate: string | null;
+lastWorkingDate: string | null;
+noticeDays: number | null;
+
+resignationDetails: {
+  resignationDate: string;
+  resignationReason: string;
+  employeeRemarks: string | null;
+  hrRemarks: string | null;
+} | null;
+
+terminationDetails: {
+  terminationDate: string;
+  terminationReason: string;
+  employeeRemarks: string | null;
+  hrRemarks: string | null;
+} | null;
 
   // Employee profile
   education: EmployeeEducation[];
@@ -295,7 +322,13 @@ export interface EmployeeDoc {
   // Archive / offboarding
   isArchived: boolean;
   archivedAt: string | null;
-  offboardingChecklist: EmployeeOffboardingItem[];
+  offboardingChecklist: {
+  assetReturn: boolean;
+  accessRevoked: boolean;
+  exitInterview: boolean;
+  finalSettlement: boolean;
+  completedAt: string | null;
+} | null;
 
   createdAt: string;
   updatedAt: string;
@@ -530,14 +563,16 @@ const employeeSchema = new Schema<EmployeeDoc>(
 
     status: {
       type: String,
-      enum: [
-        "ACTIVE",
-        "ON_LEAVE",
-        "NOTICE_PERIOD",
-        "TERMINATED",
-        "RESIGNED",
-        "INACTIVE",
-      ],
+     enum: [
+  "ONBOARDING",
+  "ACTIVE",
+  "ON_LEAVE",
+  "NOTICE_PERIOD",
+  "TERMINATED",
+  "RESIGNED",
+  "INACTIVE",
+],
+
       default: "ACTIVE",
     },
 
@@ -600,6 +635,90 @@ const employeeSchema = new Schema<EmployeeDoc>(
       default: null,
     },
 
+    probationExtensionDetails: {
+  extensionDays: {
+    type: Number,
+    default: null,
+  },
+
+  extendedFrom: {
+    type: String,
+    default: null,
+  },
+
+  extendedTo: {
+    type: String,
+    default: null,
+  },
+
+  remarks: {
+    type: String,
+    default: null,
+  },
+
+  extendedAt: {
+    type: String,
+    default: null,
+  },
+},
+
+    // -----------------------------------------------------------------------
+// Notice period
+// -----------------------------------------------------------------------
+
+noticeStartDate: {
+  type: String,
+  default: null,
+},
+
+lastWorkingDate: {
+  type: String,
+  default: null,
+},
+
+noticeDays: {
+  type: Number,
+  default: null,
+},
+
+resignationDetails: {
+  resignationDate: {
+    type: String,
+    default: null,
+  },
+  resignationReason: {
+    type: String,
+    default: null,
+  },
+  employeeRemarks: {
+    type: String,
+    default: null,
+  },
+  hrRemarks: {
+    type: String,
+    default: null,
+  },
+},
+
+terminationDetails: {
+  terminationDate: {
+    type: String,
+    default: null,
+  },
+  terminationReason: {
+    type: String,
+    default: null,
+  },
+  employeeRemarks: {
+    type: String,
+    default: null,
+  },
+  hrRemarks: {
+    type: String,
+    default: null,
+  },
+},
+
     // -----------------------------------------------------------------------
     // Employee profile
     // -----------------------------------------------------------------------
@@ -639,9 +758,27 @@ const employeeSchema = new Schema<EmployeeDoc>(
     },
 
     offboardingChecklist: {
-      type: [employeeOffboardingItemSchema],
-      default: [],
-    },
+  assetReturn: {
+    type: Boolean,
+    default: false,
+  },
+  accessRevoked: {
+    type: Boolean,
+    default: false,
+  },
+  exitInterview: {
+    type: Boolean,
+    default: false,
+  },
+  finalSettlement: {
+    type: Boolean,
+    default: false,
+  },
+  completedAt: {
+    type: String,
+    default: null,
+  },
+},
 
     createdAt: {
       type: String,
@@ -1707,6 +1844,9 @@ export interface OfferDoc {
   joiningDate: string;
   generatedAt: string | null;
   respondedAt: string | null;
+  accessTokenHash: string | null;
+  accessTokenExpiresAt: string | null;
+  viewedAt: string | null;
 }
 
 export interface BackgroundVerificationDoc {
@@ -1863,6 +2003,21 @@ const offerSchema = new Schema<OfferDoc>(
     },
 
     respondedAt: {
+      type: String,
+      default: null,
+    },
+
+    accessTokenHash: {
+      type: String,
+      default: null,
+    },
+
+    accessTokenExpiresAt: {
+      type: String,
+      default: null,
+    },
+
+    viewedAt: {
       type: String,
       default: null,
     },
@@ -2334,30 +2489,50 @@ export interface PerformanceCycleDoc {
   startDate: string;
   endDate: string;
   isActive: boolean;
+  type:
+    | "PROBATION"
+    | "QUARTERLY"
+    | "HALF_YEARLY"
+    | "ANNUAL"
+    | "THREE_SIXTY"
+    | "PIP";
+  purpose: string | null;
 }
 
 const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
   {
     _id: idField("cyc"),
-
     name: {
       type: String,
       required: true,
     },
-
     startDate: {
       type: String,
       required: true,
     },
-
     endDate: {
       type: String,
       required: true,
     },
-
     isActive: {
       type: Boolean,
       default: true,
+    },
+    type: {
+      type: String,
+      enum: [
+        "PROBATION",
+        "QUARTERLY",
+        "HALF_YEARLY",
+        "ANNUAL",
+        "THREE_SIXTY",
+        "PIP",
+      ],
+      default: "ANNUAL",
+    },
+    purpose: {
+      type: String,
+      default: null,
     },
   },
   baseOptions,
@@ -2378,6 +2553,9 @@ export interface PerformanceReviewDoc {
 
   selfRating: number | null;
   managerRating: number | null;
+  managerTechnicalRating: number | null;
+  managerDeliveryRating: number | null;
+  managerBehaviorRating: number | null;
   finalRating: number | null;
 
   strengths: string | null;
@@ -2422,6 +2600,21 @@ const performanceReviewSchema = new Schema<PerformanceReviewDoc>(
       default: null,
     },
 
+    managerTechnicalRating: {
+      type: Number,
+      default: null,
+    },
+
+    managerDeliveryRating: {
+      type: Number,
+      default: null,
+    },
+
+    managerBehaviorRating: {
+      type: Number,
+      default: null,
+    },
+
     finalRating: {
       type: Number,
       default: null,
@@ -2454,6 +2647,7 @@ performanceReviewSchema.index(
   {
     cycleId: 1,
     revieweeId: 1,
+    reviewerId: 1,
   },
   {
     unique: true,
@@ -2488,6 +2682,26 @@ export interface GoalDoc {
   }[];
   assignedBy: string | null;
 }
+
+const goalMilestoneSchema = new Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+    },
+    targetDate: {
+      type: String,
+      default: null,
+    },
+    completed: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  {
+    _id: false,
+  },
+);
 
 const goalSchema = new Schema<GoalDoc>(
   {
@@ -2527,22 +2741,41 @@ const goalSchema = new Schema<GoalDoc>(
     createdAt: {
       type: String,
       required: true,
-      cycleId: { type: String, default: null },
-      parentGoalId: { type: String, default: null },
-      category: { type: String, default: null },
-      targetValue: { type: Number, default: null },
-      currentValue: { type: Number, default: null },
-      milestones: {
-        type: [
-          {
-            title: String,
-            targetDate: { type: String, default: null },
-            completed: Boolean,
-          },
-        ],
-        default: [],
-      },
-      assignedBy: { type: String, default: null },
+    },
+
+    cycleId: {
+      type: String,
+      default: null,
+    },
+
+    parentGoalId: {
+      type: String,
+      default: null,
+    },
+
+    category: {
+      type: String,
+      default: null,
+    },
+
+    targetValue: {
+      type: Number,
+      default: null,
+    },
+
+    currentValue: {
+      type: Number,
+      default: null,
+    },
+
+    milestones: {
+      type: [goalMilestoneSchema],
+      default: [],
+    },
+
+    assignedBy: {
+      type: String,
+      default: null,
     },
   },
   baseOptions,
@@ -2642,17 +2875,74 @@ export const PerformanceOutcome = model<PerformanceOutcomeDoc>(
   performanceOutcomeSchema,
 );
 
+export interface PipObjectiveDoc {
+  title: string;
+  description: string | null;
+  target: string | null;
+  progress: number;
+  status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+  dueDate: string;
+}
+
+export interface PipCheckInDoc {
+  date: string;
+  progress: number;
+  managerComments: string | null;
+  hrComments: string | null;
+  nextSteps: string | null;
+  managerId: string | null;
+  addedByRole: string | null;
+}
+
 export interface PerformanceImprovementPlanDoc {
   _id: string;
   reviewId: string;
   employeeId: string;
-  status: "ACTIVE" | "COMPLETED" | "CANCELLED";
+  managerId: string | null;
+  createdBy: string | null;
+  status: "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
   startDate: string;
   endDate: string;
   objectives: string[];
-  checkInFrequency: "MONTHLY";
+  pipObjectives: PipObjectiveDoc[];
+  checkInFrequency: "MONTHLY" | "WEEKLY" | "BIWEEKLY";
+  pipCheckInFrequency: "MONTHLY" | "WEEKLY" | "BIWEEKLY";
+  checkIns: PipCheckInDoc[];
+  latestCheckInProgress: number;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  finalOutcome: string | null;
   createdAt: string;
 }
+
+const pipObjectiveSchema = new Schema<PipObjectiveDoc>(
+  {
+    title: { type: String, required: true },
+    description: { type: String, default: null },
+    target: { type: String, default: null },
+    progress: { type: Number, min: 0, max: 100, default: 0 },
+    status: {
+      type: String,
+      enum: ["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "OVERDUE"],
+      default: "NOT_STARTED",
+    },
+    dueDate: { type: String, required: true },
+  },
+  { _id: false },
+);
+
+const pipCheckInSchema = new Schema<PipCheckInDoc>(
+  {
+    date: { type: String, required: true },
+    progress: { type: Number, min: 0, max: 100, default: 0 },
+    managerComments: { type: String, default: null },
+    hrComments: { type: String, default: null },
+    nextSteps: { type: String, default: null },
+    managerId: { type: String, default: null },
+    addedByRole: { type: String, default: null },
+  },
+  { _id: false },
+);
 
 const performanceImprovementPlanSchema =
   new Schema<PerformanceImprovementPlanDoc>(
@@ -2667,9 +2957,17 @@ const performanceImprovementPlanSchema =
         type: String,
         required: true,
       },
+      managerId: {
+        type: String,
+        default: null,
+      },
+      createdBy: {
+        type: String,
+        default: null,
+      },
       status: {
         type: String,
-        enum: ["ACTIVE", "COMPLETED", "CANCELLED"],
+        enum: ["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"],
         default: "ACTIVE",
       },
       startDate: {
@@ -2684,10 +2982,41 @@ const performanceImprovementPlanSchema =
         type: [String],
         default: [],
       },
+      pipObjectives: {
+        type: [pipObjectiveSchema],
+        default: [],
+      },
       checkInFrequency: {
         type: String,
-        enum: ["MONTHLY"],
+        enum: ["MONTHLY", "WEEKLY", "BIWEEKLY"],
         default: "MONTHLY",
+      },
+      pipCheckInFrequency: {
+        type: String,
+        enum: ["MONTHLY", "WEEKLY", "BIWEEKLY"],
+        default: "MONTHLY",
+      },
+      checkIns: {
+        type: [pipCheckInSchema],
+        default: [],
+      },
+      latestCheckInProgress: {
+        type: Number,
+        min: 0,
+        max: 100,
+        default: 0,
+      },
+      completedAt: {
+        type: String,
+        default: null,
+      },
+      cancelledAt: {
+        type: String,
+        default: null,
+      },
+      finalOutcome: {
+        type: String,
+        default: null,
       },
       createdAt: {
         type: String,

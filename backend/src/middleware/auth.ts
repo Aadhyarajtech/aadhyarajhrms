@@ -1,9 +1,20 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import jwt, { JwtPayload } from "jsonwebtoken";
 import { env } from "@/config/env";
 import { AppError } from "@/utils/errors";
 import type { AuthUser } from "@/types/express";
 import { User } from "@/db/models";
+
+function getBearerToken(req: Request): string | null {
+  const header = req.headers.authorization;
+
+  if (!header || !header.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = header.slice("Bearer ".length).trim();
+  return token || null;
+}
 
 export async function authenticate(
   req: Request,
@@ -18,15 +29,48 @@ export async function authenticate(
     );
   }
 
-  const token = header.slice("Bearer ".length).trim();
+  const token = getBearerToken(req);
 
   if (!token) {
     return next(AppError.unauthorized("Missing authentication token"));
   }
 
-  try {
-    const payload = jwt.verify(token, env.jwtSecret) as AuthUser;
+  let payload: AuthUser;
 
+  try {
+    const decoded = jwt.verify(token, env.jwtSecret);
+
+    if (
+      typeof decoded !== "object" ||
+      decoded === null ||
+      typeof (decoded as JwtPayload).userId !== "string" ||
+      !(decoded as JwtPayload).userId
+    ) {
+      return next(AppError.unauthorized("Invalid authentication token"));
+    }
+
+    payload = decoded as AuthUser;
+  } catch (err) {
+    if (err instanceof jwt.TokenExpiredError) {
+      return next(
+        AppError.unauthorized(
+          "Authentication token has expired. Please sign in again.",
+        ),
+      );
+    }
+
+    if (err instanceof jwt.JsonWebTokenError) {
+      return next(
+        AppError.unauthorized(
+          "Invalid authentication token. Please sign in again.",
+        ),
+      );
+    }
+
+    return next(AppError.unauthorized("Unable to verify authentication token"));
+  }
+
+  try {
     const user = await User.findById(payload.userId).select("isActive");
 
     if (!user) {
@@ -42,13 +86,9 @@ export async function authenticate(
     }
 
     req.user = payload;
-    next();
-  } catch {
-    next(
-      AppError.unauthorized(
-        "Invalid or expired session. Please sign in again.",
-      ),
-    );
+    return next();
+  } catch (err) {
+    return next(err);
   }
 }
 
@@ -58,13 +98,23 @@ export function attachUserIfPresent(
   _res: Response,
   next: NextFunction,
 ) {
-  const header = req.headers.authorization;
-  if (header?.startsWith("Bearer ")) {
+  const token = getBearerToken(req);
+
+  if (token) {
     try {
-      req.user = jwt.verify(header.slice(7), env.jwtSecret) as AuthUser;
+      const decoded = jwt.verify(token, env.jwtSecret);
+
+      if (
+        typeof decoded === "object" &&
+        decoded !== null &&
+        typeof (decoded as JwtPayload).userId === "string"
+      ) {
+        req.user = decoded as AuthUser;
+      }
     } catch {
       /* ignore invalid token in optional context */
     }
   }
+
   next();
 }

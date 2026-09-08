@@ -101,7 +101,7 @@ export async function sendAnnouncementEmail(input: {
   return sendEmail({
     to: input.to,
 
-    subject: `[Aadhyaraj HRMS] ${input.title}`,
+    subject: `Aadhyaraj Technologies ${input.title}`,
 
     text:
       `${input.title}\n\n` +
