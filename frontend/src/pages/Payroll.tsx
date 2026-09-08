@@ -296,6 +296,16 @@ function PayrollRuns() {
     },
   });
 
+  const lockMutation = useMutation({
+    mutationFn: (v: { month: number; year: number }) =>
+      PayrollApi.lockAttendance(Number(v.month), Number(v.year)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["payroll", "runs"] });
+      showToast("Attendance locked for the payroll period.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
   const processMutation = useMutation({
     mutationFn: (v: { month: number; year: number }) =>
       PayrollApi.process(Number(v.month), Number(v.year)),
@@ -306,11 +316,38 @@ function PayrollRuns() {
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
+  const reviewMutation = useMutation({
+    mutationFn: PayrollApi.submitForReview,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["payroll", "runs"] });
+      showToast("Payroll submitted for HR review.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: PayrollApi.approve,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["payroll", "runs"] });
+      showToast("Payroll approved.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
   const markPaidMutation = useMutation({
     mutationFn: PayrollApi.markPaid,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payroll", "runs"] });
       showToast("Marked as paid.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const sendPayslipsMutation = useMutation({
+    mutationFn: PayrollApi.sendPayslipsForRun,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["payroll", "runs"] });
+      showToast("Payslips sent to employees.");
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
@@ -337,6 +374,14 @@ function PayrollRuns() {
               </option>
             ))}
           </SelectField>
+          <Button
+            variant="outline"
+            leftIcon={<Clock size={15} />}
+            onClick={handleSubmit((v) => lockMutation.mutate(v))}
+            isLoading={lockMutation.isPending}
+          >
+            Lock attendance
+          </Button>
           <Button
             leftIcon={<Play size={15} />}
             onClick={handleSubmit((v) => processMutation.mutate(v))}
@@ -392,11 +437,40 @@ function PayrollRuns() {
                         </button>
                         {r.status === "PROCESSED" && (
                           <button
+                            onClick={() => reviewMutation.mutate(r.id)}
+                            className="text-[12px] font-medium text-brand-600 hover:underline"
+                          >
+                            Submit for review
+                          </button>
+                        )}
+                        {r.status === "HR_REVIEW" && (
+                          <button
+                            onClick={() => approveMutation.mutate(r.id)}
+                            className="text-[12px] font-medium text-success-700 hover:underline"
+                          >
+                            Approve
+                          </button>
+                        )}
+                        {r.status === "APPROVED" && (
+                          <button
                             onClick={() => markPaidMutation.mutate(r.id)}
                             className="text-[12px] font-medium text-success-700 hover:underline"
                           >
                             Mark paid
                           </button>
+                        )}
+                        {r.status === "PAID" && !r.payslipsSentAt && (
+                          <button
+                            onClick={() => sendPayslipsMutation.mutate(r.id)}
+                            className="text-[12px] font-medium text-brand-600 hover:underline"
+                          >
+                            Send payslips
+                          </button>
+                        )}
+                        {r.status === "PAID" && r.payslipsSentAt && (
+                          <span className="text-[12px] font-medium text-success-700">
+                            Payslips sent
+                          </span>
                         )}
                       </div>
                     </td>
@@ -655,12 +729,16 @@ function PayslipModal({
     ["Conveyance", payslip.conveyance],
     ["Medical", payslip.medical],
     ["Special allowance", payslip.specialAllowance],
+    ["Performance bonus", payslip.performanceBonus],
+    ["Overtime", payslip.overtimeAmount],
   ];
   const deductions: [string, number][] = [
     ["Provident Fund", payslip.pf],
     ["Professional tax", payslip.professionalTax],
     ["Income tax (TDS)", payslip.incomeTax],
+    ["ESI", payslip.esi],
     ["Loss of pay", payslip.lop],
+    ["Advance recovery", payslip.advanceRecovery],
   ];
 
   return (
@@ -709,6 +787,26 @@ function PayslipModal({
             <span className="text-ink">Total deductions</span>
             <span className="text-ink">
               {formatCurrencyINR(payslip.totalDeductions)}
+            </span>
+          </div>
+        </div>
+        <div className="mt-4 rounded-2xl border border-line/60 px-4 py-3 text-[12px] text-ink-faint">
+          <div className="flex justify-between">
+            <span>Tax regime</span>
+            <span className="font-medium text-ink">
+              {payslip.taxRegime === "OLD" ? "Old" : "New"}
+            </span>
+          </div>
+          <div className="mt-1 flex justify-between">
+            <span>Taxable annual income</span>
+            <span className="font-medium text-ink">
+              {formatCurrencyINR(payslip.taxableIncome)}
+            </span>
+          </div>
+          <div className="mt-1 flex justify-between">
+            <span>Annual tax</span>
+            <span className="font-medium text-ink">
+              {formatCurrencyINR(payslip.annualTax)}
             </span>
           </div>
         </div>

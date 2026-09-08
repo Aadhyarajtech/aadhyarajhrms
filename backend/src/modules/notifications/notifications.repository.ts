@@ -20,7 +20,10 @@ export type NotificationType =
   | "SYSTEM"
   | "DOCUMENT_REQUESTED"
   | "DOCUMENT_UPLOADED"
-  | "DOCUMENT_READY";
+  | "DOCUMENT_READY"
+  | "ATTENDANCE_LATE"
+  | "ATTENDANCE_EARLY_DEPARTURE"
+  | "ATTENDANCE_COMP_OFF";
 
 /* =========================================================
    API DOCUMENT
