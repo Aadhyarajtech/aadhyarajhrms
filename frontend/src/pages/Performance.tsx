@@ -87,7 +87,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
   const [selfOpen, setSelfOpen] = useState(false);
 
   const { data: review, isLoading: reviewLoading } = useQuery({
-    queryKey: ["performance", "my-review"],
+    queryKey: ["performance", "my-review", activeCycleId],
     queryFn: PerformanceApi.myReview,
   });
   const { data: goals, isLoading: goalsLoading } = useQuery({

@@ -2616,6 +2616,9 @@ export interface PerformanceReviewDoc {
 
   selfRating: number | null;
   managerRating: number | null;
+  managerTechnicalRating: number | null;
+  managerDeliveryRating: number | null;
+  managerBehaviorRating: number | null;
   finalRating: number | null;
 
   strengths: string | null;
@@ -2660,6 +2663,21 @@ const performanceReviewSchema = new Schema<PerformanceReviewDoc>(
       default: null,
     },
 
+    managerTechnicalRating: {
+      type: Number,
+      default: null,
+    },
+
+    managerDeliveryRating: {
+      type: Number,
+      default: null,
+    },
+
+    managerBehaviorRating: {
+      type: Number,
+      default: null,
+    },
+
     finalRating: {
       type: Number,
       default: null,
@@ -2692,6 +2710,7 @@ performanceReviewSchema.index(
   {
     cycleId: 1,
     revieweeId: 1,
+    reviewerId: 1,
   },
   {
     unique: true,
@@ -2919,17 +2938,95 @@ export const PerformanceOutcome = model<PerformanceOutcomeDoc>(
   performanceOutcomeSchema,
 );
 
+export interface PipObjectiveDoc {
+  title: string;
+  description: string | null;
+  target: string | null;
+  progress: number;
+  status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+  dueDate: string;
+}
+
+export interface PipCheckInDoc {
+  date: string;
+  progress: number;
+  managerComments: string | null;
+  hrComments: string | null;
+  nextSteps: string | null;
+  managerId: string | null;
+  addedByRole: string | null;
+}
+
 export interface PerformanceImprovementPlanDoc {
   _id: string;
   reviewId: string;
   employeeId: string;
-  status: "ACTIVE" | "COMPLETED" | "CANCELLED";
+  managerId: string | null;
+  createdBy: string | null;
+  status: "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
   startDate: string;
   endDate: string;
   objectives: string[];
-  checkInFrequency: "MONTHLY";
+  pipObjectives: PipObjectiveDoc[];
+  checkInFrequency: "MONTHLY" | "WEEKLY" | "BIWEEKLY";
+  pipCheckInFrequency: "MONTHLY" | "WEEKLY" | "BIWEEKLY";
+  checkIns: PipCheckInDoc[];
+  latestCheckInProgress: number;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  finalOutcome: string | null;
   createdAt: string;
 }
+
+export interface PerformanceImprovementPlanDoc {
+  _id: string;
+  reviewId: string;
+  employeeId: string;
+  managerId: string | null;
+  createdBy: string | null;
+  status: "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+  startDate: string;
+  endDate: string;
+  objectives: string[];
+  pipObjectives: PipObjectiveDoc[];
+  checkInFrequency: "MONTHLY" | "WEEKLY" | "BIWEEKLY";
+  pipCheckInFrequency: "MONTHLY" | "WEEKLY" | "BIWEEKLY";
+  checkIns: PipCheckInDoc[];
+  latestCheckInProgress: number;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  finalOutcome: string | null;
+  createdAt: string;
+}
+
+const pipObjectiveSchema = new Schema<PipObjectiveDoc>(
+  {
+    title: { type: String, required: true },
+    description: { type: String, default: null },
+    target: { type: String, default: null },
+    progress: { type: Number, min: 0, max: 100, default: 0 },
+    status: {
+      type: String,
+      enum: ["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "OVERDUE"],
+      default: "NOT_STARTED",
+    },
+    dueDate: { type: String, required: true },
+  },
+  { _id: false },
+);
+
+const pipCheckInSchema = new Schema<PipCheckInDoc>(
+  {
+    date: { type: String, required: true },
+    progress: { type: Number, min: 0, max: 100, default: 0 },
+    managerComments: { type: String, default: null },
+    hrComments: { type: String, default: null },
+    nextSteps: { type: String, default: null },
+    managerId: { type: String, default: null },
+    addedByRole: { type: String, default: null },
+  },
+  { _id: false },
+);
 
 const performanceImprovementPlanSchema =
   new Schema<PerformanceImprovementPlanDoc>(
@@ -2944,9 +3041,11 @@ const performanceImprovementPlanSchema =
         type: String,
         required: true,
       },
+      managerId: { type: String, default: null },
+      createdBy: { type: String, default: null },
       status: {
         type: String,
-        enum: ["ACTIVE", "COMPLETED", "CANCELLED"],
+        enum: ["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"],
         default: "ACTIVE",
       },
       startDate: {
@@ -2961,11 +3060,22 @@ const performanceImprovementPlanSchema =
         type: [String],
         default: [],
       },
+      pipObjectives: { type: [pipObjectiveSchema], default: [] },
       checkInFrequency: {
         type: String,
-        enum: ["MONTHLY"],
+        enum: ["MONTHLY", "WEEKLY", "BIWEEKLY"],
         default: "MONTHLY",
       },
+      pipCheckInFrequency: {
+        type: String,
+        enum: ["MONTHLY", "WEEKLY", "BIWEEKLY"],
+        default: "MONTHLY",
+      },
+      checkIns: { type: [pipCheckInSchema], default: [] },
+      latestCheckInProgress: { type: Number, min: 0, max: 100, default: 0 },
+      completedAt: { type: String, default: null },
+      cancelledAt: { type: String, default: null },
+      finalOutcome: { type: String, default: null },
       createdAt: {
         type: String,
         required: true,
@@ -3531,7 +3641,9 @@ export type NotificationType =
   | "DOCUMENT_READY"
   | "ATTENDANCE_LATE"
   | "ATTENDANCE_EARLY_DEPARTURE"
-  | "ATTENDANCE_COMP_OFF";
+  | "ATTENDANCE_COMP_OFF"
+  | "ATTENDANCE_REGULARIZATION_REQUEST"
+  | "ATTENDANCE_REGULARIZATION_DECISION";
 
 export interface NotificationDoc {
   _id: string;

@@ -13,10 +13,11 @@ import {
   Download,
   Coffee,
 } from "lucide-react";
-import { AttendanceApi } from "@/lib/endpoints";
+import { AttendanceApi, EmployeesApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useAuth } from "@/context/AuthContext";
+import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +29,12 @@ import { TextField, TextareaField } from "@/components/ui/Field";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, formatTime, monthName } from "@/lib/format";
 import type { AttendanceRecord } from "@/types";
+import AiAttendanceInsights from "@/components/attendance/AiAttendanceInsights";
+import AskAI from "@/components/attendance/AskAI";
+import AiAttendanceAnomaly from "@/components/attendance/AiAttendanceAnomaly";
+import AiAttendanceForecast from "@/components/attendance/AiAttendanceForecast";
+import AttendancePatternAnalysis from "@/components/attendance/AttendancePatternAnalysis";
+import SmartRegularizationAssistant from "@/components/attendance/SmartRegularizationAssistant";
 
 const MANAGER_ROLES = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
 
@@ -61,8 +68,20 @@ function getDisplayAttendanceStatus(
 export default function Attendance() {
   const { user } = useAuth();
   const isManager = !!user && MANAGER_ROLES.includes(user.role);
-  const [tab, setTab] = useState("mine");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const [tab, setTab] = useState(
+    isManager && (requestedTab === "team" || requestedTab === "exceptions")
+      ? requestedTab
+      : "mine",
+  );
   const [regOpen, setRegOpen] = useState(false);
+
+  const handleTabChange = (nextTab: string) => {
+    setTab(nextTab);
+    setSearchParams(nextTab === "mine" ? {} : { tab: nextTab });
+  };
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | undefined>(undefined);
 
   const tabs = [
     { key: "mine", label: "My Attendance" },
@@ -90,8 +109,8 @@ export default function Attendance() {
           </Button>
         }
       />
-      <Tabs tabs={tabs} active={tab} onChange={setTab} className="mb-6 w-fit" />
-      {tab === "mine" && <MyAttendance />}
+      <Tabs tabs={tabs} active={tab} onChange={handleTabChange} className="mb-6 w-fit" />
+      {tab === "mine" && <MyAttendance selectedEmployeeId={selectedEmployeeId} onEmployeeChange={setSelectedEmployeeId} />}
       {tab === "team" && isManager && <TeamAttendance />}
       {tab === "exceptions" && isManager && <TeamAttendanceExceptions />}
       <RegularizeModal open={regOpen} onClose={() => setRegOpen(false)} />
@@ -110,8 +129,22 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function MyAttendance() {
+function MyAttendance({
+  selectedEmployeeId,
+  onEmployeeChange,
+}: {
+  selectedEmployeeId?: string;
+  onEmployeeChange: (id?: string) => void;
+}) {
   const today = new Date();
+  const { user } = useAuth();
+  const canSelectEmployee = !!user && MANAGER_ROLES.includes(user.role);
+  const { data: employeeData, isLoading: employeesLoading } = useQuery({
+    queryKey: ["attendance", "ai", "employees", user?.role, user?.employee?.id],
+    queryFn: () => EmployeesApi.list({ page: 1, pageSize: 100 }),
+    enabled: canSelectEmployee && (user?.role !== "MANAGER" || !!user?.employee?.id),
+  });
+  const employees = employeeData?.employees ?? [];
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
   const { showToast } = useToast();
@@ -449,6 +482,41 @@ function MyAttendance() {
           onChange={(e) => setEarlyDepartureReason(e.target.value)}
         />
       </Modal>
+
+      {canSelectEmployee && (
+        <Card>
+          <CardHeader
+            title="Attendance AI Analysis"
+            subtitle="Select an employee optionally. Leave it as All Employees to view the overall attendance analysis."
+          />
+          <div className="px-6 pb-5">
+            <div className="max-w-md">
+              <label className="mb-1.5 block text-[12px] font-medium text-ink">Employee</label>
+              <select
+                value={selectedEmployeeId ?? ""}
+                onChange={(e) => onEmployeeChange(e.target.value || undefined)}
+                disabled={employeesLoading}
+                className="h-10 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none focus:border-brand-400"
+              >
+                <option value="">All Employees</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.firstName} {employee.lastName}
+                    {employee.employeeCode ? ` · ${employee.employeeCode}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <AskAI employeeId={selectedEmployeeId} />
+      <AiAttendanceInsights employeeId={selectedEmployeeId} />
+      <AiAttendanceAnomaly employeeId={selectedEmployeeId} />
+      <AiAttendanceForecast employeeId={selectedEmployeeId} />
+      <AttendancePatternAnalysis employeeId={selectedEmployeeId} />
+      <SmartRegularizationAssistant employeeId={selectedEmployeeId} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <SummaryCard
