@@ -53,7 +53,15 @@ export interface Employee {
   managerFirstName: string | null;
   managerLastName: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
-  status: "ACTIVE" | "ON_LEAVE" | "NOTICE_PERIOD" | "TERMINATED" | "RESIGNED";
+  status:
+  | "ONBOARDING"
+  | "ON_PROBATION"
+  | "ACTIVE"
+  | "ON_LEAVE"
+  | "NOTICE_PERIOD"
+  | "TERMINATED"
+  | "RESIGNED"
+  | "INACTIVE";
   dateOfJoining: string;
   dateOfExit: string | null;
   email: string;
@@ -259,6 +267,8 @@ export interface CandidateOffer {
   joiningDate: string;
   generatedAt: string | null;
   respondedAt: string | null;
+  accessTokenExpiresAt?: string | null;
+  viewedAt?: string | null;
 }
 
 export interface BackgroundVerification {

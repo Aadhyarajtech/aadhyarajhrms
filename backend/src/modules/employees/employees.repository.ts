@@ -271,6 +271,7 @@ export async function createEmployee(input: CreateEmployeeInput) {
     isArchived: false,
     archivedAt: null,
     offboardingChecklist: null,
+    resignationDetails: null,
     createdAt: now,
     updatedAt: now,
   });
@@ -290,10 +291,39 @@ export interface UpdateEmployeeInput {
   employmentType?: string;
   grade?: string | null;
   workLocation?: string | null;
+
   probationPeriodMonths?: number | null;
   probationStartDate?: string | null;
   probationEndDate?: string | null;
-  status?: string;
+
+  probationExtensionDetails?: {
+  extensionDays: number;
+  extendedFrom: string | null;
+  extendedTo: string;
+  remarks: string | null;
+  extendedAt: string;
+} | null;
+
+  noticeDays?: number;
+  noticeStartDate?: string;
+  lastWorkingDate?: string;
+
+  resignationDetails?: {
+    resignationDate: string;
+    resignationReason: string;
+    employeeRemarks: string | null;
+    hrRemarks: string | null;
+  };
+
+  terminationDetails?: {
+  terminationDate: string;
+  terminationReason: string;
+  employeeRemarks: string | null;
+  hrRemarks: string | null;
+};
+
+
+status?: string;
   phone?: string;
   personalEmail?: string;
   address?: string;
@@ -372,8 +402,13 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         workLocation: merged.workLocation ?? null,
         probationPeriodMonths: merged.probationPeriodMonths ?? null,
         probationStartDate: merged.probationStartDate ?? null,
-        probationEndDate: merged.probationEndDate ?? null,
-        probationReminderSentAt:
+probationEndDate: merged.probationEndDate ?? null,
+
+noticeStartDate: merged.noticeStartDate ?? null,
+lastWorkingDate: merged.lastWorkingDate ?? null,
+noticeDays: merged.noticeDays ?? null,
+
+probationReminderSentAt:
           merged.probationEndDate !== current.probationEndDate ||
           merged.probationStartDate !== current.probationStartDate
             ? null
@@ -416,20 +451,33 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
               : nowIso()
             : (merged.archivedAt ?? current.archivedAt ?? null),
 
-        offboardingChecklist:
-          merged.status === "NOTICE_PERIOD"
-            ? current.status === "NOTICE_PERIOD" && current.offboardingChecklist
-              ? current.offboardingChecklist
-              : {
-                  assetReturn: false,
-                  accessRevoked: false,
-                  exitInterview: false,
-                  finalSettlement: false,
-                  completedAt: null,
-                }
-            : (merged.offboardingChecklist ??
-              current.offboardingChecklist ??
-              null),
+       offboardingChecklist:
+  input.offboardingChecklist ??
+  current.offboardingChecklist ??
+  (merged.status === "NOTICE_PERIOD"
+    ? {
+        assetReturn: false,
+        accessRevoked: false,
+        exitInterview: false,
+        finalSettlement: false,
+        completedAt: null,
+      }
+    : null),
+
+resignationDetails:
+  input.resignationDetails ??
+  current.resignationDetails ??
+  null,
+
+probationExtensionDetails:
+  input.probationExtensionDetails ??
+  current.probationExtensionDetails ??
+  null,
+
+  terminationDetails:
+  input.terminationDetails ??
+  current.terminationDetails ??
+  null,
 
         updatedAt: nowIso(),
       },

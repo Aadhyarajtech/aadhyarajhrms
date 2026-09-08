@@ -133,7 +133,6 @@ export const EmployeesApi = {
         payload,
       )
       .then((r) => r.data.employee),
-
   updateMe: (payload: Record<string, unknown>) =>
     api
       .patch<{ employee: Employee }>(
@@ -141,6 +140,61 @@ export const EmployeesApi = {
         payload,
       )
       .then((r) => r.data.employee),
+
+  completeOnboarding: (id: string) =>
+    api
+      .post<{ employee: Employee }>(
+        `/employees/${id}/complete-onboarding`,
+      )
+      .then((r) => r.data.employee),
+
+  startNoticePeriod: (id: string, noticeDays: number) =>
+    api
+      .post<{ employee: Employee }>(
+        `/employees/${id}/start-notice-period`,
+        { noticeDays },
+      )
+      .then((r) => r.data.employee),
+
+  confirmProbation: (id: string) =>
+    api
+      .post<{ employee: Employee }>(
+        `/employees/${id}/confirm-probation`,
+      )
+      .then((r) => r.data.employee),
+
+  extendProbation: (
+    id: string,
+    data: {
+      extensionDays: number;
+      remarks?: string;
+    },
+  ) =>
+    api
+      .post<{
+        success: boolean;
+        message: string;
+        employee: Employee;
+      }>(`/employees/${id}/extend-probation`, data)
+      .then((r) => r.data.employee),
+
+  completeOffboarding: (id: string) =>
+    api
+      .post(`/employees/${id}/complete-offboarding`)
+      .then((r) => r.data),
+
+  updateOffboardingChecklist: (
+    id: string,
+    payload: {
+      assetReturn?: boolean;
+      accessRevoked?: boolean;
+      exitInterview?: boolean;
+      finalSettlement?: boolean;
+    },
+  ) =>
+    api
+      .patch(`/employees/${id}/offboarding-checklist`, payload)
+      .then((r) => r.data),
 
   headcountByDepartment: () =>
     api
@@ -202,6 +256,8 @@ export const EmployeesApi = {
       .then((r) => r.data);
   },
 };
+
+
 
 // --- Organization ------------------------------------------------------------
 export const OrganizationApi = {
@@ -529,18 +585,18 @@ aiPatterns: async (
 
   return response.data;
 },
- regularize: (
-  date: string,
-  note: string,
-  // employeeId?: string,
-) =>
+  regularize: (
+    date: string,
+    note: string,
+    employeeId?: string,
+  ) =>
   api
     .post<{
       record: AttendanceRecord;
     }>("/attendance/regularize", {
       date,
       note,
-      // employeeId,
+      employeeId,
     })
     .then((r) => r.data.record),
 
@@ -978,17 +1034,11 @@ export const RecruitmentApi = {
       )
       .then((r) => r.data.candidate),
 
-  respondToOffer: (
-    id: string,
-    status: "ACCEPTED" | "DECLINED",
-  ) =>
+  respondToOffer: (id: string, status: "ACCEPTED" | "DECLINED") =>
     api
       .patch<{
         candidate: Candidate;
-      }>(
-        `/recruitment/candidates/${id}/offer/response`,
-        { status },
-      )
+      }>(`/recruitment/candidates/${id}/offer/response`, { status })
       .then((r) => r.data.candidate),
 
   updateBackgroundVerification: (
@@ -1128,8 +1178,104 @@ export const RecruitmentApi = {
       .then((r) => r.data.data),
 };
 
+// --- Performance Improvement Plans (PIP) -------------------------------------
+export type PipStatus = "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+export type PipCheckInFrequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+export type PipObjectiveStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+
+export interface PipObjective {
+  title: string;
+  description?: string | null;
+  target?: string | null;
+  progress: number;
+  status: PipObjectiveStatus;
+  dueDate: string;
+}
+
+export interface PipCheckIn {
+  date: string;
+  progress: number;
+  managerComments?: string | null;
+  hrComments?: string | null;
+  nextSteps?: string | null;
+  managerId?: string | null;
+  addedByRole?: string | null;
+}
+
+export interface PerformancePip {
+  id: string;
+  reviewId: string;
+  employeeId: string;
+  status: PipStatus;
+  startDate: string;
+  endDate: string;
+  objectives: PipObjective[];
+  checkInFrequency: PipCheckInFrequency;
+  createdAt: string;
+  createdBy?: string | null;
+  managerId?: string | null;
+  checkIns: PipCheckIn[];
+  completedAt?: string | null;
+  finalOutcome?: string | null;
+  employeeName?: string;
+  employeeFirstName?: string;
+  employeeLastName?: string;
+}
+
 // --- Performance -------------------------------------------------------------
 export const PerformanceApi = {
+  // PIP Management
+  pips: () =>
+    api
+      .get<{ pips: PerformancePip[] }>("/performance/pips")
+      .then((r) => r.data.pips),
+
+  pip: (id: string) =>
+    api
+      .get<{ pip: PerformancePip }>(`/performance/pips/${id}`)
+      .then((r) => r.data.pip),
+
+  createPip: (payload: {
+    reviewId: string;
+    employeeId: string;
+    startDate: string;
+    endDate: string;
+    objectives: PipObjective[];
+    checkInFrequency: PipCheckInFrequency;
+  }) =>
+    api
+      .post<{ pip: PerformancePip }>("/performance/pips", payload)
+      .then((r) => r.data.pip),
+
+  updatePipObjectives: (id: string, objectives: PipObjective[]) =>
+    api
+      .patch<{
+        pip: PerformancePip;
+      }>(`/performance/pips/${id}/objectives`, { objectives })
+      .then((r) => r.data.pip),
+
+  addPipCheckIn: (
+    id: string,
+    payload: {
+      progress: number;
+      managerComments?: string;
+      hrComments?: string;
+      nextSteps?: string;
+    },
+  ) =>
+    api
+      .post<{
+        pip: PerformancePip;
+      }>(`/performance/pips/${id}/check-ins`, payload)
+      .then((r) => r.data.pip),
+
+  updatePipStatus: (id: string, status: PipStatus, finalOutcome?: string) =>
+    api
+      .patch<{
+        pip: PerformancePip;
+      }>(`/performance/pips/${id}/status`, { status, finalOutcome })
+      .then((r) => r.data.pip),
+
   cycles: () =>
     api
       .get<{
@@ -1251,8 +1397,7 @@ export const PerformanceApi = {
         goal: Goal;
       }>("/performance/goals", payload)
       .then((r) => r.data.goal),
-
-  goalTrend: () =>
+  goalTrend: (employeeId?: string) =>
     api
       .get<{
         data: {
@@ -1260,7 +1405,7 @@ export const PerformanceApi = {
           cycleName: string;
           achievementPercentage: number;
         }[];
-      }>("/performance/goals/trend")
+      }>("/performance/goals/trend", { params: { employeeId } })
       .then((r) => r.data.data),
 
   feedbackRequests: () =>
@@ -1305,11 +1450,22 @@ export const PerformanceApi = {
         `/performance/reviews/${id}/outcome`,
       )
       .then((r) => r.data.outcome),
-
-  updateGoalProgress: (
+  updateOutcome: (
     id: string,
-    progress: number,
+    payload: {
+      incrementRecommendation: "MAXIMUM" | "STANDARD" | "NONE" | "PIP";
+      promotionEligible?: boolean;
+      trainingNeeds?: string[];
+      pipRecommended?: boolean;
+      fastTrackEligible?: boolean;
+    },
   ) =>
+    api
+      .patch<{
+        outcome: PerformanceOutcome;
+      }>(`/performance/reviews/${id}/outcome`, payload)
+      .then((r) => r.data.outcome),
+  updateGoalProgress: (id: string, progress: number) =>
     api
       .patch<{
         goal: Goal;
@@ -1318,7 +1474,12 @@ export const PerformanceApi = {
         { progress },
       )
       .then((r) => r.data.goal),
-
+  updateGoalCurrentValue: (id: string, currentValue: number) =>
+    api
+      .patch<{
+        goal: Goal;
+      }>(`/performance/goals/${id}/current-value`, { currentValue })
+      .then((r) => r.data.goal),
   ratingByDepartment: () =>
     api
       .get<{
@@ -1330,6 +1491,20 @@ export const PerformanceApi = {
         "/performance/analytics/rating-by-department",
       )
       .then((r) => r.data.data),
+
+  // Performance analytics summary.
+  analyticsSummary: () =>
+    api
+      .get<{
+        reviewCompletionPercentage: number;
+        averagePerformanceRating: number;
+        totalGoals: number;
+        averageKpiAchievement: number;
+        goalCompletionPercentage: number;
+        totalPips: number;
+        activePips: number;
+      }>("/performance/analytics/summary")
+      .then((r) => r.data),
 };
 
 // --- Payroll ----------------------------------------------------------------
@@ -1748,6 +1923,11 @@ export interface ReportsOverview {
     byStatus: ReportBucket[];
     byDepartment: ReportBucket[];
     byEmploymentType: ReportBucket[];
+    headcountTrend: {
+      label: string;
+      hires: number;
+      exits: number;
+    }[];
   };
 
   attendance: {
@@ -1757,7 +1937,30 @@ export interface ReportsOverview {
     regularized: number;
     totalWorkHours: number;
     averageWorkHours: number;
+    estimatedOvertimeHours: number;
     byStatus: ReportBucket[];
+    daily: {
+      label: string;
+      value: number;
+      total: number;
+      present: number;
+      absent: number;
+      halfDay: number;
+      workHours: number;
+      overtimeHours: number;
+      attendanceRate: number;
+    }[];
+    employeeSummary: {
+      employeeId: string;
+      records: number;
+      present: number;
+      absent: number;
+      halfDay: number;
+      leave: number;
+      attendanceRate: number;
+      workHours: number;
+      overtimeHours: number;
+    }[];
   };
 
   leave: {
@@ -1765,6 +1968,7 @@ export interface ReportsOverview {
     totalDays: number;
     byStatus: ReportBucket[];
     byType: ReportBucket[];
+    monthly: { label: string; value: number; requests: number; days: number }[];
   };
 
   payroll: {
@@ -1774,12 +1978,7 @@ export interface ReportsOverview {
     totalNet: number;
     totalLop: number;
     payslipCount: number;
-    byRun: {
-      label: string;
-      gross: number;
-      net: number;
-      headcount: number;
-    }[];
+    byRun: { label: string; gross: number; net: number; headcount: number }[];
   };
 
   recruitment: {
@@ -1787,9 +1986,11 @@ export interface ReportsOverview {
     openRoles: number;
     offersAccepted: number;
     hired: number;
+    offersSent: number;
     offerAcceptanceRate: number;
     byStage: ReportBucket[];
     bySource: ReportBucket[];
+    funnel: ReportBucket[];
   } | null;
 
   performance: {
@@ -1804,6 +2005,8 @@ export interface ReportsOverview {
     byStatus: ReportBucket[];
     byPriority: ReportBucket[];
     byCategory: ReportBucket[];
+    resolved: number;
+    averageResolutionHours: number;
   };
 
   documents: {
@@ -1815,6 +2018,19 @@ export interface ReportsOverview {
   };
 }
 
+export type ReportExportSection =
+  | "overview"
+  | "workforce"
+  | "attendance"
+  | "leave"
+  | "payroll"
+  | "recruitment"
+  | "performance"
+  | "tickets"
+  | "documents"
+  | "audit"
+  | "custom";
+
 export const ReportsApi = {
   overview: (
     filters: ReportsFilters = {},
@@ -1825,6 +2041,37 @@ export const ReportsApi = {
         { params: filters },
       )
       .then((r) => r.data),
+
+  export: async (
+    format: "xlsx" | "pdf",
+    filters: ReportsFilters = {},
+    section: ReportExportSection = "overview",
+    customSections: string[] = [],
+  ) => {
+    const response = await api.get<Blob>(`/reports/export/${format}`, {
+      params: {
+        ...filters,
+        section,
+        ...(section === "custom" && customSections.length > 0
+          ? { customSections: customSections.join(",") }
+          : {}),
+      },
+      responseType: "blob",
+    });
+    const contentType =
+      format === "xlsx"
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : "application/pdf";
+    const blob = new Blob([response.data], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `hrms-${section}-report-${filters.from ?? "all"}-to-${filters.to ?? "all"}.${format}`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // --- Dashboard ---------------------------------------------------------------
