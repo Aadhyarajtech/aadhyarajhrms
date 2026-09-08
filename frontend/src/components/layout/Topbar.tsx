@@ -331,37 +331,82 @@ export function Topbar({
     id: string,
     link: string | null,
   ) => {
-    await markNotificationRead(id);
+    /*
+     * Reading and opening are independent actions.
+     * A read-status failure must never prevent navigation.
+     */
+    try {
+      await markNotificationRead(id);
+    } catch (error) {
+      console.error(
+        "[Notification] Failed to mark as read:",
+        error,
+      );
+    }
 
     setNotifOpen(false);
 
-    if (!link) {
+    /*
+     * No destination configured.
+     */
+    if (!link || !link.trim()) {
       return;
     }
 
-    /* Normalize legacy backend links. */
-    try {
-      if (/^https?:\/\//.test(link)) {
+    let normalized = link.trim();
+
+    /*
+     * External links open in a new tab.
+     */
+    if (/^https?:\/\//i.test(normalized)) {
+      try {
         window.open(
-          link,
+          normalized,
           "_blank",
           "noopener,noreferrer",
         );
-
-        return;
+      } catch (error) {
+        console.error(
+          "[Notification] Failed to open external link:",
+          error,
+        );
       }
-    } catch {
-      // Ignore invalid external links.
+
+      return;
     }
 
-    let normalized = link;
-
-    if (
-      normalized.startsWith("/") &&
-      !normalized.startsWith("/app/")
-    ) {
-      normalized = "/app" + normalized;
+    /*
+     * Normalize internal/legacy links.
+     *
+     * Examples:
+     *   attendance
+     *   /attendance
+     *   /attendance?tab=exceptions
+     *   /app/attendance
+     *   /app/attendance?tab=exceptions
+     *
+     * Query parameters are preserved.
+     */
+    if (!normalized.startsWith("/")) {
+      normalized = `/${normalized}`;
     }
+
+    if (!normalized.startsWith("/app/")) {
+      normalized = `/app${normalized}`;
+    }
+
+    /*
+     * Protect against an accidentally duplicated /app prefix.
+     */
+    normalized = normalized.replace(
+      /^\/app\/app\//,
+      "/app/",
+    );
+
+    console.log(
+      "[Notification] Navigating to:",
+      normalized,
+    );
 
     navigate(normalized);
   };

@@ -395,6 +395,48 @@ export interface AttendanceRegularizationRequest {
   employeeCode?: string | null;
 }
 
+export interface AttendanceAiInsights {
+  period: {
+    start: string;
+    end: string;
+    daysAnalyzed: number;
+  };
+
+  summary: {
+    attendanceRate: number;
+    presentDays: number;
+    wfhDays: number;
+    leaveDays: number;
+    absentDays: number;
+    halfDays: number;
+    averageWorkHours: number;
+    regularizedDays: number;
+  };
+
+  timing: {
+    lateCheckIns: number;
+    lateCheckInRate: number;
+    earlyCheckOuts: number;
+    earlyCheckoutRate: number;
+    missingCheckoutDays: number;
+  };
+
+  trend: {
+    direction: "IMPROVING" | "DECLINING" | "STABLE";
+    change: number;
+    recentRate: number;
+    previousRate: number;
+  };
+
+  patterns: {
+    type: "POSITIVE" | "WARNING" | "INFO";
+    title: string;
+    description: string;
+  }[];
+
+  recommendations: string[];
+}
+
 export const AttendanceApi = {
   today: () =>
     api
@@ -484,11 +526,11 @@ export const AttendanceApi = {
       })
       .then((r) => r.data as Blob),
 
-  regularize: (date: string, note: string) =>
+  regularize: (date: string, note: string, employeeId?: string) =>
     api
       .post<{
         record: AttendanceRegularizationRequest;
-      }>("/attendance/regularize", { date, note })
+      }>("/attendance/regularize", { date, note, employeeId })
       .then((r) => r.data.record),
 
   teamRegularizationRequests: (
@@ -524,6 +566,97 @@ export const AttendanceApi = {
         decisionNote,
       })
       .then((r) => r.data.request),
+
+  aiForecast: async (months = 6, employeeId?: string) => {
+    const response = await api.get("/attendance/ai-forecast", {
+      params: {
+        months,
+        employeeId,
+      },
+    });
+
+    return response.data;
+  },
+  smartRegularization: async (date: string, employeeId?: string) => {
+    const response = await api.get("/attendance/smart-regularization", {
+      params: {
+        date,
+        employeeId,
+      },
+    });
+
+    return response.data;
+  },
+
+  // AI ATTENDANCE INSIGHTS
+  // ========================================================================
+  //
+  // The selected startDate and endDate are sent to the backend.
+  //
+  // Example:
+  // AttendanceApi.aiInsights("2026-09-04", "2026-09-04")
+  //
+  // Request:
+  // GET /attendance/ai-insights
+  //     ?startDate=2026-09-04
+  //     &endDate=2026-09-04
+  //
+  // ========================================================================
+
+  aiInsights: (startDate: string, endDate: string, employeeId?: string) =>
+    api
+      .get<{
+        insights: AttendanceAiInsights;
+      }>("/attendance/ai-insights", {
+        params: {
+          startDate,
+          endDate,
+          employeeId,
+        },
+      })
+      .then((r) => r.data.insights),
+  askAI: async (question: string, employeeId?: string) => {
+    const response = await api.post("/attendance/ask-ai", {
+      question,
+      employeeId,
+    });
+
+    return response.data.answer;
+  },
+
+  aiAnomalies: async (month?: number, year?: number, employeeId?: string) => {
+    const params = new URLSearchParams();
+
+    if (month !== undefined) {
+      params.set("month", String(month));
+    }
+
+    if (year !== undefined) {
+      params.set("year", String(year));
+    }
+
+    if (employeeId) {
+      params.set("employeeId", employeeId);
+    }
+
+    const query = params.toString();
+
+    const response = await api.get(
+      `/attendance/ai-anomalies${query ? `?${query}` : ""}`,
+    );
+
+    return response.data;
+  },
+  aiPatterns: async (months = 6, employeeId?: string) => {
+    const response = await api.get("/attendance/ai-patterns", {
+      params: {
+        months,
+        employeeId,
+      },
+    });
+
+    return response.data;
+  },
 };
 
 // --- Leave ----------------------------------------------------------------------
@@ -757,6 +890,13 @@ export const RecruitmentApi = {
       .post<{
         candidate: Candidate;
       }>(`/recruitment/candidates/${id}/offer`, payload)
+      .then((r) => r.data.candidate),
+
+  respondToOffer: (id: string, status: "ACCEPTED" | "DECLINED") =>
+    api
+      .patch<{
+        candidate: Candidate;
+      }>(`/recruitment/candidates/${id}/offer/response`, { status })
       .then((r) => r.data.candidate),
 
   updateBackgroundVerification: (
