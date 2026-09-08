@@ -3171,7 +3171,9 @@ export type NotificationType =
   | "SYSTEM"
   | "DOCUMENT_REQUESTED"
   | "DOCUMENT_UPLOADED"
-  | "DOCUMENT_READY";
+  | "DOCUMENT_READY"
+  | "ATTENDANCE_REGULARIZATION_REQUEST"
+  | "ATTENDANCE_REGULARIZATION_DECISION";;
 
 export interface NotificationDoc {
   _id: string;
@@ -3212,6 +3214,8 @@ const notificationSchema = new Schema<NotificationDoc>(
         "DOCUMENT_REQUESTED",
         "DOCUMENT_UPLOADED",
         "DOCUMENT_READY",
+        "ATTENDANCE_REGULARIZATION_REQUEST",
+        "ATTENDANCE_REGULARIZATION_DECISION",
       ],
       default: "SYSTEM",
     },
