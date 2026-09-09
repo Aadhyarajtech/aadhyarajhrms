@@ -113,6 +113,7 @@ leaveRouter.get("/requests", async (req, res, next) => {
       status?: string;
       approverId?: string;
       employeeId?: string;
+      excludeEmployeeId?: string;
     } = {
       status:
         typeof req.query.status === "string" ? req.query.status : undefined,
@@ -120,17 +121,36 @@ leaveRouter.get("/requests", async (req, res, next) => {
 
     if (req.query.scope === "team") {
       /**
-       * Only MANAGER may use team scope.
-       *
-       * The repository uses approverId to restrict the result
-       * to requests belonging to employees managed by this
-       * authenticated manager.
+       * Team Approvals:
+       * - MANAGER -> only their direct team's requests.
+       * - HR_ADMIN / SUPER_ADMIN -> organization-wide requests
+       *   (with optional employeeId filtering).
        */
-      if (role !== "MANAGER" || !employeeId) {
-        throw AppError.forbidden("Only managers can view team leave requests.");
+      if (!employeeId && !isPrivileged) {
+        throw AppError.forbidden("Employee profile is required.");
       }
 
-      filters.approverId = employeeId;
+      if (role === "MANAGER") {
+        // Team Approvals for managers must be limited to direct reports.
+        // The repository resolves managerId -> employee IDs.
+        filters.approverId = employeeId!;
+      } else if (isPrivileged) {
+        // HR Admin / Super Admin can review organization-wide requests,
+        // but must never see their own leave request in Team Approvals.
+        if (typeof req.query.employeeId === "string") {
+          filters.employeeId = req.query.employeeId;
+        }
+        // HR Admin must not see or approve their own leave request.
+        // Super Admin can review HR Admin requests, including HR Admin's
+        // own request, because the request belongs to a different employee.
+        if (role === "HR_ADMIN" && employeeId) {
+          filters.excludeEmployeeId = employeeId;
+        }
+      } else {
+        throw AppError.forbidden(
+          "You do not have permission to view team leave requests.",
+        );
+      }
     } else if (isPrivileged) {
       /**
        * HR Admin / Super Admin may optionally filter by employee.

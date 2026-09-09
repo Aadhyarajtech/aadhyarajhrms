@@ -50,15 +50,29 @@ import {
 
 const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
 
+const requiredSalaryAmount = (fieldLabel: string) =>
+  z.preprocess(
+    (value) =>
+      value === "" || value === null || value === undefined
+        ? undefined
+        : value,
+    z
+      .number({
+        required_error: `${fieldLabel} is required.`,
+        invalid_type_error: `${fieldLabel} is required.`,
+      })
+      .min(0, `${fieldLabel} must be 0 or greater.`),
+  );
+
 const salarySchema = z.object({
-  basic: z.coerce.number().min(0),
-  hra: z.coerce.number().min(0),
-  conveyance: z.coerce.number().min(0),
-  medical: z.coerce.number().min(0),
-  specialAllowance: z.coerce.number().min(0),
-  pf: z.coerce.number().min(0),
-  professionalTax: z.coerce.number().min(0),
-  incomeTax: z.coerce.number().min(0),
+  basic: requiredSalaryAmount("Basic"),
+  hra: requiredSalaryAmount("HRA"),
+  conveyance: requiredSalaryAmount("Conveyance"),
+  medical: requiredSalaryAmount("Medical"),
+  specialAllowance: requiredSalaryAmount("Special allowance"),
+  pf: requiredSalaryAmount("Provident Fund (PF)"),
+  professionalTax: requiredSalaryAmount("Professional tax"),
+  incomeTax: requiredSalaryAmount("Income tax (TDS)"),
 });
 type SalaryForm = z.infer<typeof salarySchema>;
 
@@ -2662,8 +2676,13 @@ function SalaryModal({
     queryFn: () => PayrollApi.getSalaryStructure(employeeId),
     enabled: open,
   });
-  const { register, handleSubmit } = useForm<SalaryForm>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<SalaryForm>({
     resolver: zodResolver(salarySchema),
+    mode: "onSubmit",
   });
 
   const mutation = useMutation({
@@ -2691,7 +2710,21 @@ function SalaryModal({
             Cancel
           </Button>
           <Button
-            onClick={handleSubmit((v) => mutation.mutate(v))}
+            onClick={handleSubmit(
+              (v) => mutation.mutate(v),
+              (formErrors) => {
+                const messages = Object.values(formErrors)
+                  .map((error) => error?.message)
+                  .filter(Boolean);
+
+                showToast(
+                  messages.length > 0
+                    ? messages.join(" ")
+                    : "Please fill in all required salary fields.",
+                  "error",
+                );
+              },
+            )}
             isLoading={mutation.isPending}
           >
             Save
@@ -2700,54 +2733,118 @@ function SalaryModal({
       }
     >
       <form className="grid gap-4 sm:grid-cols-2" key={existing?.id ?? "new"}>
-        <TextField
-          label="Basic"
-          type="number"
-          defaultValue={existing?.basic}
-          {...register("basic")}
-        />
-        <TextField
-          label="HRA"
-          type="number"
-          defaultValue={existing?.hra}
-          {...register("hra")}
-        />
-        <TextField
-          label="Conveyance"
-          type="number"
-          defaultValue={existing?.conveyance}
-          {...register("conveyance")}
-        />
-        <TextField
-          label="Medical"
-          type="number"
-          defaultValue={existing?.medical}
-          {...register("medical")}
-        />
-        <TextField
-          label="Special allowance"
-          type="number"
-          defaultValue={existing?.specialAllowance}
-          {...register("specialAllowance")}
-        />
-        <TextField
-          label="Provident Fund (PF)"
-          type="number"
-          defaultValue={existing?.pf}
-          {...register("pf")}
-        />
-        <TextField
-          label="Professional tax"
-          type="number"
-          defaultValue={existing?.professionalTax}
-          {...register("professionalTax")}
-        />
-        <TextField
-          label="Income tax (TDS)"
-          type="number"
-          defaultValue={existing?.incomeTax}
-          {...register("incomeTax")}
-        />
+        <div>
+          <TextField
+            label="Basic"
+            type="number"
+            required
+            defaultValue={existing?.basic}
+            {...register("basic", { valueAsNumber: true })}
+          />
+          {errors.basic && (
+            <p className="mt-1 text-xs font-medium text-red-500">
+              {errors.basic.message}
+            </p>
+          )}
+        </div>
+        <div>
+          <TextField
+            label="HRA"
+            type="number"
+            required
+            defaultValue={existing?.hra}
+            {...register("hra", { valueAsNumber: true })}
+          />
+          {errors.hra && (
+            <p className="mt-1 text-xs font-medium text-red-500">
+              {errors.hra.message}
+            </p>
+          )}
+        </div>
+        <div>
+          <TextField
+            label="Conveyance"
+            type="number"
+            required
+            defaultValue={existing?.conveyance}
+            {...register("conveyance", { valueAsNumber: true })}
+          />
+          {errors.conveyance && (
+            <p className="mt-1 text-xs font-medium text-red-500">
+              {errors.conveyance.message}
+            </p>
+          )}
+        </div>
+        <div>
+          <TextField
+            label="Medical"
+            type="number"
+            required
+            defaultValue={existing?.medical}
+            {...register("medical", { valueAsNumber: true })}
+          />
+          {errors.medical && (
+            <p className="mt-1 text-xs font-medium text-red-500">
+              {errors.medical.message}
+            </p>
+          )}
+        </div>
+        <div>
+          <TextField
+            label="Special allowance"
+            type="number"
+            required
+            defaultValue={existing?.specialAllowance}
+            {...register("specialAllowance", { valueAsNumber: true })}
+          />
+          {errors.specialAllowance && (
+            <p className="mt-1 text-xs font-medium text-red-500">
+              {errors.specialAllowance.message}
+            </p>
+          )}
+        </div>
+        <div>
+          <TextField
+            label="Provident Fund (PF)"
+            type="number"
+            required
+            defaultValue={existing?.pf}
+            {...register("pf", { valueAsNumber: true })}
+          />
+          {errors.pf && (
+            <p className="mt-1 text-xs font-medium text-red-500">
+              {errors.pf.message}
+            </p>
+          )}
+        </div>
+        <div>
+          <TextField
+            label="Professional tax"
+            type="number"
+            required
+            defaultValue={existing?.professionalTax}
+            {...register("professionalTax", { valueAsNumber: true })}
+          />
+          {errors.professionalTax && (
+            <p className="mt-1 text-xs font-medium text-red-500">
+              {errors.professionalTax.message}
+            </p>
+          )}
+        </div>
+        <div>
+          <TextField
+            label="Income tax (TDS)"
+            type="number"
+            required
+            defaultValue={existing?.incomeTax}
+            {...register("incomeTax", { valueAsNumber: true })}
+          />
+          {errors.incomeTax && (
+            <p className="mt-1 text-xs font-medium text-red-500">
+              {errors.incomeTax.message}
+            </p>
+          )}
+        </div>
       </form>
     </Modal>
   );

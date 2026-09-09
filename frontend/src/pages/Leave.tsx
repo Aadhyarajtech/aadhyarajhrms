@@ -183,6 +183,8 @@ function TeamApprovals() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [filter, setFilter] = useState("PENDING");
+  const [decidingId, setDecidingId] = useState<string | null>(null);
+
   const {
     data: requests,
     isLoading,
@@ -196,20 +198,65 @@ function TeamApprovals() {
       }),
   });
 
+  const getDecisionError = (err: unknown, status: "APPROVED" | "REJECTED") => {
+    const message = getErrorMessage(err);
+    const action = status === "APPROVED" ? "approve" : "reject";
+
+    // Keep useful API validation/permission messages when the backend provides them.
+    if (
+      message &&
+      message !== "Something went wrong on our end. Please try again."
+    ) {
+      return message;
+    }
+
+    return `Unable to ${action} this leave request. Please check that the request is still pending and that you have permission to ${action} it.`;
+  };
+
   const decideMutation = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       id,
       status,
     }: {
       id: string;
       status: "APPROVED" | "REJECTED";
-    }) => LeaveApi.decide(id, status),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["leave"] });
-      showToast("Decision recorded.");
+    }) => {
+      if (!id) {
+        throw new Error("Leave request ID is missing.");
+      }
+
+      return LeaveApi.decide(id, status);
     },
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onMutate: ({ id }) => {
+      setDecidingId(id);
+    },
+    onSuccess: (_data, variables) => {
+      // Refresh the team list after the decision so the item disappears
+      // from Pending and appears in the correct status when filtered.
+      queryClient.invalidateQueries({ queryKey: ["leave"] });
+
+      showToast(
+        variables.status === "APPROVED"
+          ? "Leave request approved successfully."
+          : "Leave request rejected successfully.",
+      );
+    },
+    onError: (err, variables) => {
+      showToast(getDecisionError(err, variables.status), "error");
+    },
+    onSettled: () => {
+      setDecidingId(null);
+    },
   });
+
+  const handleDecision = (
+    id: string,
+    status: "APPROVED" | "REJECTED",
+  ) => {
+    if (decideMutation.isPending) return;
+
+    decideMutation.mutate({ id, status });
+  };
 
   return (
     <Card>
@@ -220,7 +267,8 @@ function TeamApprovals() {
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+            disabled={decideMutation.isPending}
+            className="h-9 rounded-xl border border-line bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
             <option value="PENDING">Pending</option>
             <option value="APPROVED">Approved</option>
@@ -245,64 +293,61 @@ function TeamApprovals() {
         />
       ) : (
         <div className="space-y-2">
-          {requests.map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
-            >
-              <div className="flex items-center gap-3">
-                <Avatar
-                  firstName={r.firstName}
-                  lastName={r.lastName}
-                  src={r.avatarUrl}
-                  size="sm"
-                />
-                <div>
-                  <p className="text-[13px] font-medium text-ink">
-                    {r.firstName} {r.lastName}
-                  </p>
-                  <p className="text-[12px] text-ink-faint">
-                    {r.leaveTypeName} · {formatDate(r.startDate)} –{" "}
-                    {formatDate(r.endDate)} ({r.totalDays}d)
-                  </p>
-                  <p className="text-[12px] text-ink-faint">"{r.reason}"</p>
+          {requests.map((r) => {
+            const isDeciding = decidingId === r.id;
+
+            return (
+              <div
+                key={r.id}
+                className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
+              >
+                <div className="flex items-center gap-3">
+                  <Avatar
+                    firstName={r.firstName}
+                    lastName={r.lastName}
+                    src={r.avatarUrl}
+                    size="sm"
+                  />
+                  <div>
+                    <p className="text-[13px] font-medium text-ink">
+                      {r.firstName} {r.lastName}
+                    </p>
+                    <p className="text-[12px] text-ink-faint">
+                      {r.leaveTypeName} · {formatDate(r.startDate)} –{" "}
+                      {formatDate(r.endDate)} ({r.totalDays}d)
+                    </p>
+                    <p className="text-[12px] text-ink-faint">"{r.reason}"</p>
+                  </div>
                 </div>
+
+                {r.status === "PENDING" ? (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      leftIcon={<X size={14} />}
+                      isLoading={isDeciding}
+                      disabled={decideMutation.isPending}
+                      onClick={() => handleDecision(r.id, "REJECTED")}
+                    >
+                      Reject
+                    </Button>
+                    <Button
+                      size="sm"
+                      leftIcon={<Check size={14} />}
+                      isLoading={isDeciding}
+                      disabled={decideMutation.isPending}
+                      onClick={() => handleDecision(r.id, "APPROVED")}
+                    >
+                      Approve
+                    </Button>
+                  </div>
+                ) : (
+                  <StatusBadge status={r.status} />
+                )}
               </div>
-              {r.status === "PENDING" ? (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    leftIcon={<X size={14} />}
-                    isLoading={decideMutation.isPending}
-                    onClick={() =>
-                      decideMutation.mutate({
-                        id: r.id,
-                        status: "REJECTED",
-                      })
-                    }
-                  >
-                    Reject
-                  </Button>
-                  <Button
-                    size="sm"
-                    leftIcon={<Check size={14} />}
-                    isLoading={decideMutation.isPending}
-                    onClick={() =>
-                      decideMutation.mutate({
-                        id: r.id,
-                        status: "APPROVED",
-                      })
-                    }
-                  >
-                    Approve
-                  </Button>
-                </div>
-              ) : (
-                <StatusBadge status={r.status} />
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </Card>
