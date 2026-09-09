@@ -1,4 +1,4 @@
-import { LeaveType, LeaveBalance, LeaveRequest, Employee } from "@/db/models";
+import { LeaveType, LeaveBalance, LeaveRequest, Employee, User } from "@/db/models";
 import { nowIso } from "@/db/connection";
 
 function toApiDoc(doc: any) {
@@ -58,18 +58,28 @@ export async function listRequests(filters: {
   employeeId?: string;
   status?: string;
   approverId?: string;
+  excludeEmployeeId?: string;
 }) {
   const query: Record<string, any> = {};
   let employeeIdsForApprover: string[] | undefined;
 
   if (filters.employeeId) query.employeeId = filters.employeeId;
   if (filters.status) query.status = filters.status;
+  if (filters.excludeEmployeeId) {
+    query.employeeId = { $ne: filters.excludeEmployeeId };
+  }
   if (filters.approverId) {
     const reports = await Employee.find({ managerId: filters.approverId })
       .select("_id")
       .lean();
     employeeIdsForApprover = reports.map((r) => r._id);
     query.employeeId = { $in: employeeIdsForApprover };
+    if (filters.excludeEmployeeId) {
+      query.employeeId = {
+        $in: employeeIdsForApprover,
+        $ne: filters.excludeEmployeeId,
+      };
+    }
   }
 
   const rows = await LeaveRequest.find(query).sort({ appliedAt: -1 }).lean();
@@ -154,10 +164,60 @@ export async function decideRequest(
     throw new Error("Employee not found.");
   }
 
-  // Never trust an approver ID supplied by the client. The route passes the
-  // authenticated user's employeeId, and it must match the employee's
-  // assigned manager before a decision can be made.
-  if (String(employee.managerId ?? "") !== String(approverId)) {
+  /*
+   * Authorization:
+   *
+   * SUPER_ADMIN and HR_ADMIN are allowed to approve/reject organization-wide
+   * leave requests. MANAGER is restricted to their own direct reports.
+   *
+   * approverId is the authenticated user's employeeId (see leave.routes.ts).
+   * Resolve that employee to its linked User record so the actual RBAC role
+   * is checked here as well. This keeps authorization enforced at the data
+   * layer instead of relying only on the route middleware.
+   */
+  const approverEmployee = await Employee.findById(approverId)
+    .select("_id userId")
+    .lean();
+
+  if (!approverEmployee) {
+    throw new Error("Approver employee profile not found.");
+  }
+
+  const approverUser = await User.findById(approverEmployee.userId)
+    .select("role isActive")
+    .lean();
+
+  if (!approverUser) {
+    throw new Error("Approver user account not found.");
+  }
+
+  if (approverUser.isActive === false) {
+    throw new Error("Approver account is inactive.");
+  }
+
+  const isAdmin =
+    approverUser.role === "SUPER_ADMIN" ||
+    approverUser.role === "HR_ADMIN";
+
+  const isSelfRequest =
+    String(request.employeeId) === String(approverEmployee._id);
+
+  if (isSelfRequest) {
+    throw new Error(
+      "You cannot approve or reject your own leave request.",
+    );
+  }
+
+  const isDirectReport =
+    String(employee.managerId ?? "") === String(approverEmployee._id);
+
+  if (!isAdmin && approverUser.role !== "MANAGER") {
+    throw new Error(
+      "You do not have permission to approve or reject leave requests.",
+    );
+  }
+
+  if (!isAdmin && !isDirectReport) {
     throw new Error(
       "You can only approve or reject leave requests from your direct reports.",
     );
