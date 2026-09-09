@@ -114,9 +114,10 @@ export function createApp() {
 
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 20,
+    max: process.env.NODE_ENV === "production" ? 20 : 5000,
     standardHeaders: true,
     legacyHeaders: false,
+    message: { error: { message: "Too many login attempts. Please wait a moment." } },
   });
 
   app.use("/api/auth/login", authLimiter);

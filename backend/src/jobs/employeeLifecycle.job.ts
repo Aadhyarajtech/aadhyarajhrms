@@ -77,6 +77,6 @@ export function startEmployeeLifecycleJobs() {
   );
 
   console.log(
-    "[Employee Lifecycle] Probation reminder job scheduled for 09:00 IST daily.",
+    "[Employee Lifecycle] Probation reminder job scheduled for 10:00 IST daily.",
   );
 }

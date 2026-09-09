@@ -54,14 +54,14 @@ export interface Employee {
   managerLastName: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
   status:
-  | "ONBOARDING"
-  | "ON_PROBATION"
-  | "ACTIVE"
-  | "ON_LEAVE"
-  | "NOTICE_PERIOD"
-  | "TERMINATED"
-  | "RESIGNED"
-  | "INACTIVE";
+    | "ONBOARDING"
+    | "ON_PROBATION"
+    | "ACTIVE"
+    | "ON_LEAVE"
+    | "NOTICE_PERIOD"
+    | "TERMINATED"
+    | "RESIGNED"
+    | "INACTIVE";
   dateOfJoining: string;
   dateOfExit: string | null;
   email: string;
@@ -69,6 +69,7 @@ export interface Employee {
   isActive: number;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
+  shiftId?: string | null;
 }
 
 export interface Department {
@@ -133,23 +134,119 @@ export interface LeaveRequest {
   avatarUrl: string | null;
 }
 
+export type AttendanceStatus =
+  | "PRESENT"
+  | "ABSENT"
+  | "HALF_DAY"
+  | "WORK_FROM_HOME"
+  | "ON_LEAVE"
+  | "HOLIDAY"
+  | "WEEKEND"
+  | "LATE"
+  | "EARLY_DEPARTURE";
+
+export interface AttendanceBreak {
+  start: string;
+  end: string | null;
+  durationMinutes: number;
+}
+
+export type AttendanceAuditAction =
+  | "CHECK_IN"
+  | "CHECK_OUT"
+  | "REGULARIZATION_REQUESTED"
+  | "REGULARIZATION_APPROVED"
+  | "REGULARIZATION_REJECTED"
+  | "STATUS_CHANGED"
+  | "BREAK_RECORDED"
+  | "OVERTIME_CREDITED"
+  | "COMP_OFF_CREDITED";
+
+export interface AttendanceAuditEntry {
+  action: AttendanceAuditAction;
+  actorId: string;
+  actorRole: Role;
+  at: string;
+  note: string | null;
+}
+
 export interface AttendanceRecord {
   id: string;
   employeeId: string;
   date: string;
+  shiftId: string | null;
   checkIn: string | null;
   checkOut: string | null;
-  status:
-    | "PRESENT"
-    | "ABSENT"
-    | "HALF_DAY"
-    | "WORK_FROM_HOME"
-    | "ON_LEAVE"
-    | "HOLIDAY"
-    | "WEEKEND";
+  checkInLatitude: number | null;
+  checkInLongitude: number | null;
+  checkInAccuracy: number | null;
+  checkOutLatitude: number | null;
+  checkOutLongitude: number | null;
+  checkOutAccuracy: number | null;
+  breaks: AttendanceBreak[];
+  status: AttendanceStatus;
   workHours: number | null;
+  effectiveWorkHours: number | null;
+  breakMinutes: number;
+  lateMinutes: number;
+  earlyDepartureMinutes: number;
+  overtimeHours: number;
+  earlyDepartureReason: string | null;
+  overtimeReason: string | null;
   isRegularized: boolean;
+  compOffCredited: boolean;
   note: string | null;
+  auditTrail: AttendanceAuditEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AttendanceLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+export type AttendanceCheckInPayload = AttendanceLocation;
+
+export interface AttendanceCheckOutPayload extends AttendanceLocation {
+  earlyDepartureReason?: string;
+}
+
+export type AttendanceRegularizationStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED";
+
+export type AttendanceRegularizationRequestedStatus =
+  | "PRESENT"
+  | "ABSENT"
+  | "HALF_DAY"
+  | "WORK_FROM_HOME"
+  | "ON_LEAVE";
+
+export interface AttendanceRegularizationRequest {
+  id: string;
+  employeeId: string;
+  attendanceId: string | null;
+  date: string;
+  requestedCheckIn: string | null;
+  requestedCheckOut: string | null;
+  requestedStatus: AttendanceRegularizationRequestedStatus;
+  reason: string;
+  status: AttendanceRegularizationStatus;
+  approverId: string | null;
+  decisionNote: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+  approvedCheckIn?: string | null;
+  approvedCheckOut?: string | null;
+  approvedStatus?: AttendanceRegularizationRequestedStatus | null;
+  auditTrail?: AttendanceAuditEntry[];
+  firstName?: string | null;
+  lastName?: string | null;
+  employeeCode?: string | null;
 }
 
 /* =========================================================
@@ -505,14 +602,29 @@ export interface FeedbackSummary {
 export interface SalaryStructure {
   id: string;
   employeeId: string;
+  ctc: number;
+  basicPercentage: number;
+  hraPercentage: number;
   basic: number;
   hra: number;
   conveyance: number;
   medical: number;
   specialAllowance: number;
+  performanceBonus: number;
+  advanceRecovery: number;
+  overtimeRate: number;
   pf: number;
   professionalTax: number;
   incomeTax: number;
+  taxRegime: "NEW" | "OLD";
+  taxYear: number;
+  taxOtherIncome: number;
+  taxHraExemption: number;
+  taxDeduction80C: number;
+  taxDeduction80D: number;
+  taxDeduction80CCD1B: number;
+  taxDeduction80TTA: number;
+  taxPreviousTds: number;
   effectiveFrom: string;
 }
 
@@ -520,8 +632,23 @@ export interface PayrollRun {
   id: string;
   month: number;
   year: number;
-  status: "DRAFT" | "PROCESSED" | "PAID";
+  status:
+    | "DRAFT"
+    | "ATTENDANCE_LOCKED"
+    | "PROCESSED"
+    | "HR_REVIEW"
+    | "APPROVED"
+    | "PAID";
   processedAt: string | null;
+  attendanceLockedAt: string | null;
+  reviewedAt: string | null;
+  reviewedByUserId: string | null;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
+  paidAt: string | null;
+  paidByUserId: string | null;
+  payslipsSentAt: string | null;
+  payslipsSentByUserId: string | null;
   totalGross: number;
   totalDeductions: number;
   totalNet: number;
@@ -537,11 +664,20 @@ export interface Payslip {
   conveyance: number;
   medical: number;
   specialAllowance: number;
+  performanceBonus: number;
+  overtimeHours: number;
+  overtimeAmount: number;
   grossEarnings: number;
   pf: number;
   professionalTax: number;
   incomeTax: number;
+  taxRegime: "NEW" | "OLD";
+  taxYear: number;
+  taxableIncome: number;
+  annualTax: number;
+  esi: number;
   lop: number;
+  advanceRecovery: number;
   totalDeductions: number;
   netPay: number;
   daysPayable: number;
