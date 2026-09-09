@@ -3097,6 +3097,11 @@ export interface SalaryStructureDoc {
   _id: string;
   employeeId: string;
 
+  /** Annual total compensation. Monthly payroll derives components from this when configured. */
+  ctc: number;
+  basicPercentage: number;
+  hraPercentage: number;
+
   basic: number;
   hra: number;
   conveyance: number;
@@ -3131,6 +3136,10 @@ const salaryStructureSchema = new Schema<SalaryStructureDoc>(
       required: true,
       unique: true,
     },
+
+    ctc: { type: Number, default: 0, min: 0 },
+    basicPercentage: { type: Number, default: 50, min: 40, max: 50 },
+    hraPercentage: { type: Number, default: 40, min: 20, max: 40 },
 
     basic: {
       type: Number,

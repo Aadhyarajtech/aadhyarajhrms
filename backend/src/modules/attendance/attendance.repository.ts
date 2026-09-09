@@ -17,27 +17,6 @@ type AttendanceApiRecord = Record<string, any> & { id: string };
 
 const IST_TIME_ZONE = "Asia/Kolkata";
 
-async function assertAttendancePeriodUnlocked(
-  employeeId: string,
-  date: string,
-) {
-  const [yearText, monthText] = date.split("-");
-  const month = Number(monthText);
-  const year = Number(yearText);
-  if (!Number.isInteger(month) || !Number.isInteger(year)) return;
-  const lockedRun = await PayrollRun.findOne({
-    month,
-    year,
-    status: {
-      $in: ["ATTENDANCE_LOCKED", "PROCESSED", "HR_REVIEW", "APPROVED", "PAID"],
-    },
-  })
-    .select("_id")
-    .lean();
-  if (lockedRun)
-    throw AppError.badRequest("Attendance is locked for this payroll period.");
-}
-
 function todayDateString(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: IST_TIME_ZONE,
@@ -403,7 +382,6 @@ export async function checkIn(
     throw new Error("Inactive employees cannot record attendance.");
   }
 
-  await assertAttendancePeriodUnlocked(employeeId, todayDateString());
   const existing = await findOrCreateToday(employeeId);
 
   if (!existing) {
@@ -490,10 +468,6 @@ export async function checkOut(
   assertValidLocation(options);
 
   const existing = await getTodayRecord(employeeId);
-  await assertAttendancePeriodUnlocked(
-    employeeId,
-    existing?.date ?? todayDateString(),
-  );
   if (!existing || !existing.checkIn) {
     throw new Error("Check-in is required before check-out.");
   }
@@ -605,7 +579,6 @@ export async function checkOut(
 }
 
 export async function startBreak(employeeId: string) {
-  await assertAttendancePeriodUnlocked(employeeId, todayDateString());
   const attendance = await Attendance.findOne({
     employeeId,
     date: todayDateString(),
@@ -654,7 +627,6 @@ export async function startBreak(employeeId: string) {
 }
 
 export async function endBreak(employeeId: string) {
-  await assertAttendancePeriodUnlocked(employeeId, todayDateString());
   const attendance = await Attendance.findOne({
     employeeId,
     date: todayDateString(),
@@ -956,6 +928,74 @@ export async function listForDate(date: string, managerId?: string) {
   });
 }
 
+export async function listForMonth(
+  month: number,
+  year: number,
+  managerId?: string,
+) {
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw new Error("Month must be between 1 and 12.");
+  }
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw new Error("Invalid attendance year.");
+  }
+
+  let employeeIds: string[] | undefined;
+  if (managerId) {
+    const employees = await Employee.find({
+      managerId,
+      status: "ACTIVE",
+    })
+      .select("_id")
+      .lean();
+    employeeIds = employees.map((employee) => employee._id);
+    if (employeeIds.length === 0) return [];
+  }
+
+  const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const monthEndExclusive = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+  const query: Record<string, any> = {
+    date: { $gte: monthStart, $lt: monthEndExclusive },
+  };
+  if (employeeIds) query.employeeId = { $in: employeeIds };
+
+  const rows = await Attendance.find(query)
+    .sort({ date: 1, checkIn: 1 })
+    .lean();
+  if (rows.length === 0) return [];
+
+  const attendanceEmployeeIds = [...new Set(rows.map((r) => r.employeeId))];
+  const employees = await Employee.find({
+    _id: { $in: attendanceEmployeeIds },
+  }).lean();
+  const empMap = new Map(employees.map((e) => [e._id, e]));
+  const departmentIds = [
+    ...new Set(employees.map((e) => e.departmentId).filter(Boolean)),
+  ];
+  const departments = await Department.find({
+    _id: { $in: departmentIds },
+  }).lean();
+  const deptMap = new Map(departments.map((d) => [d._id, d]));
+
+  return rows.map((r) => {
+    const emp = empMap.get(r.employeeId);
+    const { _id, ...rest } = r;
+    return {
+      id: _id,
+      ...rest,
+      firstName: emp?.firstName ?? null,
+      lastName: emp?.lastName ?? null,
+      employeeCode: emp?.employeeCode ?? null,
+      departmentName: emp
+        ? (deptMap.get(emp.departmentId)?.name ?? null)
+        : null,
+    };
+  });
+}
+
 export async function getTodaySummary() {
   const today = todayDateString();
 
@@ -1004,7 +1044,7 @@ export async function requestRegularization(
   }).lean();
 
   if (existingPending) {
-    throw new Error(
+    throw AppError.conflict(
       "A regularization request is already pending for this date.",
     );
   }
@@ -1021,7 +1061,6 @@ export async function requestRegularization(
       ? attendance.status
       : "PRESENT";
 
-  await assertAttendancePeriodUnlocked(employeeId, date);
   const now = nowIso();
 
   const request = await AttendanceRegularizationRequest.create({
@@ -1113,7 +1152,6 @@ export async function approveRegularization(
   if (!request) {
     throw new Error("Pending regularization request not found.");
   }
-  await assertAttendancePeriodUnlocked(request.employeeId, request.date);
 
   const employee = await Employee.findOne(
     includeAll
@@ -1344,7 +1382,6 @@ export async function rejectRegularization(
   if (!request) {
     throw new Error("Pending regularization request not found.");
   }
-  await assertAttendancePeriodUnlocked(request.employeeId, request.date);
 
   const employee = await Employee.findOne(
     includeAll

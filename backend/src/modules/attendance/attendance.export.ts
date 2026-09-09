@@ -23,14 +23,34 @@ function safeNumber(value: unknown): number {
   return Number.isFinite(number) ? number : 0;
 }
 
+const ATTENDANCE_TIME_ZONE = "Asia/Kolkata";
+
+function formatIndianDateTime(value: unknown): string {
+  if (!value) return "";
+
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: ATTENDANCE_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(date);
+}
+
 export function buildAttendanceRows(records: any[]): AttendanceExportRow[] {
   return records.map((record) => ({
     date: String(record.date ?? ""),
     employee: `${record.firstName ?? ""} ${record.lastName ?? ""}`.trim(),
     employeeCode: String(record.employeeCode ?? ""),
     department: String(record.departmentName ?? ""),
-    checkIn: record.checkIn ? String(record.checkIn) : "",
-    checkOut: record.checkOut ? String(record.checkOut) : "",
+    checkIn: formatIndianDateTime(record.checkIn),
+    checkOut: formatIndianDateTime(record.checkOut),
     workHours: safeNumber(record.workHours),
     effectiveWorkHours: safeNumber(record.effectiveWorkHours),
     breakMinutes: safeNumber(record.breakMinutes),
@@ -95,7 +115,7 @@ export async function createAttendancePdf(rows: AttendanceExportRow[]) {
     "OT",
     "Status",
   ];
-  const widths = [55, 105, 55, 75, 75, 42, 48, 38, 38, 38, 75];
+  const widths = [58, 115, 75, 105, 105, 45, 55, 42, 42, 42, 109];
   const drawRow = (values: string[]) => {
     let x = document.page.margins.left;
     const y = document.y;
@@ -103,7 +123,7 @@ export async function createAttendancePdf(rows: AttendanceExportRow[]) {
       document.text(value, x, y, { width: widths[index], ellipsis: true });
       x += widths[index];
     });
-    document.moveDown(1.8);
+    document.moveDown(1.4);
   };
 
   drawRow(headers);

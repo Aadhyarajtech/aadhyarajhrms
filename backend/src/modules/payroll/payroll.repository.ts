@@ -16,6 +16,7 @@ import { nowIso } from "@/db/connection";
 import { AppError } from "@/utils/errors";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { calculateAnnualTax, type TaxRegime } from "./payroll.tax";
+import { getKpiAchievementPercentage } from "./payroll.performance";
 
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
@@ -30,6 +31,9 @@ export async function getSalaryStructure(employeeId: string) {
 
 export interface SalaryStructureInput {
   employeeId: string;
+  ctc?: number;
+  basicPercentage?: number;
+  hraPercentage?: number;
   basic: number;
   hra: number;
   conveyance: number;
@@ -54,8 +58,90 @@ export interface SalaryStructureInput {
 
 export async function upsertSalaryStructure(input: SalaryStructureInput) {
   const now = nowIso();
+  const suppliedCtc = Number(input.ctc ?? 0);
+  const basicPercentage = Number(input.basicPercentage ?? 50);
+  const hraPercentage = Number(input.hraPercentage ?? 40);
+  if (suppliedCtc > 0) {
+    if (basicPercentage < 40 || basicPercentage > 50) {
+      throw AppError.badRequest(
+        "Basic percentage must be between 40% and 50% of CTC.",
+      );
+    }
+    if (hraPercentage < 20 || hraPercentage > 40) {
+      throw AppError.badRequest(
+        "HRA percentage must be between 20% and 40% of Basic.",
+      );
+    }
+  }
+
+  const monthlyCtc = suppliedCtc > 0 ? suppliedCtc / 12 : 0;
+  const basic =
+    suppliedCtc > 0
+      ? roundMoney((monthlyCtc * basicPercentage) / 100)
+      : Math.max(0, Number(input.basic ?? 0));
+  const hra =
+    suppliedCtc > 0
+      ? roundMoney((basic * hraPercentage) / 100)
+      : Math.max(0, Number(input.hra ?? 0));
+  const conveyance = Math.max(0, Number(input.conveyance ?? 0));
+  const medical = Math.max(0, Number(input.medical ?? 0));
+  const specialAllowance =
+    suppliedCtc > 0
+      ? roundMoney(monthlyCtc - basic - hra - conveyance - medical)
+      : Math.max(0, Number(input.specialAllowance ?? 0));
+
+  if (suppliedCtc > 0 && specialAllowance < 0) {
+    throw AppError.badRequest(
+      "The configured CTC is too low for Basic, HRA, Conveyance and Medical components.",
+    );
+  }
+
   const normalized = {
     ...input,
+    ctc:
+      suppliedCtc > 0
+        ? roundMoney(suppliedCtc)
+        : roundMoney(
+            (basic +
+              hra +
+              conveyance +
+              medical +
+              Math.max(0, Number(input.specialAllowance ?? 0))) *
+              12,
+          ),
+    basicPercentage:
+      suppliedCtc > 0
+        ? basicPercentage
+        : Math.min(
+            50,
+            Math.max(
+              40,
+              roundMoney(
+                (basic /
+                  Math.max(
+                    basic +
+                      hra +
+                      conveyance +
+                      medical +
+                      Math.max(0, Number(input.specialAllowance ?? 0)),
+                    1,
+                  )) *
+                  100,
+              ),
+            ),
+          ),
+    hraPercentage:
+      suppliedCtc > 0
+        ? hraPercentage
+        : Math.min(
+            40,
+            Math.max(20, roundMoney((hra / Math.max(basic, 1)) * 100)),
+          ),
+    basic,
+    hra,
+    conveyance,
+    medical,
+    specialAllowance,
     performanceBonus: Math.max(0, Number(input.performanceBonus ?? 0)),
     advanceRecovery: Math.max(0, Number(input.advanceRecovery ?? 0)),
     overtimeRate: Math.max(0, Number(input.overtimeRate ?? 1.5)),
@@ -84,6 +170,54 @@ export async function upsertSalaryStructure(input: SalaryStructureInput) {
     await SalaryStructure.create({ ...normalized, effectiveFrom: now });
   }
   return getSalaryStructure(input.employeeId);
+}
+
+export async function previewTax(input: {
+  employeeId: string;
+  basic: number;
+  hra: number;
+  conveyance: number;
+  medical: number;
+  specialAllowance: number;
+  performanceBonus?: number;
+  taxRegime?: TaxRegime;
+  taxYear?: number;
+  taxOtherIncome?: number;
+  taxHraExemption?: number;
+  taxDeduction80C?: number;
+  taxDeduction80D?: number;
+  taxDeduction80CCD1B?: number;
+  taxDeduction80TTA?: number;
+}) {
+  const employee = await Employee.findById(input.employeeId)
+    .select("dateOfBirth")
+    .lean();
+  if (!employee) throw AppError.notFound("Employee not found.");
+
+  const monthlySalaryIncome = roundMoney(
+    Math.max(0, Number(input.basic ?? 0)) +
+      Math.max(0, Number(input.hra ?? 0)) +
+      Math.max(0, Number(input.conveyance ?? 0)) +
+      Math.max(0, Number(input.medical ?? 0)) +
+      Math.max(0, Number(input.specialAllowance ?? 0)) +
+      Math.max(0, Number(input.performanceBonus ?? 0)),
+  );
+  const taxYear = Math.max(2020, Number(input.taxYear ?? 2026));
+  const regime = input.taxRegime === "OLD" ? "OLD" : "NEW";
+  return calculateAnnualTax({
+    taxYear,
+    regime,
+    dateOfBirth: employee.dateOfBirth,
+    monthlySalaryIncome,
+    declarations: {
+      otherIncome: input.taxOtherIncome,
+      hraExemption: input.taxHraExemption,
+      deduction80C: input.taxDeduction80C,
+      deduction80D: input.taxDeduction80D,
+      deduction80CCD1B: input.taxDeduction80CCD1B,
+      deduction80TTA: input.taxDeduction80TTA,
+    },
+  });
 }
 
 export async function listPayrollRuns() {
@@ -235,7 +369,15 @@ export async function processPayrollRun(month: number, year: number) {
       structure.conveyance +
       structure.medical +
       structure.specialAllowance;
-    const performanceBonus = roundMoney(structure.performanceBonus ?? 0);
+    const configuredPerformanceBonus = roundMoney(
+      structure.performanceBonus ?? 0,
+    );
+    const kpiAchievementPercentage = await getKpiAchievementPercentage(emp._id);
+    const performanceBonus = roundMoney(
+      kpiAchievementPercentage === null
+        ? configuredPerformanceBonus
+        : configuredPerformanceBonus * (kpiAchievementPercentage / 100),
+    );
     const overtimeHours = roundMoney(
       attendance.reduce((sum, a) => sum + Math.max(0, a.overtimeHours || 0), 0),
     );
