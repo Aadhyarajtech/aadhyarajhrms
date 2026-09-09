@@ -1,4 +1,9 @@
 {
+  "name": "aadhyarajhrms-root",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build"
+  },
   "dependencies": {
     "exceljs": "^4.4.0",
     "mongodb": "^7.5.0",
