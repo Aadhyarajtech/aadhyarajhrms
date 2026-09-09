@@ -31,6 +31,13 @@ interface Ticket {
   assignedTo?: string;
   status: string;
   attachment?: string;
+  aiCategory?: string | null;
+  aiIntent?: string | null;
+  aiConfidence?: number | null;
+  aiReason?: string | null;
+  aiPriority?: string | null;
+  aiPriorityReason?: string | null;
+  aiSentiment?: string | null;
   createdAt: string;
   updatedAt?: string;
 }
@@ -727,6 +734,83 @@ export default function TicketDetails() {
 
         </div>
       </div>
+
+      {/* =====================================================
+          AI CLASSIFICATION INSIGHTS
+      ===================================================== */}
+      {data.aiCategory && (
+        <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/70 via-purple-50/40 to-blue-50/50 p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🤖</span>
+              <h3 className="text-base font-semibold text-gray-900">
+                AI Classification Insights
+              </h3>
+            </div>
+            {data.aiConfidence !== null && data.aiConfidence !== undefined && (
+              <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-800">
+                {Math.round(data.aiConfidence * 100)}% Confidence
+              </span>
+            )}
+          </div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                Predicted Category
+              </p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">
+                {data.aiCategory}
+              </p>
+            </div>
+
+            {data.aiIntent && (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Detected Intent
+                </p>
+                <p className="mt-1 text-sm font-semibold text-gray-900">
+                  {data.aiIntent}
+                </p>
+              </div>
+            )}
+
+            {data.aiPriority && (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Suggested Priority
+                </p>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-sm font-semibold text-indigo-700">
+                    {data.aiPriority}
+                  </span>
+                  {data.aiSentiment && data.aiSentiment !== "NEUTRAL" && (
+                    <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[11px] font-semibold text-rose-800">
+                      {data.aiSentiment}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {data.aiReason && (
+              <div className="sm:col-span-2 lg:col-span-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  AI Rationale
+                </p>
+                <p className="mt-1 text-xs text-gray-600 leading-relaxed">
+                  {data.aiReason}
+                  {data.aiPriorityReason && (
+                    <span className="block mt-1 text-indigo-600">
+                      ⚡ Priority note: {data.aiPriorityReason}
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* =====================================================
           SUBJECT & DESCRIPTION

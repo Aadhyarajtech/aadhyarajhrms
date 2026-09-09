@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AuthApi } from "@/lib/endpoints";
 import { registerUnauthorizedHandler } from "@/lib/api";
 import type { AuthUser } from "@/types";
@@ -16,13 +17,15 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const TOKEN_KEY = "aadhyaraj_token";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
+    queryClient.clear();
     setUser(null);
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     registerUnauthorizedHandler(logout);
@@ -43,10 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
+    queryClient.clear();
     const { token, user: loggedInUser } = await AuthApi.login(email, password);
     localStorage.setItem(TOKEN_KEY, token);
     setUser(loggedInUser);
-  }, []);
+  }, [queryClient]);
 
   const refreshUser = useCallback(async () => {
     const fresh = await AuthApi.me();

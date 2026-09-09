@@ -27,6 +27,7 @@ export interface UserDoc {
     | "MANAGER"
     | "RECRUITER"
     | "FINANCE"
+    | "IT_SUPPORT"
     | "EMPLOYEE";
   isActive: boolean;
   mustResetPwd: boolean;
@@ -60,6 +61,7 @@ const userSchema = new Schema<UserDoc>(
         "MANAGER",
         "RECRUITER",
         "FINANCE",
+        "IT_SUPPORT",
         "EMPLOYEE",
       ],
       default: "EMPLOYEE",
@@ -4140,7 +4142,8 @@ export interface TicketDoc {
     | "Attendance"
     | "Recruitment"
     | "Employee Referral"
-    | "IT Support";
+    | "IT Support"
+    | "Complaint";
 
   priority: "LOW" | "MEDIUM" | "HIGH";
 
@@ -4157,6 +4160,19 @@ export interface TicketDoc {
     | "WAITING_FOR_EMPLOYEE"
     | "RESOLVED"
     | "CLOSED";
+
+  // AI classification metadata
+  aiCategory: string | null;
+  aiIntent: string | null;
+  aiConfidence: number | null;
+  aiReason: string | null;
+  aiPriority: "LOW" | "MEDIUM" | "HIGH" | null;
+  aiPriorityReason: string | null;
+  aiSentiment: "POSITIVE" | "NEUTRAL" | "FRUSTRATED" | "CRITICAL" | null;
+
+  // Phase 5: Predictive SLA Breach Warning
+  slaRiskScore: number;
+  slaRiskLevel: "NORMAL" | "ELEVATED" | "CRITICAL";
 
   createdAt: string;
   updatedAt: string;
@@ -4187,6 +4203,7 @@ const ticketSchema = new Schema<TicketDoc>(
         "Recruitment",
         "Employee Referral",
         "IT Support",
+        "Complaint",
       ],
       required: true,
     },
@@ -4237,6 +4254,56 @@ const ticketSchema = new Schema<TicketDoc>(
     updatedAt: {
       type: String,
       required: true,
+    },
+
+    // AI classification metadata
+    aiCategory: {
+      type: String,
+      default: null,
+    },
+
+    aiIntent: {
+      type: String,
+      default: null,
+    },
+
+    aiConfidence: {
+      type: Number,
+      default: null,
+    },
+
+    aiReason: {
+      type: String,
+      default: null,
+    },
+
+    aiPriority: {
+      type: String,
+      enum: ["LOW", "MEDIUM", "HIGH", null],
+      default: null,
+    },
+
+    aiPriorityReason: {
+      type: String,
+      default: null,
+    },
+
+    aiSentiment: {
+      type: String,
+      enum: ["POSITIVE", "NEUTRAL", "FRUSTRATED", "CRITICAL", null],
+      default: null,
+    },
+
+    // Phase 5: Autonomous Operations & Predictive SLA
+    slaRiskScore: {
+      type: Number,
+      default: 0,
+    },
+
+    slaRiskLevel: {
+      type: String,
+      enum: ["NORMAL", "ELEVATED", "CRITICAL"],
+      default: "NORMAL",
     },
   },
   baseOptions,
