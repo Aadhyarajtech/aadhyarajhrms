@@ -243,7 +243,7 @@ function RequestPayslipsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal open onClose={onClose} title="Request Payslips" size="sm">
-      <p className="text-[13px] text-ink-faint">Select period</p>
+      <p className="text-[13px] font-medium text-ink-faint">Select period <span className="text-danger-500">*</span></p>
       <div className="mt-3 space-y-2">
         {options.map((opt) => (
           <label
@@ -360,14 +360,14 @@ function PayrollRuns() {
           subtitle="Generates payslips for every active employee with a salary structure."
         />
         <form className="flex flex-wrap items-end gap-3">
-          <SelectField label="Month" {...register("month")}>
+          <SelectField label="Month" required {...register("month")}>
             {Array.from({ length: 12 }).map((_, i) => (
               <option key={i} value={i + 1}>
                 {monthName(i + 1)}
               </option>
             ))}
           </SelectField>
-          <SelectField label="Year" {...register("year")}>
+          <SelectField label="Year" required {...register("year")}>
             {[2024, 2025, 2026, 2027].map((y) => (
               <option key={y} value={y}>
                 {y}

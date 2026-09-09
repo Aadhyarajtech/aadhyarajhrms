@@ -424,7 +424,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
 
           {/* Subject */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Subject</label>
+            <label className="mb-2 block text-sm font-medium">Subject <span className="text-red-500">*</span></label>
 
             <input
               type="text"
@@ -438,7 +438,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
           {/* Description */}
           <div>
             <label className="mb-2 block text-sm font-medium">
-              Description
+              Description <span className="text-red-500">*</span>
             </label>
 
             <textarea

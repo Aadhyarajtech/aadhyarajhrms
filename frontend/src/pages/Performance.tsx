@@ -680,7 +680,7 @@ function CreatePipModal({ open, onClose }: { open: boolean; onClose: () => void 
       }
     >
       <div className="space-y-4">
-        <SelectField label="Completed review" {...form.register("reviewId")} onChange={(event) => {
+        <SelectField label="Completed review" required {...form.register("reviewId")} onChange={(event) => {
           const review = completedReviews.find((item: any) => item.id === event.target.value);
           form.setValue("reviewId", event.target.value);
           if (review) form.setValue("employeeId", review.revieweeId);
@@ -703,7 +703,7 @@ function CreatePipModal({ open, onClose }: { open: boolean; onClose: () => void 
         <TextField label="Target" {...form.register("target")} />
         <TextField label="Objective due date" type="date" required {...form.register("dueDate")} />
 
-        <SelectField label="Check-in frequency" {...form.register("checkInFrequency")}>
+        <SelectField label="Check-in frequency" required {...form.register("checkInFrequency")}>
           <option value="WEEKLY">Weekly</option>
           <option value="BIWEEKLY">Biweekly</option>
           <option value="MONTHLY">Monthly</option>
