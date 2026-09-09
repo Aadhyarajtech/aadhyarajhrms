@@ -566,11 +566,11 @@ export const AttendanceApi = {
       .get("/attendance/smart-regularization", { params: { date, employeeId } })
       .then((r) => r.data),
 
-  regularize: (date: string, note: string) =>
+  regularize: (date: string, note: string, employeeId?: string) =>
     api
       .post<{
         record: AttendanceRegularizationRequest;
-      }>("/attendance/regularize", { date, note })
+      }>("/attendance/regularize", { date, note, employeeId })
       .then((r) => r.data.record),
 
   teamRegularizationRequests: (
