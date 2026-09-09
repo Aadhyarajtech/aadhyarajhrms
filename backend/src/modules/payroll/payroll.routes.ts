@@ -26,6 +26,9 @@ payrollRouter.get(
 
 const structureSchema = z.object({
   employeeId: z.string(),
+  ctc: z.number().nonnegative().optional(),
+  basicPercentage: z.number().min(40).max(50).optional(),
+  hraPercentage: z.number().min(20).max(40).optional(),
   basic: z.number().min(0),
   hra: z.number().min(0),
   conveyance: z.number().min(0),
@@ -47,6 +50,37 @@ const structureSchema = z.object({
   taxDeduction80TTA: z.number().min(0).optional(),
   taxPreviousTds: z.number().min(0).optional(),
 });
+
+const taxPreviewSchema = structureSchema.pick({
+  employeeId: true,
+  basic: true,
+  hra: true,
+  conveyance: true,
+  medical: true,
+  specialAllowance: true,
+  performanceBonus: true,
+  taxRegime: true,
+  taxYear: true,
+  taxOtherIncome: true,
+  taxHraExemption: true,
+  taxDeduction80C: true,
+  taxDeduction80D: true,
+  taxDeduction80CCD1B: true,
+  taxDeduction80TTA: true,
+});
+
+payrollRouter.post(
+  "/tax-preview",
+  isAdmin,
+  validate(taxPreviewSchema),
+  async (req, res, next) => {
+    try {
+      res.json({ tax: await repo.previewTax(req.body) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 payrollRouter.put(
   "/salary-structure",

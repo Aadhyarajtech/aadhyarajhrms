@@ -130,7 +130,7 @@ function generateTicketId(category: string) {
 // ASSIGN DEPARTMENT
 // =========================================================
 
-function assignDepartment(category: string) {
+export function assignDepartment(category: string) {
   switch (category) {
     case "HR":
       return "HR_ADMIN";
@@ -173,6 +173,13 @@ export async function createTicket(data: {
   subject: string;
   description: string;
   attachment?: string;
+  aiCategory?: string | null;
+  aiIntent?: string | null;
+  aiConfidence?: number | null;
+  aiReason?: string | null;
+  aiPriority?: string | null;
+  aiPriorityReason?: string | null;
+  aiSentiment?: string | null;
 }) {
   const now = new Date().toISOString();
 
@@ -206,6 +213,15 @@ export async function createTicket(data: {
     escalatedById: null,
     escalatedTo: null,
     escalationReason: null,
+
+    // AI classification metadata
+    aiCategory: data.aiCategory ?? null,
+    aiIntent: data.aiIntent ?? null,
+    aiConfidence: data.aiConfidence ?? null,
+    aiReason: data.aiReason ?? null,
+    aiPriority: data.aiPriority ?? null,
+    aiPriorityReason: data.aiPriorityReason ?? null,
+    aiSentiment: data.aiSentiment ?? null,
 
     createdAt: now,
 
@@ -372,6 +388,92 @@ export async function getTeamGrievanceTicket(
     employeeId: { $in: employeeIds },
   }).lean();
 }
+
+// =========================================================
+// STRICT DEPARTMENT-LEVEL TICKET SEGREGATION
+// =========================================================
+
+export const HR_CATEGORIES = [
+  "HR",
+  "Leave",
+  "Attendance",
+  "Recruitment",
+  "Employee Referral",
+  "Complaint",
+];
+
+export async function getTicketsForDepartment(
+  role: string,
+  managerEmployeeId?: string | null,
+) {
+  // Super Admin and HR Admin have enterprise-wide oversight over all tickets
+  if (role === "SUPER_ADMIN" || role === "HR_ADMIN") {
+    return Ticket.find({}).sort({ createdAt: -1 }).lean();
+  }
+
+  // IT Support sees only IT Support tickets
+  if (role === "IT_SUPPORT") {
+    return Ticket.find({
+      $or: [{ assignedTo: "IT_SUPPORT" }, { category: "IT Support" }],
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  // Finance sees only Payroll / Finance tickets
+  if (role === "FINANCE") {
+    return Ticket.find({
+      $or: [{ assignedTo: "FINANCE" }, { category: "Payroll" }],
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  if (role === "MANAGER") {
+    if (!managerEmployeeId) return [];
+    return getTeamGrievanceTickets(managerEmployeeId);
+  }
+
+  return [];
+}
+
+export function isUserAuthorizedForTicket(
+  ticket: any,
+  user: { role: string; employeeId?: string | null },
+): boolean {
+  if (!ticket || !user) return false;
+  const role = String(user.role);
+
+  // Super Admin and HR Admin have enterprise-wide access
+  if (role === "SUPER_ADMIN" || role === "HR_ADMIN") return true;
+
+  // The ticket creator can always view their own ticket
+  if (user.employeeId && ticket.employeeId === user.employeeId) return true;
+
+  // Manager can only access Complaint/Grievance tickets assigned to them
+  if (role === "MANAGER") {
+    return (
+      ticket.category === "Complaint" &&
+      !!user.employeeId &&
+      ticket.assignedManagerId === user.employeeId
+    );
+  }
+
+  // IT Support can only access IT Support tickets
+  if (role === "IT_SUPPORT") {
+    return (
+      ticket.assignedTo === "IT_SUPPORT" || ticket.category === "IT Support"
+    );
+  }
+
+  // Finance can only access Payroll/Finance tickets
+  if (role === "FINANCE") {
+    return ticket.assignedTo === "FINANCE" || ticket.category === "Payroll";
+  }
+
+  return false;
+}
+
 
 // =========================================================
 // ESCALATE MANAGER GRIEVANCE

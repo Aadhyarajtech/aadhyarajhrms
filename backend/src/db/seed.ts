@@ -578,6 +578,8 @@ export async function runSeed() {
       experienceMin: jb.expMin, experienceMax: jb.expMax,
       description: `We're looking for a ${jb.title} to join Aadhyaraj Technologies and help us scale our platform for thousands of HR teams across the region. You'll collaborate closely with cross-functional partners and own outcomes end to end.`,
       status: "OPEN", openings: jb.openings, postedAt: addDays(today, -randomInt(5, 40)).toISOString(),
+      requestedById: hrVp.userId,
+      requestedAt: addDays(today, -randomInt(10, 50)).toISOString(),
     });
     jobIds.push({ id, deptCode: jb.deptCode });
   }

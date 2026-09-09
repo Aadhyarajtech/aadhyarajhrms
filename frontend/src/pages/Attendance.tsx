@@ -81,7 +81,9 @@ export default function Attendance() {
     setTab(nextTab);
     setSearchParams(nextTab === "mine" ? {} : { tab: nextTab });
   };
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | undefined>(undefined);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<
+    string | undefined
+  >(undefined);
 
   const tabs = [
     { key: "mine", label: "My Attendance" },
@@ -109,8 +111,18 @@ export default function Attendance() {
           </Button>
         }
       />
-      <Tabs tabs={tabs} active={tab} onChange={handleTabChange} className="mb-6 w-fit" />
-      {tab === "mine" && <MyAttendance selectedEmployeeId={selectedEmployeeId} onEmployeeChange={setSelectedEmployeeId} />}
+      <Tabs
+        tabs={tabs}
+        active={tab}
+        onChange={handleTabChange}
+        className="mb-6 w-fit"
+      />
+      {tab === "mine" && (
+        <MyAttendance
+          selectedEmployeeId={selectedEmployeeId}
+          onEmployeeChange={setSelectedEmployeeId}
+        />
+      )}
       {tab === "team" && isManager && <TeamAttendance />}
       {tab === "exceptions" && isManager && <TeamAttendanceExceptions />}
       <RegularizeModal open={regOpen} onClose={() => setRegOpen(false)} />
@@ -142,7 +154,8 @@ function MyAttendance({
   const { data: employeeData, isLoading: employeesLoading } = useQuery({
     queryKey: ["attendance", "ai", "employees", user?.role, user?.employee?.id],
     queryFn: () => EmployeesApi.list({ page: 1, pageSize: 100 }),
-    enabled: canSelectEmployee && (user?.role !== "MANAGER" || !!user?.employee?.id),
+    enabled:
+      canSelectEmployee && (user?.role !== "MANAGER" || !!user?.employee?.id),
   });
   const employees = employeeData?.employees ?? [];
   const [month, setMonth] = useState(today.getMonth() + 1);
@@ -491,7 +504,9 @@ function MyAttendance({
           />
           <div className="px-6 pb-5">
             <div className="max-w-md">
-              <label className="mb-1.5 block text-[12px] font-medium text-ink">Employee</label>
+              <label className="mb-1.5 block text-[12px] font-medium text-ink">
+                Employee
+              </label>
               <select
                 value={selectedEmployeeId ?? ""}
                 onChange={(e) => onEmployeeChange(e.target.value || undefined)}
@@ -666,14 +681,35 @@ function SummaryCard({
 
 function TeamAttendance() {
   const [date, setDate] = useState(localDateString());
+  const today = new Date();
+  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [year, setYear] = useState(today.getFullYear());
   const { showToast } = useToast();
-  const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
+  const [exporting, setExporting] = useState<
+    "xlsx" | "pdf" | "monthly-xlsx" | "monthly-pdf" | null
+  >(null);
 
   const exportTeamAttendance = async (format: "xlsx" | "pdf") => {
     try {
       setExporting(format);
       const blob = await AttendanceApi.exportTeam(date, format);
       downloadBlob(blob, `team-attendance-${date}.${format}`);
+    } catch (error) {
+      showToast(getErrorMessage(error), "error");
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const exportTeamMonthlyAttendance = async (format: "xlsx" | "pdf") => {
+    try {
+      const key = `monthly-${format}` as "monthly-xlsx" | "monthly-pdf";
+      setExporting(key);
+      const blob = await AttendanceApi.exportTeamMonthly(month, year, format);
+      downloadBlob(
+        blob,
+        `team-attendance-${year}-${String(month).padStart(2, "0")}.${format}`,
+      );
     } catch (error) {
       showToast(getErrorMessage(error), "error");
     } finally {
@@ -705,7 +741,7 @@ function TeamAttendance() {
               onClick={() => exportTeamAttendance("xlsx")}
               disabled={!!exporting}
             >
-              Excel
+              {exporting === "xlsx" ? "Exporting..." : "Daily Excel"}
             </Button>
             <Button
               size="sm"
@@ -714,7 +750,39 @@ function TeamAttendance() {
               onClick={() => exportTeamAttendance("pdf")}
               disabled={!!exporting}
             >
-              PDF
+              {exporting === "pdf" ? "Exporting..." : "Daily PDF"}
+            </Button>
+            <input
+              type="month"
+              value={`${year}-${String(month).padStart(2, "0")}`}
+              onChange={(e) => {
+                const [nextYear, nextMonth] = e.target.value
+                  .split("-")
+                  .map(Number);
+                if (nextYear && nextMonth) {
+                  setYear(nextYear);
+                  setMonth(nextMonth);
+                }
+              }}
+              className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<Download size={14} />}
+              onClick={() => exportTeamMonthlyAttendance("xlsx")}
+              disabled={!!exporting}
+            >
+              {exporting === "monthly-xlsx" ? "Exporting..." : "Monthly Excel"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<Download size={14} />}
+              onClick={() => exportTeamMonthlyAttendance("pdf")}
+              disabled={!!exporting}
+            >
+              {exporting === "monthly-pdf" ? "Exporting..." : "Monthly PDF"}
             </Button>
           </div>
         }

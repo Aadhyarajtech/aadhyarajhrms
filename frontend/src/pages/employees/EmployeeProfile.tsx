@@ -52,11 +52,14 @@ import {
 const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
 
 const salarySchema = z.object({
-  basic: z.coerce.number().min(0),
-  hra: z.coerce.number().min(0),
+  ctc: z.coerce.number().positive(),
+  basicPercentage: z.coerce.number().min(40).max(50),
+  hraPercentage: z.coerce.number().min(20).max(40),
+  basic: z.coerce.number().min(0).default(0),
+  hra: z.coerce.number().min(0).default(0),
   conveyance: z.coerce.number().min(0),
   medical: z.coerce.number().min(0),
-  specialAllowance: z.coerce.number().min(0),
+  specialAllowance: z.coerce.number().min(0).default(0),
   performanceBonus: z.coerce.number().min(0).default(0),
   advanceRecovery: z.coerce.number().min(0).default(0),
   overtimeRate: z.coerce.number().min(0).default(1.5),
@@ -670,6 +673,7 @@ export default function EmployeeProfile() {
           onClose={() => setSalaryOpen(false)}
           employeeId={employee.id}
           employeeState={employee.state}
+          dateOfBirth={employee.dateOfBirth}
         />
       )}
       {isAdmin && (
@@ -2680,6 +2684,7 @@ function SalaryModal({
   onClose: () => void;
   employeeId: string;
   employeeState: string | null;
+  dateOfBirth: string | null;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -2688,15 +2693,106 @@ function SalaryModal({
     queryFn: () => PayrollApi.getSalaryStructure(employeeId),
     enabled: open,
   });
-  const { register, handleSubmit, watch } = useForm<SalaryForm>({
+  const { register, handleSubmit, watch, setValue } = useForm<SalaryForm>({
     resolver: zodResolver(salarySchema),
   });
+  const [taxPreview, setTaxPreview] = useState<Awaited<
+    ReturnType<typeof PayrollApi.calculateTax>
+  > | null>(null);
+  const taxPreviewMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      PayrollApi.calculateTax(payload),
+    onSuccess: (result) => {
+      setTaxPreview(result);
+      setValue("incomeTax", Math.round((result.annualTax / 12) * 100) / 100, {
+        shouldDirty: true,
+      });
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const calculateTaxPreview = () => {
+    taxPreviewMutation.mutate({
+      employeeId,
+      basic:
+        ((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+          Number(watch("basicPercentage", existing?.basicPercentage ?? 50))) /
+        100,
+      hra:
+        ((((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+          Number(watch("basicPercentage", existing?.basicPercentage ?? 50))) /
+          100) *
+          Number(watch("hraPercentage", existing?.hraPercentage ?? 40))) /
+        100,
+      conveyance: Number(watch("conveyance", existing?.conveyance ?? 0)),
+      medical: Number(watch("medical", existing?.medical ?? 0)),
+      specialAllowance: Math.max(
+        0,
+        Number(watch("ctc", existing?.ctc ?? 0)) / 12 -
+          ((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+            Number(watch("basicPercentage", existing?.basicPercentage ?? 50))) /
+            100 -
+          ((((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+            Number(watch("basicPercentage", existing?.basicPercentage ?? 50))) /
+            100) *
+            Number(watch("hraPercentage", existing?.hraPercentage ?? 40))) /
+            100 -
+          Number(watch("conveyance", existing?.conveyance ?? 0)) -
+          Number(watch("medical", existing?.medical ?? 0)),
+      ),
+      performanceBonus: Number(
+        watch("performanceBonus", existing?.performanceBonus ?? 0),
+      ),
+      taxRegime: watch("taxRegime", existing?.taxRegime ?? "NEW"),
+      taxYear: Number(watch("taxYear", existing?.taxYear ?? 2026)),
+      taxOtherIncome: Number(
+        watch("taxOtherIncome", existing?.taxOtherIncome ?? 0),
+      ),
+      taxHraExemption: Number(
+        watch("taxHraExemption", existing?.taxHraExemption ?? 0),
+      ),
+      taxDeduction80C: Number(
+        watch("taxDeduction80C", existing?.taxDeduction80C ?? 0),
+      ),
+      taxDeduction80D: Number(
+        watch("taxDeduction80D", existing?.taxDeduction80D ?? 0),
+      ),
+      taxDeduction80CCD1B: Number(
+        watch("taxDeduction80CCD1B", existing?.taxDeduction80CCD1B ?? 0),
+      ),
+      taxDeduction80TTA: Number(
+        watch("taxDeduction80TTA", existing?.taxDeduction80TTA ?? 0),
+      ),
+    });
+  };
 
   const mutation = useMutation({
     mutationFn: (payload: SalaryForm) =>
       PayrollApi.upsertSalaryStructure({
         employeeId,
         ...payload,
+        ctc: Number(payload.ctc),
+        basicPercentage: Number(payload.basicPercentage),
+        hraPercentage: Number(payload.hraPercentage),
+        basic:
+          ((Number(payload.ctc) / 12) * Number(payload.basicPercentage)) / 100,
+        hra:
+          ((((Number(payload.ctc) / 12) * Number(payload.basicPercentage)) /
+            100) *
+            Number(payload.hraPercentage)) /
+          100,
+        specialAllowance: Math.max(
+          0,
+          Number(payload.ctc) / 12 -
+            ((Number(payload.ctc) / 12) * Number(payload.basicPercentage)) /
+              100 -
+            ((((Number(payload.ctc) / 12) * Number(payload.basicPercentage)) /
+              100) *
+              Number(payload.hraPercentage)) /
+              100 -
+            Number(payload.conveyance) -
+            Number(payload.medical),
+        ),
         pf: 0,
         professionalTax: 0,
       }),
@@ -2732,37 +2828,101 @@ function SalaryModal({
     >
       <form className="grid gap-4 sm:grid-cols-2" key={existing?.id ?? "new"}>
         <TextField
-          label="Basic"
+          label="Annual CTC"
           type="number"
-          defaultValue={existing?.basic}
-          {...register("basic")}
+          defaultValue={existing?.ctc || undefined}
+          {...register("ctc")}
         />
         <TextField
-          label="HRA"
+          label="Basic — % of CTC (40–50%)"
           type="number"
-          defaultValue={existing?.hra}
-          {...register("hra")}
+          min={40}
+          max={50}
+          defaultValue={existing?.basicPercentage ?? 50}
+          {...register("basicPercentage")}
         />
         <TextField
-          label="Conveyance"
+          label="HRA — % of Basic (20–40%)"
           type="number"
-          defaultValue={existing?.conveyance}
+          min={20}
+          max={40}
+          defaultValue={existing?.hraPercentage ?? 40}
+          {...register("hraPercentage")}
+        />
+        <TextField
+          label="Basic / month"
+          type="number"
+          value={
+            Math.round(
+              (((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+                Number(
+                  watch("basicPercentage", existing?.basicPercentage ?? 50),
+                )) /
+                100) *
+                100,
+            ) / 100 || 0
+          }
+          readOnly
+        />
+        <TextField
+          label="HRA / month"
+          type="number"
+          value={
+            Math.round(
+              (((((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+                Number(
+                  watch("basicPercentage", existing?.basicPercentage ?? 50),
+                )) /
+                100) *
+                Number(watch("hraPercentage", existing?.hraPercentage ?? 40))) /
+                100) *
+                100,
+            ) / 100 || 0
+          }
+          readOnly
+        />
+        <TextField
+          label="Conveyance / month"
+          type="number"
+          defaultValue={existing?.conveyance ?? 0}
           {...register("conveyance")}
         />
         <TextField
-          label="Medical"
+          label="Medical / month"
           type="number"
-          defaultValue={existing?.medical}
+          defaultValue={existing?.medical ?? 0}
           {...register("medical")}
         />
         <TextField
-          label="Special allowance"
+          label="Special allowance / month — CTC balance"
           type="number"
-          defaultValue={existing?.specialAllowance}
-          {...register("specialAllowance")}
+          value={Math.max(
+            0,
+            Math.round(
+              (Number(watch("ctc", existing?.ctc ?? 0)) / 12 -
+                ((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+                  Number(
+                    watch("basicPercentage", existing?.basicPercentage ?? 50),
+                  )) /
+                  100 -
+                ((((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+                  Number(
+                    watch("basicPercentage", existing?.basicPercentage ?? 50),
+                  )) /
+                  100) *
+                  Number(
+                    watch("hraPercentage", existing?.hraPercentage ?? 40),
+                  )) /
+                  100 -
+                Number(watch("conveyance", existing?.conveyance ?? 0)) -
+                Number(watch("medical", existing?.medical ?? 0))) *
+                100,
+            ) / 100,
+          )}
+          readOnly
         />
         <TextField
-          label="Performance bonus"
+          label="Performance bonus target / month"
           type="number"
           defaultValue={existing?.performanceBonus ?? 0}
           {...register("performanceBonus")}
@@ -2779,6 +2939,12 @@ function SalaryModal({
           step="0.1"
           defaultValue={existing?.overtimeRate ?? 1.5}
           {...register("overtimeRate")}
+        />
+        <TextField
+          label="Income tax / TDS — monthly"
+          type="number"
+          value={Number(watch("incomeTax", existing?.incomeTax ?? 0)) || 0}
+          readOnly
         />
         <TextField
           label="Provident Fund (PF) — 12% of Basic"
@@ -2887,6 +3053,79 @@ function SalaryModal({
           defaultValue={existing?.taxPreviousTds ?? 0}
           {...register("taxPreviousTds")}
         />
+        <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-[12px] font-medium uppercase tracking-wide text-ink-faint">
+                Tax slab calculation
+              </p>
+              <p className="mt-1 text-[12px] text-ink-faint">
+                Calculate the employee's tax using the selected regime and the
+                applicable income-tax slabs.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={calculateTaxPreview}
+              isLoading={taxPreviewMutation.isPending}
+              className="w-full sm:w-auto sm:shrink-0"
+            >
+              Calculate tax
+            </Button>
+          </div>
+          {taxPreview && (
+            <div className="mt-4 space-y-2 text-[12px]">
+              {taxPreview.slabBreakdown.map((slab, index) => (
+                <div
+                  key={`${slab.from}-${slab.to}-${index}`}
+                  className="flex flex-col gap-1 rounded-xl bg-black/[0.02] px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <span className="min-w-0 break-words">
+                    {formatCurrencyINR(slab.from)} –{" "}
+                    {slab.to == null ? "above" : formatCurrencyINR(slab.to)} @{" "}
+                    {(slab.rate * 100).toFixed(0)}%
+                  </span>
+                  <span className="font-medium sm:shrink-0">
+                    {formatCurrencyINR(slab.tax)}
+                  </span>
+                </div>
+              ))}
+              <div className="flex flex-col gap-1 border-t border-line/60 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                <span>Taxable annual income</span>
+                <span className="font-medium">
+                  {formatCurrencyINR(taxPreview.taxableIncome)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <span>Tax after slab calculation/rebate</span>
+                <span className="font-medium">
+                  {formatCurrencyINR(
+                    Math.max(0, taxPreview.slabTax - taxPreview.rebate),
+                  )}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <span>Cess + surcharge</span>
+                <span className="font-medium">
+                  {formatCurrencyINR(taxPreview.cess + taxPreview.surcharge)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 border-t border-line/60 pt-2 text-[13px] font-medium sm:flex-row sm:items-center sm:justify-between">
+                <span>Annual tax</span>
+                <span>{formatCurrencyINR(taxPreview.annualTax)}</span>
+              </div>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <span>Monthly TDS added to form</span>
+                <span className="font-medium">
+                  {formatCurrencyINR(
+                    Math.round((taxPreview.annualTax / 12) * 100) / 100,
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       </form>
     </Modal>
   );

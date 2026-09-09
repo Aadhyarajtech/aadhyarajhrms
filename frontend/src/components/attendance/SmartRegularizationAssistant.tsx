@@ -15,9 +15,7 @@ import { useToast } from "@/context/ToastContext";
 
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import {
-  TextareaField,
-} from "@/components/ui/Field";
+import { TextareaField } from "@/components/ui/Field";
 
 type AttendanceData = {
   status: string;
@@ -67,15 +65,16 @@ function formatDate(value: string) {
   });
 }
 
-export default function SmartRegularizationAssistant({employeeId,}: {employeeId?: string;}) {
+export default function SmartRegularizationAssistant({
+  employeeId,
+}: {
+  employeeId?: string;
+}) {
   const { showToast } = useToast();
 
-  const [date, setDate] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
-  const [analysis, setAnalysis] =
-    useState<RegularizationAnalysis | null>(null);
+  const [analysis, setAnalysis] = useState<RegularizationAnalysis | null>(null);
 
   const [reason, setReason] = useState("");
 
@@ -84,10 +83,7 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
 
   const analyzeAttendance = async () => {
     if (!date) {
-      showToast(
-        "Please select an attendance date.",
-        "error",
-      );
+      showToast("Please select an attendance date.", "error");
       return;
     }
 
@@ -96,11 +92,7 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
       setAnalysis(null);
       setReason("");
 
-      const result =
-        await AttendanceApi.smartRegularization(
-          date,
-          employeeId,
-        );
+      const result = await AttendanceApi.smartRegularization(date, employeeId);
 
       setAnalysis(result);
 
@@ -108,10 +100,7 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
         setReason(result.suggestion);
       }
     } catch (error) {
-      showToast(
-        getErrorMessage(error),
-        "error",
-      );
+      showToast(getErrorMessage(error), "error");
     } finally {
       setLoading(false);
     }
@@ -119,41 +108,26 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
 
   const submitRegularization = async () => {
     if (!date) {
-      showToast(
-        "Please select an attendance date.",
-        "error",
-      );
+      showToast("Please select an attendance date.", "error");
       return;
     }
 
     if (!reason.trim()) {
-      showToast(
-        "Please provide a regularization reason.",
-        "error",
-      );
+      showToast("Please provide a regularization reason.", "error");
       return;
     }
 
     try {
       setSubmitting(true);
 
-      await AttendanceApi.regularize(
-        date,
-        reason.trim(),
-        employeeId,
-      );
+      await AttendanceApi.regularize(date, reason.trim());
 
-      showToast(
-        "Regularization request submitted successfully.",
-      );
+      showToast("Regularization request submitted successfully.");
 
       setAnalysis(null);
       setReason("");
     } catch (error) {
-      showToast(
-        getErrorMessage(error),
-        "error",
-      );
+      showToast(getErrorMessage(error), "error");
     } finally {
       setSubmitting(false);
     }
@@ -178,9 +152,7 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
             </div>
 
             <div>
-              <h3 className="font-semibold text-ink">
-                Select Attendance Date
-              </h3>
+              <h3 className="font-semibold text-ink">Select Attendance Date</h3>
 
               <p className="text-sm text-ink-faint">
                 Choose the date you want to review.
@@ -212,18 +184,13 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
               disabled={loading || !date}
               leftIcon={
                 loading ? (
-                  <RefreshCw
-                    size={16}
-                    className="animate-spin"
-                  />
+                  <RefreshCw size={16} className="animate-spin" />
                 ) : (
                   <Sparkles size={16} />
                 )
               }
             >
-              {loading
-                ? "Analyzing..."
-                : "Analyze Attendance"}
+              {loading ? "Analyzing..." : "Analyze Attendance"}
             </Button>
           </div>
         </div>
@@ -282,21 +249,14 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
             {analysis.attendance && (
               <div className="rounded-2xl border border-line/60 bg-white p-5">
                 <div className="flex items-center gap-2">
-                  <Clock3
-                    size={18}
-                    className="text-brand-600"
-                  />
+                  <Clock3 size={18} className="text-brand-600" />
 
-                  <h3 className="font-semibold text-ink">
-                    Attendance Details
-                  </h3>
+                  <h3 className="font-semibold text-ink">Attendance Details</h3>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                   <div className="rounded-xl bg-gray-50 p-4">
-                    <p className="text-xs text-ink-faint">
-                      Status
-                    </p>
+                    <p className="text-xs text-ink-faint">Status</p>
 
                     <p className="mt-1 font-semibold text-ink">
                       {analysis.attendance.status}
@@ -304,39 +264,27 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
                   </div>
 
                   <div className="rounded-xl bg-gray-50 p-4">
-                    <p className="text-xs text-ink-faint">
-                      Check-in
-                    </p>
+                    <p className="text-xs text-ink-faint">Check-in</p>
 
                     <p className="mt-1 font-semibold text-ink">
-                      {formatTime(
-                        analysis.attendance.checkIn,
-                      )}
+                      {formatTime(analysis.attendance.checkIn)}
                     </p>
                   </div>
 
                   <div className="rounded-xl bg-gray-50 p-4">
-                    <p className="text-xs text-ink-faint">
-                      Check-out
-                    </p>
+                    <p className="text-xs text-ink-faint">Check-out</p>
 
                     <p className="mt-1 font-semibold text-ink">
-                      {formatTime(
-                        analysis.attendance.checkOut,
-                      )}
+                      {formatTime(analysis.attendance.checkOut)}
                     </p>
                   </div>
 
                   <div className="rounded-xl bg-gray-50 p-4">
-                    <p className="text-xs text-ink-faint">
-                      Work Hours
-                    </p>
+                    <p className="text-xs text-ink-faint">Work Hours</p>
 
                     <p className="mt-1 font-semibold text-ink">
-                      {analysis.attendance.workHours !==
-                      null &&
-                      analysis.attendance.workHours !==
-                        undefined
+                      {analysis.attendance.workHours !== null &&
+                      analysis.attendance.workHours !== undefined
                         ? `${analysis.attendance.workHours}h`
                         : "—"}
                     </p>
@@ -349,85 +297,65 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
             {/* SUGGESTED REASON */}
             {/* ========================================================= */}
 
-            {analysis.eligible &&
-              analysis.suggestion && (
-                <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-5">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-xl bg-purple-100 p-3 text-purple-600">
-                      <Sparkles size={20} />
-                    </div>
-
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-ink">
-                        Suggested Regularization Reason
-                      </h3>
-
-                      <p className="mt-1 text-sm text-ink-faint">
-                        Review and edit the suggested reason
-                        before submitting.
-                      </p>
-                    </div>
+            {analysis.eligible && analysis.suggestion && (
+              <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-purple-100 p-3 text-purple-600">
+                    <Sparkles size={20} />
                   </div>
 
-                  <div className="mt-5">
-                    <TextareaField
-                      label="Reason"
-                      value={reason}
-                      onChange={(event) =>
-                        setReason(event.target.value)
-                      }
-                      placeholder="Enter your regularization reason..."
-                      rows={4}
-                      maxLength={1000}
-                    />
-                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-ink">
+                      Suggested Regularization Reason
+                    </h3>
 
-                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        setReason(
-                          analysis.suggestion ?? "",
-                        )
-                      }
-                    >
-                      <Sparkles
-                        size={16}
-                        className="mr-2"
-                      />
-                      Use Suggestion
-                    </Button>
-
-                    <Button
-                      type="button"
-                      onClick={submitRegularization}
-                      disabled={
-                        submitting ||
-                        !reason.trim()
-                      }
-                    >
-                      {submitting ? (
-                        <>
-                          <RefreshCw
-                            size={16}
-                            className="mr-2 animate-spin"
-                          />
-                          Submitting...
-                        </>
-                      ) : (
-                        <>
-                          <FileText
-                            size={16}
-                            className="mr-2"
-                          />
-                          Submit Regularization
-                        </>
-                      )}
-                    </Button>
+                    <p className="mt-1 text-sm text-ink-faint">
+                      Review and edit the suggested reason before submitting.
+                    </p>
                   </div>
                 </div>
-              )}
+
+                <div className="mt-5">
+                  <TextareaField
+                    label="Reason"
+                    value={reason}
+                    onChange={(event) => setReason(event.target.value)}
+                    placeholder="Enter your regularization reason..."
+                    rows={4}
+                    maxLength={1000}
+                  />
+                </div>
+
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setReason(analysis.suggestion ?? "")}
+                  >
+                    <Sparkles size={16} className="mr-2" />
+                    Use Suggestion
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={submitRegularization}
+                    disabled={submitting || !reason.trim()}
+                  >
+                    {submitting ? (
+                      <>
+                        <RefreshCw size={16} className="mr-2 animate-spin" />
+                        Submitting...
+                      </>
+                    ) : (
+                      <>
+                        <FileText size={16} className="mr-2" />
+                        Submit Regularization
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* ========================================================= */}
             {/* NOT ELIGIBLE */}
@@ -436,14 +364,10 @@ export default function SmartRegularizationAssistant({employeeId,}: {employeeId?
             {!analysis.eligible && (
               <div className="rounded-2xl border border-line/60 bg-gray-50 p-5">
                 <div className="flex items-center gap-3">
-                  <CheckCircle2
-                    size={20}
-                    className="text-success-600"
-                  />
+                  <CheckCircle2 size={20} className="text-success-600" />
 
                   <p className="text-sm text-ink-soft">
-                    No regularization request should be
-                    submitted for this date.
+                    No regularization request should be submitted for this date.
                   </p>
                 </div>
               </div>
