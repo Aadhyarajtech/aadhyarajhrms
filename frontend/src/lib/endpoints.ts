@@ -704,6 +704,10 @@ export const LeaveApi = {
     api
       .get<{ entries: any[] }>("/leave/calendar", { params: { month, year } })
       .then((r) => r.data.entries),
+  generateReason: (reason: string) =>
+  api
+    .post<{ reason: string }>("/leave/ai/reason", { reason })
+    .then((r) => r.data.reason),
 };
 
 // --- Recruitment ------------------------------------------------------------------

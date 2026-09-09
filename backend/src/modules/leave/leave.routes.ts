@@ -7,7 +7,7 @@ import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 
 import * as repo from "./leave.repository";
-
+import { generateLeaveReason } from "./leaveAi.service";
 import { getEmployeeById } from "@/modules/employees/employees.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
 
@@ -201,6 +201,40 @@ leaveRouter.get("/summary/on-leave-today", async (_req, res, next) => {
     next(err);
   }
 });
+/**
+ * ============================================================
+ * AI LEAVE REASON ASSISTANT
+ * ============================================================
+ *
+ * Generates a professional leave description from a
+ * short employee-provided reason.
+ *
+ * AI only improves the wording.
+ * It does not create or submit a leave request.
+ */
+const aiReasonSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(3, "Please enter a short leave reason.")
+    .max(500, "Leave reason must not exceed 500 characters."),
+});
+
+leaveRouter.post(
+  "/ai/reason",
+  validate(aiReasonSchema),
+  async (req, res, next) => {
+    try {
+      const result = await generateLeaveReason(
+        req.body.reason,
+      );
+
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 /**
  * ============================================================
