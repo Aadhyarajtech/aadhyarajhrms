@@ -96,60 +96,54 @@ export const EmployeesApi = {
     api
       .patch<{ employee: Employee }>(`/employees/${id}`, payload)
       .then((r) => r.data.employee),
-    updateMe: (payload: Record<string, unknown>) =>
+  updateMe: (payload: Record<string, unknown>) =>
     api
       .patch<{ employee: Employee }>("/employees/me", payload)
       .then((r) => r.data.employee),
- completeOnboarding: (id: string) =>
-  api
-    .post<{ employee: Employee }>(`/employees/${id}/complete-onboarding`)
-    .then((r) => r.data.employee),
+  completeOnboarding: (id: string) =>
+    api
+      .post<{ employee: Employee }>(`/employees/${id}/complete-onboarding`)
+      .then((r) => r.data.employee),
 
-startNoticePeriod: (id: string, noticeDays: number) =>
-  api
-    .post<{ employee: Employee }>(
-      `/employees/${id}/start-notice-period`,
-      { noticeDays },
-    )
-    .then((r) => r.data.employee),
-      confirmProbation: (id: string) =>
-  api
-    .post(`/employees/${id}/confirm-probation`)
-    .then((r) => r.data.employee),
+  startNoticePeriod: (id: string, noticeDays: number) =>
+    api
+      .post<{
+        employee: Employee;
+      }>(`/employees/${id}/start-notice-period`, { noticeDays })
+      .then((r) => r.data.employee),
+  confirmProbation: (id: string) =>
+    api.post(`/employees/${id}/confirm-probation`).then((r) => r.data.employee),
 
-    extendProbation: (
-  id: string,
-  data: {
-    extensionDays: number;
-    remarks?: string;
-  },
-) =>
-  api
-    .post<{
-      success: boolean;
-      message: string;
-      employee: Employee;
-    }>(`/employees/${id}/extend-probation`, data)
-    .then((r) => r.data.employee),
+  extendProbation: (
+    id: string,
+    data: {
+      extensionDays: number;
+      remarks?: string;
+    },
+  ) =>
+    api
+      .post<{
+        success: boolean;
+        message: string;
+        employee: Employee;
+      }>(`/employees/${id}/extend-probation`, data)
+      .then((r) => r.data.employee),
 
-    
+  completeOffboarding: (id: string) =>
+    api.post(`/employees/${id}/complete-offboarding`),
 
-    completeOffboarding: (id: string) =>
-  api.post(`/employees/${id}/complete-offboarding`),
-
-    updateOffboardingChecklist: (
-  id: string,
-  payload: {
-    assetReturn?: boolean;
-    accessRevoked?: boolean;
-    exitInterview?: boolean;
-    finalSettlement?: boolean;
-  },
-) =>
-  api
-    .patch(`/employees/${id}/offboarding-checklist`, payload)
-    .then((r) => r.data),
-
+  updateOffboardingChecklist: (
+    id: string,
+    payload: {
+      assetReturn?: boolean;
+      accessRevoked?: boolean;
+      exitInterview?: boolean;
+      finalSettlement?: boolean;
+    },
+  ) =>
+    api
+      .patch(`/employees/${id}/offboarding-checklist`, payload)
+      .then((r) => r.data),
 
   headcountByDepartment: () =>
     api
@@ -192,8 +186,6 @@ startNoticePeriod: (id: string, noticeDays: number) =>
   },
 };
 
-
-
 // --- Organization (departments, designations, holidays) ----------------------
 export const OrganizationApi = {
   departments: () =>
@@ -233,36 +225,274 @@ export const OrganizationApi = {
   deleteHoliday: (id: string) => api.delete(`/organization/holidays/${id}`),
 };
 
+export interface AttendanceAiInsights {
+  period: {
+    start: string;
+    end: string;
+    daysAnalyzed: number;
+  };
+
+  summary: {
+    attendanceRate: number;
+    presentDays: number;
+    wfhDays: number;
+    leaveDays: number;
+    absentDays: number;
+    halfDays: number;
+    averageWorkHours: number;
+    regularizedDays: number;
+  };
+
+  timing: {
+    lateCheckIns: number;
+    lateCheckInRate: number;
+    earlyCheckOuts: number;
+    earlyCheckoutRate: number;
+    missingCheckoutDays: number;
+  };
+
+  trend: {
+    direction: "IMPROVING" | "DECLINING" | "STABLE";
+    change: number;
+    recentRate: number;
+    previousRate: number;
+  };
+
+  patterns: {
+    type: "POSITIVE" | "WARNING" | "INFO";
+    title: string;
+    description: string;
+  }[];
+
+  recommendations: string[];
+}
+
+// --- Attendance shifts -------------------------------------------------------
+export interface AttendanceShift {
+  id: string;
+  name: string;
+  code: string | null;
+  startTime: string;
+  endTime: string;
+  standardHours: number;
+  graceMinutes: number;
+  halfDayHours: number;
+  breakMinutes: number;
+  overtimeAfterHours: number;
+  departmentId: string | null;
+  employeeIds: string[];
+  geofence: {
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+  } | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AttendanceShiftPayload {
+  name: string;
+  code?: string | null;
+  startTime: string;
+  endTime: string;
+  standardHours: number;
+  graceMinutes?: number;
+  breakMinutes?: number;
+  overtimeAfterHours?: number;
+  departmentId?: string | null;
+  employeeIds?: string[];
+  geofence?: {
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+  } | null;
+  isActive?: boolean;
+}
+
+export const AttendanceShiftApi = {
+  list: (includeInactive = true) =>
+    api
+      .get<{ shifts: AttendanceShift[] }>("/attendance/shifts", {
+        params: { includeInactive },
+      })
+      .then((r) => r.data.shifts),
+  get: (id: string) =>
+    api
+      .get<{ shift: AttendanceShift }>(`/attendance/shifts/${id}`)
+      .then((r) => r.data.shift),
+  getForEmployee: (employeeId: string) =>
+    api
+      .get<{
+        shift: AttendanceShift | null;
+      }>(`/attendance/shifts/employee/${employeeId}`)
+      .then((r) => r.data.shift),
+  create: (payload: AttendanceShiftPayload) =>
+    api
+      .post<{ shift: AttendanceShift }>("/attendance/shifts", payload)
+      .then((r) => r.data.shift),
+  update: (id: string, payload: Partial<AttendanceShiftPayload>) =>
+    api
+      .patch<{ shift: AttendanceShift }>(`/attendance/shifts/${id}`, payload)
+      .then((r) => r.data.shift),
+  assign: (id: string, employeeIds: string[]) =>
+    api
+      .post<{
+        shift: AttendanceShift;
+      }>(`/attendance/shifts/${id}/assign`, { employeeIds })
+      .then((r) => r.data.shift),
+};
+
 // --- Attendance ----------------------------------------------------------------
+export type AttendanceStatus =
+  | "PRESENT"
+  | "ABSENT"
+  | "LATE"
+  | "HALF_DAY"
+  | "WORK_FROM_HOME"
+  | "ON_LEAVE"
+  | "HOLIDAY"
+  | "WEEKEND"
+  | "EARLY_DEPARTURE";
+
+export interface AttendanceLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+export interface AttendanceCheckOutOptions extends Partial<AttendanceLocation> {
+  breakMinutes?: number;
+  earlyDepartureReason?: string;
+}
+
+export interface AttendanceApiRecord extends Omit<
+  AttendanceRecord,
+  | "status"
+  | "breakMinutes"
+  | "effectiveWorkHours"
+  | "lateMinutes"
+  | "earlyDepartureMinutes"
+  | "overtimeHours"
+  | "earlyDepartureReason"
+  | "compOffCredited"
+  | "auditTrail"
+  | "checkInLatitude"
+  | "checkInLongitude"
+  | "checkInAccuracy"
+  | "checkOutLatitude"
+  | "checkOutLongitude"
+  | "checkOutAccuracy"
+> {
+  status: AttendanceStatus;
+  checkInLatitude?: number | null;
+  checkInLongitude?: number | null;
+  checkInAccuracy?: number | null;
+  checkOutLatitude?: number | null;
+  checkOutLongitude?: number | null;
+  checkOutAccuracy?: number | null;
+  effectiveWorkHours?: number;
+  breakMinutes?: number;
+  lateMinutes?: number;
+  earlyDepartureMinutes?: number;
+  overtimeHours?: number;
+  earlyDepartureReason?: string | null;
+  compOffCredited?: boolean;
+  auditTrail?: Array<{
+    action: string;
+    performedBy?: string | null;
+    performedAt?: string;
+    note?: string | null;
+  }>;
+}
+
+/**
+ * Backend attendance responses may contain extended status/metrics. The
+ * compatibility return type below keeps existing consumers source-compatible.
+ */
+export type AttendanceRecordResponse = AttendanceRecord | AttendanceApiRecord;
+
+export type AttendanceRegularizationStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED";
+
+export interface AttendanceRegularizationRequest {
+  id: string;
+  employeeId: string;
+  attendanceId: string | null;
+  date: string;
+  requestedCheckIn: string | null;
+  requestedCheckOut: string | null;
+  requestedStatus: AttendanceStatus | string;
+  reason: string;
+  status: AttendanceRegularizationStatus;
+  approverId: string | null;
+  decisionNote: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  employeeCode?: string | null;
+}
+
 export const AttendanceApi = {
   today: () =>
     api
       .get<{ record: AttendanceRecord | null }>("/attendance/today")
       .then((r) => r.data.record),
+
+  // No-argument methods remain compatible with existing consumers.
   checkIn: () =>
     api
       .post<{ record: AttendanceRecord }>("/attendance/check-in")
       .then((r) => r.data.record),
+
+  checkInWithLocation: (location: Partial<AttendanceLocation>) =>
+    api
+      .post<{ record: AttendanceRecord }>("/attendance/check-in", location)
+      .then((r) => r.data.record),
+
   checkOut: () =>
     api
       .post<{ record: AttendanceRecord }>("/attendance/check-out")
       .then((r) => r.data.record),
+
+  checkOutWithOptions: (options: AttendanceCheckOutOptions) =>
+    api
+      .post<{ record: AttendanceRecord }>("/attendance/check-out", options)
+      .then((r) => r.data.record),
+
+  startBreak: () =>
+    api
+      .post<{ record: AttendanceRecord }>("/attendance/break/start")
+      .then((r) => r.data.record),
+
+  endBreak: () =>
+    api
+      .post<{ record: AttendanceRecord }>("/attendance/break/end")
+      .then((r) => r.data.record),
+
   mine: (month?: number, year?: number) =>
     api
-      .get<{
-        records: AttendanceRecord[];
-      }>("/attendance/me", { params: { month, year } })
+      .get<{ records: AttendanceRecord[] }>("/attendance/me", {
+        params: { month, year },
+      })
       .then((r) => r.data.records),
+
   forEmployee: (employeeId: string, month?: number, year?: number) =>
     api
       .get<{
         records: AttendanceRecord[];
       }>(`/attendance/employee/${employeeId}`, { params: { month, year } })
       .then((r) => r.data.records),
+
   byDate: (date: string) =>
     api
-      .get<{ records: any[] }>(`/attendance/by-date/${date}`)
+      .get<{ records: AttendanceApiRecord[] }>(`/attendance/by-date/${date}`)
       .then((r) => r.data.records),
+
   summaryToday: () =>
     api
       .get<{
@@ -272,42 +502,85 @@ export const AttendanceApi = {
         isToday: boolean;
       }>("/attendance/summary/today")
       .then((r) => r.data),
+
+  aiInsights: (startDate: string, endDate: string, employeeId?: string) =>
+    api
+      .get<{ insights: AttendanceAiInsights }>("/attendance/ai-insights", {
+        params: { startDate, endDate, employeeId },
+      })
+      .then((r) => r.data.insights),
+
+  askAI: (question: string, employeeId?: string) =>
+    api
+      .post<{ answer: string }>("/attendance/ask-ai", { question, employeeId })
+      .then((r) => r.data.answer),
+
+  aiAnomalies: (month?: number, year?: number, employeeId?: string) =>
+    api
+      .get("/attendance/ai-anomalies", { params: { month, year, employeeId } })
+      .then((r) => r.data),
+
+  aiPatterns: (months = 6, employeeId?: string) =>
+    api
+      .get("/attendance/ai-patterns", { params: { months, employeeId } })
+      .then((r) => r.data),
+
   trend: (months = 6) =>
     api
       .get<{
         data: { month: string; presentRate: number }[];
       }>("/attendance/analytics/trend", { params: { months } })
       .then((r) => r.data.data),
-  regularize: (date: string, note: string) =>
+
+  exportMine: (month: number, year: number, format: "xlsx" | "pdf") =>
+    api
+      .get(`/attendance/export/me`, {
+        params: { month, year, format },
+        responseType: "blob",
+      })
+      .then((r) => r.data as Blob),
+
+  exportTeam: (date: string, format: "xlsx" | "pdf") =>
+    api
+      .get(`/attendance/export/team`, {
+        params: { date, format },
+        responseType: "blob",
+      })
+      .then((r) => r.data as Blob),
+
+  exportTeamMonthly: (month: number, year: number, format: "xlsx" | "pdf") =>
+    api
+      .get(`/attendance/export/team/monthly`, {
+        params: { month, year, format },
+        responseType: "blob",
+      })
+      .then((r) => r.data as Blob),
+
+  aiForecast: async (months = 6, employeeId?: string) =>
+    api
+      .get("/attendance/ai-forecast", { params: { months, employeeId } })
+      .then((r) => r.data),
+
+  smartRegularization: async (date: string, employeeId?: string) =>
+    api
+      .get("/attendance/smart-regularization", { params: { date, employeeId } })
+      .then((r) => r.data),
+
+  regularize: (date: string, note: string, employeeId?: string) =>
     api
       .post<{
-        record: AttendanceRecord;
-      }>("/attendance/regularize", { date, note })
+        record: AttendanceRegularizationRequest;
+      }>("/attendance/regularize", { date, note, employeeId })
       .then((r) => r.data.record),
 
-  teamRegularizationRequests: (status = "PENDING") =>
+  teamRegularizationRequests: (
+    status: AttendanceRegularizationStatus | string = "PENDING",
+  ) =>
     api
       .get<{
-        requests: Array<{
-          id: string;
-          employeeId: string;
-          attendanceId: string | null;
-          date: string;
-          requestedCheckIn: string | null;
-          requestedCheckOut: string | null;
-          requestedStatus: string;
-          reason: string;
-          status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
-          approverId: string | null;
-          decisionNote: string | null;
-          requestedAt: string;
-          decidedAt: string | null;
-          firstName: string | null;
-          lastName: string | null;
-          employeeCode: string | null;
-        }>;
+        requests: AttendanceRegularizationRequest[];
       }>("/attendance/regularization/team", {
-        params: status ? { status } : undefined,
+        params: { status },
       })
       .then((r) => r.data.requests),
 
@@ -315,19 +588,19 @@ export const AttendanceApi = {
     api
       .post<{
         result: {
-          request: any;
-          attendance: AttendanceRecord;
+          request: AttendanceRegularizationRequest;
+          attendance: AttendanceRecord | null;
         };
         message: string;
       }>(`/attendance/regularization/${requestId}/approve`, {
         decisionNote,
       })
-      .then((r) => r.data.result),
+      .then((r) => r.data.result.request),
 
   rejectRegularization: (requestId: string, decisionNote: string) =>
     api
       .post<{
-        request: any;
+        request: AttendanceRegularizationRequest;
         message: string;
       }>(`/attendance/regularization/${requestId}/reject`, {
         decisionNote,
@@ -380,6 +653,10 @@ export const LeaveApi = {
     api
       .get<{ entries: any[] }>("/leave/calendar", { params: { month, year } })
       .then((r) => r.data.entries),
+  generateReason: (reason: string) =>
+  api
+    .post<{ reason: string }>("/leave/ai/reason", { reason })
+    .then((r) => r.data.reason),
 };
 
 // --- Recruitment ------------------------------------------------------------------
@@ -952,15 +1229,59 @@ export const PayrollApi = {
     api
       .put<{ structure: SalaryStructure }>("/payroll/salary-structure", payload)
       .then((r) => r.data.structure),
+  calculateTax: (payload: Record<string, unknown>) =>
+    api
+      .post<{
+        tax: {
+          taxRegime: "NEW" | "OLD";
+          taxYear: number;
+          annualGrossIncome: number;
+          standardDeduction: number;
+          totalDeductions: number;
+          taxableIncome: number;
+          slabTax: number;
+          rebate: number;
+          surcharge: number;
+          cess: number;
+          annualTax: number;
+          slabBreakdown: Array<{
+            from: number;
+            to: number | null;
+            rate: number;
+            taxableAmount: number;
+            tax: number;
+          }>;
+        };
+      }>("/payroll/tax-preview", payload)
+      .then((r) => r.data.tax),
+
   runs: () =>
     api.get<{ runs: PayrollRun[] }>("/payroll/runs").then((r) => r.data.runs),
+  lockAttendance: (month: number, year: number) =>
+    api
+      .post<{
+        run: PayrollRun;
+      }>("/payroll/runs/lock-attendance", { month, year })
+      .then((r) => r.data.run),
   process: (month: number, year: number) =>
     api
       .post<{ run: PayrollRun }>("/payroll/runs/process", { month, year })
       .then((r) => r.data.run),
+  submitForReview: (id: string) =>
+    api
+      .post<{ run: PayrollRun }>(`/payroll/runs/${id}/submit-review`)
+      .then((r) => r.data.run),
+  approve: (id: string) =>
+    api
+      .post<{ run: PayrollRun }>(`/payroll/runs/${id}/approve`)
+      .then((r) => r.data.run),
   markPaid: (id: string) =>
     api
       .post<{ run: PayrollRun }>(`/payroll/runs/${id}/mark-paid`)
+      .then((r) => r.data.run),
+  sendPayslipsForRun: (id: string) =>
+    api
+      .post<{ run: PayrollRun }>(`/payroll/runs/${id}/send-payslips`)
       .then((r) => r.data.run),
   payslipsForRun: (runId: string) =>
     api
@@ -1417,4 +1738,3 @@ export const DashboardApi = {
   overview: () =>
     api.get<DashboardOverview>("/dashboard/overview").then((r) => r.data),
 };
-

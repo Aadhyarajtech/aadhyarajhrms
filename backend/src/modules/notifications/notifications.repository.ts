@@ -20,7 +20,12 @@ export type NotificationType =
   | "SYSTEM"
   | "DOCUMENT_REQUESTED"
   | "DOCUMENT_UPLOADED"
-  | "DOCUMENT_READY";
+  | "DOCUMENT_READY"
+  | "ATTENDANCE_LATE"
+  | "ATTENDANCE_EARLY_DEPARTURE"
+  | "ATTENDANCE_COMP_OFF"
+  | "ATTENDANCE_REGULARIZATION_REQUEST"
+  | "ATTENDANCE_REGULARIZATION_DECISION";
 
 /* =========================================================
    API DOCUMENT
@@ -30,6 +35,10 @@ function toApiDoc(doc: any) {
   if (!doc) return undefined;
 
   const { _id, ...rest } = doc;
+
+  if (rest.type === "ATTENDANCE_REGULARIZATION_REQUEST") {
+    rest.link = "/app/attendance?tab=exceptions";
+  }
 
   return {
     id: _id,

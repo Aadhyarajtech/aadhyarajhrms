@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarDays,
+  Sparkles,
 } from "lucide-react";
 import { LeaveApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
@@ -79,18 +80,22 @@ export default function Leave() {
 function MyLeave() {
   const { user } = useAuth();
   const employeeId = user?.employee?.id;
+
   const { data: balances, isLoading: balancesLoading } = useQuery({
     queryKey: ["leave", "balances", "mine"],
     queryFn: () => LeaveApi.balances(employeeId),
     enabled: !!employeeId,
   });
+
   const { data: requests, isLoading: requestsLoading } = useQuery({
     queryKey: ["leave", "requests", "mine"],
     queryFn: () => LeaveApi.requests({ employeeId }),
     enabled: !!employeeId,
   });
+
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+
   const cancelMutation = useMutation({
     mutationFn: (id: string) => LeaveApi.cancel(id),
     onSuccess: () => {
@@ -147,20 +152,25 @@ function MyLeave() {
                   <p className="text-[13px] font-medium text-ink">
                     {r.leaveTypeName} · {r.totalDays} day(s)
                   </p>
+
                   <p className="text-[12px] text-ink-faint">
                     {formatDate(r.startDate)} – {formatDate(r.endDate)}
                   </p>
+
                   <p className="mt-0.5 text-[12px] text-ink-faint">
                     "{r.reason}"
                   </p>
+
                   {r.decisionNote && (
                     <p className="mt-0.5 text-[12px] italic text-ink-faint">
                       Note: {r.decisionNote}
                     </p>
                   )}
                 </div>
+
                 <div className="flex flex-col items-end gap-2">
                   <StatusBadge status={r.status} />
+
                   {r.status === "PENDING" && (
                     <button
                       onClick={() => cancelMutation.mutate(r.id)}
@@ -277,6 +287,7 @@ function TeamApprovals() {
           </select>
         }
       />
+
       {isLoading ? (
         <Skeleton className="h-48 rounded-2xl" />
       ) : isError ? (
@@ -358,6 +369,7 @@ function LeaveCalendar() {
   const [cursor, setCursor] = useState(new Date());
   const month = cursor.getMonth() + 1;
   const year = cursor.getFullYear();
+
   const { data: entries, isLoading } = useQuery({
     queryKey: ["leave", "calendar", month, year],
     queryFn: () => LeaveApi.calendar(month, year),
@@ -368,15 +380,23 @@ function LeaveCalendar() {
     const daysInMonth = new Date(year, month, 0).getDate();
     const startOffset = firstDay.getDay();
     const cells: { date: Date | null }[] = [];
-    for (let i = 0; i < startOffset; i++) cells.push({ date: null });
-    for (let d = 1; d <= daysInMonth; d++)
+
+    for (let i = 0; i < startOffset; i++) {
+      cells.push({ date: null });
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
       cells.push({ date: new Date(year, month - 1, d) });
+    }
+
     return cells;
   }, [month, year]);
 
   function entriesForDay(date: Date) {
     if (!entries) return [];
+
     const iso = date.toISOString().slice(0, 10);
+
     return entries.filter(
       (e: any) =>
         e.startDate.slice(0, 10) <= iso && e.endDate.slice(0, 10) >= iso,
@@ -397,6 +417,7 @@ function LeaveCalendar() {
             >
               <ChevronLeft size={14} />
             </Button>
+
             <Button
               size="sm"
               variant="outline"
@@ -407,6 +428,7 @@ function LeaveCalendar() {
           </div>
         }
       />
+
       {isLoading ? (
         <Skeleton className="h-80 rounded-2xl" />
       ) : (
@@ -419,11 +441,15 @@ function LeaveCalendar() {
               {d}
             </div>
           ))}
+
           {days.map((cell, i) => {
             if (!cell.date) return <div key={i} />;
+
             const dayEntries = entriesForDay(cell.date);
+
             const isToday =
               cell.date.toDateString() === new Date().toDateString();
+
             return (
               <div
                 key={i}
@@ -435,11 +461,14 @@ function LeaveCalendar() {
                 <p
                   className={cx(
                     "text-[11px]",
-                    isToday ? "font-semibold text-brand-600" : "text-ink-faint",
+                    isToday
+                      ? "font-semibold text-brand-600"
+                      : "text-ink-faint",
                   )}
                 >
                   {cell.date.getDate()}
                 </p>
+
                 <div className="mt-1 flex flex-wrap gap-0.5">
                   {dayEntries.slice(0, 3).map((e: any) => (
                     <span
@@ -455,6 +484,7 @@ function LeaveCalendar() {
                       />
                     </span>
                   ))}
+
                   {dayEntries.length > 3 && (
                     <span className="text-[9px] text-ink-faint">
                       +{dayEntries.length - 3}
@@ -470,20 +500,65 @@ function LeaveCalendar() {
   );
 }
 
-function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function ApplyModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+
+  const [generatingReason, setGeneratingReason] = useState(false);
+
   const { data: leaveTypes } = useQuery({
     queryKey: ["leave-types"],
     queryFn: LeaveApi.types,
     enabled: open,
   });
+
   const {
     register,
     handleSubmit,
     reset,
+    getValues,
+    setValue,
+    setError,
+    clearErrors,
     formState: { errors },
-  } = useForm<ApplyForm>({ resolver: zodResolver(applySchema) });
+  } = useForm<ApplyForm>({
+    resolver: zodResolver(applySchema),
+  });
+
+  const handleGenerateReason = async () => {
+    const reason = getValues("reason")?.trim();
+
+    if (!reason || reason.length < 3) {
+      setError("reason", {
+        type: "manual",
+        message: "Enter a short reason first.",
+      });
+      return;
+    }
+
+    try {
+      setGeneratingReason(true);
+      clearErrors("reason");
+
+      const generatedReason = await LeaveApi.generateReason(reason);
+
+      setValue("reason", generatedReason, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    } catch (error) {
+      console.error("Failed to generate leave reason:", error);
+      showToast("Unable to generate a professional reason.", "error");
+    } finally {
+      setGeneratingReason(false);
+    }
+  };
 
   const mutation = useMutation<
     Awaited<ReturnType<typeof LeaveApi.apply>>,
@@ -498,12 +573,14 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         reason: values.reason,
       });
     },
+
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["leave"] });
       showToast("Leave request submitted for approval.");
       reset();
       onClose();
     },
+
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
@@ -517,6 +594,7 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
+
           <Button
             onClick={handleSubmit((v) => mutation.mutate(v))}
             isLoading={mutation.isPending}
@@ -534,12 +612,14 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
           {...register("leaveTypeId")}
         >
           <option value="">Select leave type</option>
+
           {leaveTypes?.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}
             </option>
           ))}
         </SelectField>
+
         <div className="grid grid-cols-2 gap-4">
           <TextField
             label="Start date"
@@ -548,6 +628,7 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
             error={errors.startDate?.message}
             {...register("startDate")}
           />
+
           <TextField
             label="End date"
             type="date"
@@ -556,12 +637,31 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
             {...register("endDate")}
           />
         </div>
-        <TextareaField
-          label="Reason"
-          required
-          error={errors.reason?.message}
-          {...register("reason")}
-        />
+
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="text-sm font-medium text-ink">
+              Reason <span className="text-danger-500">*</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={handleGenerateReason}
+              disabled={generatingReason}
+              className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Sparkles size={13} />
+              {generatingReason ? "Generating..." : "Generate with AI"}
+            </button>
+          </div>
+
+          <TextareaField
+            label=""
+            required
+            error={errors.reason?.message}
+            {...register("reason")}
+          />
+        </div>
       </div>
     </Modal>
   );
