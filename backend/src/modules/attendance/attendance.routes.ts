@@ -474,6 +474,41 @@ attendanceRouter.get(
 );
 
 attendanceRouter.get(
+  "/export/team/monthly",
+  isManagerOrAbove,
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+      const month = req.query.month ? Number(req.query.month) : NaN;
+      const year = req.query.year ? Number(req.query.year) : NaN;
+      if (!Number.isInteger(month) || month < 1 || month > 12) {
+        throw AppError.badRequest("Invalid attendance month.");
+      }
+      if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+        throw AppError.badRequest("Invalid attendance year.");
+      }
+      if (role === "MANAGER" && !employeeId) {
+        throw AppError.forbidden("Manager employee profile not found.");
+      }
+      const format = parseExportFormat(req.query.format);
+      const records = await repo.listForMonth(
+        month,
+        year,
+        role === "MANAGER" ? (employeeId ?? undefined) : undefined,
+      );
+      await sendAttendanceExport(
+        res,
+        records,
+        format,
+        `team-attendance-${year}-${String(month).padStart(2, "0")}`,
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.get(
   "/summary/today",
   isManagerOrAbove,
   async (_req, res, next) => {
@@ -1681,26 +1716,6 @@ attendanceRouter.post(
           includeAll,
         ),
         message: "Attendance regularization rejected successfully.",
-      });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-attendanceRouter.post(
-  "/regularize",
-  validate(regularizationSchema),
-  async (req, res, next) => {
-    try {
-      if (!req.user!.employeeId) throw AppError.forbidden();
-      const { date, note } = req.body as z.infer<typeof regularizationSchema>;
-      res.json({
-        record: await repo.requestRegularization(
-          req.user!.employeeId,
-          date,
-          note,
-        ),
       });
     } catch (err) {
       next(err);
