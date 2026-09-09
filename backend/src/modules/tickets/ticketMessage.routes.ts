@@ -61,43 +61,7 @@ ticketMessageRouter.get(
         });
       }
 
-      const role = String(req.user.role);
-
-      let allowed = false;
-
-      if (role === "SUPER_ADMIN") {
-        allowed = true;
-      }
-
-      if (req.user.employeeId && ticket.employeeId === req.user.employeeId) {
-        allowed = true;
-      }
-
-      const allowedAssignees: Record<string, string[]> = {
-        HR_ADMIN: ["HR_ADMIN"],
-        FINANCE: ["FINANCE"],
-        IT_SUPPORT: ["IT_SUPPORT"],
-      };
-
-      if (
-        role === "MANAGER" &&
-        req.user.employeeId &&
-        ticket.category === "Complaint" &&
-        ticket.assignedManagerId === req.user.employeeId
-      ) {
-        allowed = true;
-      }
-
-      if (
-        role !== "MANAGER" &&
-        allowedAssignees[role] &&
-        ticket.assignedTo &&
-        allowedAssignees[role].includes(ticket.assignedTo)
-      ) {
-        allowed = true;
-      }
-
-      if (!allowed) {
+      if (!ticketRepo.isUserAuthorizedForTicket(ticket, req.user)) {
         return res.status(403).json({
           error: {
             message: "You are not authorized to view this ticket",
@@ -202,43 +166,7 @@ ticketMessageRouter.post(
         });
       }
 
-      const role = String(req.user.role);
-
-      let allowed = false;
-
-      if (role === "SUPER_ADMIN") {
-        allowed = true;
-      }
-
-      if (req.user.employeeId && ticket.employeeId === req.user.employeeId) {
-        allowed = true;
-      }
-
-      const allowedAssignees: Record<string, string[]> = {
-        HR_ADMIN: ["HR_ADMIN"],
-        FINANCE: ["FINANCE"],
-        IT_SUPPORT: ["IT_SUPPORT"],
-      };
-
-      if (
-        role === "MANAGER" &&
-        req.user.employeeId &&
-        ticket.category === "Complaint" &&
-        ticket.assignedManagerId === req.user.employeeId
-      ) {
-        allowed = true;
-      }
-
-      if (
-        role !== "MANAGER" &&
-        allowedAssignees[role] &&
-        ticket.assignedTo &&
-        allowedAssignees[role].includes(ticket.assignedTo)
-      ) {
-        allowed = true;
-      }
-
-      if (!allowed) {
+      if (!ticketRepo.isUserAuthorizedForTicket(ticket, req.user)) {
         return res.status(403).json({
           error: {
             message: "You are not authorized to reply to this ticket",
@@ -246,14 +174,25 @@ ticketMessageRouter.post(
         });
       }
 
+      const role = String(req.user.role);
+
       const message = await messageRepo.createTicketMessage({
         ticketId,
-        employeeId: req.user.employeeId,
-        senderName: req.user.name || req.user.employeeId,
+        employeeId: req.user.employeeId || req.user.userId || "SYSTEM",
+        senderName: req.user.name || (role === "EMPLOYEE" ? "Employee" : "Staff"),
         senderRole: role || "EMPLOYEE",
         message: parsed.data.message,
         attachment,
       });
+
+      // When support staff replies to an OPEN ticket, auto-transition to IN_PROGRESS
+      if (role !== "EMPLOYEE" && ticket.status === "OPEN") {
+        try {
+          await ticketRepo.updateTicketStatus(ticketId, "IN_PROGRESS");
+        } catch (statusErr) {
+          console.warn("Failed to auto-advance ticket status to IN_PROGRESS", statusErr);
+        }
+      }
 
       // Create notifications for relevant users (do not notify the sender)
       try {
