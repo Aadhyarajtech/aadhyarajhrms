@@ -12,8 +12,20 @@ import { validate } from "@/middleware/validate";
 
 import * as repo from "./ticket.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
-import { User, AuditLog } from "@/db/models";
+import { User, AuditLog, Ticket } from "@/db/models";
 import { Employee } from "@/db/models";
+import { classifyTicket, summarizeTicketThread, generateSuggestedReply } from "@/services/ai.service";
+import * as messageRepo from "./ticketMessage.repository";
+import {
+  calculatePredictiveSlaRisk,
+  enrichTicketsWithSlaRisk,
+} from "@/services/predictiveSla.service";
+import { detectTicketAnomalies } from "@/services/anomalyDetection.service";
+import { getHelpdeskExecutiveAnalytics } from "@/services/analytics.service";
+import {
+  findSimilarTickets,
+  detectRecurringIssueGroups,
+} from "@/services/similarTickets.service";
 
 import type { AuthUser } from "@/types/express";
 
@@ -87,14 +99,32 @@ ticketRouter.post(
       // can store assignedManagerId for manager-scoped grievance access.
       const employee = await Employee.findById(req.user.employeeId).lean();
 
+      // AI classification (non-blocking — if it fails, we proceed without it)
+      const aiResult = await classifyTicket(
+        parsed.data.subject,
+        parsed.data.description,
+        parsed.data.category,
+      );
+
+      // Auto-elevate priority to HIGH if AI detects high urgency (financial/work blocker, harassment)
+      const effectivePriority =
+        aiResult?.priority === "HIGH" ? "HIGH" : parsed.data.priority;
+
       const ticket = await repo.createTicket({
         employeeId: req.user.employeeId,
         managerId: employee?.managerId ?? null,
         category: parsed.data.category,
-        priority: parsed.data.priority,
+        priority: effectivePriority,
         subject: parsed.data.subject,
         description: parsed.data.description,
         attachment,
+        aiCategory: aiResult?.category ?? null,
+        aiIntent: aiResult?.intent ?? null,
+        aiConfidence: aiResult?.confidence ?? null,
+        aiReason: aiResult?.reason ?? null,
+        aiPriority: aiResult?.priority ?? null,
+        aiPriorityReason: aiResult?.priorityReason ?? null,
+        aiSentiment: aiResult?.sentiment ?? null,
       });
 
       // Notify role owners (e.g., HR_ADMIN, FINANCE, MANAGER, IT_SUPPORT)
@@ -141,8 +171,9 @@ ticketRouter.post(
         }
       }
 
+      const risk = calculatePredictiveSlaRisk(ticket);
       return res.status(201).json({
-        ticket,
+        ticket: { ...ticket, ...risk },
       });
     } catch (err) {
       next(err);
@@ -175,68 +206,39 @@ ticketRouter.get(
 
       const role = String(req.user.role);
 
-      /* SUPER ADMIN → ALL TICKETS */
+      const allowedRoles = [
+        "SUPER_ADMIN",
+        "HR_ADMIN",
+        "FINANCE",
+        "MANAGER",
+        "IT_SUPPORT",
+      ];
 
-      if (role === "SUPER_ADMIN") {
-        const tickets = await repo.getTickets();
-
-        return res.json({
-          tickets,
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to access tickets",
+          },
         });
       }
 
-      /* HR ADMIN → HR TICKETS */
-
-      if (role === "HR_ADMIN") {
-        const tickets = await repo.getTicketsByAssignees(["HR_ADMIN"]);
-
-        return res.json({
-          tickets,
+      if (role === "MANAGER" && !req.user.employeeId) {
+        return res.status(401).json({
+          error: {
+            message: "Manager employee profile not found",
+          },
         });
       }
 
-      /* FINANCE → PAYROLL TICKETS */
+      const rawTickets = await repo.getTicketsForDepartment(
+        role,
+        req.user.employeeId,
+      );
 
-      if (role === "FINANCE") {
-        const tickets = await repo.getTicketsByAssignees(["FINANCE"]);
-
-        return res.json({
-          tickets,
-        });
-      }
-
-      /* MANAGER → TEAM GRIEVANCE TICKETS */
-
-      if (role === "MANAGER") {
-        if (!req.user.employeeId) {
-          return res.status(401).json({
-            error: {
-              message: "Manager employee profile not found",
-            },
-          });
-        }
-
-        const tickets = await repo.getTeamGrievanceTickets(req.user.employeeId);
-
-        return res.json({
-          tickets,
-        });
-      }
-
-      /* IT SUPPORT → IT TICKETS */
-
-      if (role === "IT_SUPPORT") {
-        const tickets = await repo.getTicketsByAssignees(["IT_SUPPORT"]);
-
-        return res.json({
-          tickets,
-        });
-      }
-
-      return res.status(403).json({
-        error: {
-          message: "You are not authorized to access tickets",
-        },
+      // Enrich all tickets with predictive SLA breach evaluations
+      const tickets = enrichTicketsWithSlaRisk(rawTickets);
+      return res.json({
+        tickets,
       });
     } catch (err) {
       next(err);
@@ -246,15 +248,6 @@ ticketRouter.get(
 
 /* =========================================================
    MY TICKETS
-
-   IMPORTANT:
-   Employee sees ONLY tickets raised by that employee.
-
-   This includes:
-   - Old tickets
-   - New tickets
-
-   It does NOT show other employees' tickets.
 ========================================================= */
 
 ticketRouter.get(
@@ -269,14 +262,283 @@ ticketRouter.get(
         });
       }
 
-      console.log("[Tickets] My Tickets employeeId:", req.user.employeeId);
-
-      const tickets = await repo.getMyTickets(req.user.employeeId);
-
-      console.log(`[Tickets] Found ${tickets.length} ticket(s)`);
+      const rawTickets = await repo.getMyTickets(req.user.employeeId);
+      const tickets = enrichTicketsWithSlaRisk(rawTickets);
 
       return res.json({
         tickets,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   EXECUTIVE AI HELPDESK ANALYTICS (Phase 5)
+========================================================= */
+
+function getDepartmentFilterForRole(role: string) {
+  if (role === "SUPER_ADMIN" || role === "HR_ADMIN") {
+    return undefined; // Global access for HR Manager and Super Admin
+  }
+  if (role === "IT_SUPPORT") {
+    return { assignedTo: ["IT_SUPPORT"], categories: ["IT Support"] };
+  }
+  if (role === "FINANCE") {
+    return { assignedTo: ["FINANCE"], categories: ["Payroll"] };
+  }
+  return undefined;
+}
+
+ticketRouter.get(
+  "/analytics",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { message: "Unauthorized" },
+        });
+      }
+
+      const role = String(req.user.role);
+      const allowedRoles = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE", "MANAGER", "IT_SUPPORT"];
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({
+          error: { message: "Executive analytics is restricted to support staff and administrators" },
+        });
+      }
+
+      const departmentFilter = getDepartmentFilterForRole(role);
+      const analytics = await getHelpdeskExecutiveAnalytics(departmentFilter);
+      return res.json({
+        success: true,
+        analytics,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   TREND & OUTAGE ANOMALY DETECTION (Phase 5)
+========================================================= */
+ticketRouter.get(
+  "/anomalies",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { message: "Unauthorized" },
+        });
+      }
+
+      const role = String(req.user.role);
+      const departmentFilter = getDepartmentFilterForRole(role);
+      const query: any = {};
+      if (departmentFilter) {
+        query.$or = [
+          { assignedTo: { $in: departmentFilter.assignedTo } },
+          { category: { $in: departmentFilter.categories } },
+        ];
+      }
+
+      const rawTickets = await Ticket.find(query).sort({ createdAt: -1 }).limit(150).lean();
+      const anomalies = detectTicketAnomalies(rawTickets as any, 24);
+
+      return res.json({
+        success: true,
+        anomalies,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   RECURRING ISSUE DETECTION (Phase 5)
+   Clusters active tickets reporting the exact same problem
+========================================================= */
+ticketRouter.get(
+  "/recurring-issues",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { message: "Unauthorized" },
+        });
+      }
+
+      const role = String(req.user.role);
+      const departmentFilter = getDepartmentFilterForRole(role);
+      const windowHours = req.query.windowHours ? Number(req.query.windowHours) : 48;
+      const groups = await detectRecurringIssueGroups(2, windowHours, departmentFilter);
+
+      return res.json({
+        success: true,
+        groups,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   CLUSTER BROADCAST MESSAGE (Phase 5)
+   Sends a unified message and optional status update to all
+   tickets in a cluster or recurring issue group simultaneously.
+========================================================= */
+
+const broadcastBatchSchema = z.object({
+  ticketIds: z.array(z.string()).min(1, "At least one ticket ID required"),
+  message: z.string().min(3, "Message must be at least 3 characters"),
+  updateStatus: z
+    .enum(["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"])
+    .optional(),
+});
+
+ticketRouter.post(
+  "/broadcast-batch",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: { message: "Unauthorized" } });
+      }
+
+      const role = String(req.user.role || "");
+      const allowedRoles = [
+        "SUPER_ADMIN",
+        "HR_ADMIN",
+        "FINANCE",
+        "MANAGER",
+        "IT_SUPPORT",
+      ];
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({
+          error: {
+            message: "You do not have permission to broadcast cluster messages",
+          },
+        });
+      }
+
+      const parsed = broadcastBatchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: {
+            message: "Validation failed",
+            details: parsed.error.flatten().fieldErrors,
+          },
+        });
+      }
+
+      const { ticketIds, message: broadcastMessage, updateStatus } = parsed.data;
+
+      // Find tickets by _id or ticketId
+      const tickets = await Ticket.find({
+        $or: [{ _id: { $in: ticketIds } }, { ticketId: { $in: ticketIds } }],
+      });
+
+      if (!tickets || tickets.length === 0) {
+        return res.status(404).json({
+          error: { message: "No matching tickets found to broadcast to" },
+        });
+      }
+
+      // Department authorization check
+      const unauthorized = tickets.some(
+        (t) => !repo.isUserAuthorizedForTicket(t, req.user!),
+      );
+      if (unauthorized && role !== "SUPER_ADMIN" && role !== "HR_ADMIN") {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to broadcast to tickets outside your department",
+          },
+        });
+      }
+
+      const senderEmployeeId =
+        req.user.employeeId || req.user.userId || "STAFF";
+      const senderName = req.user.name || "Support Staff";
+      const senderRole = req.user.role || "HR_ADMIN";
+
+      const results: Array<{
+        ticketId: string;
+        status: string;
+        messageId: string;
+      }> = [];
+
+      for (const ticket of tickets) {
+        const ticketIdStr = String(ticket._id);
+
+        // 1. Create message in ticket conversation
+        const createdMsg = await messageRepo.createTicketMessage({
+          ticketId: ticketIdStr,
+          employeeId: senderEmployeeId,
+          senderName: `${senderName} (Broadcast)`,
+          senderRole,
+          message: broadcastMessage,
+        });
+
+        // 2. Update status if specified
+        let currentStatus = ticket.status;
+        if (updateStatus && updateStatus !== ticket.status) {
+          await repo.updateTicketStatus(ticketIdStr, updateStatus);
+          currentStatus = updateStatus;
+        }
+
+        // 3. Notify ticket owner employee
+        try {
+          const ownerEmp = await Employee.findById(ticket.employeeId).lean();
+          if (ownerEmp?.userId && ownerEmp.userId !== req.user.userId) {
+            await notify({
+              userId: ownerEmp.userId,
+              type: "TICKET_MESSAGE",
+              title: `${senderName} posted an update on ticket ${ticket.ticketId}`,
+              message: broadcastMessage.slice(0, 100),
+              link: `/app/tickets/${ticket._id}`,
+            });
+          }
+        } catch (notifErr) {
+          console.warn(
+            "Broadcast notification failed for ticket",
+            ticket.ticketId,
+            notifErr,
+          );
+        }
+
+        results.push({
+          ticketId: ticket.ticketId,
+          status: currentStatus,
+          messageId: String((createdMsg as any)?._id || ""),
+        });
+      }
+
+      // Record permanent audit entry
+      try {
+        await AuditLog.create({
+          userId: req.user.userId,
+          action: "TICKET_CLUSTER_BROADCAST",
+          entity: "Ticket",
+          entityId: tickets[0]._id,
+          metadata: JSON.stringify({
+            ticketCount: tickets.length,
+            ticketIds: tickets.map((t) => t.ticketId),
+            updateStatus: updateStatus || null,
+            senderRole,
+          }),
+          ipAddress: req.ip || null,
+        });
+      } catch (auditErr) {
+        console.warn("Failed to record audit log for broadcast", auditErr);
+      }
+
+      return res.status(200).json({
+        success: true,
+        sentCount: results.length,
+        results,
       });
     } catch (err) {
       next(err);
@@ -330,36 +592,12 @@ ticketRouter.patch(
         });
       }
 
-      // Managers may update:
-      // 1. their own tickets, OR
-      // 2. Complaint/grievance tickets assigned to their team.
-      //
-      // They must never be able to update another Manager's team grievance.
-      if (String(req.user.role) === "MANAGER") {
-        if (!req.user.employeeId) {
-          return res.status(401).json({
-            error: {
-              message: "Manager employee profile not found",
-            },
-          });
-        }
-
-        const isOwnTicket = existingTicket?.employeeId === req.user.employeeId;
-
-        const managerTicket = isOwnTicket
-          ? null
-          : await repo.getTeamGrievanceTicket(
-              req.params.id,
-              req.user.employeeId,
-            );
-
-        if (!isOwnTicket && !managerTicket) {
-          return res.status(403).json({
-            error: {
-              message: "You are not authorized to update this ticket",
-            },
-          });
-        }
+      if (!repo.isUserAuthorizedForTicket(existingTicket, req.user)) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to update this ticket",
+          },
+        });
       }
 
       const ticket = await repo.updateTicketStatus(
@@ -756,85 +994,361 @@ ticketRouter.get(
         });
       }
 
-      const role = String(req.user.role);
+      const risk = calculatePredictiveSlaRisk(ticket);
+      const enrichedTicket = { ...ticket, ...risk };
 
-      /* =====================================================
-         SUPER ADMIN
-      ===================================================== */
-
-      if (role === "SUPER_ADMIN") {
-        return res.json({
-          ticket,
-        });
-      }
-
-      /* =====================================================
-         EMPLOYEE
-         Employee can view their own ticket.
-      ===================================================== */
-
-      if (req.user.employeeId && ticket.employeeId === req.user.employeeId) {
-        return res.json({
-          ticket,
-        });
-      }
-
-      /* =====================================================
-         ROLE-BASED ACCESS
-      ===================================================== */
-
-      // MANAGER → only Complaint tickets assigned to this manager.
-      if (role === "MANAGER") {
-        if (!req.user.employeeId) {
-          return res.status(401).json({
-            error: {
-              message: "Manager employee profile not found",
-            },
-          });
-        }
-
-        // Managers can access only grievance/Complaint tickets assigned
-        // to their own team. The authenticated employeeId is the only
-        // manager scope used here.
-        const managerTicket =
-          ticket.category === "Complaint"
-            ? await repo.getTeamGrievanceTicket(
-                req.params.id,
-                req.user.employeeId,
-              )
-            : null;
-
-        if (managerTicket) {
-          return res.json({
-            ticket: managerTicket,
-          });
-        }
-
+      if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
         return res.status(403).json({
           error: {
-            message: "You are not authorized to view this team grievance",
+            message: "You are not authorized to view this ticket",
           },
         });
       }
 
-      const allowedAssignees: Record<string, string[]> = {
-        HR_ADMIN: ["HR_ADMIN"],
-        FINANCE: ["FINANCE"],
-        IT_SUPPORT: ["IT_SUPPORT"],
-      };
+      return res.json({
+        ticket: enrichedTicket,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-      const allowed = allowedAssignees[role];
-
-      if (allowed && ticket.assignedTo && allowed.includes(ticket.assignedTo)) {
-        return res.json({
-          ticket,
+/* =========================================================
+   SIMILAR TICKET DETECTION (Phase 5)
+   Identifies other tickets reporting the exact same problem
+========================================================= */
+ticketRouter.get(
+  "/:id/similar",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { message: "Unauthorized" },
         });
       }
 
-      return res.status(403).json({
-        error: {
-          message: "You are not authorized to view this ticket",
-        },
+      const result = await findSimilarTickets(req.params.id);
+
+      return res.json({
+        success: true,
+        ...result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   AI CLASSIFY
+   Pre-submission classification endpoint.
+   Frontend calls this before creating a ticket so the employee
+   can see the AI suggestion and optionally accept it.
+========================================================= */
+
+const classifySchema = z.object({
+  subject: z.string().min(3),
+  description: z.string().min(5),
+  category: z.string().optional(),
+});
+
+ticketRouter.post(
+  "/classify",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user?.employeeId) {
+        return res.status(401).json({
+          error: { message: "Authentication required" },
+        });
+      }
+
+      const parsed = classifySchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: {
+            message: "Subject and description are required",
+            details: parsed.error.flatten(),
+          },
+        });
+      }
+
+      const result = await classifyTicket(
+        parsed.data.subject,
+        parsed.data.description,
+        parsed.data.category,
+      );
+
+      if (!result) {
+        return res.json({
+          classified: false,
+          message: "AI classification is not available",
+        });
+      }
+
+      return res.json({
+        classified: true,
+        category: result.category,
+        intent: result.intent,
+        confidence: result.confidence,
+        reason: result.reason,
+        priority: result.priority,
+        priorityReason: result.priorityReason,
+        sentiment: result.sentiment,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   ANALYZE EXISTING TICKET WITH AI
+   Allows HR/Admin to trigger AI classification on an existing
+   ticket and persist the insights directly into the database.
+========================================================= */
+
+ticketRouter.post(
+  "/:id/analyze-ai",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { message: "Authentication required" },
+        });
+      }
+
+      const ticket = await repo.getTicket(req.params.id);
+
+      if (!ticket) {
+        return res.status(404).json({
+          error: { message: "Ticket not found" },
+        });
+      }
+
+      const result = await classifyTicket(
+        ticket.subject,
+        ticket.description,
+        ticket.category,
+      );
+
+      if (!result) {
+        return res.status(500).json({
+          error: { message: "AI classification failed" },
+        });
+      }
+
+      // Update ticket in database
+      const updateFields: any = {
+        aiCategory: result.category,
+        aiIntent: result.intent,
+        aiConfidence: result.confidence,
+        aiReason: result.reason,
+        aiPriority: result.priority,
+        aiPriorityReason: result.priorityReason,
+        aiSentiment: result.sentiment,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (result.priority === "HIGH") {
+        updateFields.priority = "HIGH";
+      }
+
+      // Smart Re-routing: If AI is confident (>= 0.70) and category differs from current,
+      // re-route to the proper department and update category
+      if (result.confidence >= 0.7 && result.category !== ticket.category) {
+        updateFields.category = result.category;
+        updateFields.assignedTo = repo.assignDepartment(result.category);
+      }
+
+      const updatedTicket = await Ticket.findByIdAndUpdate(
+        req.params.id,
+        { $set: updateFields },
+        { new: true },
+      ).lean();
+
+      return res.json({
+        success: true,
+        ticket: updatedTicket,
+        ai: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   PHASE 3: SUMMARIZE TICKET THREAD
+   Staff-only endpoint. Generates a 3-bullet executive summary
+   of the ticket and its conversation history.
+========================================================= */
+
+const STAFF_ROLES = ["HR_ADMIN", "FINANCE", "IT_SUPPORT", "SUPER_ADMIN", "MANAGER"];
+
+ticketRouter.post(
+  "/:id/summarize",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { message: "Authentication required" },
+        });
+      }
+
+      const role = String(req.user.role);
+      if (!STAFF_ROLES.includes(role)) {
+        return res.status(403).json({
+          error: { message: "Only support staff can use AI summarization" },
+        });
+      }
+
+      const ticket = await repo.getTicket(req.params.id);
+      if (!ticket) {
+        return res.status(404).json({
+          error: { message: "Ticket not found" },
+        });
+      }
+
+      if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
+        return res.status(403).json({
+          error: { message: "You are not authorized to access this ticket" },
+        });
+      }
+
+      // Fetch all messages for this ticket
+      const messages = await messageRepo.getTicketMessages(req.params.id);
+
+      // Fetch employee profile for real identity context
+      const employee = ticket.employeeId
+        ? await Employee.findById(ticket.employeeId).lean()
+        : null;
+
+      const employeeName = employee
+        ? `${employee.firstName || ""} ${employee.lastName || ""}`.trim() || undefined
+        : undefined;
+
+      const ticketContext = {
+        ticketId: ticket.ticketId,
+        subject: ticket.subject,
+        description: ticket.description || "",
+        category: ticket.category,
+        priority: ticket.priority,
+        status: ticket.status,
+        employeeName,
+        agentName: req.user?.name || undefined,
+        agentRole: String(req.user?.role || "Staff"),
+      };
+
+      const messageContexts = (messages || []).map((m: any) => ({
+        senderName: m.senderName || "Unknown",
+        senderRole: m.senderRole || "EMPLOYEE",
+        message: m.message || "",
+        createdAt: m.createdAt || new Date().toISOString(),
+      }));
+
+      const summary = await summarizeTicketThread(ticketContext, messageContexts);
+
+      return res.json({
+        success: true,
+        summary,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   PHASE 3: AI SUGGESTED REPLY
+   Staff-only endpoint. Generates a context-aware draft reply
+   for HR support agents with selectable tone.
+========================================================= */
+
+const suggestReplySchema = z.object({
+  tone: z.enum(["empathetic", "formal", "concise"]).default("empathetic"),
+  prompt: z.string().optional(),
+  instruction: z.string().optional(),
+});
+
+ticketRouter.post(
+  "/:id/suggest-reply",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { message: "Authentication required" },
+        });
+      }
+
+      const role = String(req.user.role);
+      if (!STAFF_ROLES.includes(role)) {
+        return res.status(403).json({
+          error: { message: "Only support staff can use AI reply suggestions" },
+        });
+      }
+
+      const ticket = await repo.getTicket(req.params.id);
+      if (!ticket) {
+        return res.status(404).json({
+          error: { message: "Ticket not found" },
+        });
+      }
+
+      if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
+        return res.status(403).json({
+          error: { message: "You are not authorized to access this ticket" },
+        });
+      }
+
+      const parsed = suggestReplySchema.safeParse(req.body || {});
+      const tone = parsed.success ? parsed.data.tone : "empathetic";
+      const instruction = parsed.success
+        ? (parsed.data.instruction || parsed.data.prompt)?.trim() || undefined
+        : undefined;
+
+      // Fetch all messages for this ticket
+      const messages = await messageRepo.getTicketMessages(req.params.id);
+
+      // Fetch employee profile for real identity context
+      const employee = ticket.employeeId
+        ? await Employee.findById(ticket.employeeId).lean()
+        : null;
+
+      const employeeName = employee
+        ? `${employee.firstName || ""} ${employee.lastName || ""}`.trim() || undefined
+        : undefined;
+
+      const ticketContext = {
+        ticketId: ticket.ticketId,
+        subject: ticket.subject,
+        description: ticket.description || "",
+        category: ticket.category,
+        priority: ticket.priority,
+        status: ticket.status,
+        employeeName,
+        agentName: req.user?.name || undefined,
+        agentRole: String(req.user?.role || "Staff"),
+      };
+
+      const messageContexts = (messages || []).map((m: any) => ({
+        senderName: m.senderName || "Unknown",
+        senderRole: m.senderRole || "EMPLOYEE",
+        message: m.message || "",
+        createdAt: m.createdAt || new Date().toISOString(),
+      }));
+
+      const result = await generateSuggestedReply(
+        ticketContext,
+        messageContexts,
+        tone,
+        instruction,
+      );
+
+      return res.json({
+        success: true,
+        ...result,
       });
     } catch (err) {
       next(err);

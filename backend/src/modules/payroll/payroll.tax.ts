@@ -22,6 +22,13 @@ export interface TaxCalculation {
   surcharge: number;
   cess: number;
   annualTax: number;
+  slabBreakdown: {
+    from: number;
+    to: number | null;
+    rate: number;
+    taxableAmount: number;
+    tax: number;
+  }[];
 }
 
 const NEW_SLABS = [
@@ -64,13 +71,22 @@ function calculateSlabTax(
 ) {
   let tax = 0;
   let previous = 0;
+  const slabBreakdown: TaxCalculation["slabBreakdown"] = [];
   for (const slab of slabs) {
     if (income <= previous) break;
-    const taxableInSlab = Math.min(income, slab.limit) - previous;
-    tax += taxableInSlab * slab.rate;
+    const taxableInSlab = Math.max(0, Math.min(income, slab.limit) - previous);
+    const slabTax = taxableInSlab * slab.rate;
+    tax += slabTax;
+    slabBreakdown.push({
+      from: previous,
+      to: Number.isFinite(slab.limit) ? slab.limit : null,
+      rate: slab.rate,
+      taxableAmount: roundMoney(taxableInSlab),
+      tax: roundMoney(slabTax),
+    });
     previous = slab.limit;
   }
-  return roundMoney(tax);
+  return { tax: roundMoney(tax), slabBreakdown };
 }
 
 function ageOnTaxYearStart(
@@ -161,7 +177,8 @@ export function calculateAnnualTax(params: {
           : OLD_SLABS_UNDER_60;
   }
 
-  const slabTax = calculateSlabTax(taxableIncome, slabs);
+  const slabResult = calculateSlabTax(taxableIncome, slabs);
+  const slabTax = slabResult.tax;
   const rebateLimit = params.regime === "NEW" ? 1200000 : 500000;
   const rebateMax = params.regime === "NEW" ? 60000 : 12500;
   const rebate =
@@ -185,5 +202,6 @@ export function calculateAnnualTax(params: {
     surcharge,
     cess,
     annualTax,
+    slabBreakdown: slabResult.slabBreakdown,
   };
 }

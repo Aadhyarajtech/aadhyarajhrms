@@ -602,6 +602,9 @@ export interface FeedbackSummary {
 export interface SalaryStructure {
   id: string;
   employeeId: string;
+  ctc: number;
+  basicPercentage: number;
+  hraPercentage: number;
   basic: number;
   hra: number;
   conveyance: number;
