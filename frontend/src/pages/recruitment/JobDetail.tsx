@@ -2121,19 +2121,21 @@ function EditJobModal({
           required
           {...register("location", { required: "Location is required" })}
         />
-        <SelectField label="Status" {...register("status")}>
+        <SelectField label="Status" required {...register("status")}>
           <option value="OPEN">Open</option>
           <option value="ON_HOLD">On hold</option>
           <option value="CLOSED">Closed</option>
         </SelectField>
         <TextField
           label="Minimum experience"
+          required
           type="number"
           min="0"
           {...register("experienceMin", { valueAsNumber: true })}
         />
         <TextField
           label="Maximum experience"
+          required
           type="number"
           min="0"
           error={errors.experienceMax?.message}
@@ -2146,6 +2148,7 @@ function EditJobModal({
         />
         <TextField
           label="Openings"
+          required
           type="number"
           min="1"
           {...register("openings", {
@@ -2162,6 +2165,7 @@ function EditJobModal({
         />
         <SelectField
           label="Hiring mode"
+          required
           className="sm:col-span-2"
           {...register("hiringMode")}
         >
@@ -2191,7 +2195,7 @@ function EditJobModal({
         </div>
         <div className="sm:col-span-2">
           <label className="mb-1 block text-sm font-medium text-ink">
-            Job description
+            Job description <span className="text-danger-500">*</span>
           </label>
           <textarea
             className="min-h-40 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-brand-500"
@@ -2720,7 +2724,7 @@ function ScheduleInterviewModal({
           </p>
 
           <div className="grid grid-cols-2 gap-3">
-            <SelectField label="Interviewer" {...register("interviewerId")}>
+            <SelectField label="Interviewer" required {...register("interviewerId")}>
               <option value="">Select</option>
 
               {managers?.map((manager) => (
@@ -2730,11 +2734,12 @@ function ScheduleInterviewModal({
               ))}
             </SelectField>
 
-            <TextField label="Round" {...register("round")} />
+            <TextField label="Round" required {...register("round")} />
           </div>
 
           <TextField
             label="Date & time"
+            required
             type="datetime-local"
             {...register("scheduledAt")}
           />

@@ -282,15 +282,15 @@ const updateEmployeeSchema = z.object({
   workLocation: z.string().nullable().optional(),
   probationPeriodMonths: z.coerce.number().int().min(0).nullable().optional(),
 
- probationStartDate: z.string().nullable().optional(),
-probationEndDate: z.string().nullable().optional(),
+  probationStartDate: z.string().nullable().optional(),
+  probationEndDate: z.string().nullable().optional(),
 
-noticeStartDate: z.string().nullable().optional(),
-lastWorkingDate: z.string().nullable().optional(),
-noticeDays: z.coerce.number().int().min(0).nullable().optional(),
+  noticeStartDate: z.string().nullable().optional(),
+  lastWorkingDate: z.string().nullable().optional(),
+  noticeDays: z.coerce.number().int().min(0).nullable().optional(),
 
-status: z
-  .enum([
+  status: z
+    .enum([
     "ONBOARDING",
     "ACTIVE",
     "ON_PROBATION",
@@ -300,8 +300,8 @@ status: z
     "RESIGNED",
     "INACTIVE",
     "ON_HOLD",
-  ])
-  .optional(),
+    ])
+    .optional(),
   phone: z.string().optional(),
   personalEmail: z.string().email().or(z.literal("")).optional(),
   address: z.string().optional(),
@@ -311,7 +311,12 @@ status: z
   emergencyContactName: z.string().optional(),
   emergencyContactPhone: z.string().optional(),
   emergencyContactRelationship: z.string().nullable().optional(),
-  emergencyContactEmail: z.string().email().nullable().optional(),
+  emergencyContactEmail: z
+    .string()
+    .email()
+    .or(z.literal(""))
+    .nullable()
+    .optional(),
   employeeAadhaar: z.string().nullable().optional(),
   employeePan: z.string().nullable().optional(),
   avatarUrl: z.string().optional(),
@@ -448,38 +453,38 @@ employeesRouter.patch(
             avatarUrl: req.body.avatarUrl,
           };
 
-      const updateBody: any = { ...body };
+            const updateBody: any = { ...body };
 
-if (
-  isPrivileged &&
-  req.body.status === "ON_PROBATION" &&
-  target.status !== "ON_PROBATION"
-) {
-  const probationStartDate =
-    req.body.probationStartDate ||
-    target.probationStartDate ||
-    target.dateOfJoining ||
-    new Date().toISOString();
+      if (
+        isPrivileged &&
+        req.body.status === "ON_PROBATION" &&
+        target.status !== "ON_PROBATION"
+      ) {
+        const probationStartDate =
+          req.body.probationStartDate ||
+          target.probationStartDate ||
+          target.dateOfJoining ||
+          new Date().toISOString();
 
-  updateBody.probationStartDate = probationStartDate;
+        updateBody.probationStartDate = probationStartDate;
 
-  if (!req.body.probationEndDate) {
-    const probationMonths = Number(
-      req.body.probationPeriodMonths ??
-        target.probationPeriodMonths ??
-        3,
-    );
+        if (!req.body.probationEndDate) {
+          const probationMonths = Number(
+            req.body.probationPeriodMonths ??
+              target.probationPeriodMonths ??
+              3,
+          );
 
-    const probationEndDate = new Date(probationStartDate);
-    probationEndDate.setMonth(
-      probationEndDate.getMonth() + probationMonths,
-    );
+          const probationEndDate = new Date(probationStartDate);
+          probationEndDate.setMonth(
+            probationEndDate.getMonth() + probationMonths,
+          );
 
-    updateBody.probationEndDate = probationEndDate.toISOString();
-  }
-}
+          updateBody.probationEndDate = probationEndDate.toISOString();
+        }
+      }
 
-const employee = await repo.updateEmployee(
+      const employee = await repo.updateEmployee(
   req.params.id,
   updateBody,
 );

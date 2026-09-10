@@ -238,6 +238,49 @@ function roundMoney(value: number): number {
   return Math.round(Math.max(0, value) * 100) / 100;
 }
 
+/**
+ * Older payslips may not contain the annual tax fields because those fields
+ * were added after the payslip was originally generated. Keep existing valid
+ * values untouched and calculate missing values from the stored gross salary.
+ */
+function getPayslipTaxDetails(
+  row: any,
+  employee: any,
+  runMonth: number,
+  runYear: number,
+) {
+  const storedTaxableIncome = Number(row.taxableIncome);
+  const storedAnnualTax = Number(row.annualTax);
+
+  if (
+    Number.isFinite(storedTaxableIncome) &&
+    Number.isFinite(storedAnnualTax)
+  ) {
+    return {
+      taxableIncome: storedTaxableIncome,
+      annualTax: storedAnnualTax,
+    };
+  }
+
+  const taxYear = Number(
+    row.taxYear ?? (runMonth >= 4 ? runYear : runYear - 1),
+  );
+  const taxRegime: TaxRegime = row.taxRegime === "OLD" ? "OLD" : "NEW";
+  const monthlySalaryIncome = Math.max(0, Number(row.grossEarnings ?? 0));
+
+  const tax = calculateAnnualTax({
+    taxYear,
+    regime: taxRegime,
+    dateOfBirth: employee?.dateOfBirth,
+    monthlySalaryIncome,
+  });
+
+  return {
+    taxableIncome: tax.taxableIncome,
+    annualTax: tax.annualTax,
+  };
+}
+
 function monthPrefix(month: number, year: number) {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
@@ -616,8 +659,11 @@ function monthNameForNotification(month: number) {
 }
 
 export async function listPayslipsForRun(runId: string) {
-  const rows = await Payslip.find({ payrollRunId: runId }).lean();
-  if (!rows.length) return [];
+  const [rows, run] = await Promise.all([
+    Payslip.find({ payrollRunId: runId }).lean(),
+    PayrollRun.findById(runId).lean(),
+  ]);
+  if (!rows.length || !run) return [];
   const employeeIds = [...new Set(rows.map((r) => r.employeeId))];
   const employees = await Employee.find({ _id: { $in: employeeIds } }).lean();
   const empMap = new Map(employees.map((e) => [e._id, e]));
@@ -629,9 +675,11 @@ export async function listPayslipsForRun(runId: string) {
   return rows
     .map((r) => {
       const emp = empMap.get(r.employeeId);
+      const taxDetails = getPayslipTaxDetails(r, emp, run.month, run.year);
       return {
         id: r._id,
         ...r,
+        ...taxDetails,
         firstName: emp?.firstName ?? null,
         lastName: emp?.lastName ?? null,
         employeeCode: emp?.employeeCode ?? null,
@@ -644,9 +692,10 @@ export async function listPayslipsForRun(runId: string) {
 }
 
 export async function listPayslipsForEmployee(employeeId: string) {
-  const paidRuns = await PayrollRun.find({ status: "PAID" })
-    .select("_id")
-    .lean();
+  const [paidRuns, employee] = await Promise.all([
+    PayrollRun.find({ status: "PAID" }).select("_id").lean(),
+    Employee.findById(employeeId).select("dateOfBirth").lean(),
+  ]);
   const paidRunIds = paidRuns.map((r) => r._id);
   const rows = await Payslip.find({
     employeeId,
@@ -659,9 +708,20 @@ export async function listPayslipsForEmployee(employeeId: string) {
   return rows
     .map((r) => {
       const run = runMap.get(r.payrollRunId);
+      const taxDetails = run
+        ? getPayslipTaxDetails(r, employee, run.month, run.year)
+        : {
+            taxableIncome: Number.isFinite(Number(r.taxableIncome))
+              ? Number(r.taxableIncome)
+              : 0,
+            annualTax: Number.isFinite(Number(r.annualTax))
+              ? Number(r.annualTax)
+              : 0,
+          };
       return {
         id: r._id,
         ...r,
+        ...taxDetails,
         month: run?.month ?? null,
         year: run?.year ?? null,
         runStatus: run?.status ?? null,
@@ -684,9 +744,20 @@ export async function getPayslip(id: string) {
     employee ? Designation.findById(employee.designationId).lean() : null,
     employee ? Department.findById(employee.departmentId).lean() : null,
   ]);
+  const taxDetails = run
+    ? getPayslipTaxDetails(row, employee, run.month, run.year)
+    : {
+        taxableIncome: Number.isFinite(Number(row.taxableIncome))
+          ? Number(row.taxableIncome)
+          : 0,
+        annualTax: Number.isFinite(Number(row.annualTax))
+          ? Number(row.annualTax)
+          : 0,
+      };
   return {
     id: row._id,
     ...row,
+    ...taxDetails,
     month: run?.month ?? null,
     year: run?.year ?? null,
     runStatus: run?.status ?? null,
@@ -847,4 +918,14 @@ export async function sendPayslipRequest(id: string, adminUserId: string) {
     link: "/payroll",
   });
   return getPayslipRequest(id);
+}
+
+export async function reprocessPayrollRun(id: string) {
+  const run = await PayrollRun.findById(id).lean();
+
+  if (!run) {
+    throw AppError.notFound("Payroll run not found.");
+  }
+
+  return processPayrollRun(run.month, run.year);
 }

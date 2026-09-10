@@ -244,7 +244,7 @@ async function attendance(filters: ReportFilters, employeeIds?: string[]) {
       ]),
     ]);
 
-  const [lateMetrics, compOffMetrics] = await Promise.all([
+  const [lateMetrics, compOffMetrics, lateByWeekday, lateByEmployee] = await Promise.all([
     Attendance.aggregate([
       { $match: query },
       {
@@ -280,7 +280,71 @@ async function attendance(filters: ReportFilters, employeeIds?: string[]) {
         },
       },
     ]),
+    Attendance.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: { $dayOfWeek: { $dateFromString: { dateString: "$date" } } },
+          lateRecords: {
+            $sum: {
+              $cond: [{ $gt: [{ $ifNull: ["$lateMinutes", 0] }, 0] }, 1, 0],
+            },
+          },
+          lateMinutes: { $sum: { $ifNull: ["$lateMinutes", 0] } },
+          earlyDepartureRecords: {
+            $sum: {
+              $cond: [
+                { $gt: [{ $ifNull: ["$earlyDepartureMinutes", 0] }, 0] },
+                1,
+                0,
+              ],
+            },
+          },
+          earlyDepartureMinutes: {
+            $sum: { $ifNull: ["$earlyDepartureMinutes", 0] },
+          },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    Attendance.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: "$employeeId",
+          lateRecords: {
+            $sum: {
+              $cond: [{ $gt: [{ $ifNull: ["$lateMinutes", 0] }, 0] }, 1, 0],
+            },
+          },
+          lateMinutes: { $sum: { $ifNull: ["$lateMinutes", 0] } },
+          earlyDepartureRecords: {
+            $sum: {
+              $cond: [
+                { $gt: [{ $ifNull: ["$earlyDepartureMinutes", 0] }, 0] },
+                1,
+                0,
+              ],
+            },
+          },
+          earlyDepartureMinutes: {
+            $sum: { $ifNull: ["$earlyDepartureMinutes", 0] } },
+        },
+      },
+      { $sort: { lateRecords: -1, lateMinutes: -1 } },
+      { $limit: 20 },
+    ]),
   ]);
+
+  const weekdayNames = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
 
   const present = byStatus
     .filter((x) => ["PRESENT", "WORK_FROM_HOME"].includes(x._id))
@@ -307,6 +371,23 @@ async function attendance(filters: ReportFilters, employeeIds?: string[]) {
     regularized,
     lateRecords: lateMetrics[0]?.lateRecords ?? 0,
     lateMinutes: Math.round((lateMetrics[0]?.lateMinutes ?? 0) * 100) / 100,
+    earlyDepartureRecords: lateMetrics[0]?.earlyDepartureRecords ?? 0,
+    earlyDepartureMinutes:
+      Math.round((lateMetrics[0]?.earlyDepartureMinutes ?? 0) * 100) / 100,
+    lateByWeekday: lateByWeekday.map((x) => ({
+      label: weekdayNames[(x._id ?? 1) - 1] ?? "Unknown",
+      lateRecords: x.lateRecords ?? 0,
+      lateMinutes: Math.round((x.lateMinutes ?? 0) * 100) / 100,
+      earlyDepartureRecords: x.earlyDepartureRecords ?? 0,
+      earlyDepartureMinutes: Math.round((x.earlyDepartureMinutes ?? 0) * 100) / 100,
+    })),
+    lateEmployeeSummary: lateByEmployee.map((x) => ({
+      employeeId: x._id,
+      lateRecords: x.lateRecords ?? 0,
+      lateMinutes: Math.round((x.lateMinutes ?? 0) * 100) / 100,
+      earlyDepartureRecords: x.earlyDepartureRecords ?? 0,
+      earlyDepartureMinutes: Math.round((x.earlyDepartureMinutes ?? 0) * 100) / 100,
+    })),
     overtimeHours: Math.round((lateMetrics[0]?.overtimeHours ?? 0) * 100) / 100,
     compOffCreditedRecords: lateMetrics[0]?.compOffCreditedRecords ?? 0,
     compOffEarnedHours:
@@ -721,7 +802,14 @@ async function documents(filters: ReportFilters, employeeIds?: string[]) {
     }),
   ]);
 
-  return { total, verified, pending, requests, assignedAssets: assets };
+  return {
+    total,
+    verified,
+    pending,
+    requests,
+    assignedAssets: assets,
+    complianceRate: total ? Math.round((verified / total) * 1000) / 10 : 100,
+  };
 }
 
 async function audit(filters: ReportFilters, role: string) {

@@ -1139,6 +1139,47 @@ const holidaySchema = new Schema<HolidayDoc>(
 
 export const Holiday = model<HolidayDoc>("Holiday", holidaySchema);
 
+export interface CompOffCreditDoc {
+  _id: string;
+  employeeId: string;
+  attendanceId: string | null;
+  days: number;
+  remainingDays: number;
+  creditedAt: string;
+  expiresAt: string;
+  status: "ACTIVE" | "EXPIRED" | "USED";
+  createdAt: string;
+  updatedAt: string;
+}
+
+const compOffCreditSchema = new Schema<CompOffCreditDoc>(
+  {
+    _id: idField("coc"),
+    employeeId: { type: String, required: true },
+    attendanceId: { type: String, default: null },
+    days: { type: Number, required: true, min: 0 },
+    remainingDays: { type: Number, required: true, min: 0 },
+    creditedAt: { type: String, required: true },
+    expiresAt: { type: String, required: true },
+    status: {
+      type: String,
+      enum: ["ACTIVE", "EXPIRED", "USED"],
+      default: "ACTIVE",
+    },
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, required: true },
+  },
+  baseOptions,
+);
+
+compOffCreditSchema.index({ employeeId: 1, status: 1, expiresAt: 1 });
+compOffCreditSchema.index({ attendanceId: 1 });
+
+export const CompOffCredit = model<CompOffCreditDoc>(
+  "CompOffCredit",
+  compOffCreditSchema,
+);
+
 // ===========================================================================
 
 export interface LeaveTypeDoc {
@@ -3764,6 +3805,8 @@ export interface DocumentRecordDoc {
 
   employeeId: string;
 
+  expiryDate: string | null;
+
   type: DocumentRecordType;
 
   fileName: string;
@@ -3824,6 +3867,8 @@ const documentSchema = new Schema<DocumentRecordDoc>(
       type: String,
       required: true,
     },
+
+    expiryDate: { type: String, default: null },
 
     status: {
       type: String,

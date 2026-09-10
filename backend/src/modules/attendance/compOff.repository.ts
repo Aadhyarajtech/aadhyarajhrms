@@ -203,9 +203,10 @@ export async function getEmployeeCompOffBalance(
     .lean();
 
   const balance = rows.reduce(
-    (total, row) => total + Number(row.remainingHours || 0),
-    0,
-  );
+  (total: number, row: { remainingHours?: number }) =>
+    total + Number(row.remainingHours || 0),
+  0,
+);
 
   return roundHours(balance);
 }
@@ -246,11 +247,12 @@ export async function useCompOff(params: {
   }).sort({ expiresAt: 1, earnedDate: 1, createdAt: 1 });
 
   const totalAvailable = roundHours(
-    credits.reduce(
-      (total, credit) => total + Number(credit.remainingHours || 0),
-      0,
-    ),
-  );
+  credits.reduce(
+    (total: number, credit: { remainingHours?: number }) =>
+      total + Number(credit.remainingHours || 0),
+    0,
+  ),
+);
 
   if (totalAvailable < hours) {
     throw new Error(

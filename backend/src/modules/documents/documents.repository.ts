@@ -46,6 +46,7 @@ export async function addDocument(input: {
   fileUrl: string;
   uploadedBy?: string | null;
   requestId?: string | null;
+  expiryDate?: string | null;
 }) {
   const doc = await DocumentRecord.create({
     employeeId: input.employeeId,
@@ -55,9 +56,14 @@ export async function addDocument(input: {
     uploadedAt: nowIso(),
     uploadedBy: input.uploadedBy ?? null,
     requestId: input.requestId ?? null,
+    expiryDate: input.expiryDate ?? null,
   });
-  return toApiDoc((await DocumentRecord.findById(doc._id).lean())!);
+
+  return toApiDoc(
+    (await DocumentRecord.findById(doc._id).lean())!,
+  );
 }
+
 
 export async function deleteDocument(id: string) {
   await DocumentRecord.deleteOne({ _id: id });
@@ -192,7 +198,10 @@ export async function fulfillDocumentRequest(input: {
   fileName: string;
   fileUrl: string;
   uploadedByUserId: string;
+  expiryDate?: string | null;
 }) {
+
+
   const requestRow = await DocumentRequest.findById(input.requestId).lean();
   if (!requestRow) throw AppError.notFound("Document request not found.");
   if (requestRow.status !== "PENDING") {
@@ -204,13 +213,14 @@ export async function fulfillDocumentRequest(input: {
   // The document type is always taken from the request itself, never from
   // the uploader's payload, so the requested type cannot be changed silently.
   const document = await addDocument({
-    employeeId: requestRow.employeeId,
-    type: requestRow.type,
-    fileName: input.fileName,
-    fileUrl: input.fileUrl,
-    uploadedBy: input.uploadedByUserId,
-    requestId: requestRow._id,
-  });
+  employeeId: requestRow.employeeId,
+  type: requestRow.type,
+  fileName: input.fileName,
+  fileUrl: input.fileUrl,
+  uploadedBy: input.uploadedByUserId,
+  requestId: requestRow._id,
+  expiryDate: input.expiryDate ?? null,
+});
 
   const completedAt = nowIso();
   await DocumentRequest.updateOne(

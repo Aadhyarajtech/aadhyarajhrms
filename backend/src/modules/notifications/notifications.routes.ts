@@ -18,15 +18,42 @@ notificationsRouter.use(authenticate);
 
 notificationsRouter.get("/", async (req, res, next) => {
   try {
-    const unreadOnly = req.query.unreadOnly === "true";
+    if (!req.user) {
+      return res.status(401).json({
+        error: {
+          message: "Unauthorized",
+        },
+      });
+    }
 
-    const [notifications, unreadCount] = await Promise.all([
-      repo.listNotifications(req.user!.userId, unreadOnly),
-      repo.unreadCount(req.user!.userId),
-    ]);
+    const unreadOnly =
+      req.query.unreadOnly === "true";
 
-    res.json({
-      notifications,
+    const limit = Math.min(
+      Math.max(
+        Number(req.query.limit ?? 50),
+        1,
+      ),
+      100,
+    );
+
+    const offset = Math.max(
+      Number(req.query.offset ?? 0),
+      0,
+    );
+
+    const result = await repo.listNotifications(
+      req.user.userId,
+      unreadOnly,
+      limit,
+      offset,
+    );
+
+    const unreadCount =
+      await repo.unreadCount(req.user.userId);
+
+    return res.json({
+      ...result,
       unreadCount,
     });
   } catch (err) {

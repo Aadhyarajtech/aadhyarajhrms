@@ -1314,7 +1314,7 @@ export async function approveRegularization(
     try {
       await notify({
         userId: employeeUser.userId,
-        type: "ATTENDANCE_REGULARIZATION_DECISION",
+        type: "ATTENDANCE_REGULARIZATION",
         title: "Regularization Approved",
         message: `Your attendance regularization request for ${updatedRequest.date} has been approved.`,
         link: "/app/attendance",
@@ -1434,7 +1434,7 @@ export async function rejectRegularization(
     try {
       await notify({
         userId: employeeUser.userId,
-        type: "ATTENDANCE_REGULARIZATION_DECISION",
+        type: "ATTENDANCE_REGULARIZATION",
         title: "Regularization Rejected",
         message: `Your attendance regularization request for ${updatedRequest.date} has been rejected.`,
         link: "/app/attendance",

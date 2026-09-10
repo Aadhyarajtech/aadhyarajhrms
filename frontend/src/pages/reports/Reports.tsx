@@ -132,20 +132,12 @@ export default function Reports() {
       const exportSection = tab === "custom" ? "custom" : tab;
       const exportSections = tab === "custom" ? customSections : undefined;
 
-      // Keep the existing ReportsApi call shape compatible until the endpoint
-      // layer is updated to accept the selected report section(s).
-      await (
-        ReportsApi.export as unknown as (
-          format: "xlsx" | "pdf",
-          filters: {
-            from: string;
-            to: string;
-            departmentId?: string;
-          },
-          section?: string,
-          sections?: string[],
-        ) => Promise<void>
-      )(format, filters, exportSection, exportSections);
+      await ReportsApi.export(
+        format,
+        filters,
+        exportSection as Parameters<typeof ReportsApi.export>[2],
+        exportSections,
+      );
     } finally {
       setExporting(null);
     }
@@ -182,6 +174,12 @@ export default function Reports() {
         data.tickets.averageResolutionHours,
       ],
       ["Documents", "Total Documents", data.documents.total],
+      ["Documents", "Verified Documents", data.documents.verified],
+      [
+        "Documents",
+        "Document Compliance Rate",
+        `${data.documents.complianceRate}%`,
+      ],
     ];
 
     if (data.recruitment) {
@@ -401,6 +399,16 @@ export default function Reports() {
                   icon={Clock3}
                 />
                 <StatCard
+                  label="Late arrivals"
+                  value={data.attendance.lateRecords}
+                  icon={Clock3}
+                />
+                <StatCard
+                  label="Early departures"
+                  value={data.attendance.earlyDepartureRecords}
+                  icon={Clock3}
+                />
+                <StatCard
                   label="Regularized"
                   value={data.attendance.regularized}
                   icon={Clock3}
@@ -436,6 +444,57 @@ export default function Reports() {
                   attendanceRate: `${row.attendanceRate}%`,
                 }))}
               />
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card>
+                  <CardHeader title="Late-arrival pattern by weekday" />
+                  <Chart
+                    data={data.attendance.lateByWeekday}
+                    dataKey="lateRecords"
+                  />
+                </Card>
+                <Card>
+                  <CardHeader title="Attendance exceptions" />
+                  <div className="grid grid-cols-2 gap-3 p-4 text-[12px]">
+                    <div>
+                      <span className="text-ink-faint">Late minutes</span>
+                      <div className="font-semibold">
+                        {data.attendance.lateMinutes}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-ink-faint">
+                        Early-departure minutes
+                      </span>
+                      <div className="font-semibold">
+                        {data.attendance.earlyDepartureMinutes}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-ink-faint">Comp-off credited</span>
+                      <div className="font-semibold">
+                        {data.attendance.compOffCreditedRecords}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-ink-faint">Comp-off earned</span>
+                      <div className="font-semibold">
+                        {data.attendance.compOffEarnedHours} hrs
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+              <DataTable
+                title="Employees with the most late arrivals"
+                columns={[
+                  ["Employee", "employeeId"],
+                  ["Late Records", "lateRecords"],
+                  ["Late Minutes", "lateMinutes"],
+                  ["Early Departures", "earlyDepartureRecords"],
+                  ["Early Minutes", "earlyDepartureMinutes"],
+                ]}
+                rows={data.attendance.lateEmployeeSummary}
+              />
               <DataTable
                 title="Individual attendance summary"
                 columns={[
@@ -455,10 +514,9 @@ export default function Reports() {
                 }))}
               />
               <p className="text-[11px] text-ink-faint">
-                Estimated overtime is calculated from recorded attendance work
-                hours above 8 hours per day. Comp-off credits are not shown
-                because the current attendance data model does not store
-                comp-off balances.
+                Late-arrival frequency is grouped by weekday and employee to
+                surface recurring attendance exceptions. Comp-off metrics are
+                sourced from credited attendance records and Comp-Off entries.
               </p>
             </Section>
           )}
@@ -756,6 +814,11 @@ export default function Reports() {
                   label="Assigned assets"
                   value={data.documents.assignedAssets}
                   icon={BriefcaseBusiness}
+                />
+                <StatCard
+                  label="Compliance rate"
+                  value={`${data.documents.complianceRate}%`}
+                  icon={ShieldCheck}
                 />
               </div>
             </Section>
