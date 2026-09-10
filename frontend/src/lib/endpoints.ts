@@ -654,9 +654,9 @@ export const LeaveApi = {
       .get<{ entries: any[] }>("/leave/calendar", { params: { month, year } })
       .then((r) => r.data.entries),
   generateReason: (reason: string) =>
-  api
-    .post<{ reason: string }>("/leave/ai/reason", { reason })
-    .then((r) => r.data.reason),
+    api
+      .post<{ reason: string }>("/leave/ai/reason", { reason })
+      .then((r) => r.data.reason),
 };
 
 // --- Recruitment ------------------------------------------------------------------
@@ -1552,6 +1552,28 @@ export interface ReportsOverview {
     totalWorkHours: number;
     averageWorkHours: number;
     estimatedOvertimeHours: number;
+    lateRecords: number;
+    lateMinutes: number;
+    earlyDepartureRecords: number;
+    earlyDepartureMinutes: number;
+    compOffCreditedRecords: number;
+    compOffEarnedHours: number;
+    compOffRemainingHours: number;
+    overtimeHours: number;
+    lateByWeekday: {
+      label: string;
+      lateRecords: number;
+      lateMinutes: number;
+      earlyDepartureRecords: number;
+      earlyDepartureMinutes: number;
+    }[];
+    lateEmployeeSummary: {
+      employeeId: string;
+      lateRecords: number;
+      lateMinutes: number;
+      earlyDepartureRecords: number;
+      earlyDepartureMinutes: number;
+    }[];
     byStatus: ReportBucket[];
     daily: {
       label: string;
@@ -1652,6 +1674,7 @@ export interface ReportsOverview {
     pending: number;
     requests: number;
     assignedAssets: number;
+    complianceRate: number;
   };
 }
 
