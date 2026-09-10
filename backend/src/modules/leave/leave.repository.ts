@@ -134,12 +134,17 @@ export async function decideRequest(
   approverId: string,
   status: "APPROVED" | "REJECTED",
   decisionNote?: string,
+  options?: {
+    canApproveAny?: boolean;
+  },
 ) {
   const request = (await getRequest(id)) as any;
-  if (!request) return undefined;
 
-  // A leave request can only be decided once. This also prevents an
-  // already-approved request from incrementing the leave balance again.
+  if (!request) {
+    return undefined;
+  }
+
+  // A leave request can only be decided once.
   if (request.status !== "PENDING") {
     throw new Error(
       `Leave request has already been ${String(request.status).toLowerCase()}.`,
@@ -154,10 +159,19 @@ export async function decideRequest(
     throw new Error("Employee not found.");
   }
 
-  // Never trust an approver ID supplied by the client. The route passes the
-  // authenticated user's employeeId, and it must match the employee's
-  // assigned manager before a decision can be made.
-  if (String(employee.managerId ?? "") !== String(approverId)) {
+  /*
+   * Managers can approve only their own direct reports.
+   *
+   * HR_ADMIN and SUPER_ADMIN are allowed to approve/reject
+   * leave requests across the organization. The route passes
+   * canApproveAny=true only for those roles.
+   */
+  const canApproveAny = options?.canApproveAny === true;
+
+  if (
+    !canApproveAny &&
+    String(employee.managerId ?? "") !== String(approverId)
+  ) {
     throw new Error(
       "You can only approve or reject leave requests from your direct reports.",
     );
@@ -179,13 +193,13 @@ export async function decideRequest(
     { new: true },
   ).lean();
 
-  // Another request may have decided this leave between the initial read and
-  // the update. Treat that as a conflict rather than applying the decision
-  // or changing the balance twice.
   if (!updated) {
     throw new Error("Leave request has already been decided.");
   }
 
+  /*
+   * Update leave balance only after successful approval.
+   */
   if (status === "APPROVED") {
     const year = new Date(request.startDate).getFullYear();
 
@@ -197,13 +211,16 @@ export async function decideRequest(
 
     await LeaveBalance.updateOne(
       { _id: balance.id },
-      { $inc: { used: request.totalDays } },
+      {
+        $inc: {
+          used: request.totalDays,
+        },
+      },
     );
   }
 
   return toApiDoc(updated);
 }
-
 export async function cancelRequest(id: string, employeeId: string) {
   await LeaveRequest.updateOne(
     { _id: id, employeeId, status: "PENDING" },
