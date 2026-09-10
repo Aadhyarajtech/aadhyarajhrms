@@ -919,3 +919,13 @@ export async function sendPayslipRequest(id: string, adminUserId: string) {
   });
   return getPayslipRequest(id);
 }
+
+export async function reprocessPayrollRun(id: string) {
+  const run = await PayrollRun.findById(id).lean();
+
+  if (!run) {
+    throw AppError.notFound("Payroll run not found.");
+  }
+
+  return processPayrollRun(run.month, run.year);
+}

@@ -91,6 +91,88 @@ leaveRouter.get("/balances", async (req, res, next) => {
 
 /**
  * ============================================================
+ * COMP-OFF
+ * ============================================================
+ *
+ * Employees:
+ *   -> Can view their own Comp-Off balance and credits.
+ *
+ * HR / Super Admin:
+ *   -> Can view any employee's Comp-Off balance and credits.
+ */
+
+/**
+ * GET /comp-off/balance
+ */
+leaveRouter.get("/comp-off/balance", async (req, res, next) => {
+  try {
+    const requester = req.user!;
+
+    const requestedEmployeeId =
+      typeof req.query.employeeId === "string"
+        ? req.query.employeeId
+        : undefined;
+
+    const isAdminUser =
+      requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
+
+    let employeeId: string;
+
+    if (isAdminUser && requestedEmployeeId) {
+      employeeId = requestedEmployeeId;
+    } else {
+      if (!requester.employeeId) {
+        throw AppError.forbidden("Employee profile is required.");
+      }
+
+      employeeId = requester.employeeId;
+    }
+
+    const balance = await repo.getEmployeeCompOffBalance(employeeId);
+
+    res.json({ balance });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /comp-off/credits
+ */
+leaveRouter.get("/comp-off/credits", async (req, res, next) => {
+  try {
+    const requester = req.user!;
+
+    const requestedEmployeeId =
+      typeof req.query.employeeId === "string"
+        ? req.query.employeeId
+        : undefined;
+
+    const isAdminUser =
+      requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
+
+    let employeeId: string;
+
+    if (isAdminUser && requestedEmployeeId) {
+      employeeId = requestedEmployeeId;
+    } else {
+      if (!requester.employeeId) {
+        throw AppError.forbidden("Employee profile is required.");
+      }
+
+      employeeId = requester.employeeId;
+    }
+
+    const credits = await repo.listCompOffCredits(employeeId);
+
+    res.json({ credits });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * ============================================================
  * LEAVE REQUESTS
  * ============================================================
  *
@@ -200,7 +282,12 @@ leaveRouter.get("/calendar", async (req, res, next) => {
       throw AppError.badRequest("Invalid year.");
     }
 
-    const entries = await repo.getLeaveCalendar(month, year);
+    const entries = await repo.getLeaveCalendar(
+      month,
+      year,
+      req.user!.role,
+      req.user!.employeeId,
+    );
 
     res.json({ entries });
   } catch (err) {
@@ -266,7 +353,31 @@ const createRequestSchema = z.object({
   leaveTypeId: z.string(),
   startDate: z.string(),
   endDate: z.string(),
-  reason: z.string().min(3, "Please add a short reason for this leave."),
+  halfDay: z.boolean().optional().default(false),
+  halfDayType: z
+    .enum(["FIRST_HALF", "SECOND_HALF"])
+    .nullable()
+    .optional()
+    .default(null),
+  reason: z
+    .string()
+    .min(3, "Please add a short reason for this leave."),
+}).superRefine((value, ctx) => {
+  if (value.halfDay && !value.halfDayType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["halfDayType"],
+      message: "Select first half or second half.",
+    });
+  }
+
+  if (!value.halfDay && value.halfDayType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["halfDayType"],
+      message: "Half-day type is only allowed for half-day leave.",
+    });
+  }
 });
 
 leaveRouter.post(
@@ -348,11 +459,12 @@ leaveRouter.post(
           : undefined;
 
       const request = await repo.decideRequest(
-        req.params.id,
-        req.user!.employeeId,
-        req.body.status,
-        decisionNote,
-      );
+  req.params.id,
+  req.user!.employeeId,
+  req.body.status,
+  decisionNote,
+  req.user!.role,
+);
 
       if (!request) {
         throw AppError.notFound("Leave request not found.");

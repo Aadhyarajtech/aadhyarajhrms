@@ -56,6 +56,12 @@ const COMPANY_PROCESSOR_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
 // --- Schemas ---
 const directUploadTypeSchema = z.enum(ALL_DOC_TYPES);
 
+const expiryDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid expiry date.")
+  .optional()
+  .nullable();
+
 const documentRequestSchema = z.object({
   // Only required/used when a privileged user is requesting a document
   // from an employee. Ignored for employee-originated requests: the
@@ -133,12 +139,22 @@ documentsRouter.post(
 
         // The type is intentionally taken from the request by the
         // repository, not from this payload, so it cannot be overridden.
-        const { document } = await repo.fulfillDocumentRequest({
-          requestId,
-          fileName: req.file.originalname,
-          fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
-          uploadedByUserId: req.user!.userId,
-        });
+        const parsedExpiryDate =
+  expiryDateSchema.safeParse(req.body.expiryDate);
+
+if (!parsedExpiryDate.success) {
+  throw AppError.badRequest("Invalid expiry date.");
+}
+
+const { document } = await repo.fulfillDocumentRequest({
+  requestId,
+  fileName: req.file.originalname,
+  fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
+  uploadedByUserId: req.user!.userId,
+  expiryDate: parsedExpiryDate.data ?? null,
+});
+
+
         res.status(201).json({ document });
         return;
       }
@@ -166,14 +182,24 @@ documentsRouter.post(
       );
       const type = parsedType.success ? parsedType.data : "OTHER";
 
-      const document = await repo.addDocument({
-        employeeId,
-        uploadedBy: req.user!.userId,
-        requestId: null,
-        type,
-        fileName: req.file.originalname,
-        fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
-      });
+      const parsedExpiryDate =
+  expiryDateSchema.safeParse(req.body.expiryDate);
+
+if (!parsedExpiryDate.success) {
+  throw AppError.badRequest("Invalid expiry date.");
+}
+
+const document = await repo.addDocument({
+  employeeId,
+  uploadedBy: req.user!.userId,
+  requestId: null,
+  type,
+  fileName: req.file.originalname,
+  fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
+  expiryDate: parsedExpiryDate.data ?? null,
+});
+
+
       res.status(201).json({ document });
     } catch (error) {
       next(error);

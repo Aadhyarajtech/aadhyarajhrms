@@ -10,6 +10,7 @@ import {
   Department,
 } from "@/db/models";
 import { nowIso } from "@/db/connection";
+import { notify } from "@/modules/notifications/notifications.repository";
 
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
@@ -113,6 +114,7 @@ export async function getReview(id: string) {
 }
 
 export async function ensureReview(
+  
   cycleId: string,
   revieweeId: string,
   reviewerId: string,
@@ -132,6 +134,39 @@ export async function ensureReview(
     });
 
     row = await PerformanceReview.findById(doc._id).lean();
+
+    const [reviewee, reviewer] = await Promise.all([
+  Employee.findById(revieweeId)
+    .select("userId firstName lastName")
+    .lean(),
+  Employee.findById(reviewerId)
+    .select("userId")
+    .lean(),
+]);
+
+if (reviewee?.userId) {
+  await notify({
+    userId: reviewee.userId,
+    type: "PERFORMANCE",
+    title: "Performance review available",
+    message: "A new performance review has been assigned to you.",
+    link: "/performance",
+    dedupeKey: `performance-review-assigned:${doc._id}:${reviewee.userId}`,
+  });
+}
+
+if (reviewer?.userId) {
+  await notify({
+    userId: reviewer.userId,
+    type: "PERFORMANCE",
+    title: "Performance review assigned",
+    message: `You have a performance review to complete for ${
+      reviewee?.firstName ?? "an employee"
+    } ${reviewee?.lastName ?? ""}.`,
+    link: "/performance",
+    dedupeKey: `performance-review-manager:${doc._id}:${reviewer.userId}`,
+  });
+}
   }
 
   return getReview((row as any)._id);
@@ -166,6 +201,22 @@ export async function submitSelfReview(
       },
     },
   );
+
+  const reviewer = await Employee.findById(review.reviewerId)
+  .select("userId")
+  .lean();
+
+if (reviewer?.userId) {
+  await notify({
+    userId: reviewer.userId,
+    type: "PERFORMANCE",
+    title: "Manager review required",
+    message:
+      "The employee self-review has been submitted and your manager review is now required.",
+    link: "/performance",
+    dedupeKey: `performance-manager-review-required:${id}:${reviewer.userId}`,
+  });
+}
 
   return getReview(id);
 }
@@ -211,6 +262,21 @@ export async function submitManagerReview(
   );
 
   const rating = Math.round(finalRating);
+
+  const revieweeEmployee = await Employee.findById(review.revieweeId)
+  .select("userId firstName lastName")
+  .lean();
+
+if (revieweeEmployee?.userId) {
+  await notify({
+    userId: revieweeEmployee.userId,
+    type: "PERFORMANCE",
+    title: "Performance review completed",
+    message: `Your performance review has been completed with a final rating of ${finalRating}.`,
+    link: "/performance",
+    dedupeKey: `performance-review-completed:${id}:${revieweeEmployee.userId}`,
+  });
+}
 
 
   // Feed KPI/goal achievement into the automatic outcome decision.
@@ -306,6 +372,18 @@ export async function submitManagerReview(
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
   }
+
+  if (revieweeEmployee?.userId) {
+  await notify({
+    userId: revieweeEmployee.userId,
+    type: "PERFORMANCE",
+    title: "Performance improvement plan initiated",
+    message:
+      "Your completed performance review resulted in a Performance Improvement Plan.",
+    link: "/performance",
+    dedupeKey: `performance-pip-initiated:${id}:${revieweeEmployee.userId}`,
+  });
+}
 
   return getReview(id);
 }
