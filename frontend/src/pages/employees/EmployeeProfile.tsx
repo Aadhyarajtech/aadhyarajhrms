@@ -1980,8 +1980,9 @@ function EditEmployeeModal({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const { register, handleSubmit, control, watch, setValue, reset } =
+  const { register, handleSubmit, control, watch, setValue, reset, formState: { errors } } =
     useForm<EmployeeForm>({
+      mode: "onSubmit",
       defaultValues: {
         firstName: employee.firstName ?? "",
         lastName: employee.lastName ?? "",
@@ -2195,11 +2196,12 @@ function EditEmployeeModal({
               {/* Department */}
               <div>
                 <label className="text-[13px] font-medium text-ink-soft">
-                  Department
+                  Department <span className="text-danger-500">*</span>
                 </label>
 
                 <select
                   {...register("departmentId", {
+                    required: "Department is required",
                     onChange: () => {
                       setValue("designationId", "");
                     },
@@ -2219,11 +2221,13 @@ function EditEmployeeModal({
               {/* Designation */}
               <div>
                 <label className="text-[13px] font-medium text-ink-soft">
-                  Designation
+                  Designation <span className="text-danger-500">*</span>
                 </label>
 
                 <select
-                  {...register("designationId")}
+                  {...register("designationId", {
+                    required: "Designation is required",
+                  })}
                   disabled={!selectedDepartmentId}
                   className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm disabled:opacity-50"
                 >
@@ -2244,11 +2248,13 @@ function EditEmployeeModal({
               {/* Reporting Manager */}
               <div className="sm:col-span-2">
                 <label className="text-[13px] font-medium text-ink-soft">
-                  Reporting Manager
+                  Reporting Manager <span className="text-danger-500">*</span>
                 </label>
 
                 <select
-                  {...register("managerId")}
+                  {...register("managerId", {
+                    required: "Reporting Manager is required",
+                  })}
                   className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
                 >
                   <option value="">Select reporting manager</option>
@@ -2265,15 +2271,15 @@ function EditEmployeeModal({
             </div>
           </div>
         )}
-        <TextField label="First name" {...register("firstName")} />
-        <TextField label="Last name" {...register("lastName")} />
+        <TextField label="First name" required {...register("firstName", { required: "First name is required" })} />
+        <TextField label="Last name" required {...register("lastName", { required: "Last name is required" })} />
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
-            Gender
+            Gender <span className="text-danger-500">*</span>
           </label>
 
           <select
-            {...register("gender")}
+            {...register("gender", { required: "Gender is required" })}
             className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
           >
             <option value="">Select gender</option>
@@ -2281,14 +2287,15 @@ function EditEmployeeModal({
             <option value="FEMALE">FEMALE</option>
             <option value="NOT_MENTIONED">NOT MENTIONED</option>
           </select>
+          {errors.gender && <p className="mt-1 text-xs text-danger-500">{errors.gender.message}</p>}
         </div>
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
-            Marital Status
+            Marital Status <span className="text-danger-500">*</span>
           </label>
 
           <select
-            {...register("maritalStatus")}
+            {...register("maritalStatus", { required: "Marital Status is required" })}
             className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
           >
             <option value="">Select marital status</option>
@@ -2297,6 +2304,7 @@ function EditEmployeeModal({
             <option value="DIVORCED">DIVORCED</option>
             <option value="WIDOWED">WIDOWED</option>
           </select>
+          {errors.maritalStatus && <p className="mt-1 text-xs text-danger-500">{errors.maritalStatus.message}</p>}
         </div>
         <TextField
           label="Date of birth"
@@ -2695,6 +2703,7 @@ function SalaryModal({
   });
   const { register, handleSubmit, watch, setValue } = useForm<SalaryForm>({
     resolver: zodResolver(salarySchema),
+    mode: "onSubmit",
   });
   const [taxPreview, setTaxPreview] = useState<Awaited<
     ReturnType<typeof PayrollApi.calculateTax>
@@ -2818,7 +2827,21 @@ function SalaryModal({
             Cancel
           </Button>
           <Button
-            onClick={handleSubmit((v) => mutation.mutate(v))}
+            onClick={handleSubmit(
+              (v) => mutation.mutate(v),
+              (formErrors) => {
+                const messages = Object.values(formErrors)
+                  .map((error) => error?.message)
+                  .filter(Boolean);
+
+                showToast(
+                  messages.length > 0
+                    ? messages.join(" ")
+                    : "Please fill in all required salary fields.",
+                  "error",
+                );
+              },
+            )}
             isLoading={mutation.isPending}
           >
             Save
@@ -2828,12 +2851,14 @@ function SalaryModal({
     >
       <form className="grid gap-4 sm:grid-cols-2" key={existing?.id ?? "new"}>
         <TextField
+          required
           label="Annual CTC"
           type="number"
           defaultValue={existing?.ctc || undefined}
           {...register("ctc")}
         />
         <TextField
+          required
           label="Basic — % of CTC (40–50%)"
           type="number"
           min={40}
@@ -2842,6 +2867,7 @@ function SalaryModal({
           {...register("basicPercentage")}
         />
         <TextField
+          required
           label="HRA — % of Basic (20–40%)"
           type="number"
           min={20}
@@ -2882,12 +2908,14 @@ function SalaryModal({
           readOnly
         />
         <TextField
+          required
           label="Conveyance / month"
           type="number"
           defaultValue={existing?.conveyance ?? 0}
           {...register("conveyance")}
         />
         <TextField
+          required
           label="Medical / month"
           type="number"
           defaultValue={existing?.medical ?? 0}

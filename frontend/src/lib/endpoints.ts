@@ -1238,19 +1238,8 @@ export const LeaveApi = {
     api
       .get<{
         balances: LeaveBalance[];
-      }>(
-        "/leave/balances",
-        {
-          params: {
-            employeeId,
-            year,
-          },
-        },
-      )
-      .then(
-        (r) => r.data.balances,
-      ),
-
+      }>("/leave/balances", { params: { employeeId, year } })
+      .then((r) => r.data.balances),
   requests: (
     params: {
       status?: string;
@@ -1270,11 +1259,13 @@ export const LeaveApi = {
       ),
 
   apply: (payload: {
-    leaveTypeId: string;
-    startDate: string;
-    endDate: string;
-    reason: string;
-  }) =>
+  leaveTypeId: string;
+  startDate: string;
+  endDate: string;
+  halfDay?: boolean;
+  halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
+  reason: string;
+}) =>
     api
       .post<{
         request: LeaveRequest;
@@ -1323,110 +1314,15 @@ export const LeaveApi = {
     year?: number,
   ) =>
     api
-      .get<{
-        entries: any[];
-      }>(
-        "/leave/calendar",
-        {
-          params: {
-            month,
-            year,
-          },
-        },
-      )
-      .then(
-        (r) => r.data.entries,
-      ),
-
-  /**
-   * AI Leave Reason / Description Assistant.
-   */
-  generateReason: (
-    reason: string,
-  ) =>
-    api
-      .post<{
-        reason: string;
-      }>(
-        "/leave/ai/reason",
-        { reason },
-      )
-      .then(
-        (r) => r.data.reason,
-      ),
-
-  /**
-   * AI Leave Conflict & Team Impact.
-   *
-   * Checks pending/approved overlapping leave
-   * among the employee's direct team members.
-   */
-  checkConflict: (
-    employeeId: string,
-    startDate: string,
-    endDate: string,
-  ) =>
-    api
-      .post<LeaveConflictAnalysis>(
-        "/leave/ai/conflict",
-        {
-          employeeId,
-          startDate,
-          endDate,
-        },
-      )
-      .then(
-        (r) => r.data,
-      ),
-
-  /**
-   * AI Leave Analytics.
-   *
-   * Returns deterministic leave statistics with an
-   * AI-generated explanation for the selected period/scope.
-   */
-  aiAnalytics: (
-    startDate: string,
-    endDate: string,
-    employeeId?: string,
-  ) =>
-    api
-      .post<LeaveAnalyticsResponse>(
-        "/leave/ai/analytics",
-        {
-          startDate,
-          endDate,
-          employeeId,
-        },
-      )
-      .then(
-        (r) => r.data,
-      ),
-
-  /**
-   * AI Leave Pattern Detection.
-   *
-   * Detects objective recurring leave patterns for the
-   * selected period and scope.
-   */
-  aiPatterns: (
-    startDate: string,
-    endDate: string,
-    employeeId?: string,
-  ) =>
-    api
-      .post<LeavePatternDetectionResponse>(
-        "/leave/ai/patterns",
-        {
-          startDate,
-          endDate,
-          employeeId,
-        },
-      )
-      .then(
-        (r) => r.data,
-      ),
+      .get<{ entries: any[] }>("/leave/calendar", { params: { month, year } })
+      .then((r) => r.data.entries),
+  generateReason: (reason: string) =>
+  api
+    .post<{ reason: string }>("/leave/ai/reason", { reason })
+    .then((r) => r.data.reason),
 };
+
+
 
 // --- Recruitment ------------------------------------------------------------------
 export const RecruitmentApi = {
@@ -3105,6 +3001,28 @@ export interface ReportsOverview {
     totalWorkHours: number;
     averageWorkHours: number;
     estimatedOvertimeHours: number;
+    lateRecords: number;
+    lateMinutes: number;
+    earlyDepartureRecords: number;
+    earlyDepartureMinutes: number;
+    compOffCreditedRecords: number;
+    compOffEarnedHours: number;
+    compOffRemainingHours: number;
+    overtimeHours: number;
+    lateByWeekday: {
+      label: string;
+      lateRecords: number;
+      lateMinutes: number;
+      earlyDepartureRecords: number;
+      earlyDepartureMinutes: number;
+    }[];
+    lateEmployeeSummary: {
+      employeeId: string;
+      lateRecords: number;
+      lateMinutes: number;
+      earlyDepartureRecords: number;
+      earlyDepartureMinutes: number;
+    }[];
     byStatus: ReportBucket[];
 
     daily: {
@@ -3223,6 +3141,7 @@ export interface ReportsOverview {
     pending: number;
     requests: number;
     assignedAssets: number;
+    complianceRate: number;
   };
 }
 

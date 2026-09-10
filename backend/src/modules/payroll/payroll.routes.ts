@@ -166,6 +166,30 @@ payrollRouter.post(
 );
 
 payrollRouter.post(
+  "/runs/:id/reprocess",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+
+
+     const payrollRun =
+  await repo.reprocessPayrollRun(
+    req.params.id,
+  );
+
+      return res.json({
+        success: true,
+        message:
+          "Payroll run recalculated successfully.",
+        payrollRun,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
   "/runs/:id/mark-paid",
   isAdminOrFinance,
   async (req, res, next) => {
