@@ -194,27 +194,36 @@ attendanceRouter.get("/today", async (req, res, next) => {
 });
 
 const attendanceLocationSchema = z.object({
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
   accuracy: z.number().min(0).max(100000).optional(),
 });
 
 const checkOutSchema = attendanceLocationSchema.extend({
   breakMinutes: z.number().min(0).max(1440).optional(),
-  earlyDepartureReason: z.string().trim().max(1000).optional(),
+  earlyDepartureReason: z
+    .string()
+    .trim()
+    .max(1000)
+    .optional(),
 });
 
 attendanceRouter.post(
   "/check-in",
-  validate(attendanceLocationSchema),
   async (req, res, next) => {
     try {
-      if (!req.user!.employeeId)
-        throw AppError.forbidden("Only employees can check in.");
+      if (!req.user!.employeeId) {
+        throw AppError.forbidden(
+          "Only employees can check in.",
+        );
+      }
 
-      const location = req.body as z.infer<typeof attendanceLocationSchema>;
+      const record = await repo.checkIn(
+        req.user!.employeeId,
+      );
+
       res.json({
-        record: await repo.checkIn(req.user!.employeeId, location),
+        record,
       });
     } catch (err) {
       next(err);
@@ -224,29 +233,41 @@ attendanceRouter.post(
 
 attendanceRouter.post(
   "/check-out",
-  validate(checkOutSchema),
   async (req, res, next) => {
     try {
-      if (!req.user!.employeeId)
-        throw AppError.forbidden("Only employees can check out.");
+      if (!req.user!.employeeId) {
+        throw AppError.forbidden(
+          "Only employees can check out.",
+        );
+      }
 
-      const options = req.body as z.infer<typeof checkOutSchema>;
-      const record = await repo.checkOut(req.user!.employeeId, options);
+      const options = req.body as z.infer<
+        typeof checkOutSchema
+      >;
 
-      if (!record)
+      const record = await repo.checkOut(
+        req.user!.employeeId,
+      );
+
+      if (!record) {
         throw AppError.badRequest(
           "You need to check in before you can check out.",
         );
+      }
 
       res.json({ record });
     } catch (err) {
       if (
         err instanceof Error &&
-        err.message === "A reason is required for early departure."
+        err.message ===
+          "A reason is required for early departure."
       ) {
-        next(AppError.badRequest(err.message));
+        next(
+          AppError.badRequest(err.message),
+        );
         return;
       }
+
       next(err);
     }
   },

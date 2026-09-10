@@ -21,11 +21,13 @@ export type NotificationType =
   | "DOCUMENT_REQUESTED"
   | "DOCUMENT_UPLOADED"
   | "DOCUMENT_READY"
+  | "DOCUMENT_EXPIRY"
   | "ATTENDANCE_LATE"
   | "ATTENDANCE_EARLY_DEPARTURE"
+  | "ATTENDANCE_REGULARIZATION"
+  | "ATTENDANCE_OVERTIME"
   | "ATTENDANCE_COMP_OFF"
-  | "ATTENDANCE_REGULARIZATION_REQUEST"
-  | "ATTENDANCE_REGULARIZATION_DECISION";
+  | "EMPLOYEE_LIFECYCLE";
 
 /* =========================================================
    API DOCUMENT
@@ -35,10 +37,6 @@ function toApiDoc(doc: any) {
   if (!doc) return undefined;
 
   const { _id, ...rest } = doc;
-
-  if (rest.type === "ATTENDANCE_REGULARIZATION_REQUEST") {
-    rest.link = "/app/attendance?tab=exceptions";
-  }
 
   return {
     id: _id,
@@ -55,42 +53,67 @@ export async function notify(input: {
   type: NotificationType;
   title: string;
   message: string;
-  link?: string;
+  link?: string | null;
+  dedupeKey?: string;
 }) {
-  const doc = await Notification.create({
+  if (input.dedupeKey) {
+    const existing = await Notification.findOne({
+      userId: input.userId,
+      dedupeKey: input.dedupeKey,
+    }).select("_id");
+
+    if (existing) {
+      return existing._id;
+    }
+  }
+
+  const notification = await Notification.create({
     userId: input.userId,
     type: input.type,
     title: input.title,
     message: input.message,
-    link: input.link ?? null,
     isRead: false,
-    createdAt: nowIso(),
+    link: input.link ?? null,
+    dedupeKey: input.dedupeKey ?? null,
   });
 
-  return doc._id;
+  return notification._id;
 }
 
 /* =========================================================
    LIST NOTIFICATIONS
 ========================================================= */
 
-export async function listNotifications(userId: string, unreadOnly = false) {
-  const query: Record<string, any> = {
+export async function listNotifications(
+  userId: string,
+  unreadOnly = false,
+  limit = 50,
+  offset = 0,
+) {
+  const filter: Record<string, unknown> = {
     userId,
   };
 
   if (unreadOnly) {
-    query.isRead = false;
+    filter.isRead = false;
   }
 
-  const rows = await Notification.find(query)
-    .sort({
-      createdAt: -1,
-    })
-    .limit(50)
-    .lean();
+  const [notifications, total] = await Promise.all([
+    Notification.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(offset)
+      .limit(limit)
+      .lean(),
 
-  return rows.map(toApiDoc);
+    Notification.countDocuments(filter),
+  ]);
+
+  return {
+    notifications,
+    total,
+    limit,
+    offset,
+  };
 }
 
 /* =========================================================

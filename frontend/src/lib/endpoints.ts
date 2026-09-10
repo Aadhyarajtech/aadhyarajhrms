@@ -620,6 +620,39 @@ export const LeaveApi = {
         balances: LeaveBalance[];
       }>("/leave/balances", { params: { employeeId, year } })
       .then((r) => r.data.balances),
+
+        compOffBalance: (employeeId?: string) =>
+    api
+      .get<{
+        balance: {
+          allotted: number;
+          used: number;
+          available: number;
+        };
+      }>("/leave/comp-off/balance", {
+        params: { employeeId },
+      })
+      .then((r) => r.data.balance),
+
+  compOffCredits: (employeeId?: string) =>
+    api
+      .get<{
+        credits: Array<{
+          id: string;
+          employeeId: string;
+          attendanceId: string | null;
+          days: number;
+          remainingDays: number;
+          creditedAt: string;
+          expiresAt: string;
+          status: "ACTIVE" | "EXPIRED" | "USED";
+          createdAt: string;
+          updatedAt: string;
+        }>;
+      }>("/leave/comp-off/credits", {
+        params: { employeeId },
+      })
+      .then((r) => r.data.credits),
   requests: (
     params: { status?: string; scope?: "team"; employeeId?: string } = {},
   ) =>
@@ -627,11 +660,13 @@ export const LeaveApi = {
       .get<{ requests: LeaveRequest[] }>("/leave/requests", { params })
       .then((r) => r.data.requests),
   apply: (payload: {
-    leaveTypeId: string;
-    startDate: string;
-    endDate: string;
-    reason: string;
-  }) =>
+  leaveTypeId: string;
+  startDate: string;
+  endDate: string;
+  halfDay?: boolean;
+  halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
+  reason: string;
+}) =>
     api
       .post<{ request: LeaveRequest }>("/leave/requests", payload)
       .then((r) => r.data.request),
@@ -658,6 +693,8 @@ export const LeaveApi = {
       .post<{ reason: string }>("/leave/ai/reason", { reason })
       .then((r) => r.data.reason),
 };
+
+
 
 // --- Recruitment ------------------------------------------------------------------
 export const RecruitmentApi = {

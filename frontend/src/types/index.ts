@@ -109,8 +109,12 @@ export interface LeaveBalance {
   allotted: number;
   used: number;
   carriedOver: number;
+  pendingDays?: number;
   name: string;
   colorHex: string;
+  defaultDaysPerYear?: number;
+  isPaid?: boolean;
+  requiresApproval?: boolean;
 }
 
 export interface LeaveRequest {
