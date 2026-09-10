@@ -9,8 +9,6 @@ import {
   CartesianGrid,
   BarChart,
   Bar,
-  PieChart,
-  Pie,
   Cell,
   LineChart,
   Line,
@@ -49,7 +47,7 @@ import {
 
 import type { Announcement } from "@/types";
 
-const GENDER_COLORS = ["#5B4FE5", "#C9A14A", "#94A3B8"];
+// const GENDER_COLORS = ["#5B4FE5", "#C9A14A", "#94A3B8"];
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -388,7 +386,7 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </Card>
 
-            <Card>
+            {/* <Card>
               <CardHeader title="Gender diversity" />
 
               <ResponsiveContainer width="100%" height={200}>
@@ -435,7 +433,7 @@ export default function Dashboard() {
                   </span>
                 ))}
               </div>
-            </Card>
+            </Card> */}
           </div>
 
           {/* =================================================
