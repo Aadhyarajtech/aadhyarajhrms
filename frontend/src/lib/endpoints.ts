@@ -1316,10 +1316,36 @@ export const LeaveApi = {
     api
       .get<{ entries: any[] }>("/leave/calendar", { params: { month, year } })
       .then((r) => r.data.entries),
+
   generateReason: (reason: string) =>
-  api
-    .post<{ reason: string }>("/leave/ai/reason", { reason })
-    .then((r) => r.data.reason),
+    api
+      .post<{ reason: string }>("/leave/ai/reason", { reason })
+      .then((r) => r.data.reason),
+
+  compOffBalance: (employeeId?: string) =>
+    api
+      .get<{ balance: { allotted: number; used: number; available: number } }>('/leave/comp-off/balance', { params: { employeeId } })
+      .then((r) => r.data.balance),
+
+  compOffCredits: (employeeId?: string) =>
+    api
+      .get<{ credits: Array<{ id: string; employeeId: string; attendanceId: string | null; days: number; remainingDays: number; creditedAt: string; expiresAt: string; status: 'ACTIVE' | 'EXPIRED' | 'USED'; createdAt: string; updatedAt: string }> }>('/leave/comp-off/credits', { params: { employeeId } })
+      .then((r) => r.data.credits),
+
+  checkConflict: (employeeId: string, startDate: string, endDate: string) =>
+    api
+      .post<LeaveConflictAnalysis>('/leave/ai/conflict', { employeeId, startDate, endDate })
+      .then((r) => r.data),
+
+  aiAnalytics: (startDate: string, endDate: string, employeeId?: string) =>
+    api
+      .post<LeaveAnalyticsResponse>('/leave/ai/analytics', { startDate, endDate, employeeId })
+      .then((r) => r.data),
+
+  aiPatterns: (startDate: string, endDate: string, employeeId?: string) =>
+    api
+      .post<LeavePatternDetectionResponse>('/leave/ai/patterns', { startDate, endDate, employeeId })
+      .then((r) => r.data),
 };
 
 
