@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { isAdmin, isManagerOrAbove } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./attendance.repository";
@@ -104,18 +104,22 @@ const shiftUpdateSchema = shiftPayloadSchema.partial();
 
 // Shift configuration is restricted to HR/admin users. Attendance punching
 // continues to use the shift data independently of these management routes.
-attendanceRouter.get("/shifts", isAdmin, async (req, res, next) => {
-  try {
-    const includeInactive = req.query.includeInactive === "true";
-    res.json({ shifts: await shiftRepo.listShifts(includeInactive) });
-  } catch (err) {
-    next(err);
-  }
-});
+attendanceRouter.get(
+  "/shifts",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const includeInactive = req.query.includeInactive === "true";
+      res.json({ shifts: await shiftRepo.listShifts(includeInactive) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 attendanceRouter.get(
   "/shifts/employee/:employeeId",
-  isAdmin,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       res.json({
@@ -128,19 +132,23 @@ attendanceRouter.get(
   },
 );
 
-attendanceRouter.get("/shifts/:id", isAdmin, async (req, res, next) => {
-  try {
-    const shift = await shiftRepo.getShift(req.params.id);
-    if (!shift) throw AppError.notFound("Shift not found.");
-    res.json({ shift });
-  } catch (err) {
-    next(err);
-  }
-});
+attendanceRouter.get(
+  "/shifts/:id",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const shift = await shiftRepo.getShift(req.params.id);
+      if (!shift) throw AppError.notFound("Shift not found.");
+      res.json({ shift });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 attendanceRouter.post(
   "/shifts",
-  isAdmin,
+  requirePermission("attendance.manage"),
   validate(shiftPayloadSchema),
   async (req, res, next) => {
     try {
@@ -153,7 +161,7 @@ attendanceRouter.post(
 
 attendanceRouter.patch(
   "/shifts/:id",
-  isAdmin,
+  requirePermission("attendance.manage"),
   validate(shiftUpdateSchema),
   async (req, res, next) => {
     try {
@@ -166,7 +174,7 @@ attendanceRouter.patch(
 
 attendanceRouter.post(
   "/shifts/:id/assign",
-  isAdmin,
+  requirePermission("attendance.manage"),
   validate(z.object({ employeeIds: z.array(z.string().trim()) })),
   async (req, res, next) => {
     try {
@@ -201,77 +209,54 @@ const attendanceLocationSchema = z.object({
 
 const checkOutSchema = attendanceLocationSchema.extend({
   breakMinutes: z.number().min(0).max(1440).optional(),
-  earlyDepartureReason: z
-    .string()
-    .trim()
-    .max(1000)
-    .optional(),
+  earlyDepartureReason: z.string().trim().max(1000).optional(),
 });
 
-attendanceRouter.post(
-  "/check-in",
-  async (req, res, next) => {
-    try {
-      if (!req.user!.employeeId) {
-        throw AppError.forbidden(
-          "Only employees can check in.",
-        );
-      }
-
-      const record = await repo.checkIn(
-        req.user!.employeeId,
-      );
-
-      res.json({
-        record,
-      });
-    } catch (err) {
-      next(err);
+attendanceRouter.post("/check-in", async (req, res, next) => {
+  try {
+    if (!req.user!.employeeId) {
+      throw AppError.forbidden("Only employees can check in.");
     }
-  },
-);
 
-attendanceRouter.post(
-  "/check-out",
-  async (req, res, next) => {
-    try {
-      if (!req.user!.employeeId) {
-        throw AppError.forbidden(
-          "Only employees can check out.",
-        );
-      }
+    const record = await repo.checkIn(req.user!.employeeId);
 
-      const options = req.body as z.infer<
-        typeof checkOutSchema
-      >;
+    res.json({
+      record,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
-      const record = await repo.checkOut(
-        req.user!.employeeId,
-      );
-
-      if (!record) {
-        throw AppError.badRequest(
-          "You need to check in before you can check out.",
-        );
-      }
-
-      res.json({ record });
-    } catch (err) {
-      if (
-        err instanceof Error &&
-        err.message ===
-          "A reason is required for early departure."
-      ) {
-        next(
-          AppError.badRequest(err.message),
-        );
-        return;
-      }
-
-      next(err);
+attendanceRouter.post("/check-out", async (req, res, next) => {
+  try {
+    if (!req.user!.employeeId) {
+      throw AppError.forbidden("Only employees can check out.");
     }
-  },
-);
+
+    const options = req.body as z.infer<typeof checkOutSchema>;
+
+    const record = await repo.checkOut(req.user!.employeeId);
+
+    if (!record) {
+      throw AppError.badRequest(
+        "You need to check in before you can check out.",
+      );
+    }
+
+    res.json({ record });
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message === "A reason is required for early departure."
+    ) {
+      next(AppError.badRequest(err.message));
+      return;
+    }
+
+    next(err);
+  }
+});
 
 attendanceRouter.post("/break/start", async (req, res, next) => {
   try {
@@ -332,7 +317,7 @@ attendanceRouter.get("/me", async (req, res, next) => {
 
 attendanceRouter.get(
   "/employee/:employeeId",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId: requesterEmployeeId } = req.user!;
@@ -384,7 +369,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/by-date/:date",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -468,7 +453,7 @@ attendanceRouter.get("/export/me", async (req, res, next) => {
 
 attendanceRouter.get(
   "/export/team",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -496,7 +481,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/export/team/monthly",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -531,7 +516,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/summary/today",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (_req, res, next) => {
     try {
       res.json(await repo.getTodaySummary());
@@ -543,7 +528,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/analytics/trend",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const months = req.query.months ? Number(req.query.months) : 6;
@@ -1276,7 +1261,7 @@ attendanceRouter.get("/ai-patterns", async (req, res, next) => {
 
 attendanceRouter.get(
   "/employee/:employeeId",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId: requesterEmployeeId } = req.user!;
@@ -1329,7 +1314,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/by-date/:date",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -1386,7 +1371,7 @@ attendanceRouter.get("/summary/today", async (_req, res, next) => {
 
 attendanceRouter.get(
   "/analytics/trend",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const months = req.query.months ? Number(req.query.months) : 6;
@@ -1618,7 +1603,7 @@ attendanceRouter.post(
 
 attendanceRouter.get(
   "/regularization/team",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -1662,7 +1647,7 @@ attendanceRouter.get(
 
 attendanceRouter.post(
   "/regularization/:requestId/approve",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   validate(regularizationDecisionSchema),
   async (req, res, next) => {
     try {
@@ -1701,7 +1686,7 @@ attendanceRouter.post(
 
 attendanceRouter.post(
   "/regularization/:requestId/reject",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   validate(
     regularizationDecisionSchema.extend({
       decisionNote: z

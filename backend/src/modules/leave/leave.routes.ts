@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import { isManagerOrAbove } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 
@@ -195,8 +195,7 @@ leaveRouter.get("/requests", async (req, res, next) => {
   try {
     const { role, employeeId } = req.user!;
 
-    const isPrivileged =
-      role === "SUPER_ADMIN" || role === "HR_ADMIN";
+    const isPrivileged = role === "SUPER_ADMIN" || role === "HR_ADMIN";
 
     const filters: {
       status?: string;
@@ -205,9 +204,7 @@ leaveRouter.get("/requests", async (req, res, next) => {
       excludeEmployeeId?: string;
     } = {
       status:
-        typeof req.query.status === "string"
-          ? req.query.status
-          : undefined,
+        typeof req.query.status === "string" ? req.query.status : undefined,
     };
 
     if (req.query.scope === "team") {
@@ -224,9 +221,7 @@ leaveRouter.get("/requests", async (req, res, next) => {
        */
       if (role === "MANAGER") {
         if (!employeeId) {
-          throw AppError.forbidden(
-            "Employee profile is required.",
-          );
+          throw AppError.forbidden("Employee profile is required.");
         }
 
         filters.approverId = employeeId;
@@ -256,9 +251,7 @@ leaveRouter.get("/requests", async (req, res, next) => {
        * Normal employees can only see their own requests.
        */
       if (!employeeId) {
-        throw AppError.forbidden(
-          "Employee profile is required.",
-        );
+        throw AppError.forbidden("Employee profile is required.");
       }
 
       filters.employeeId = employeeId;
@@ -398,16 +391,14 @@ const aiApprovalSchema = z.object({
 
 leaveRouter.post(
   "/ai/approval",
-  isManagerOrAbove,
+  requirePermission("leave.manage"),
   validate(aiApprovalSchema),
   async (req, res, next) => {
     try {
       const requester = req.user!;
 
       if (!requester.employeeId) {
-        throw AppError.forbidden(
-          "Employee profile is required.",
-        );
+        throw AppError.forbidden("Employee profile is required.");
       }
 
       if (
@@ -456,7 +447,7 @@ const aiPatternsSchema = z.object({
 
 leaveRouter.post(
   "/ai/patterns",
-  isManagerOrAbove,
+  requirePermission("leave.manage"),
   validate(aiPatternsSchema),
   async (req, res, next) => {
     try {
@@ -519,7 +510,7 @@ const aiAnalyticsSchema = z.object({
 
 leaveRouter.post(
   "/ai/analytics",
-  isManagerOrAbove,
+  requirePermission("leave.manage"),
   validate(aiAnalyticsSchema),
   async (req, res, next) => {
     try {
@@ -560,36 +551,36 @@ leaveRouter.post(
  * ============================================================
  */
 
-const createRequestSchema = z.object({
-  leaveTypeId: z.string(),
-  startDate: z.string(),
-  endDate: z.string(),
-  halfDay: z.boolean().optional().default(false),
-  halfDayType: z
-    .enum(["FIRST_HALF", "SECOND_HALF"])
-    .nullable()
-    .optional()
-    .default(null),
-  reason: z
-    .string()
-    .min(3, "Please add a short reason for this leave."),
-}).superRefine((value, ctx) => {
-  if (value.halfDay && !value.halfDayType) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["halfDayType"],
-      message: "Select first half or second half.",
-    });
-  }
+const createRequestSchema = z
+  .object({
+    leaveTypeId: z.string(),
+    startDate: z.string(),
+    endDate: z.string(),
+    halfDay: z.boolean().optional().default(false),
+    halfDayType: z
+      .enum(["FIRST_HALF", "SECOND_HALF"])
+      .nullable()
+      .optional()
+      .default(null),
+    reason: z.string().min(3, "Please add a short reason for this leave."),
+  })
+  .superRefine((value, ctx) => {
+    if (value.halfDay && !value.halfDayType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["halfDayType"],
+        message: "Select first half or second half.",
+      });
+    }
 
-  if (!value.halfDay && value.halfDayType) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["halfDayType"],
-      message: "Half-day type is only allowed for half-day leave.",
-    });
-  }
-});
+    if (!value.halfDay && value.halfDayType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["halfDayType"],
+        message: "Half-day type is only allowed for half-day leave.",
+      });
+    }
+  });
 
 leaveRouter.post(
   "/requests",
@@ -656,14 +647,12 @@ const decisionSchema = z.object({
 
 leaveRouter.post(
   "/requests/:id/decide",
-  isManagerOrAbove,
+  requirePermission("leave.manage"),
   validate(decisionSchema),
   async (req, res, next) => {
     try {
       if (!req.user!.employeeId) {
-        throw AppError.forbidden(
-          "Employee profile is required.",
-        );
+        throw AppError.forbidden("Employee profile is required.");
       }
 
       const decisionNote =
@@ -672,8 +661,7 @@ leaveRouter.post(
           : undefined;
 
       const canApproveAny =
-        req.user!.role === "SUPER_ADMIN" ||
-        req.user!.role === "HR_ADMIN";
+        req.user!.role === "SUPER_ADMIN" || req.user!.role === "HR_ADMIN";
 
       const request = await repo.decideRequest(
         req.params.id,
@@ -686,9 +674,7 @@ leaveRouter.post(
       );
 
       if (!request) {
-        throw AppError.notFound(
-          "Leave request not found.",
-        );
+        throw AppError.notFound("Leave request not found.");
       }
 
       /*
@@ -717,8 +703,7 @@ leaveRouter.post(
           await notify({
             userId: employee.userId,
             type: "LEAVE_DECISION",
-            title:
-              `Your leave request was ${req.body.status.toLowerCase()}`,
+            title: `Your leave request was ${req.body.status.toLowerCase()}`,
             message:
               req.body.decisionNote ||
               `Your request for ${(request as any).totalDays} day(s) ` +

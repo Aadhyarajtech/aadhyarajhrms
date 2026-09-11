@@ -36,8 +36,6 @@ import AiAttendanceForecast from "@/components/attendance/AiAttendanceForecast";
 import AttendancePatternAnalysis from "@/components/attendance/AttendancePatternAnalysis";
 import SmartRegularizationAssistant from "@/components/attendance/SmartRegularizationAssistant";
 
-const MANAGER_ROLES = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
-
 function localDateString(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(
     date,
@@ -66,8 +64,8 @@ function getDisplayAttendanceStatus(
 }
 
 export default function Attendance() {
-  const { user } = useAuth();
-  const isManager = !!user && MANAGER_ROLES.includes(user.role);
+  const { hasPermission } = useAuth();
+  const isManager = hasPermission("attendance.manage");
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const [tab, setTab] = useState(
@@ -149,8 +147,8 @@ function MyAttendance({
   onEmployeeChange: (id?: string) => void;
 }) {
   const today = new Date();
-  const { user } = useAuth();
-  const canSelectEmployee = !!user && MANAGER_ROLES.includes(user.role);
+  const { user, hasPermission } = useAuth();
+  const canSelectEmployee = hasPermission("attendance.manage");
   const { data: employeeData, isLoading: employeesLoading } = useQuery({
     queryKey: ["attendance", "ai", "employees", user?.role, user?.employee?.id],
     queryFn: () => EmployeesApi.list({ page: 1, pageSize: 100 }),

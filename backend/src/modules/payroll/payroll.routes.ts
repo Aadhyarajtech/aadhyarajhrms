@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { isAdmin, isAdminOrFinance } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./payroll.repository";
@@ -11,7 +11,7 @@ payrollRouter.use(authenticate);
 
 payrollRouter.get(
   "/salary-structure/:employeeId",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({
@@ -71,7 +71,7 @@ const taxPreviewSchema = structureSchema.pick({
 
 payrollRouter.post(
   "/tax-preview",
-  isAdmin,
+  requirePermission("payroll.manage"),
   validate(taxPreviewSchema),
   async (req, res, next) => {
     try {
@@ -84,7 +84,7 @@ payrollRouter.post(
 
 payrollRouter.put(
   "/salary-structure",
-  isAdmin,
+  requirePermission("payroll.manage"),
   validate(structureSchema),
   async (req, res, next) => {
     try {
@@ -95,13 +95,17 @@ payrollRouter.put(
   },
 );
 
-payrollRouter.get("/runs", isAdminOrFinance, async (_req, res, next) => {
-  try {
-    res.json({ runs: await repo.listPayrollRuns() });
-  } catch (err) {
-    next(err);
-  }
-});
+payrollRouter.get(
+  "/runs",
+  requirePermission("payroll.manage"),
+  async (_req, res, next) => {
+    try {
+      res.json({ runs: await repo.listPayrollRuns() });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 const processSchema = z.object({
   month: z.number().int().min(1).max(12),
@@ -109,7 +113,7 @@ const processSchema = z.object({
 });
 payrollRouter.post(
   "/runs/lock-attendance",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   validate(processSchema),
   async (req, res, next) => {
     try {
@@ -124,7 +128,7 @@ payrollRouter.post(
 
 payrollRouter.post(
   "/runs/process",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   validate(processSchema),
   async (req, res, next) => {
     try {
@@ -139,7 +143,7 @@ payrollRouter.post(
 
 payrollRouter.post(
   "/runs/:id/submit-review",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({
@@ -153,7 +157,7 @@ payrollRouter.post(
 
 payrollRouter.post(
   "/runs/:id/approve",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({
@@ -167,20 +171,14 @@ payrollRouter.post(
 
 payrollRouter.post(
   "/runs/:id/reprocess",
-  isAdmin,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
-
-
-     const payrollRun =
-  await repo.reprocessPayrollRun(
-    req.params.id,
-  );
+      const payrollRun = await repo.reprocessPayrollRun(req.params.id);
 
       return res.json({
         success: true,
-        message:
-          "Payroll run recalculated successfully.",
+        message: "Payroll run recalculated successfully.",
         payrollRun,
       });
     } catch (err) {
@@ -191,7 +189,7 @@ payrollRouter.post(
 
 payrollRouter.post(
   "/runs/:id/mark-paid",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({
@@ -205,7 +203,7 @@ payrollRouter.post(
 
 payrollRouter.post(
   "/runs/:id/send-payslips",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({
@@ -219,7 +217,7 @@ payrollRouter.post(
 
 payrollRouter.get(
   "/runs/:id/payslips",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({ payslips: await repo.listPayslipsForRun(req.params.id) });
@@ -242,7 +240,7 @@ payrollRouter.get("/payslips/mine", async (req, res, next) => {
 
 payrollRouter.get(
   "/payslips/employee/:employeeId",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({
@@ -273,7 +271,7 @@ payrollRouter.get("/payslips/:id", async (req, res, next) => {
 
 payrollRouter.get(
   "/analytics/cost-trend",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       const months = req.query.months ? Number(req.query.months) : 6;
@@ -321,27 +319,35 @@ payrollRouter.get("/payslip-requests/mine", async (req, res, next) => {
   }
 });
 
-payrollRouter.get("/payslip-requests", isAdmin, async (_req, res, next) => {
-  try {
-    res.json({ requests: await repo.listPayslipRequests() });
-  } catch (err) {
-    next(err);
-  }
-});
+payrollRouter.get(
+  "/payslip-requests",
+  requirePermission("payroll.manage"),
+  async (_req, res, next) => {
+    try {
+      res.json({ requests: await repo.listPayslipRequests() });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-payrollRouter.get("/payslip-requests/:id", isAdmin, async (req, res, next) => {
-  try {
-    const request = await repo.getPayslipRequest(req.params.id);
-    if (!request) throw AppError.notFound("Payslip request not found.");
-    res.json({ request });
-  } catch (err) {
-    next(err);
-  }
-});
+payrollRouter.get(
+  "/payslip-requests/:id",
+  requirePermission("payroll.manage"),
+  async (req, res, next) => {
+    try {
+      const request = await repo.getPayslipRequest(req.params.id);
+      if (!request) throw AppError.notFound("Payslip request not found.");
+      res.json({ request });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 payrollRouter.post(
   "/payslip-requests/:id/send",
-  isAdmin,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({

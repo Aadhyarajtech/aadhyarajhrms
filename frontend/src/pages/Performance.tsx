@@ -29,7 +29,6 @@ import { TextField, TextareaField, SelectField } from "@/components/ui/Field";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, cx } from "@/lib/format";
 
-const MANAGER_ROLES: string[] = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
 
 const goalSchema = z.object({
   title: z.string().min(2, "Required"),
@@ -43,8 +42,8 @@ const goalSchema = z.object({
 type GoalForm = z.infer<typeof goalSchema>;
 
 export default function Performance() {
-  const { user } = useAuth();
-  const isManager = !!user && MANAGER_ROLES.includes(user.role);
+  const { hasPermission } = useAuth();
+  const isManager = hasPermission("performance.manage");
   const [tab, setTab] = useState("mine");
   const { data: cycles } = useQuery({
     queryKey: ["performance", "cycles"],

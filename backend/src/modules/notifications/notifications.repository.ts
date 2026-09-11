@@ -75,6 +75,7 @@ export async function notify(input: {
     isRead: false,
     link: input.link ?? null,
     dedupeKey: input.dedupeKey ?? null,
+    createdAt: nowIso(),
   });
 
   return notification._id;

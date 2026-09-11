@@ -26,7 +26,6 @@ import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatCurrencyINR, monthName } from "@/lib/format";
 import type { Payslip, PayslipRequest, PayslipRequestPeriod } from "@/types";
 
-const FINANCE_ROLES = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"];
 const PAYSLIP_REQUEST_ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
 
 const PERIOD_LABELS: Record<PayslipRequestPeriod, string> = {
@@ -36,8 +35,8 @@ const PERIOD_LABELS: Record<PayslipRequestPeriod, string> = {
 };
 
 export default function Payroll() {
-  const { user } = useAuth();
-  const canManage = !!user && FINANCE_ROLES.includes(user.role);
+  const { user, hasPermission } = useAuth();
+  const canManage = hasPermission("payroll.manage");
   const canManageRequests =
     !!user && PAYSLIP_REQUEST_ADMIN_ROLES.includes(user.role);
   const [tab, setTab] = useState("mine");
