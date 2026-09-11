@@ -1,4 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -169,9 +174,23 @@ export default function JobDetail() {
   const { showToast } = useToast();
 
   const [addOpen, setAddOpen] = useState(false);
-  const [scheduleFor, setScheduleFor] = useState<Candidate | null>(null);
-  const [rejectOpen, setRejectOpen] = useState(false);
+const [scheduleFor, setScheduleFor] = useState<Candidate | null>(null);
+const [rejectOpen, setRejectOpen] = useState(false);
+
+const [draggedCandidateId, setDraggedCandidateId] = useState<string | null>(
+  null,
+);
+
+const [dragOverStage, setDragOverStage] = useState<
+  Candidate["stage"] | null
+>(null);
+
+
+
   const [lifecycleFor, setLifecycleFor] = useState<Candidate | null>(null);
+
+
+
   const [offerLetterFor, setOfferLetterFor] = useState<Candidate | null>(null);
   const [editCandidateFor, setEditCandidateFor] = useState<Candidate | null>(
     null,
@@ -254,6 +273,119 @@ export default function JobDetail() {
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
+
+  const handleCandidateDragStart = (
+  event: DragEvent<HTMLDivElement>,
+  candidateId: string,
+) => {
+  setDraggedCandidateId(candidateId);
+
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", candidateId);
+};
+
+const handleCandidateDragEnd = () => {
+  setDraggedCandidateId(null);
+  setDragOverStage(null);
+};
+
+const handleStageDragOver = (
+  event: DragEvent<HTMLDivElement>,
+  stage: Candidate["stage"],
+) => {
+  event.preventDefault();
+
+  event.dataTransfer.dropEffect = "move";
+  setDragOverStage(stage);
+};
+
+const canMoveCandidateToStage = (
+  candidate: Candidate,
+  targetStage: Candidate["stage"],
+) => {
+  if (candidate.stage === targetStage) {
+    return false;
+  }
+
+  // Hired candidates are final.
+  if (candidate.stage === "HIRED") {
+    return false;
+  }
+
+  // Rejected candidates are final.
+  if (candidate.stage === "REJECTED") {
+    return false;
+  }
+
+  // Hired should only happen through the hiring lifecycle action.
+  if (targetStage === "HIRED") {
+    return false;
+  }
+
+  return true;
+};
+
+const handleStageDragLeave = (
+  event: DragEvent<HTMLDivElement>,
+  stage: Candidate["stage"],
+) => {
+  const currentTarget = event.currentTarget;
+  const relatedTarget = event.relatedTarget as Node | null;
+
+  if (!relatedTarget || !currentTarget.contains(relatedTarget)) {
+    setDragOverStage((current) =>
+      current === stage ? null : current,
+    );
+  }
+};
+
+const handleStageDrop = (
+  event: DragEvent<HTMLDivElement>,
+  stage: Candidate["stage"],
+) => {
+  event.preventDefault();
+
+  const candidateId =
+    event.dataTransfer.getData("text/plain") || draggedCandidateId;
+
+  setDragOverStage(null);
+  setDraggedCandidateId(null);
+
+  if (!candidateId) return;
+
+  const candidate = (candidates ?? []).find(
+    (item) => item.id === candidateId,
+  );
+
+  if (!candidate) return;
+
+  // Prevent invalid lifecycle transitions in the UI.
+  if (!canMoveCandidateToStage(candidate, stage)) {
+    if (candidate.stage === "HIRED") {
+      showToast(
+        "Hired candidates cannot be moved back in the recruitment pipeline.",
+        "error",
+      );
+    } else if (candidate.stage === "REJECTED") {
+      showToast(
+        "Rejected candidates cannot be moved back into the recruitment pipeline.",
+        "error",
+      );
+    } else if (stage === "HIRED") {
+      showToast(
+        "Use the hiring workflow to move a candidate to Hired.",
+        "error",
+      );
+    }
+
+    return;
+  }
+
+  stageMutation.mutate({
+    id: candidate.id,
+    stage,
+  });
+};
 
   const rateMutation = useMutation({
     mutationFn: ({ id, rating }: { id: string; rating: number }) =>
@@ -900,7 +1032,7 @@ export default function JobDetail() {
             <Skeleton key={i} className="h-72 rounded-3xl" />
           ))}
         </div>
-      ) : (
+              ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           {STAGES.map((stage) => {
             const stageCandidates = filteredCandidates.filter(
@@ -910,12 +1042,34 @@ export default function JobDetail() {
             return (
               <div
                 key={stage.key}
-                className="min-w-0 rounded-3xl bg-ink/[0.03] p-3"
+                onDragOver={(event) =>
+                  handleStageDragOver(event, stage.key)
+                }
+                onDragLeave={(event) =>
+                  handleStageDragLeave(event, stage.key)
+                }
+                onDrop={(event) =>
+                  handleStageDrop(event, stage.key)
+                }
+                className={cx(
+                  "min-w-0 rounded-3xl p-3 transition-all duration-200",
+                  dragOverStage === stage.key
+                    ? "bg-brand-50 ring-2 ring-brand-300 ring-inset"
+                    : "bg-ink/[0.03]",
+                )}
               >
                 <div className="mb-3 flex items-center justify-between px-1">
-                  <p className="text-[13px] font-semibold text-ink-soft">
-                    {stage.label}
-                  </p>
+                  <div>
+  <p className="text-[13px] font-semibold text-ink-soft">
+    {stage.label}
+  </p>
+
+  {draggedCandidateId && dragOverStage === stage.key && (
+    <p className="mt-0.5 text-[10px] font-medium text-brand-600">
+      Drop candidate here
+    </p>
+  )}
+</div>
 
                   <Badge tone="neutral">{stageCandidates.length}</Badge>
                 </div>
@@ -927,8 +1081,37 @@ export default function JobDetail() {
                     const screening = screeningCandidate.screening;
 
                     return (
-                      <Card key={candidate.id} padded={false} className="p-3.5">
-                        <p className="text-[13px] font-medium text-ink">
+
+                      <Card
+  key={candidate.id}
+  padded={false}
+  draggable={
+    candidate.stage !== "HIRED" &&
+    candidate.stage !== "REJECTED"
+  }
+  onDragStart={(event) =>
+    handleCandidateDragStart(event, candidate.id)
+  }
+  onDragEnd={handleCandidateDragEnd}
+  className={cx(
+    "cursor-grab p-3.5 transition-all duration-200",
+    draggedCandidateId === candidate.id
+      ? "scale-[0.98] opacity-50"
+      : "hover:-translate-y-0.5 hover:shadow-md",
+    draggedCandidateId === candidate.id && "cursor-grabbing",
+  )}
+>
+  <div className="mb-2 flex items-center gap-1.5 text-[10px] text-ink-faint">
+    <span className="inline-flex h-1.5 w-1.5 rounded-full bg-ink/30" />
+    <span>
+      {candidate.stage === "HIRED" || candidate.stage === "REJECTED"
+        ? "Final pipeline stage"
+        : "Drag to move candidate"}
+    </span>
+  </div>
+
+  <p className="text-[13px] font-medium text-ink">
+ 
                           {candidate.firstName} {candidate.lastName}
                         </p>
 
@@ -1269,67 +1452,64 @@ export default function JobDetail() {
                         })()}
 
                         <div className="mt-2.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex min-w-0 items-center gap-3">
-                              {candidate.stage === "INTERVIEW" &&
-                                (screeningCandidate.finalResult ??
-                                  "PENDING") === "PENDING" && (
-                                  <button
-                                    type="button"
-                                    disabled={selectCandidateMutation.isPending}
-                                    onClick={() =>
-                                      selectCandidateMutation.mutate(
-                                        candidate.id,
-                                      )
-                                    }
-                                    className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:underline disabled:opacity-50"
-                                  >
-                                    <UserCheck size={12} />
-                                    Select
-                                  </button>
-                                )}
+  <div className="grid grid-cols-2 gap-2">
+    <button
+      type="button"
+      onClick={() => setScheduleFor(candidate)}
+      className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 hover:bg-brand-50"
+    >
+      <Calendar size={12} />
+      <span>Interview</span>
+    </button>
 
-                              <button
-                                type="button"
-                                onClick={() => setScheduleFor(candidate)}
-                                className="flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:underline"
-                              >
-                                <Calendar size={12} />
-                                Interview
-                              </button>
+    <button
+      type="button"
+      onClick={() => setLifecycleFor(candidate)}
+      className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 hover:bg-brand-50"
+    >
+      <FileText size={12} />
+      <span>Lifecycle</span>
+    </button>
 
-                              <button
-                                type="button"
-                                onClick={() => setLifecycleFor(candidate)}
-                                className="flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:underline"
-                              >
-                                <FileText size={12} />
-                                Lifecycle
-                              </button>
-                            </div>
+    {candidate.stage === "INTERVIEW" &&
+  (screeningCandidate.finalResult ?? "PENDING") === "PENDING" && (
+    <button
+      type="button"
+      disabled={selectCandidateMutation.isPending}
+      onClick={() => selectCandidateMutation.mutate(candidate.id)}
+      className="col-span-2 flex items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+    >
+      <UserCheck size={12} />
+      <span>
+        {selectCandidateMutation.isPending
+          ? "Selecting..."
+          : "Select Candidate"}
+      </span>
+    </button>
+  )}
 
-                            {stage.key !== "HIRED" &&
-                              stage.key !== "REJECTED" && (
-                                <select
-                                  value={candidate.stage}
-                                  onChange={(event) =>
-                                    stageMutation.mutate({
-                                      id: candidate.id,
-                                      stage: event.target.value,
-                                    })
-                                  }
-                                  aria-label={`Move ${candidate.firstName} ${candidate.lastName} to another stage`}
-                                  className="w-[88px] shrink-0 rounded-lg border border-line bg-white px-2 py-1 text-center text-[11px] font-medium text-ink shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-                                >
-                                  {STAGES.map((s) => (
-                                    <option key={s.key} value={s.key}>
-                                      {s.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                          </div>
-                        </div>
+    {stage.key !== "HIRED" &&
+      stage.key !== "REJECTED" && (
+        <select
+          value={candidate.stage}
+          onChange={(event) =>
+            stageMutation.mutate({
+              id: candidate.id,
+              stage: event.target.value,
+            })
+          }
+          aria-label={`Move ${candidate.firstName} ${candidate.lastName} to another stage`}
+          className="col-span-2 w-full rounded-lg border border-line bg-white px-2 py-1.5 text-center text-[11px] font-medium text-ink shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+        >
+          {STAGES.map((s) => (
+            <option key={s.key} value={s.key}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      )}
+  </div>
+</div>
                       </Card>
                     );
                   })}
@@ -2948,7 +3128,7 @@ function OfferLetterModal({
   );
 }
 
-function CandidateLifecycleModal({
+ function CandidateLifecycleModal({
   candidate,
   onClose,
   job,
@@ -2972,13 +3152,10 @@ function CandidateLifecycleModal({
   >("IN_PROGRESS");
 
   const [bgvProvider, setBgvProvider] = useState("");
-
   const [bgvReference, setBgvReference] = useState("");
-
   const [bgvNotes, setBgvNotes] = useState("");
 
   const [documentType, setDocumentType] = useState("Aadhaar");
-
   const [documentUrl, setDocumentUrl] = useState("");
 
   const [referralBonusStatus, setReferralBonusStatus] = useState<
@@ -2987,12 +3164,28 @@ function CandidateLifecycleModal({
 
   useEffect(() => {
     if (!rawCandidate) return;
+
     const loaded = rawCandidate as LifecycleCandidate;
-    setBgvStatus(loaded.backgroundVerification?.status ?? "IN_PROGRESS");
-    setBgvProvider(loaded.backgroundVerification?.provider ?? "");
-    setBgvReference(loaded.backgroundVerification?.reference ?? "");
-    setBgvNotes(loaded.backgroundVerification?.notes ?? "");
-    setReferralBonusStatus(loaded.referralBonusStatus ?? "NOT_APPLICABLE");
+
+    setBgvStatus(
+      loaded.backgroundVerification?.status ?? "IN_PROGRESS",
+    );
+
+    setBgvProvider(
+      loaded.backgroundVerification?.provider ?? "",
+    );
+
+    setBgvReference(
+      loaded.backgroundVerification?.reference ?? "",
+    );
+
+    setBgvNotes(
+      loaded.backgroundVerification?.notes ?? "",
+    );
+
+    setReferralBonusStatus(
+      loaded.referralBonusStatus ?? "NOT_APPLICABLE",
+    );
   }, [rawCandidate, job?.budgetCtc]);
 
   const refreshCandidate = () => {
@@ -3009,6 +3202,10 @@ function CandidateLifecycleModal({
     });
   };
 
+  /* =========================================================
+     BACKGROUND VERIFICATION
+  ========================================================= */
+
   const bgvMutation = useMutation({
     mutationFn: () =>
       RecruitmentApi.updateBackgroundVerification(candidate.id, {
@@ -3023,8 +3220,14 @@ function CandidateLifecycleModal({
       showToast("Background verification updated.");
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err) => {
+      showToast(getErrorMessage(err), "error");
+    },
   });
+
+  /* =========================================================
+     PRE-BOARDING DOCUMENT
+  ========================================================= */
 
   const documentMutation = useMutation({
     mutationFn: () =>
@@ -3039,7 +3242,9 @@ function CandidateLifecycleModal({
       showToast("Pre-boarding document added.");
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err) => {
+      showToast(getErrorMessage(err), "error");
+    },
   });
 
   const verifyDocumentMutation = useMutation({
@@ -3051,43 +3256,63 @@ function CandidateLifecycleModal({
       showToast("Pre-boarding document verified.");
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err) => {
+      showToast(getErrorMessage(err), "error");
+    },
   });
+
+  /* =========================================================
+     EMPLOYEE REFERRAL
+  ========================================================= */
 
   const referralBonusMutation = useMutation({
     mutationFn: async () => {
       const response = await api.patch<{ candidate: Candidate }>(
         `/recruitment/candidates/${candidate.id}/referral-bonus`,
-        { status: referralBonusStatus },
+        {
+          status: referralBonusStatus,
+        },
       );
 
       return response.data.candidate;
     },
+
     onSuccess: () => {
       refreshCandidate();
       showToast("Referral bonus status updated.");
     },
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+
+    onError: (err) => {
+      showToast(getErrorMessage(err), "error");
+    },
   });
 
+  /* =========================================================
+     HIRE / EMPLOYEE HANDOFF
+  ========================================================= */
+
   const hireMutation = useMutation({
-    mutationFn: () => RecruitmentApi.hireCandidate(candidate.id, "EMPLOYEE"),
+    mutationFn: () =>
+      RecruitmentApi.hireCandidate(candidate.id, "EMPLOYEE"),
 
     onSuccess: () => {
       refreshCandidate();
       showToast("Candidate hired and employee account created.");
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err) => {
+      showToast(getErrorMessage(err), "error");
+    },
   });
 
   const offerStatus = current.offer?.status ?? "NOT_SENT";
-
   const offerAccepted = offerStatus === "ACCEPTED";
 
-  const bgvVerified = current.backgroundVerification?.status === "VERIFIED";
+  const bgvVerified =
+    current.backgroundVerification?.status === "VERIFIED";
 
-  const preboardingCompleted = current.preboarding?.status === "COMPLETED";
+  const preboardingCompleted =
+    current.preboarding?.status === "COMPLETED";
 
   const hired = Boolean(current.hiredEmployeeId);
 
@@ -3106,6 +3331,11 @@ function CandidateLifecycleModal({
         </div>
       ) : (
         <div className="space-y-4">
+
+          {/* =====================================================
+              CANDIDATE SUMMARY
+          ===================================================== */}
+
           <div className="rounded-2xl border border-line/70 bg-ink/[0.02] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -3113,7 +3343,9 @@ function CandidateLifecycleModal({
                   {current.firstName} {current.lastName}
                 </p>
 
-                <p className="text-[12px] text-ink-faint">{current.email}</p>
+                <p className="text-[12px] text-ink-faint">
+                  {current.email}
+                </p>
               </div>
 
               <Badge tone={hired ? "success" : "neutral"}>
@@ -3122,7 +3354,10 @@ function CandidateLifecycleModal({
             </div>
           </div>
 
-          {/* 1. OFFER */}
+          {/* =====================================================
+              1. OFFER
+          ===================================================== */}
+
           <LifecycleSection
             number="1"
             title="Offer"
@@ -3131,11 +3366,12 @@ function CandidateLifecycleModal({
           >
             {offerStatus === "NOT_SENT" ? (
               <p className="text-[12px] text-ink-faint">
-                Offer has not been generated yet. Use the Offer Letter action on
-                the candidate card to create the offer letter.
+                Offer has not been generated yet. Use the Offer Letter
+                action on the candidate card to create the offer letter.
               </p>
             ) : (
               <div className="space-y-3">
+
                 <p className="text-[12px] text-ink-soft">
                   CTC:{" "}
                   {current.offer?.annualCtc != null
@@ -3146,22 +3382,28 @@ function CandidateLifecycleModal({
 
                 {offerStatus === "SENT" && (
                   <div className="rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2 text-[12px] text-brand-800">
-                    Offer sent. The candidate must review and accept or decline
-                    it through the secure candidate portal.
+                    Offer sent. The candidate must review and accept
+                    or decline it through the secure candidate portal.
                   </div>
                 )}
 
                 {offerStatus === "ACCEPTED" && (
-                  <Badge tone="success">Offer accepted</Badge>
+                  <Badge tone="success">
+                    Offer accepted
+                  </Badge>
                 )}
 
                 {offerStatus === "DECLINED" && (
-                  <Badge tone="warning">Offer declined</Badge>
+                  <Badge tone="warning">
+                    Offer declined
+                  </Badge>
                 )}
 
                 {current.offer?.offerUrl && (
                   <a
-                    href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
+                    href={
+                      resolveAssetUrl(current.offer.offerUrl) ?? "#"
+                    }
                     target="_blank"
                     rel="noreferrer"
                     className="inline-block text-[12px] font-medium text-brand-600 hover:underline"
@@ -3173,19 +3415,27 @@ function CandidateLifecycleModal({
             )}
           </LifecycleSection>
 
-          {/* 2. BACKGROUND VERIFICATION */}
+          {/* =====================================================
+              2. BACKGROUND VERIFICATION
+          ===================================================== */}
+
           <LifecycleSection
             number="2"
             title="Background Verification"
-            status={current.backgroundVerification?.status ?? "NOT_STARTED"}
+            status={
+              current.backgroundVerification?.status ??
+              "NOT_STARTED"
+            }
             complete={bgvVerified}
           >
             {!offerAccepted ? (
               <p className="text-[12px] text-ink-faint">
-                Accept the offer before completing background verification.
+                Accept the offer before completing background
+                verification.
               </p>
             ) : (
               <div className="space-y-3">
+
                 <SelectField
                   label="Status"
                   value={bgvStatus}
@@ -3199,29 +3449,45 @@ function CandidateLifecycleModal({
                     )
                   }
                 >
-                  <option value="NOT_STARTED">Not started</option>
-                  <option value="IN_PROGRESS">In progress</option>
-                  <option value="VERIFIED">Verified</option>
-                  <option value="FAILED">Failed</option>
+                  <option value="NOT_STARTED">
+                    Not started
+                  </option>
+                  <option value="IN_PROGRESS">
+                    In progress
+                  </option>
+                  <option value="VERIFIED">
+                    Verified
+                  </option>
+                  <option value="FAILED">
+                    Failed
+                  </option>
                 </SelectField>
 
                 <div className="grid gap-3 sm:grid-cols-2">
+
                   <TextField
                     label="Provider"
                     value={bgvProvider}
-                    onChange={(e) => setBgvProvider(e.target.value)}
+                    onChange={(e) =>
+                      setBgvProvider(e.target.value)
+                    }
                   />
 
                   <TextField
                     label="Reference"
                     value={bgvReference}
-                    onChange={(e) => setBgvReference(e.target.value)}
+                    onChange={(e) =>
+                      setBgvReference(e.target.value)
+                    }
                   />
+
                 </div>
 
                 <textarea
                   value={bgvNotes}
-                  onChange={(e) => setBgvNotes(e.target.value)}
+                  onChange={(e) =>
+                    setBgvNotes(e.target.value)
+                  }
                   rows={3}
                   placeholder="Verification notes..."
                   className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[12.5px] text-ink outline-none focus:border-brand-500"
@@ -3234,54 +3500,76 @@ function CandidateLifecycleModal({
                 >
                   Update verification
                 </Button>
+
               </div>
             )}
           </LifecycleSection>
 
-          {/* 3. PRE-BOARDING */}
+          {/* =====================================================
+              3. PRE-BOARDING
+          ===================================================== */}
+
           <LifecycleSection
             number="3"
             title="Pre-boarding"
-            status={current.preboarding?.status ?? "NOT_STARTED"}
+            status={
+              current.preboarding?.status ?? "NOT_STARTED"
+            }
             complete={preboardingCompleted}
           >
             {!bgvVerified ? (
               <p className="text-[12px] text-ink-faint">
-                Complete BGV with VERIFIED status before pre-boarding.
+                Complete BGV with VERIFIED status before
+                pre-boarding.
               </p>
             ) : (
               <div className="space-y-3">
+
+                {/* Existing documents */}
+
                 {current.preboarding?.documents?.length ? (
                   <div className="space-y-2">
-                    {current.preboarding.documents.map((doc, index) => (
-                      <div
-                        key={`${doc.type}-${index}`}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/60 px-3 py-2.5"
-                      >
-                        <div>
-                          <p className="text-[12.5px] font-medium text-ink">
-                            {doc.type}
-                          </p>
 
-                          <p className="max-w-[420px] truncate text-[11px] text-ink-faint">
-                            {doc.url}
-                          </p>
+                    {current.preboarding.documents.map(
+                      (doc, index) => (
+                        <div
+                          key={`${doc.type}-${index}`}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/60 px-3 py-2.5"
+                        >
+                          <div>
+                            <p className="text-[12.5px] font-medium text-ink">
+                              {doc.type}
+                            </p>
+
+                            <p className="max-w-[420px] truncate text-[11px] text-ink-faint">
+                              {doc.url}
+                            </p>
+                          </div>
+
+                          {doc.verified ? (
+                            <Badge tone="success">
+                              Verified
+                            </Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              isLoading={
+                                verifyDocumentMutation.isPending
+                              }
+                              onClick={() =>
+                                verifyDocumentMutation.mutate(
+                                  index,
+                                )
+                              }
+                            >
+                              Verify
+                            </Button>
+                          )}
                         </div>
+                      ),
+                    )}
 
-                        {doc.verified ? (
-                          <Badge tone="success">Verified</Badge>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            isLoading={verifyDocumentMutation.isPending}
-                            onClick={() => verifyDocumentMutation.mutate(index)}
-                          >
-                            Verify
-                          </Button>
-                        )}
-                      </div>
-                    ))}
                   </div>
                 ) : (
                   <p className="text-[12px] text-ink-faint">
@@ -3289,52 +3577,114 @@ function CandidateLifecycleModal({
                   </p>
                 )}
 
+                {/* Add document */}
+
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <TextField
+
+                  <SelectField
                     label="Document type"
                     value={documentType}
-                    onChange={(e) => setDocumentType(e.target.value)}
-                  />
+                    onChange={(e) =>
+                      setDocumentType(e.target.value)
+                    }
+                  >
+                    <option value="Aadhaar">
+                      Aadhaar
+                    </option>
+
+                    <option value="PAN Card">
+                      PAN Card
+                    </option>
+
+                    <option value="Passport">
+                      Passport
+                    </option>
+
+                    <option value="Driving License">
+                      Driving License
+                    </option>
+
+                    <option value="Voter ID">
+                      Voter ID
+                    </option>
+
+                    <option value="Degree Certificate">
+                      Degree Certificate
+                    </option>
+
+                    <option value="Experience Certificate">
+                      Experience Certificate
+                    </option>
+
+                    <option value="Bank Account Proof">
+                      Bank Account Proof
+                    </option>
+
+                    <option value="Address Proof">
+                      Address Proof
+                    </option>
+
+                    <option value="Other">
+                      Other
+                    </option>
+                  </SelectField>
 
                   <TextField
                     label="Document URL"
                     value={documentUrl}
-                    onChange={(e) => setDocumentUrl(e.target.value)}
+                    onChange={(e) =>
+                      setDocumentUrl(e.target.value)
+                    }
                     placeholder="https://..."
                   />
+
                 </div>
 
                 <Button
                   size="sm"
                   variant="outline"
                   isLoading={documentMutation.isPending}
-                  disabled={!documentType.trim() || !documentUrl.trim()}
+                  disabled={
+                    !documentType.trim() ||
+                    !documentUrl.trim()
+                  }
                   onClick={() => documentMutation.mutate()}
                 >
                   Add document
                 </Button>
+
               </div>
             )}
           </LifecycleSection>
 
-          {/* 4. REFERRAL BONUS */}
+          {/* =====================================================
+              4. EMPLOYEE REFERRAL
+          ===================================================== */}
+
           <LifecycleSection
             number="4"
             title="Employee Referral"
-            status={current.referralBonusStatus ?? "NOT_APPLICABLE"}
+            status={
+              current.referralBonusStatus ??
+              "NOT_APPLICABLE"
+            }
             complete={
-              !current.referredById || current.referralBonusStatus === "PAID"
+              !current.referredById ||
+              current.referralBonusStatus === "PAID"
             }
           >
             {!current.referredById ? (
               <p className="text-[12px] text-ink-faint">
-                This candidate was not submitted through an employee referral.
+                This candidate was not submitted through an
+                employee referral.
               </p>
             ) : (
               <div className="space-y-3">
+
                 <p className="text-[12px] text-ink-soft">
                   Referrer: {current.referredById}
                 </p>
+
                 <SelectField
                   label="Referral bonus status"
                   value={referralBonusStatus}
@@ -3348,39 +3698,61 @@ function CandidateLifecycleModal({
                     )
                   }
                 >
-                  <option value="PENDING">Pending</option>
-                  <option value="APPROVED">Approved</option>
-                  <option value="PAID">Paid</option>
-                  <option value="NOT_APPLICABLE">Not applicable</option>
+                  <option value="PENDING">
+                    Pending
+                  </option>
+
+                  <option value="APPROVED">
+                    Approved
+                  </option>
+
+                  <option value="PAID">
+                    Paid
+                  </option>
+
+                  <option value="NOT_APPLICABLE">
+                    Not applicable
+                  </option>
                 </SelectField>
+
                 <Button
                   size="sm"
                   variant="outline"
                   isLoading={referralBonusMutation.isPending}
-                  onClick={() => referralBonusMutation.mutate()}
+                  onClick={() =>
+                    referralBonusMutation.mutate()
+                  }
                 >
                   Update referral bonus
                 </Button>
+
               </div>
             )}
           </LifecycleSection>
 
-          {/* 5. HIRE */}
+          {/* =====================================================
+              5. HIRE / EMPLOYEE HANDOFF
+          ===================================================== */}
+
           <LifecycleSection
             number="5"
             title="Hire / Employee Handoff"
             status={hired ? "COMPLETED" : "PENDING"}
             complete={hired}
           >
-            {!offerAccepted || !bgvVerified || !preboardingCompleted ? (
+            {!offerAccepted ||
+            !bgvVerified ||
+            !preboardingCompleted ? (
               <p className="text-[12px] text-ink-faint">
-                Hiring unlocks after Offer Accepted, BGV Verified and
-                Pre-boarding Completed.
+                Hiring unlocks after Offer Accepted, BGV Verified
+                and Pre-boarding Completed.
               </p>
             ) : hired ? (
               <div className="flex items-center gap-2 text-[12.5px] text-ink-soft">
                 <UserCheck size={15} />
+
                 Employee account created.
+
                 {current.hiredEmployeeId
                   ? ` Employee ID: ${current.hiredEmployeeId}`
                   : ""}
@@ -3395,12 +3767,12 @@ function CandidateLifecycleModal({
               </Button>
             )}
           </LifecycleSection>
+
         </div>
       )}
     </Modal>
   );
 }
-
 /* =========================================================
    LIFECYCLE SECTION
 ========================================================= */

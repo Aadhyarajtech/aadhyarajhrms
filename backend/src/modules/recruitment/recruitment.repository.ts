@@ -1,3 +1,4 @@
+import { AppError } from "@/utils/errors";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -1350,11 +1351,11 @@ export async function createCandidate(input: CreateCandidateInput) {
     email: normalizedEmail,
   }).lean();
 
-  if (duplicate) {
-    throw new Error(
-      "A candidate with this email already applied for this job.",
-    );
-  }
+ if (duplicate) {
+  throw AppError.conflict(
+    "A candidate with this email already applied for this job.",
+  );
+}
 
   const doc = await Candidate.create({
     jobPostingId: input.jobPostingId,
@@ -2564,13 +2565,23 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
     return undefined;
   }
 
+  // ---------------------------------------------------------
+  // 1. OFFER VALIDATION
+  // ---------------------------------------------------------
+
   if (!candidate.offer) {
     throw new Error("Offer has not been generated.");
   }
 
   if (candidate.offer.status !== "ACCEPTED") {
-    throw new Error("Candidate must accept the offer before joining.");
+    throw new Error(
+      "Candidate must accept the offer before joining.",
+    );
   }
+
+  // ---------------------------------------------------------
+  // 2. BACKGROUND VERIFICATION VALIDATION
+  // ---------------------------------------------------------
 
   if (!candidate.backgroundVerification) {
     throw new Error(
@@ -2578,81 +2589,197 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
     );
   }
 
-  if (candidate.backgroundVerification.status !== "VERIFIED") {
-    throw new Error("Background verification must be VERIFIED before joining.");
+  if (
+    candidate.backgroundVerification.status !== "VERIFIED"
+  ) {
+    throw new Error(
+      "Background verification must be VERIFIED before joining.",
+    );
   }
 
+  // ---------------------------------------------------------
+  // 3. PRE-BOARDING VALIDATION
+  // ---------------------------------------------------------
+
   if (!candidate.preboarding) {
-    throw new Error("Pre-boarding must be completed before joining.");
+    throw new Error(
+      "Pre-boarding must be completed before joining.",
+    );
   }
 
   if (candidate.preboarding.status !== "COMPLETED") {
-    throw new Error("Pre-boarding documents must be completed before joining.");
+    throw new Error(
+      "Pre-boarding documents must be completed before joining.",
+    );
   }
+
+  // ---------------------------------------------------------
+  // 4. ALREADY HIRED CHECK
+  // ---------------------------------------------------------
 
   if (candidate.hiredEmployeeId) {
     return getCandidate(id);
   }
 
-  const job = await JobPosting.findById(candidate.jobPostingId);
+  // ---------------------------------------------------------
+  // 5. LOAD JOB
+  // ---------------------------------------------------------
+
+  const job = await JobPosting.findById(
+    candidate.jobPostingId,
+  );
 
   if (!job) {
     throw new Error("Job posting not found.");
   }
 
+  // ---------------------------------------------------------
+  // 6. HEADCOUNT VALIDATION
+  // ---------------------------------------------------------
+
   const hiredCount = await Candidate.countDocuments({
-    jobPostingId: candidate.jobPostingId,
-    stage: "HIRED",
-    _id: { $ne: candidate._id },
-  });
+  jobPostingId: candidate.jobPostingId,
+  stage: "HIRED",
+  _id: { $ne: candidate._id },
+});
 
-  /*
-   * Headcount is the approved hiring capacity for the requisition.
-   * Prefer the explicit headcount value, while falling back to openings
-   * for older requisitions that may not have headcount populated.
-   */
-  const approvedHeadcount = Math.max(
-    1,
-    Number(job.headcount ?? job.openings ?? 1),
+const approvedHeadcount = Math.max(
+  1,
+  Number(job.headcount ?? job.openings ?? 1),
+);
+
+if (hiredCount >= approvedHeadcount) {
+  throw AppError.conflict(
+    `Hiring capacity reached: ${hiredCount} of ${approvedHeadcount} approved position(s) for this requisition are already filled.`,
   );
+}
 
-  if (hiredCount >= approvedHeadcount) {
-    throw new Error(
-      `Hiring capacity reached: ${hiredCount} of ${approvedHeadcount} approved position(s) for this requisition are already filled.`,
-    );
-  }
+  // ---------------------------------------------------------
+  // 7. LOAD DESIGNATION / DEPARTMENT
+  // ---------------------------------------------------------
 
-  const existing = await User.findOne({
-    email: candidate.email.toLowerCase(),
-  }).lean();
+  const designation = await Designation.findById(
+    job.designationId,
+  ).lean();
 
-  if (existing) {
-    throw new Error("A user already exists with the candidate email.");
-  }
-
-  const designation = await Designation.findById(job.designationId).lean();
-
-  const department = await Department.findById(job.departmentId).lean();
+  const department = await Department.findById(
+    job.departmentId,
+  ).lean();
 
   const now = nowIso();
 
-  const tempPassword = `ART@${Math.random().toString(36).slice(2, 10)}1!`;
+  const normalizedEmail = candidate.email
+    .trim()
+    .toLowerCase();
 
-  const user = await User.create({
-    email: candidate.email.toLowerCase(),
+  // ---------------------------------------------------------
+  // 8. FIND EXISTING USER
+  // ---------------------------------------------------------
 
-    passwordHash: bcrypt.hashSync(tempPassword, 10),
-
-    role: role as any,
-
-    isActive: true,
-
-    mustResetPwd: true,
-
-    createdAt: now,
-
-    updatedAt: now,
+  let user = await User.findOne({
+    email: normalizedEmail,
   });
+
+  let temporaryPassword: string | null = null;
+
+  // ---------------------------------------------------------
+  // 9. HANDLE EXISTING USER
+  // ---------------------------------------------------------
+
+  if (user) {
+    /*
+     * The email already belongs to a User account.
+     *
+     * Check whether that User is already linked to
+     * an Employee record.
+     */
+    const existingEmployee = await Employee.findOne({
+      userId: user._id,
+    });
+
+    if (existingEmployee) {
+      /*
+       * The candidate's email already belongs to an
+       * existing employee.
+       *
+       * Reuse the existing employee instead of creating
+       * a duplicate Employee record.
+       */
+      candidate.hiredEmployeeId = existingEmployee._id;
+      candidate.stage = "HIRED";
+      candidate.finalResult = "SELECTED";
+
+      await candidate.save();
+
+      await notifyRecruitmentTeam({
+        title: "Candidate linked to existing employee",
+        message: `${candidate.firstName} ${candidate.lastName} has been linked to existing employee ${existingEmployee.employeeCode}.`,
+        link: `/employees/${existingEmployee._id}`,
+      });
+
+      await notifyCandidateEmail(
+        candidate,
+        "Recruitment Process Completed",
+        `Dear ${candidate.firstName} ${candidate.lastName},
+
+Your recruitment process is complete.
+
+Employee ID: ${existingEmployee.employeeCode}
+Joining date: ${candidate.offer.joiningDate}
+
+Welcome to AadhyaRaj Technologies!
+
+AadhyaRaj HRMS`,
+      );
+
+      return {
+        ...(await getCandidate(id)),
+        employeeId: existingEmployee._id,
+        employeeCode: existingEmployee.employeeCode,
+        temporaryPassword: null,
+        departmentName: department?.name ?? null,
+        designationTitle: designation?.title ?? null,
+      };
+    }
+
+    /*
+     * User exists but is not yet linked to an Employee.
+     *
+     * Reuse this User account and create the Employee
+     * record below.
+     */
+  } else {
+    // -------------------------------------------------------
+    // 10. CREATE NEW USER
+    // -------------------------------------------------------
+
+    temporaryPassword = `ART@${Math.random()
+      .toString(36)
+      .slice(2, 10)}1!`;
+
+    user = await User.create({
+      email: normalizedEmail,
+
+      passwordHash: bcrypt.hashSync(
+        temporaryPassword,
+        10,
+      ),
+
+      role: role as any,
+
+      isActive: true,
+
+      mustResetPwd: true,
+
+      createdAt: now,
+
+      updatedAt: now,
+    });
+  }
+
+  // ---------------------------------------------------------
+  // 11. CREATE EMPLOYEE
+  // ---------------------------------------------------------
 
   const employeeCode = `ART-${new Date().getFullYear()}-${String(
     (await Employee.countDocuments()) + 1,
@@ -2668,8 +2795,11 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
     lastName: candidate.lastName,
 
     avatarUrl: null,
+
     gender: null,
+
     maritalStatus: null,
+
     dateOfBirth: null,
 
     personalEmail: candidate.email,
@@ -2677,8 +2807,11 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
     phone: candidate.phone,
 
     address: null,
+
     city: null,
+
     state: null,
+
     country: "India",
 
     departmentId: job.departmentId,
@@ -2691,39 +2824,83 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
 
     status: "ONBOARDING",
 
-    dateOfJoining: candidate.offer.joiningDate ?? now,
+    dateOfJoining:
+      candidate.offer.joiningDate ?? now,
 
     dateOfExit: null,
 
     emergencyContactName: null,
+
     emergencyContactPhone: null,
+
     emergencyContactRelationship: null,
+
     emergencyContactEmail: null,
 
     employeeAadhaar: null,
+
     employeePan: null,
 
     createdAt: now,
+
     updatedAt: now,
   });
+
+  // ---------------------------------------------------------
+  // 12. UPDATE CANDIDATE
+  // ---------------------------------------------------------
 
   candidate.hiredEmployeeId = employee._id;
 
   candidate.stage = "HIRED";
+
   candidate.finalResult = "SELECTED";
 
   await candidate.save();
 
+  // ---------------------------------------------------------
+  // 13. NOTIFY RECRUITMENT TEAM
+  // ---------------------------------------------------------
+
   await notifyRecruitmentTeam({
     title: "Candidate hired",
-    message: `${candidate.firstName} ${candidate.lastName} has been converted to employee ${employeeCode}.`,
+
+    message:
+      `${candidate.firstName} ${candidate.lastName} ` +
+      `has been converted to employee ${employeeCode}.`,
+
     link: `/employees/${employee._id}`,
   });
+
+  // ---------------------------------------------------------
+  // 14. SEND CANDIDATE EMAIL
+  // ---------------------------------------------------------
+
   await notifyCandidateEmail(
     candidate,
     "Welcome to AadhyaRaj Technologies",
-    `Dear ${candidate.firstName} ${candidate.lastName},\n\nCongratulations. Your recruitment process is complete and your employee account has been created.\nEmployee ID: ${employeeCode}\nJoining date: ${candidate.offer.joiningDate}\n\nPlease use the credentials shared through the secure onboarding process and reset your temporary password at first login.\n\nWelcome to the team!\nAadhyaRaj HRMS`,
+    `Dear ${candidate.firstName} ${candidate.lastName},
+
+Congratulations!
+
+Your recruitment process is complete and your employee account has been created.
+
+Employee ID: ${employeeCode}
+
+Joining date: ${candidate.offer.joiningDate}
+
+Please use your existing account credentials to sign in.
+
+If a new account was created for you, you will be required to reset your temporary password at first login.
+
+Welcome to the team!
+
+AadhyaRaj HRMS`,
   );
+
+  // ---------------------------------------------------------
+  // 15. RETURN RESULT
+  // ---------------------------------------------------------
 
   return {
     ...(await getCandidate(id)),
@@ -2732,7 +2909,7 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
 
     employeeCode,
 
-    temporaryPassword: tempPassword,
+    temporaryPassword,
 
     departmentName: department?.name ?? null,
 

@@ -55,7 +55,8 @@ export async function notify(input: {
   message: string;
   link?: string | null;
   dedupeKey?: string;
-}) {
+}) 
+{
   if (input.dedupeKey) {
     const existing = await Notification.findOne({
       userId: input.userId,
@@ -79,8 +80,6 @@ export async function notify(input: {
   });
 
   return notification._id;
-}
-
 /* =========================================================
    LIST NOTIFICATIONS
 ========================================================= */
