@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { isAdmin } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 import { AppError } from "@/utils/errors";
@@ -139,21 +139,21 @@ documentsRouter.post(
 
         // The type is intentionally taken from the request by the
         // repository, not from this payload, so it cannot be overridden.
-        const parsedExpiryDate =
-  expiryDateSchema.safeParse(req.body.expiryDate);
+        const parsedExpiryDate = expiryDateSchema.safeParse(
+          req.body.expiryDate,
+        );
 
-if (!parsedExpiryDate.success) {
-  throw AppError.badRequest("Invalid expiry date.");
-}
+        if (!parsedExpiryDate.success) {
+          throw AppError.badRequest("Invalid expiry date.");
+        }
 
-const { document } = await repo.fulfillDocumentRequest({
-  requestId,
-  fileName: req.file.originalname,
-  fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
-  uploadedByUserId: req.user!.userId,
-  expiryDate: parsedExpiryDate.data ?? null,
-});
-
+        const { document } = await repo.fulfillDocumentRequest({
+          requestId,
+          fileName: req.file.originalname,
+          fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
+          uploadedByUserId: req.user!.userId,
+          expiryDate: parsedExpiryDate.data ?? null,
+        });
 
         res.status(201).json({ document });
         return;
@@ -182,23 +182,21 @@ const { document } = await repo.fulfillDocumentRequest({
       );
       const type = parsedType.success ? parsedType.data : "OTHER";
 
-      const parsedExpiryDate =
-  expiryDateSchema.safeParse(req.body.expiryDate);
+      const parsedExpiryDate = expiryDateSchema.safeParse(req.body.expiryDate);
 
-if (!parsedExpiryDate.success) {
-  throw AppError.badRequest("Invalid expiry date.");
-}
+      if (!parsedExpiryDate.success) {
+        throw AppError.badRequest("Invalid expiry date.");
+      }
 
-const document = await repo.addDocument({
-  employeeId,
-  uploadedBy: req.user!.userId,
-  requestId: null,
-  type,
-  fileName: req.file.originalname,
-  fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
-  expiryDate: parsedExpiryDate.data ?? null,
-});
-
+      const document = await repo.addDocument({
+        employeeId,
+        uploadedBy: req.user!.userId,
+        requestId: null,
+        type,
+        fileName: req.file.originalname,
+        fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
+        expiryDate: parsedExpiryDate.data ?? null,
+      });
 
       res.status(201).json({ document });
     } catch (error) {
@@ -207,14 +205,18 @@ const document = await repo.addDocument({
   },
 );
 
-documentsRouter.delete("/:id", isAdmin, async (req, res, next) => {
-  try {
-    await repo.deleteDocument(req.params.id);
-    res.status(204).send();
-  } catch (err) {
-    next(err);
-  }
-});
+documentsRouter.delete(
+  "/:id",
+  requirePermission("documents.manage"),
+  async (req, res, next) => {
+    try {
+      await repo.deleteDocument(req.params.id);
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 documentsRouter.patch(
   "/:id/review",
@@ -344,13 +346,17 @@ documentsRouter.get("/requests/company", async (req, res, next) => {
 });
 
 // --- Assets ---
-documentsRouter.get("/assets/all", isAdmin, async (_req, res, next) => {
-  try {
-    res.json({ assets: await repo.listAssets() });
-  } catch (err) {
-    next(err);
-  }
-});
+documentsRouter.get(
+  "/assets/all",
+  requirePermission("documents.manage"),
+  async (_req, res, next) => {
+    try {
+      res.json({ assets: await repo.listAssets() });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 documentsRouter.get("/assets/employee/:employeeId", async (req, res, next) => {
   try {
@@ -365,7 +371,7 @@ documentsRouter.get("/assets/employee/:employeeId", async (req, res, next) => {
 
 documentsRouter.post(
   "/assets",
-  isAdmin,
+  requirePermission("documents.manage"),
   validate(assignSchema),
   async (req, res, next) => {
     try {
@@ -378,7 +384,7 @@ documentsRouter.post(
 
 documentsRouter.patch(
   "/assets/:id/status",
-  isAdmin,
+  requirePermission("documents.manage"),
   validate(assetStatusSchema),
   async (req, res, next) => {
     try {

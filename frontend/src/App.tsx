@@ -205,7 +205,7 @@ export default function App() {
           <Route
             path="employees"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN"]}>
+              <ProtectedRoute permissions={["employees.view"]}>
                 <EmployeeDirectory />
               </ProtectedRoute>
             }
@@ -220,7 +220,7 @@ export default function App() {
           <Route
             path="my-team"
             element={
-              <ProtectedRoute roles={["MANAGER"]}>
+              <ProtectedRoute permissions={["employees.view"]}>
                 <MyTeam />
               </ProtectedRoute>
             }
@@ -233,7 +233,9 @@ export default function App() {
           <Route
             path="org-chart"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN", "MANAGER"]}>
+              <ProtectedRoute
+                permissions={["organization.manage", "employees.view"]}
+              >
                 <OrgChart />
               </ProtectedRoute>
             }
@@ -243,13 +245,27 @@ export default function App() {
               ATTENDANCE
           ================================================= */}
 
-          <Route path="attendance" element={<Attendance />} />
+          <Route
+            path="attendance"
+            element={
+              <ProtectedRoute permissions={["attendance.view"]}>
+                <Attendance />
+              </ProtectedRoute>
+            }
+          />
 
           {/* =================================================
               LEAVE
           ================================================= */}
 
-          <Route path="leave" element={<Leave />} />
+          <Route
+            path="leave"
+            element={
+              <ProtectedRoute permissions={["leave.view"]}>
+                <Leave />
+              </ProtectedRoute>
+            }
+          />
 
           {/* =================================================
               RECRUITMENT
@@ -258,9 +274,7 @@ export default function App() {
           <Route
             path="recruitment"
             element={
-              <ProtectedRoute
-                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
-              >
+              <ProtectedRoute permissions={["recruitment.view"]}>
                 <Recruitment />
               </ProtectedRoute>
             }
@@ -273,9 +287,7 @@ export default function App() {
           <Route
             path="recruitment/:jobId"
             element={
-              <ProtectedRoute
-                roles={["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"]}
-              >
+              <ProtectedRoute permissions={["recruitment.view"]}>
                 <JobDetail />
               </ProtectedRoute>
             }
@@ -285,7 +297,14 @@ export default function App() {
               PERFORMANCE
           ================================================= */}
 
-          <Route path="performance" element={<Performance />} />
+          <Route
+            path="performance"
+            element={
+              <ProtectedRoute permissions={["performance.view"]}>
+                <Performance />
+              </ProtectedRoute>
+            }
+          />
 
           {/* =================================================
               REPORTS & ANALYTICS
@@ -294,7 +313,7 @@ export default function App() {
           <Route
             path="reports"
             element={
-              <ProtectedRoute roles={["SUPER_ADMIN", "HR_ADMIN", "MANAGER"]}>
+              <ProtectedRoute permissions={["reports.view"]}>
                 <Reports />
               </ProtectedRoute>
             }
@@ -304,13 +323,27 @@ export default function App() {
               PAYROLL
           ================================================= */}
 
-          <Route path="payroll" element={<Payroll />} />
+          <Route
+            path="payroll"
+            element={
+              <ProtectedRoute permissions={["payroll.view"]}>
+                <Payroll />
+              </ProtectedRoute>
+            }
+          />
 
           {/* =================================================
               DOCUMENTS
           ================================================= */}
 
-          <Route path="documents" element={<Documents />} />
+          <Route
+            path="documents"
+            element={
+              <ProtectedRoute permissions={["documents.view"]}>
+                <Documents />
+              </ProtectedRoute>
+            }
+          />
 
           {/* =================================================
               ANNOUNCEMENTS
@@ -319,7 +352,7 @@ export default function App() {
           <Route
             path="announcements"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute permissions={["announcements.view"]}>
                 <Announcements />
               </ProtectedRoute>
             }
@@ -355,12 +388,12 @@ export default function App() {
             path="settings"
             element={
               <ProtectedRoute
-                roles={[
-                  "SUPER_ADMIN",
-                  "HR_ADMIN",
-                  "MANAGER",
-                  "RECRUITER",
-                  "FINANCE",
+                permissions={[
+                  "settings.manage",
+                  "organization.manage",
+                  "attendance.manage",
+                  "performance.manage",
+                  "governance.manage",
                 ]}
               >
                 <Settings />
