@@ -80,6 +80,8 @@ export async function notify(input: {
   });
 
   return notification._id;
+}
+
 /* =========================================================
    LIST NOTIFICATIONS
 ========================================================= */
