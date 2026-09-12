@@ -679,6 +679,9 @@ export async function listPayslipsForRun(runId: string) {
       return {
         id: r._id,
         ...r,
+        month: run.month,
+        year: run.year,
+        runStatus: run.status,
         ...taxDetails,
         firstName: emp?.firstName ?? null,
         lastName: emp?.lastName ?? null,
@@ -833,7 +836,7 @@ export async function createPayslipRequest(
     ? `${employee.firstName} ${employee.lastName}`
     : "An employee";
   const admins = await User.find({
-    role: { $in: ["SUPER_ADMIN", "HR_ADMIN"] },
+    role: { $in: ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"] },
     isActive: true,
   })
     .select("_id")
@@ -870,13 +873,13 @@ export async function getPayslipRequest(id: string) {
   if (!row) return undefined;
   const employee = await Employee.findById(row.employeeId).lean();
   const all = await listPayslipsForEmployee(row.employeeId);
+  const count =
+    PAYSLIP_REQUEST_PERIOD_MONTHS[row.period as PayslipRequestPeriod] ?? 6;
+  const matched = (row.payslipIds || []).length
+    ? all.filter((p) => row.payslipIds.includes(p.id))
+    : [];
   const available =
-    row.status === "PENDING"
-      ? all.slice(
-          0,
-          PAYSLIP_REQUEST_PERIOD_MONTHS[row.period as PayslipRequestPeriod],
-        )
-      : all.filter((p) => row.payslipIds.includes(p.id));
+    row.status === "PENDING" || !matched.length ? all.slice(0, count) : matched;
   return {
     ...withEmployeeInfo(toApiDoc(row)!, employee),
     availablePayslips: available,

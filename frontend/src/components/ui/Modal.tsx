@@ -57,7 +57,7 @@ export function Modal({
 
   const modal = (
     <div
-      className="fixed inset-0 z-[99999] flex h-[100dvh] w-screen items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-[99999] flex h-[100dvh] w-screen items-center justify-center p-4 sm:p-6 print:hidden"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
