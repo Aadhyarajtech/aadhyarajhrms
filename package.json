@@ -2,7 +2,9 @@
   "name": "aadhyarajhrms-root",
   "private": true,
   "scripts": {
-    "build": "npm --prefix frontend run build"
+    "build": "npm --prefix frontend run build",
+    "test:anomaly": "npm --prefix backend run test:anomaly",
+    "test:anomaly:seed": "npm --prefix backend run test:anomaly:seed"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
