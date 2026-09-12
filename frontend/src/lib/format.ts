@@ -1,9 +1,11 @@
 export function formatCurrencyINR(value: number): string {
+  const num = Number(value);
+  const safeVal = isNaN(num) ? 0 : num;
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(safeVal);
 }
 
 export function formatDate(
@@ -114,12 +116,9 @@ export function timeAgo(
   return formatDate(d);
 }
 
-export function monthName(month: number): string {
-  return new Date(
-    2000,
-    month - 1,
-    1,
-  ).toLocaleString("en-IN", {
+export function monthName(month?: number | null): string {
+  if (!month || isNaN(month) || month < 1 || month > 12) return "";
+  return new Date(2000, month - 1, 1).toLocaleString("en-IN", {
     month: "long",
   });
 }

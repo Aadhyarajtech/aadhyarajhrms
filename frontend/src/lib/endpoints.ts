@@ -18,7 +18,10 @@ import type {
   FeedbackSummary,
   SalaryStructure,
   PayrollRun,
+  PayrollReadinessResult,
+  PayrollAuditResult,
   Payslip,
+  PayslipExplanation,
   PayslipRequest,
   PayslipRequestPeriod,
   Notification,
@@ -1744,12 +1747,11 @@ export const PayrollApi = {
       .then((r) => r.data.tax),
 
   runs: () =>
+    api.get<{ runs: PayrollRun[] }>("/payroll/runs").then((r) => r.data.runs),
+  validateReadiness: (month: number, year: number) =>
     api
-      .get<{
-        runs: PayrollRun[];
-      }>("/payroll/runs")
-      .then((r) => r.data.runs),
-
+      .post<PayrollReadinessResult>("/payroll/validate-readiness", { month, year })
+      .then((r) => r.data),
   lockAttendance: (month: number, year: number) =>
     api
       .post<{
@@ -1805,6 +1807,10 @@ export const PayrollApi = {
       }>(`/payroll/runs/${runId}/payslips`)
       .then((r) => r.data.payslips),
 
+  getRunAnomalies: (runId: string) =>
+    api
+      .get<{ audit: PayrollAuditResult }>(`/payroll/runs/${runId}/anomalies`)
+      .then((r) => r.data.audit),
   myPayslips: () =>
     api
       .get<{
@@ -1826,6 +1832,19 @@ export const PayrollApi = {
       }>(`/payroll/payslips/${id}`)
       .then((r) => r.data.payslip),
 
+  explainPayslip: (id: string) =>
+    api
+      .get<{ explanation: PayslipExplanation }>(
+        `/payroll/payslips/${id}/explain`,
+      )
+      .then((r) => r.data.explanation),
+  askPayslipQuestion: (id: string, question: string) =>
+    api
+      .post<{ question: string; answer: string; source: string }>(
+        `/payroll/payslips/${id}/ask`,
+        { question },
+      )
+      .then((r) => r.data),
   costTrend: (months = 6) =>
     api
       .get<{

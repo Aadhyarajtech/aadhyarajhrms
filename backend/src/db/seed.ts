@@ -479,7 +479,7 @@ export async function runSeed() {
   // --- Attendance (last ~55 working days, excluding today for demo accounts) -
   console.log("Seeding attendance history (this may take a moment)...");
   const attendanceDocs: any[] = [];
-  for (let i = 55; i >= 0; i--) {
+  for (let i = 95; i >= 0; i--) {
     const date = addDays(today, -i);
     const dateStr = isoDate(date);
     if (isWeekend(date) || holidaySet.has(dateStr)) continue;
@@ -505,10 +505,11 @@ export async function runSeed() {
       checkIn.setHours(Math.floor(checkInHour), Math.floor((checkInHour % 1) * 60), 0, 0);
       const workHours = status === "HALF_DAY" ? 4 + Math.random() : 8 + Math.random() * 1.5;
       const checkOut = new Date(checkIn.getTime() + workHours * 3_600_000);
+      const overtimeHours = status === "PRESENT" && Math.random() < 0.04 ? Math.floor(Math.random() * 3) + 1 : 0;
 
       attendanceDocs.push({
         _id: genId("att"), employeeId: emp.id, date: dateStr, checkIn: checkIn.toISOString(), checkOut: checkOut.toISOString(),
-        status, workHours: Math.round(workHours * 100) / 100, createdAt: now,
+        status, workHours: Math.round(workHours * 100) / 100, overtimeHours, createdAt: now,
       });
     }
   }

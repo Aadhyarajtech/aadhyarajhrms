@@ -698,6 +698,102 @@ export interface Payslip {
   designationTitle?: string;
 }
 
+export interface PayslipExplanation {
+  payslipId: string;
+  employeeName: string;
+  month: number;
+  year: number;
+  summary: string;
+  primaryChangeReason: string;
+  keyHighlights: string[];
+  deltas: {
+    hasPriorMonth: boolean;
+    priorMonth?: number;
+    priorYear?: number;
+    grossDelta: number;
+    netDelta: number;
+    deductionsDelta: number;
+    lopDelta: number;
+  };
+  componentBreakdown: Array<{
+    component: string;
+    category: "EARNING" | "DEDUCTION" | "TAX" | "ATTENDANCE";
+    amount: number;
+    explanation: string;
+  }>;
+  faqAnswers: Record<string, string>;
+  source: "llm" | "deterministic";
+}
+
+export interface PayrollReadinessItem {
+  id: string;
+  category: "STRUCTURE" | "BANKING" | "ATTENDANCE" | "LEAVE";
+  severity: "BLOCKER" | "WARNING" | "INFO";
+  title: string;
+  description: string;
+  employeeName?: string;
+  employeeCode?: string;
+}
+
+export interface PayrollReadinessResult {
+  month: number;
+  year: number;
+  score: number;
+  status: "READY" | "ATTENTION" | "BLOCKED";
+  totalEmployees: number;
+  readyEmployees: number;
+  blockersCount: number;
+  warningsCount: number;
+  aiSummary: string;
+  recommendations: string[];
+  items: PayrollReadinessItem[];
+}
+
+export type PayrollAnomalySeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+export type PayrollAnomalyCategory =
+  | "SALARY_VARIANCE"
+  | "DUPLICATE_ACCOUNT"
+  | "GHOST_EMPLOYEE"
+  | "NEGATIVE_PAY"
+  | "ATTENDANCE_MISMATCH"
+  | "STATUTORY_COMPLIANCE"
+  | "MACRO_VARIANCE";
+
+export interface PayrollAnomalyItem {
+  id: string;
+  category: PayrollAnomalyCategory;
+  severity: PayrollAnomalySeverity;
+  title: string;
+  description: string;
+  employeeId?: string;
+  employeeName?: string;
+  employeeCode?: string;
+  department?: string;
+  currentValue?: number | string;
+  expectedValue?: number | string;
+  financialExposure?: number;
+  recommendation: string;
+}
+
+export interface PayrollAuditResult {
+  runId: string;
+  month: number;
+  year: number;
+  status: string;
+  healthScore: number;
+  totalEmployees: number;
+  anomaliesCount: number;
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  totalFinancialExposure: number;
+  discrepancyRate: number;
+  aiSummary: string;
+  recommendations: string[];
+  anomalies: PayrollAnomalyItem[];
+}
+
 export type PayslipRequestPeriod = "3_MONTHS" | "6_MONTHS" | "12_MONTHS";
 
 export type PayslipRequestStatus = "PENDING" | "SENT" | "REJECTED";
@@ -851,4 +947,40 @@ export interface Asset {
   firstName?: string;
   lastName?: string;
   employeeCode?: string;
+}
+
+/* =========================================================
+   PAYROLL READINESS VALIDATION
+========================================================= */
+
+export interface AffectedEmployeeItem {
+  id: string;
+  name: string;
+  code?: string;
+}
+
+export interface PayrollReadinessItem {
+  id: string;
+  category: "STRUCTURE" | "BANKING" | "ATTENDANCE" | "LEAVE";
+  severity: "BLOCKER" | "WARNING" | "INFO";
+  title: string;
+  description: string;
+  count?: number;
+  affectedEmployees?: AffectedEmployeeItem[];
+  employeeName?: string;
+  employeeCode?: string;
+}
+
+export interface PayrollReadinessResult {
+  month: number;
+  year: number;
+  score: number;
+  status: "READY" | "ATTENTION" | "BLOCKED";
+  totalEmployees: number;
+  readyEmployees: number;
+  blockersCount: number;
+  warningsCount: number;
+  aiSummary: string;
+  recommendations: string[];
+  items: PayrollReadinessItem[];
 }
