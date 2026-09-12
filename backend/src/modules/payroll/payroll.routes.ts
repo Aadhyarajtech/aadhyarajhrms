@@ -5,6 +5,9 @@ import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./payroll.repository";
+import { explainPayslip, askPayslipQuestion } from "../../services/payslipExplainer.service";
+import { validatePayrollReadiness } from "../../services/payrollValidation.service";
+import { detectPayrollAnomalies } from "../../services/payrollAnomaly.service";
 
 export const payrollRouter = Router();
 payrollRouter.use(authenticate);
@@ -142,6 +145,23 @@ payrollRouter.post(
 );
 
 payrollRouter.post(
+  "/validate-readiness",
+  requirePermission("payroll.manage"),
+  validate(processSchema),
+  async (req, res, next) => {
+    try {
+      const result = await validatePayrollReadiness(
+        Number(req.body.month),
+        Number(req.body.year),
+      );
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
   "/runs/:id/submit-review",
   requirePermission("payroll.manage"),
   async (req, res, next) => {
@@ -227,6 +247,20 @@ payrollRouter.get(
   },
 );
 
+payrollRouter.get(
+  "/runs/:id/anomalies",
+  requirePermission("payroll.manage"),
+  async (req, res, next) => {
+    try {
+      res.json({
+        audit: await detectPayrollAnomalies(req.params.id),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 payrollRouter.get("/payslips/mine", async (req, res, next) => {
   try {
     if (!req.user!.employeeId) throw AppError.forbidden();
@@ -264,6 +298,49 @@ payrollRouter.get("/payslips/:id", async (req, res, next) => {
       throw AppError.forbidden();
     if (!isOwner && !isPrivileged) throw AppError.forbidden();
     res.json({ payslip });
+  } catch (err) {
+    next(err);
+  }
+});
+
+payrollRouter.get("/payslips/:id/explain", async (req, res, next) => {
+  try {
+    const payslip = (await repo.getPayslip(req.params.id)) as any;
+    if (!payslip) throw AppError.notFound("Payslip not found.");
+    const isOwner = payslip.employeeId === req.user!.employeeId;
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
+      req.user!.role,
+    );
+    if (isOwner && payslip.runStatus !== "PAID" && !isPrivileged)
+      throw AppError.forbidden();
+    if (!isOwner && !isPrivileged) throw AppError.forbidden();
+
+    const explanation = await explainPayslip(req.params.id);
+    res.json({ explanation });
+  } catch (err) {
+    next(err);
+  }
+});
+
+payrollRouter.post("/payslips/:id/ask", async (req, res, next) => {
+  try {
+    const payslip = (await repo.getPayslip(req.params.id)) as any;
+    if (!payslip) throw AppError.notFound("Payslip not found.");
+    const isOwner = payslip.employeeId === req.user!.employeeId;
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
+      req.user!.role,
+    );
+    if (isOwner && payslip.runStatus !== "PAID" && !isPrivileged)
+      throw AppError.forbidden();
+    if (!isOwner && !isPrivileged) throw AppError.forbidden();
+
+    const { question } = req.body;
+    if (!question || typeof question !== "string") {
+      throw AppError.badRequest("Question must be a non-empty string.");
+    }
+
+    const answer = await askPayslipQuestion(req.params.id, question);
+    res.json(answer);
   } catch (err) {
     next(err);
   }
