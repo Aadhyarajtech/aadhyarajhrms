@@ -376,7 +376,6 @@ export interface AttendanceAiInsights {
     title: string;
     description: string;
   }[];
-
   recommendations: string[];
 }
 
@@ -631,7 +630,43 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.records),
 
-  forEmployee: (employeeId: string, month?: number, year?: number) =>
+
+
+  aiForecast: async (
+    months = 6,
+    employeeId?: string,
+  ) => {
+    const response = await api.get("/attendance/ai-forecast", {
+      params: {
+        months,
+        employeeId,
+      },
+    });
+
+    return response.data;
+  },
+  smartRegularization: async (
+    date: string,
+    employeeId?: string,
+  ) => {
+    const response = await api.get(
+      "/attendance/smart-regularization",
+      {
+        params: {
+          date,
+          employeeId,
+        },
+      },
+    );
+
+    return response.data;
+  },
+
+  forEmployee: (
+    employeeId: string,
+    month?: number,
+    year?: number,
+  ) =>
     api
       .get<{
         records: AttendanceRecord[];
@@ -716,7 +751,12 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.data),
 
-  exportMine: (month: number, year: number, format: "xlsx" | "pdf") =>
+
+  exportMine: (
+    month: number,
+    year: number,
+    format: "xlsx" | "pdf",
+  ) =>
     api
       .get(`/attendance/export/me`, {
         params: {
@@ -728,7 +768,10 @@ export const AttendanceApi = {
       })
       .then((r) => r.data as Blob),
 
-  exportTeam: (date: string, format: "xlsx" | "pdf") =>
+  exportTeam: (
+    date: string,
+    format: "xlsx" | "pdf",
+  ) =>
     api
       .get(`/attendance/export/team`, {
         params: {
@@ -739,7 +782,11 @@ export const AttendanceApi = {
       })
       .then((r) => r.data as Blob),
 
-  exportTeamMonthly: (month: number, year: number, format: "xlsx" | "pdf") =>
+  exportTeamMonthly: (
+    month: number,
+    year: number,
+    format: "xlsx" | "pdf",
+  ) =>
     api
       .get(`/attendance/export/team/monthly`, {
         params: {
@@ -751,27 +798,13 @@ export const AttendanceApi = {
       })
       .then((r) => r.data as Blob),
 
-  aiForecast: async (months = 6, employeeId?: string) =>
-    api
-      .get("/attendance/ai-forecast", {
-        params: {
-          months,
-          employeeId,
-        },
-      })
-      .then((r) => r.data),
 
-  smartRegularization: async (date: string, employeeId?: string) =>
-    api
-      .get("/attendance/smart-regularization", {
-        params: {
-          date,
-          employeeId,
-        },
-      })
-      .then((r) => r.data),
 
-  regularize: (date: string, note: string, employeeId?: string) =>
+  regularize: (
+    date: string,
+    note: string,
+    employeeId?: string,
+  ) =>
     api
       .post<{
         record: AttendanceRegularizationRequest;
@@ -782,12 +815,39 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.record),
 
+
+
   teamRegularizationRequests: (
     status: AttendanceRegularizationStatus | string = "PENDING",
   ) =>
     api
       .get<{
-        requests: AttendanceRegularizationRequest[];
+
+        requests: Array<{
+          id: string;
+          employeeId: string;
+          attendanceId: string | null;
+          date: string;
+          requestedCheckIn: string | null;
+          requestedCheckOut: string | null;
+          requestedStatus: string;
+          reason: string;
+          status:
+          | "PENDING"
+          | "APPROVED"
+          | "REJECTED"
+          | "CANCELLED";
+          approverId: string | null;
+          decisionNote: string | null;
+          requestedAt: string;
+          decidedAt: string | null;
+          firstName: string | null;
+          lastName: string | null;
+          employeeCode: string | null;
+        }>;
+
+
+
       }>("/attendance/regularization/team", {
         params: { status },
       })
@@ -1642,7 +1702,62 @@ export const PerformanceApi = {
         summary: FeedbackSummary;
       }>(`/performance/reviews/${id}/feedback-summary`)
       .then((r) => r.data.summary),
-
+  aiInsights: (id: string) =>
+    api
+      .get<{
+        insights: {
+          summary: string;
+          strengths: string[];
+          developmentAreas: string[];
+          goalInsight: string;
+          suggestedFocus: string;
+        };
+      }>(
+        `/performance/reviews/${id}/ai-insights`,
+      )
+      .then((r) => r.data.insights),
+  aiGoalHealth: (id: string) =>
+    api.get(`/performance/goals/${id}/health`).then((res) => res.data),
+  scorecard: (employeeId: string) =>
+    api
+      .get(`/performance/scorecard/${employeeId}`)
+      .then((res) => res.data.scorecard),
+  aiDevelopmentPlan: (id: string) =>
+    api
+      .get<{
+        plan: {
+          overallFocus: string;
+          days30: {
+            action: string;
+            successMeasure: string;
+          }[];
+          days60: {
+            action: string;
+            successMeasure: string;
+          }[];
+          days90: {
+            action: string;
+            successMeasure: string;
+          }[];
+        };
+      }>(`/performance/reviews/${id}/ai-development-plan`)
+      .then((r) => r.data.plan),
+  aiChat: (id: string, question: string) =>
+    api
+      .post<{
+        answer: string;
+      }>(
+        `/performance/reviews/${id}/ai-chat`,
+        { question },
+      )
+      .then((r) => r.data.answer),
+  aiGoalCoach: (id: string, question?: string) =>
+    api
+      .post<{ answer: string }>(
+        `/performance/goals/${id}/ai-coach`,
+        { question },
+      )
+      .then((r) => r.data.answer),
   outcome: (id: string) =>
     api
       .get<{
@@ -2207,7 +2322,6 @@ export interface ReportsOverview {
     totalNet: number;
     totalLop: number;
     payslipCount: number;
-
     byRun: {
       label: string;
       gross: number;
@@ -2280,6 +2394,7 @@ export interface ReportsOverview {
     assignedAssets: number;
     complianceRate: number;
   };
+
 }
 
 export type ReportExportSection =
@@ -2315,8 +2430,8 @@ export const ReportsApi = {
         section,
         ...(section === "custom" && customSections.length > 0
           ? {
-              customSections: customSections.join(","),
-            }
+            customSections: customSections.join(","),
+          }
           : {}),
       },
       responseType: "blob",
