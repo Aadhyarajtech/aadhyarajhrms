@@ -212,51 +212,61 @@ const checkOutSchema = attendanceLocationSchema.extend({
   earlyDepartureReason: z.string().trim().max(1000).optional(),
 });
 
-attendanceRouter.post("/check-in", async (req, res, next) => {
-  try {
-    if (!req.user!.employeeId) {
-      throw AppError.forbidden("Only employees can check in.");
-    }
+attendanceRouter.post(
+  "/check-in",
+  validate(attendanceLocationSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user!.employeeId) {
+        throw AppError.forbidden("Only employees can check in.");
+      }
 
-    const record = await repo.checkIn(req.user!.employeeId);
-
-    res.json({
-      record,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-attendanceRouter.post("/check-out", async (req, res, next) => {
-  try {
-    if (!req.user!.employeeId) {
-      throw AppError.forbidden("Only employees can check out.");
-    }
-
-    const options = req.body as z.infer<typeof checkOutSchema>;
-
-    const record = await repo.checkOut(req.user!.employeeId);
-
-    if (!record) {
-      throw AppError.badRequest(
-        "You need to check in before you can check out.",
+      const record = await repo.checkIn(
+        req.user!.employeeId,
+        req.body as z.infer<typeof attendanceLocationSchema>,
       );
-    }
 
-    res.json({ record });
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      err.message === "A reason is required for early departure."
-    ) {
-      next(AppError.badRequest(err.message));
-      return;
+      res.json({
+        record,
+      });
+    } catch (err) {
+      next(err);
     }
+  },
+);
 
-    next(err);
-  }
-});
+attendanceRouter.post(
+  "/check-out",
+  validate(checkOutSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user!.employeeId) {
+        throw AppError.forbidden("Only employees can check out.");
+      }
+
+      const options = req.body as z.infer<typeof checkOutSchema>;
+      const record = await repo.checkOut(req.user!.employeeId, options);
+
+      if (!record) {
+        throw AppError.badRequest(
+          "You need to check in before you can check out.",
+        );
+      }
+
+      res.json({ record });
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        err.message === "A reason is required for early departure."
+      ) {
+        next(AppError.badRequest(err.message));
+        return;
+      }
+
+      next(err);
+    }
+  },
+);
 
 attendanceRouter.post("/break/start", async (req, res, next) => {
   try {

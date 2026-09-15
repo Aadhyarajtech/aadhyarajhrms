@@ -777,6 +777,7 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
     name: string;
   } | null>(null);
   const [goalFor, setGoalFor] = useState<{ id: string; name: string } | null>(null);
+  const [feedbackFor, setFeedbackFor] = useState<{ reviewId: string; revieweeId: string; revieweeName: string } | null>(null);
   const employeeId = user?.employee?.id;
 
   const { data: reports, isLoading: reportsLoading } = useQuery({
@@ -893,6 +894,21 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
                 ) : (
                   <Badge tone="neutral">Awaiting self-review</Badge>
                 )}
+                {review && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      setFeedbackFor({
+                        reviewId: review.id,
+                        revieweeId: emp.id,
+                        revieweeName: `${emp.firstName} ${emp.lastName}`,
+                      })
+                    }
+                  >
+                    360 feedback
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -933,7 +949,85 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
           cycleId={activeCycleId}
         />
       )}
+      {feedbackFor && activeCycleId && (
+        <FeedbackAssignmentModal
+          open
+          cycleId={activeCycleId}
+          reviewId={feedbackFor.reviewId}
+          revieweeId={feedbackFor.revieweeId}
+          revieweeName={feedbackFor.revieweeName}
+          reviewers={reports.filter((employee) => employee.id !== feedbackFor.revieweeId)}
+          onClose={() => setFeedbackFor(null)}
+        />
+      )}
     </Card>
+  );
+}
+
+function FeedbackAssignmentModal({
+  open,
+  onClose,
+  cycleId,
+  reviewId,
+  revieweeId,
+  revieweeName,
+  reviewers,
+}: {
+  open: boolean;
+  onClose: () => void;
+  cycleId: string;
+  reviewId: string;
+  revieweeId: string;
+  revieweeName: string;
+  reviewers: any[];
+}) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [reviewerId, setReviewerId] = useState(reviewers[0]?.id ?? "");
+  const [type, setType] = useState<"PEER" | "SUBORDINATE">("PEER");
+  const mutation = useMutation({
+    mutationFn: () =>
+      PerformanceApi.createFeedbackRequest({
+        cycleId,
+        reviewId,
+        reviewerEmployeeId: reviewerId,
+        revieweeEmployeeId: revieweeId,
+        type,
+      }),
+    onSuccess: () => {
+      showToast("360 feedback request assigned.");
+      queryClient.invalidateQueries({ queryKey: ["performance", "feedback-requests"] });
+      onClose();
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Assign 360 feedback — ${revieweeName}`}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button isLoading={mutation.isPending} disabled={!reviewerId} onClick={() => mutation.mutate()}>Assign feedback</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <SelectField label="Reviewer" value={reviewerId} onChange={(event) => setReviewerId(event.target.value)}>
+          <option value="">Select reviewer</option>
+          {reviewers.map((employee) => (
+            <option key={employee.id} value={employee.id}>
+              {employee.firstName} {employee.lastName}
+            </option>
+          ))}
+        </SelectField>
+        <SelectField label="Relationship" value={type} onChange={(event) => setType(event.target.value as "PEER" | "SUBORDINATE")}>
+          <option value="PEER">Peer</option>
+          <option value="SUBORDINATE">Subordinate</option>
+        </SelectField>
+      </div>
+    </Modal>
   );
 }
 
@@ -1112,12 +1206,12 @@ function FeedbackRequests() {
   const [selected, setSelected] = useState<{ id: string; name: string } | null>(
     null,
   );
-  const { data: reviews, isLoading } = useQuery({
+  const { data: requests, isLoading } = useQuery({
     queryKey: ["performance", "feedback-requests"],
-    queryFn: PerformanceApi.feedbackRequests,
+    queryFn: () => PerformanceApi.feedbackRequests(),
   });
   if (isLoading) return <Skeleton className="h-64 rounded-3xl" />;
-  if (!reviews?.length)
+  if (!requests?.length)
     return (
       <EmptyState
         icon={MessageSquare}
@@ -1132,24 +1226,24 @@ function FeedbackRequests() {
         subtitle="Your responses are aggregated and never show your name to the reviewee."
       />
       <div className="space-y-2">
-        {reviews.map((review) => (
+        {requests.map((request) => (
           <div
-            key={review.id}
+            key={request.id}
             className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
           >
             <div className="flex items-center gap-3">
               <Avatar
-                firstName={review.revieweeFirstName}
-                lastName={review.revieweeLastName}
-                src={review.revieweeAvatar}
+                firstName={request.revieweeFirstName ?? ""}
+                lastName={request.revieweeLastName ?? ""}
+                src={request.revieweeAvatar ?? undefined}
                 size="sm"
               />
               <div>
                 <p className="text-[13px] font-medium text-ink">
-                  {review.revieweeFirstName} {review.revieweeLastName}
+                  {request.revieweeFirstName} {request.revieweeLastName}
                 </p>
                 <p className="text-[12px] text-ink-faint">
-                  {review.revieweeDesignation}
+                  {request.type} feedback
                 </p>
               </div>
             </div>
@@ -1158,8 +1252,8 @@ function FeedbackRequests() {
               variant="outline"
               onClick={() =>
                 setSelected({
-                  id: review.id,
-                  name: `${review.revieweeFirstName} ${review.revieweeLastName}`,
+                  id: request.id,
+                  name: `${request.revieweeFirstName ?? ""} ${request.revieweeLastName ?? ""}`,
                 })
               }
             >
@@ -1170,7 +1264,7 @@ function FeedbackRequests() {
       </div>
       {selected && (
         <FeedbackModal
-          reviewId={selected.id}
+          requestId={selected.id}
           employeeName={selected.name}
           onClose={() => setSelected(null)}
         />
@@ -1180,11 +1274,11 @@ function FeedbackRequests() {
 }
 
 function FeedbackModal({
-  reviewId,
+  requestId,
   employeeName,
   onClose,
 }: {
-  reviewId: string;
+  requestId: string;
   employeeName: string;
   onClose: () => void;
 }) {
@@ -1201,7 +1295,7 @@ function FeedbackModal({
   });
   const mutation = useMutation({
     mutationFn: (value: { comments: string }) =>
-      PerformanceApi.submitFeedback(reviewId, {
+      PerformanceApi.submitFeedbackRequest(requestId, {
         type,
         comments: value.comments,
         competencyRatings: Object.entries(ratings).map(

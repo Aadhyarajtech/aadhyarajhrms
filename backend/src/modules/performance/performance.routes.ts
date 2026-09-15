@@ -47,6 +47,30 @@ performanceRouter.post(
   },
 );
 
+performanceRouter.patch(
+  "/cycles/:id/activate",
+  requirePermission("performance.manage"),
+  async (req, res, next) => {
+    try {
+      const cycle = await repo.activateCycle(req.params.id);
+      if (!cycle) throw AppError.notFound("Performance cycle not found.");
+      res.json({ cycle });
+    } catch (err) { next(err); }
+  },
+);
+
+performanceRouter.patch(
+  "/cycles/:id/deactivate",
+  requirePermission("performance.manage"),
+  async (req, res, next) => {
+    try {
+      const cycle = await repo.deactivateCycle(req.params.id);
+      if (!cycle) throw AppError.notFound("Performance cycle not found.");
+      res.json({ cycle });
+    } catch (err) { next(err); }
+  },
+);
+
 performanceRouter.get("/reviews", async (req, res, next) => {
   try {
     const { role, employeeId } = req.user!;
@@ -545,46 +569,76 @@ const feedbackSchema = z.object({
   comments: z.string().max(2000).optional(),
 });
 
-performanceRouter.get("/feedback-requests", async (req, res, next) => {
-  try {
-    const cycle = await repo.getActiveCycle();
-    const employeeId = req.user!.employeeId;
-    if (!cycle || !employeeId) {
-      res.json({ reviews: [] });
-      return;
-    }
-    const reviews = await repo.listReviews({ cycleId: (cycle as any).id });
-    res.json({
-      reviews: reviews.filter(
-        (review: any) => review.revieweeId !== employeeId,
-      ),
-    });
-  } catch (err) {
-    next(err);
-  }
+const feedbackRequestSchema = z.object({
+  cycleId: z.string(),
+  reviewId: z.string(),
+  reviewerEmployeeId: z.string(),
+  revieweeEmployeeId: z.string(),
+  type: z.enum(["PEER", "SUBORDINATE"]),
+  dueDate: z.string().optional(),
 });
 
+performanceRouter.get("/feedback-requests", async (req, res, next) => {
+  try {
+    const employeeId = req.user!.employeeId;
+    if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+    res.json({ requests: await repo.listFeedbackRequests(employeeId, req.query.cycleId as string | undefined) });
+  } catch (err) { next(err); }
+});
+
+performanceRouter.post(
+  "/feedback-requests",
+  requirePermission("performance.manage"),
+  validate(feedbackRequestSchema),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+      if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+      const reviewer = (await getEmployeeById(req.body.reviewerEmployeeId)) as any;
+      const reviewee = (await getEmployeeById(req.body.revieweeEmployeeId)) as any;
+      if (!reviewer || !reviewee) throw AppError.notFound("Reviewer or reviewee not found.");
+      if (reviewer.id === reviewee.id) throw AppError.badRequest("Reviewer and reviewee must be different employees.");
+      if (role === "MANAGER") {
+        if (reviewer.managerId !== employeeId || reviewee.managerId !== employeeId) {
+          throw AppError.forbidden("Managers can only assign 360 feedback within their direct-report team.");
+        }
+      }
+      const request = await repo.createFeedbackRequest({ ...req.body, createdBy: employeeId });
+      res.status(201).json({ request });
+    } catch (err) { next(err); }
+  },
+);
+
+performanceRouter.post(
+  "/feedback-requests/:id/submit",
+  validate(feedbackSchema),
+  async (req, res, next) => {
+    try {
+      const employeeId = req.user!.employeeId;
+      if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+      const request = await repo.getFeedbackRequest(req.params.id);
+      if (!request) throw AppError.notFound("Feedback request not found.");
+      if (request.reviewerEmployeeId !== employeeId) throw AppError.forbidden("You are not authorized to submit this feedback request.");
+      res.status(201).json({ feedback: await repo.submitFeedback({ requestId: req.params.id, reviewerEmployeeId: employeeId, ...req.body }) });
+    } catch (err) { next(err); }
+  },
+);
+
+// Legacy endpoint retained for compatibility, but now requires an explicit assigned request.
 performanceRouter.post(
   "/reviews/:id/feedback",
   validate(feedbackSchema),
   async (req, res, next) => {
     try {
-      const review = await repo.getReview(req.params.id);
-      if (!review) throw AppError.notFound("Review not found.");
-      if (!req.user!.employeeId || review.revieweeId === req.user!.employeeId)
-        throw AppError.forbidden("You cannot submit feedback for yourself.");
-      res.status(201).json({
-        feedback: await repo.submitFeedback({
-          reviewId: req.params.id,
-          reviewerEmployeeId: req.user!.employeeId,
-          ...req.body,
-        }),
-      });
-    } catch (err) {
-      next(err);
-    }
+      const employeeId = req.user!.employeeId;
+      if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+      const request = (await repo.listFeedbackRequests(employeeId)).find((item: any) => item.reviewId === req.params.id && item.status === "PENDING");
+      if (!request) throw AppError.forbidden("You do not have a pending feedback request for this review.");
+      res.status(201).json({ feedback: await repo.submitFeedback({ requestId: request.id, reviewerEmployeeId: employeeId, ...req.body }) });
+    } catch (err) { next(err); }
   },
 );
+
 performanceRouter.get(
   "/reviews/:id/feedback-summary",
   async (req, res, next) => {
@@ -814,9 +868,31 @@ performanceRouter.post(
         }
       }
 
+      const managerId = role === "MANAGER"
+        ? employeeId
+        : (req.body.managerId ?? employee.managerId ?? null);
+
+      if (!managerId) {
+        throw AppError.badRequest("A manager must be assigned before creating a PIP.");
+      }
+
+      if (role === "MANAGER" && managerId !== employeeId) {
+        throw AppError.forbidden("Managers can only create PIPs assigned to themselves.");
+      }
+
+      if (role !== "MANAGER") {
+        const assignedManager = (await getEmployeeById(managerId)) as any;
+        if (!assignedManager || assignedManager.status === "TERMINATED") {
+          throw AppError.badRequest("Assigned manager is not valid.");
+        }
+        if (employee.managerId && managerId !== employee.managerId) {
+          throw AppError.badRequest("The PIP manager must match the employee's reporting manager.");
+        }
+      }
+
       const pip = await repo.createPip({
         ...req.body,
-        managerId: req.body.managerId ?? employeeId,
+        managerId,
         createdBy: employeeId,
         status: "DRAFT",
       });

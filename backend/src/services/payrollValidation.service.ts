@@ -117,7 +117,7 @@ export async function validatePayrollReadiness(
       category: "STRUCTURE",
       severity: "BLOCKER",
       title: "Missing Salary Structure",
-      description: `${employeesMissingStructure.length} active employee(s) have no salary structure configured and will be skipped by the payroll engine.`,
+      description: `${employeesMissingStructure.length} active employee(s) have no salary structure configured and payroll processing will be blocked until it is configured.`,
       count: employeesMissingStructure.length,
       affectedEmployees: employeesMissingStructure.map((e) => ({
         id: String(e._id),
