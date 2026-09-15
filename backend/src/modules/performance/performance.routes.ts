@@ -17,6 +17,61 @@ performanceRouter.get("/cycles", async (_req, res, next) => {
     next(err);
   }
 });
+performanceRouter.get(
+  "/goals/:id/health",
+  async (req, res, next) => {
+    try {
+      const goal = await repo.getGoal(req.params.id);
+
+      if (!goal) {
+        throw AppError.notFound("Goal not found.");
+      }
+
+      const health = await repo.getGoalHealth(req.params.id);
+
+      res.json({
+        health,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+performanceRouter.get(
+  "/scorecard/:employeeId",
+  async (req, res, next) => {
+    try {
+      const employee = await getEmployeeById(
+        req.params.employeeId,
+      );
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      const allowed =
+        req.user!.employeeId === req.params.employeeId ||
+        ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(
+          req.user!.role,
+        );
+
+      if (!allowed) {
+        throw AppError.forbidden();
+      }
+
+      const scorecard =
+        await repo.getPerformanceScorecard(
+          req.params.employeeId,
+        );
+
+      res.json({
+        scorecard,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 const cycleSchema = z.object({
   name: z.string().min(2),
@@ -616,7 +671,63 @@ performanceRouter.get("/reviews/:id/outcome", async (req, res, next) => {
     next(err);
   }
 });
+performanceRouter.get("/reviews/:id/ai-insights", async (req, res, next) => {
+  try {
+    const review = await repo.getReview(req.params.id);
 
+    if (!review) {
+      throw AppError.notFound("Review not found.");
+    }
+
+    const allowed =
+      review.revieweeId === req.user!.employeeId ||
+      review.reviewerId === req.user!.employeeId ||
+      ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+
+    if (!allowed) {
+      throw AppError.forbidden();
+    }
+
+    res.json({
+      insights: await repo.getAiPerformanceInsights(req.params.id),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+performanceRouter.get(
+  "/reviews/:id/ai-development-plan",
+  async (req, res, next) => {
+    try {
+      const review = await repo.getReview(req.params.id);
+
+      if (!review) {
+        throw AppError.notFound("Review not found.");
+      }
+
+      const allowed =
+        review.revieweeId === req.user!.employeeId ||
+        review.reviewerId === req.user!.employeeId ||
+        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+
+      if (!allowed) {
+        throw AppError.forbidden();
+      }
+
+      if (review.status !== "COMPLETED") {
+        throw AppError.badRequest(
+          "AI development plan is available only after the review is completed.",
+        );
+      }
+
+      res.json({
+        plan: await repo.getAiDevelopmentPlan(req.params.id),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 const performanceOutcomeSchema = z.object({
   incrementRecommendation: z.enum(["MAXIMUM", "STANDARD", "NONE", "PIP"]),
   promotionEligible: z.boolean().optional(),
@@ -673,6 +784,107 @@ performanceRouter.patch(
       const outcome = await repo.upsertOutcome(req.params.id, req.body);
 
       res.json({ outcome });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+performanceRouter.post(
+  "/reviews/:id/ai-chat",
+  async (req, res, next) => {
+    try {
+      const review = await repo.getReview(req.params.id);
+
+      if (!review) {
+        throw AppError.notFound("Review not found.");
+      }
+
+      const allowed =
+        review.revieweeId === req.user!.employeeId ||
+        review.reviewerId === req.user!.employeeId ||
+        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+
+      if (!allowed) {
+        throw AppError.forbidden();
+      }
+
+      if (review.status !== "COMPLETED") {
+        throw AppError.badRequest(
+          "Performance AI Assistant is available only after the review is completed.",
+        );
+      }
+
+      const question = req.body?.question;
+
+      if (
+        typeof question !== "string" ||
+        !question.trim()
+      ) {
+        throw AppError.badRequest(
+          "A question is required.",
+        );
+      }
+
+      if (question.trim().length > 500) {
+        throw AppError.badRequest(
+          "Question must be 500 characters or less.",
+        );
+      }
+
+
+
+
+      const answer =
+        await repo.getAiPerformanceChat(
+          req.params.id,
+          question.trim(),
+        );
+
+      res.json({ answer });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+performanceRouter.post(
+  "/goals/:id/ai-coach",
+  async (req, res, next) => {
+    try {
+      const goal = await repo.getGoal(req.params.id);
+
+      if (!goal) {
+        throw AppError.notFound("Goal not found.");
+      }
+
+      const allowed =
+        goal.employeeId === req.user!.employeeId ||
+        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+
+      if (!allowed) {
+        throw AppError.forbidden();
+      }
+
+      const question = req.body?.question;
+
+      if (
+        question !== undefined &&
+        (typeof question !== "string" ||
+          question.trim().length > 500)
+      ) {
+        throw AppError.badRequest(
+          "Question must be 500 characters or less.",
+        );
+      }
+
+      const answer =
+        await repo.getAiGoalCoach(
+          req.params.id,
+          typeof question === "string"
+            ? question.trim()
+            : undefined,
+        );
+
+      res.json({ answer });
     } catch (err) {
       next(err);
     }
@@ -961,11 +1173,11 @@ performanceRouter.get(
       const averageRating =
         ratings.length > 0
           ? Number(
-              (
-                ratings.reduce((sum, rating) => sum + rating, 0) /
-                ratings.length
-              ).toFixed(2),
-            )
+            (
+              ratings.reduce((sum, rating) => sum + rating, 0) /
+              ratings.length
+            ).toFixed(2),
+          )
           : 0;
 
       const goalEmployeeId =
@@ -1002,23 +1214,23 @@ performanceRouter.get(
       const averageGoalAchievement =
         achievementValues.length > 0
           ? Number(
-              (
-                achievementValues.reduce((sum, value) => sum + value, 0) /
-                achievementValues.length
-              ).toFixed(2),
-            )
+            (
+              achievementValues.reduce((sum, value) => sum + value, 0) /
+              achievementValues.length
+            ).toFixed(2),
+          )
           : 0;
+
 
       const goalCompletionPercentage =
         goals.length > 0
           ? Number(
-              (
-                (goals.filter((goal: any) => goal.status === "COMPLETED")
-                  .length /
-                  goals.length) *
-                100
-              ).toFixed(2),
-            )
+            (
+              (goals.filter((goal: any) => goal.status === "COMPLETED").length /
+                goals.length) *
+              100
+            ).toFixed(2),
+          )
           : 0;
 
       const pips = await repo.listPips(
@@ -1036,8 +1248,8 @@ performanceRouter.get(
           reviewCompletionPercentage:
             reviews.length > 0
               ? Number(
-                  ((completedReviews.length / reviews.length) * 100).toFixed(2),
-                )
+                ((completedReviews.length / reviews.length) * 100).toFixed(2),
+              )
               : 0,
           averageRating,
           totalGoals: goals.length,

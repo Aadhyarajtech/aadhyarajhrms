@@ -10,6 +10,12 @@ import {
   Department,
 } from "@/db/models";
 import { nowIso } from "@/db/connection";
+import {
+  generatePerformanceInsights,
+  generateDevelopmentPlan,
+  generatePerformanceChat,
+  generateGoalCoach,
+} from "./performance.ai";
 import { notify } from "@/modules/notifications/notifications.repository";
 
 function toApiDoc(doc: any) {
@@ -112,9 +118,140 @@ export async function getReview(id: string) {
   const [enriched] = await enrichReviews([row]);
   return enriched;
 }
+export async function getPerformanceScorecard(employeeId: string) {
+  // Get the latest completed review for the employee
+  const review = await PerformanceReview.findOne({
+    revieweeId: employeeId,
+    status: "COMPLETED",
+  })
+    .sort({ submittedAt: -1 })
+    .lean();
+
+  // Get completed reviews for performance history
+  const completedReviews = await PerformanceReview.find({
+    revieweeId: employeeId,
+    status: "COMPLETED",
+  })
+    .sort({ submittedAt: 1 })
+    .lean();
+
+  const performanceHistory = completedReviews
+    .filter(
+      (item: any) =>
+        typeof item.finalRating === "number" &&
+        item.submittedAt,
+    )
+    .map((item: any, index: number) => ({
+      reviewNumber: index + 1,
+      cycleId: item.cycleId,
+      rating: item.finalRating,
+      submittedAt: item.submittedAt,
+    }));
+
+  // Get all goals for the employee
+  const goals = await Goal.find({
+    employeeId,
+  }).lean();
+
+  // Calculate average goal achievement
+  const goalProgressValues = goals
+    .map((goal: any) => {
+      if (
+        typeof goal.targetValue === "number" &&
+        goal.targetValue > 0 &&
+        typeof goal.currentValue === "number"
+      ) {
+        return Math.min(
+          100,
+          Math.max(
+            0,
+            (goal.currentValue / goal.targetValue) * 100,
+          ),
+        );
+      }
+
+      return typeof goal.progress === "number"
+        ? Math.min(100, Math.max(0, goal.progress))
+        : null;
+    })
+    .filter(
+      (value): value is number =>
+        typeof value === "number",
+    );
+
+  const goalAchievement = goalProgressValues.length
+    ? Math.round(
+      goalProgressValues.reduce(
+        (sum, value) => sum + value,
+        0,
+      ) / goalProgressValues.length,
+    )
+    : null;
+
+  // Get 360 feedback summary when a completed review exists
+  let feedbackSummary = null;
+
+  if (review) {
+    feedbackSummary = await getFeedbackSummary(
+      String(review._id),
+    );
+  }
+
+  const feedbackRatings =
+    feedbackSummary?.competencies
+      ?.map((item: any) => Number(item.averageRating))
+      .filter((value: number) => Number.isFinite(value)) ?? [];
+
+  const feedbackRating = feedbackRatings.length
+    ? Math.round(
+      (feedbackRatings.reduce(
+        (sum, value) => sum + value,
+        0,
+      ) /
+        feedbackRatings.length) *
+      10,
+    ) / 10
+    : null;
+
+  return {
+    overallRating: review?.finalRating ?? null,
+
+    performanceHistory,
+
+    managerRating: review?.managerRating ?? null,
+
+    goalAchievement,
+
+    feedbackRating,
+
+    strengths: review?.strengths
+      ? review.strengths
+        .split(/[,\n]+/)
+        .map((item: string) => item.trim())
+        .filter(Boolean)
+      : [],
+
+    developmentAreas: review?.improvements
+      ? review.improvements
+        .split(/[,\n]+/)
+        .map((item: string) => item.trim())
+        .filter(Boolean)
+      : [],
+
+    review: review
+      ? {
+        id: review._id,
+        status: review.status,
+        cycleId: review.cycleId,
+        submittedAt: review.submittedAt,
+      }
+      : null,
+
+    goalCount: goals.length,
+  };
+}
 
 export async function ensureReview(
-  
   cycleId: string,
   revieweeId: string,
   reviewerId: string,
@@ -136,37 +273,36 @@ export async function ensureReview(
     row = await PerformanceReview.findById(doc._id).lean();
 
     const [reviewee, reviewer] = await Promise.all([
-  Employee.findById(revieweeId)
-    .select("userId firstName lastName")
-    .lean(),
-  Employee.findById(reviewerId)
-    .select("userId")
-    .lean(),
-]);
+      Employee.findById(revieweeId)
+        .select("userId firstName lastName")
+        .lean(),
+      Employee.findById(reviewerId)
+        .select("userId")
+        .lean(),
+    ]);
 
-if (reviewee?.userId) {
-  await notify({
-    userId: reviewee.userId,
-    type: "PERFORMANCE",
-    title: "Performance review available",
-    message: "A new performance review has been assigned to you.",
-    link: "/performance",
-    dedupeKey: `performance-review-assigned:${doc._id}:${reviewee.userId}`,
-  });
-}
+    if (reviewee?.userId) {
+      await notify({
+        userId: reviewee.userId,
+        type: "PERFORMANCE",
+        title: "Performance review available",
+        message: "A new performance review has been assigned to you.",
+        link: "/performance",
+        dedupeKey: `performance-review-assigned:${doc._id}:${reviewee.userId}`,
+      });
+    }
 
-if (reviewer?.userId) {
-  await notify({
-    userId: reviewer.userId,
-    type: "PERFORMANCE",
-    title: "Performance review assigned",
-    message: `You have a performance review to complete for ${
-      reviewee?.firstName ?? "an employee"
-    } ${reviewee?.lastName ?? ""}.`,
-    link: "/performance",
-    dedupeKey: `performance-review-manager:${doc._id}:${reviewer.userId}`,
-  });
-}
+    if (reviewer?.userId) {
+      await notify({
+        userId: reviewer.userId,
+        type: "PERFORMANCE",
+        title: "Performance review assigned",
+        message: `You have a performance review to complete for ${reviewee?.firstName ?? "an employee"
+          } ${reviewee?.lastName ?? ""}.`,
+        link: "/performance",
+        dedupeKey: `performance-review-manager:${doc._id}:${reviewer.userId}`,
+      });
+    }
   }
 
   return getReview((row as any)._id);
@@ -203,20 +339,20 @@ export async function submitSelfReview(
   );
 
   const reviewer = await Employee.findById(review.reviewerId)
-  .select("userId")
-  .lean();
+    .select("userId")
+    .lean();
 
-if (reviewer?.userId) {
-  await notify({
-    userId: reviewer.userId,
-    type: "PERFORMANCE",
-    title: "Manager review required",
-    message:
-      "The employee self-review has been submitted and your manager review is now required.",
-    link: "/performance",
-    dedupeKey: `performance-manager-review-required:${id}:${reviewer.userId}`,
-  });
-}
+  if (reviewer?.userId) {
+    await notify({
+      userId: reviewer.userId,
+      type: "PERFORMANCE",
+      title: "Manager review required",
+      message:
+        "The employee self-review has been submitted and your manager review is now required.",
+      link: "/performance",
+      dedupeKey: `performance-manager-review-required:${id}:${reviewer.userId}`,
+    });
+  }
 
   return getReview(id);
 }
@@ -264,19 +400,19 @@ export async function submitManagerReview(
   const rating = Math.round(finalRating);
 
   const revieweeEmployee = await Employee.findById(review.revieweeId)
-  .select("userId firstName lastName")
-  .lean();
+    .select("userId firstName lastName")
+    .lean();
 
-if (revieweeEmployee?.userId) {
-  await notify({
-    userId: revieweeEmployee.userId,
-    type: "PERFORMANCE",
-    title: "Performance review completed",
-    message: `Your performance review has been completed with a final rating of ${finalRating}.`,
-    link: "/performance",
-    dedupeKey: `performance-review-completed:${id}:${revieweeEmployee.userId}`,
-  });
-}
+  if (revieweeEmployee?.userId) {
+    await notify({
+      userId: revieweeEmployee.userId,
+      type: "PERFORMANCE",
+      title: "Performance review completed",
+      message: `Your performance review has been completed with a final rating of ${finalRating}.`,
+      link: "/performance",
+      dedupeKey: `performance-review-completed:${id}:${revieweeEmployee.userId}`,
+    });
+  }
 
 
   // Feed KPI/goal achievement into the automatic outcome decision.
@@ -296,9 +432,9 @@ if (revieweeEmployee?.userId) {
 
   const kpiAchievementPercentage = goalProgressValues.length
     ? Math.round(
-        goalProgressValues.reduce((sum, value) => sum + value, 0) /
-          goalProgressValues.length,
-      )
+      goalProgressValues.reduce((sum, value) => sum + value, 0) /
+      goalProgressValues.length,
+    )
     : null;
 
   const kpiSupportsPromotion =
@@ -374,16 +510,16 @@ if (revieweeEmployee?.userId) {
   }
 
   if (revieweeEmployee?.userId) {
-  await notify({
-    userId: revieweeEmployee.userId,
-    type: "PERFORMANCE",
-    title: "Performance improvement plan initiated",
-    message:
-      "Your completed performance review resulted in a Performance Improvement Plan.",
-    link: "/performance",
-    dedupeKey: `performance-pip-initiated:${id}:${revieweeEmployee.userId}`,
-  });
-}
+    await notify({
+      userId: revieweeEmployee.userId,
+      type: "PERFORMANCE",
+      title: "Performance improvement plan initiated",
+      message:
+        "Your completed performance review resulted in a Performance Improvement Plan.",
+      link: "/performance",
+      dedupeKey: `performance-pip-initiated:${id}:${revieweeEmployee.userId}`,
+    });
+  }
 
   return getReview(id);
 }
@@ -467,8 +603,8 @@ export async function createGoal(input: {
   // corresponding achievement percentage instead of resetting it to zero.
   const progress =
     typeof targetValue === "number" &&
-    targetValue > 0 &&
-    typeof currentValue === "number"
+      targetValue > 0 &&
+      typeof currentValue === "number"
       ? Math.min(100, Math.max(0, Math.round((currentValue / targetValue) * 100)))
       : 0;
 
@@ -591,7 +727,123 @@ export async function updateGoalCurrentValue(
 export async function getGoal(id: string) {
   return normalizeGoal(await Goal.findById(id).lean());
 }
+export async function getGoalHealth(id: string) {
+  const goal = await Goal.findById(id).lean();
 
+  if (!goal) {
+    return undefined;
+  }
+
+  const normalized = normalizeGoal(goal);
+
+  const progress = Math.min(
+    100,
+    Math.max(0, Number(normalized.progress ?? 0)),
+  );
+
+  const createdAt = goal.createdAt
+    ? new Date(goal.createdAt as string)
+    : null;
+
+  const dueDate = goal.dueDate
+    ? new Date(goal.dueDate as string)
+    : null;
+
+  let expectedProgress: number | null = null;
+  let daysRemaining: number | null = null;
+
+  if (
+    createdAt &&
+    dueDate &&
+    !Number.isNaN(createdAt.getTime()) &&
+    !Number.isNaN(dueDate.getTime()) &&
+    dueDate.getTime() > createdAt.getTime()
+  ) {
+    const now = new Date();
+
+    const totalDuration =
+      dueDate.getTime() - createdAt.getTime();
+
+    const elapsedDuration =
+      Math.min(
+        totalDuration,
+        Math.max(0, now.getTime() - createdAt.getTime()),
+      );
+
+    expectedProgress = Math.round(
+      (elapsedDuration / totalDuration) * 100,
+    );
+
+    daysRemaining = Math.max(
+      0,
+      Math.ceil(
+        (dueDate.getTime() - now.getTime()) /
+        (1000 * 60 * 60 * 24),
+      ),
+    );
+  }
+
+  const gap =
+    expectedProgress === null
+      ? null
+      : Math.round(progress - expectedProgress);
+
+  let health: "ON_TRACK" | "NEEDS_ATTENTION" | "AT_RISK" =
+    "ON_TRACK";
+
+  if (progress >= 100) {
+    health = "ON_TRACK";
+  } else if (gap !== null) {
+    if (gap <= -20) {
+      health = "AT_RISK";
+    } else if (gap < 0) {
+      health = "NEEDS_ATTENTION";
+    }
+  }
+
+  const milestones = Array.isArray(goal.milestones)
+    ? goal.milestones
+    : [];
+
+  const completedMilestones = milestones.filter(
+    (milestone: any) => milestone.completed,
+  ).length;
+
+  return {
+    goalId: goal._id,
+    title: goal.title,
+    category: goal.category ?? null,
+
+    progress,
+
+    targetValue:
+      typeof goal.targetValue === "number"
+        ? goal.targetValue
+        : null,
+
+    currentValue:
+      typeof goal.currentValue === "number"
+        ? goal.currentValue
+        : null,
+
+    expectedProgress,
+    gap,
+    daysRemaining,
+
+    health,
+
+    milestones: {
+      total: milestones.length,
+      completed: completedMilestones,
+      completionPercentage:
+        milestones.length > 0
+          ? Math.round(
+            (completedMilestones / milestones.length) * 100,
+          )
+          : null,
+    },
+  };
+}
 export async function getGoalTrend(employeeId: string) {
   const goals = await Goal.find({ employeeId }).lean();
   const values = new Map<string, { total: number; count: number }>();
@@ -714,24 +966,24 @@ function toPipApiDoc(doc: any, managerId: string | null = null) {
 
   const objectives = Array.isArray(storedObjectives)
     ? storedObjectives.map((objective: any) =>
-        typeof objective === "string"
-          ? {
-              title: objective,
-              description: null,
-              target: null,
-              progress: 0,
-              status: "NOT_STARTED",
-              dueDate: plain.endDate,
-            }
-          : {
-              title: objective.title,
-              description: objective.description ?? null,
-              target: objective.target ?? null,
-              progress: objective.progress ?? 0,
-              status: objective.status ?? "NOT_STARTED",
-              dueDate: objective.dueDate ?? plain.endDate,
-            },
-      )
+      typeof objective === "string"
+        ? {
+          title: objective,
+          description: null,
+          target: null,
+          progress: 0,
+          status: "NOT_STARTED",
+          dueDate: plain.endDate,
+        }
+        : {
+          title: objective.title,
+          description: objective.description ?? null,
+          target: objective.target ?? null,
+          progress: objective.progress ?? 0,
+          status: objective.status ?? "NOT_STARTED",
+          dueDate: objective.dueDate ?? plain.endDate,
+        },
+    )
     : [];
 
   return {
@@ -921,17 +1173,17 @@ export async function addPipCheckIn(
     ? (row as any).pipObjectives
     : Array.isArray((row as any).objectives)
       ? (row as any).objectives.map((objective: any) =>
-          typeof objective === "string"
-            ? {
-                title: objective,
-                description: null,
-                target: null,
-                progress: 0,
-                status: "NOT_STARTED",
-                dueDate: row.endDate,
-              }
-            : objective,
-        )
+        typeof objective === "string"
+          ? {
+            title: objective,
+            description: null,
+            target: null,
+            progress: 0,
+            status: "NOT_STARTED",
+            dueDate: row.endDate,
+          }
+          : objective,
+      )
       : [];
 
   const updatedObjectives = existingObjectives.map((objective: any) => ({
@@ -985,10 +1237,10 @@ export async function updatePipStatus(
       ? (row as any).pipObjectives
       : Array.isArray((row as any).objectives)
         ? (row as any).objectives.map((objective: any) =>
-            typeof objective === "string"
-              ? { progress: 0, status: "NOT_STARTED" }
-              : objective,
-          )
+          typeof objective === "string"
+            ? { progress: 0, status: "NOT_STARTED" }
+            : objective,
+        )
         : [];
 
     if (rawObjectives.length === 0) {
@@ -1065,4 +1317,267 @@ export async function getAverageRatingByDepartment() {
       Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 100) /
       100,
   }));
+}
+export async function getAiPerformanceInsights(
+  reviewId: string,
+) {
+  const review = (await getReview(reviewId)) as any;
+
+  if (!review) {
+    return undefined;
+  }
+
+  const goals = await Goal.find({
+    employeeId: review.revieweeId,
+    cycleId: review.cycleId,
+  }).lean();
+
+  const feedbackSummary =
+    await getFeedbackSummary(reviewId);
+
+  const outcome =
+    await getOutcome(reviewId);
+
+  const input = {
+    selfRating: review.selfRating ?? null,
+
+    managerRating:
+      review.managerRating ?? null,
+
+    finalRating:
+      review.finalRating ?? null,
+
+    managerTechnicalRating:
+      review.managerTechnicalRating ?? null,
+
+    managerDeliveryRating:
+      review.managerDeliveryRating ?? null,
+
+    managerBehaviorRating:
+      review.managerBehaviorRating ?? null,
+
+    strengths:
+      review.strengths ?? null,
+
+    improvements:
+      review.improvements ?? null,
+
+    goals: goals.map((goal: any) => ({
+      title: goal.title,
+      progress: normalizeGoal(goal).progress,
+    })),
+
+    feedback:
+      feedbackSummary.competencies.map(
+        (item) => ({
+          competency: item.competency,
+          averageRating: item.averageRating,
+        }),
+      ),
+
+    outcome: outcome
+      ? {
+        incrementRecommendation:
+          outcome.incrementRecommendation,
+
+        promotionEligible:
+          outcome.promotionEligible,
+
+        pipRecommended:
+          outcome.pipRecommended,
+
+        fastTrackEligible:
+          outcome.fastTrackEligible,
+
+        trainingNeeds:
+          outcome.trainingNeeds ?? [],
+      }
+      : null,
+  };
+
+  return generatePerformanceInsights(input);
+}
+export async function getAiDevelopmentPlan(reviewId: string) {
+  const review = await getReview(reviewId);
+
+  if (!review) {
+    throw new Error("Review not found.");
+  }
+
+  const goals = await Goal.find({
+    employeeId: review.revieweeId,
+    cycleId: review.cycleId,
+  }).lean();
+
+  const feedback = await getFeedbackSummary(reviewId);
+  const outcome = await getOutcome(reviewId);
+
+  const input = {
+    selfRating: review.selfRating ?? null,
+    managerRating: review.managerRating ?? null,
+    finalRating: review.finalRating ?? null,
+
+    managerTechnicalRating:
+      review.managerTechnicalRating ?? null,
+
+    managerDeliveryRating:
+      review.managerDeliveryRating ?? null,
+
+    managerBehaviorRating:
+      review.managerBehaviorRating ?? null,
+
+    strengths: review.strengths ?? null,
+    improvements: review.improvements ?? null,
+
+    goals: goals.map((goal: any) => ({
+      title: goal.title,
+      progress: Math.max(
+        0,
+        Math.min(100, Number(goal.progress ?? 0)),
+      ),
+    })),
+
+    feedback: feedback.competencies.map((item: any) => ({
+      competency: item.competency,
+      averageRating: Number(item.averageRating ?? 0),
+    })),
+
+    outcome: outcome
+      ? {
+        incrementRecommendation:
+          outcome.incrementRecommendation,
+
+        promotionEligible:
+          outcome.promotionEligible,
+
+        pipRecommended:
+          outcome.pipRecommended,
+
+        fastTrackEligible:
+          outcome.fastTrackEligible,
+
+        trainingNeeds:
+          outcome.trainingNeeds,
+      }
+      : null,
+  };
+
+  return generateDevelopmentPlan(input);
+}
+export async function getPerformanceChatContext(
+  reviewId: string,
+) {
+  const review = (await getReview(reviewId)) as any;
+
+  if (!review) {
+    return undefined;
+  }
+
+  const goals = await Goal.find({
+    employeeId: review.revieweeId,
+    cycleId: review.cycleId,
+  }).lean();
+
+  const feedbackSummary =
+    await getFeedbackSummary(reviewId);
+
+  const outcome =
+    await getOutcome(reviewId);
+
+  return {
+    selfRating: review.selfRating ?? null,
+    managerRating: review.managerRating ?? null,
+    finalRating: review.finalRating ?? null,
+
+    managerTechnicalRating:
+      review.managerTechnicalRating ?? null,
+
+    managerDeliveryRating:
+      review.managerDeliveryRating ?? null,
+
+    managerBehaviorRating:
+      review.managerBehaviorRating ?? null,
+
+    strengths: review.strengths ?? null,
+    improvements: review.improvements ?? null,
+
+    goals: goals.map((goal: any) => ({
+      title: goal.title,
+      progress: normalizeGoal(goal).progress,
+    })),
+
+    feedback: feedbackSummary.competencies.map(
+      (item: any) => ({
+        competency: item.competency,
+        averageRating: Number(
+          item.averageRating ?? 0,
+        ),
+      }),
+    ),
+
+    outcome: outcome
+      ? {
+        incrementRecommendation:
+          outcome.incrementRecommendation,
+
+        promotionEligible:
+          outcome.promotionEligible,
+
+        pipRecommended:
+          outcome.pipRecommended,
+
+        fastTrackEligible:
+          outcome.fastTrackEligible,
+
+        trainingNeeds:
+          outcome.trainingNeeds ?? [],
+      }
+      : null,
+  };
+}
+export async function getAiPerformanceChat(
+  reviewId: string,
+  question: string,
+) {
+  const context = await getPerformanceChatContext(reviewId);
+
+  if (!context) {
+    return undefined;
+  }
+
+  return generatePerformanceChat(
+    context,
+    question,
+  );
+}
+export async function getAiGoalCoach(
+  goalId: string,
+  question?: string,
+) {
+  const goal = await Goal.findById(goalId).lean();
+
+  if (!goal) {
+    return undefined;
+  }
+
+  const health = await getGoalHealth(goalId);
+
+  const normalized = normalizeGoal(goal);
+
+  return generateGoalCoach(
+    {
+      title: goal.title,
+      description: goal.description ?? null,
+      progress: normalized.progress,
+      target:
+        typeof goal.targetValue === "number"
+          ? goal.targetValue
+          : null,
+      dueDate: goal.dueDate
+        ? new Date(goal.dueDate).toISOString()
+        : null,
+      health: health?.health ?? null,
+    },
+    question,
+  );
 }
