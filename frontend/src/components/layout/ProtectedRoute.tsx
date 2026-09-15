@@ -3,8 +3,16 @@ import { useAuth } from "@/context/AuthContext";
 import type { Role } from "@/types";
 import { Loader2 } from "lucide-react";
 
-export function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: Role[] }) {
-  const { user, isLoading } = useAuth();
+export function ProtectedRoute({
+  children,
+  roles,
+  permissions,
+}: {
+  children: React.ReactNode;
+  roles?: Role[];
+  permissions?: string[];
+}) {
+  const { user, isLoading, hasPermission } = useAuth();
 
   if (isLoading) {
     return (
@@ -15,7 +23,17 @@ export function ProtectedRoute({ children, roles }: { children: React.ReactNode;
   }
 
   if (!user) return <Navigate to="/login" replace />;
-  if (roles && !roles.includes(user.role)) return <Navigate to="/app/dashboard" replace />;
+  const roleAllowed = !roles || roles.includes(user.role);
+  const permissionAllowed =
+    !permissions?.length || permissions.some(hasPermission);
+  if (roles && permissions) {
+    if (!roleAllowed && !permissionAllowed)
+      return <Navigate to="/app/dashboard" replace />;
+  } else if (roles && !roleAllowed) {
+    return <Navigate to="/app/dashboard" replace />;
+  } else if (permissions && !permissionAllowed) {
+    return <Navigate to="/app/dashboard" replace />;
+  }
 
   return <>{children}</>;
 }

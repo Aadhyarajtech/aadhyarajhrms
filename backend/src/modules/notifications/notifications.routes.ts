@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import { isAdmin } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 import * as repo from "./notifications.repository";
@@ -18,15 +18,31 @@ notificationsRouter.use(authenticate);
 
 notificationsRouter.get("/", async (req, res, next) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({
+        error: {
+          message: "Unauthorized",
+        },
+      });
+    }
+
     const unreadOnly = req.query.unreadOnly === "true";
 
-    const [notifications, unreadCount] = await Promise.all([
-      repo.listNotifications(req.user!.userId, unreadOnly),
-      repo.unreadCount(req.user!.userId),
-    ]);
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 50), 1), 100);
 
-    res.json({
-      notifications,
+    const offset = Math.max(Number(req.query.offset ?? 0), 0);
+
+    const result = await repo.listNotifications(
+      req.user.userId,
+      unreadOnly,
+      limit,
+      offset,
+    );
+
+    const unreadCount = await repo.unreadCount(req.user.userId);
+
+    return res.json({
+      ...result,
       unreadCount,
     });
   } catch (err) {
@@ -78,7 +94,7 @@ const announcementSchema = z.object({
 
 notificationsRouter.post(
   "/announcements",
-  isAdmin,
+  requirePermission("announcements.manage"),
   upload.single("attachment"),
   validate(announcementSchema),
   async (req, res, next) => {

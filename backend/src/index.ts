@@ -3,6 +3,7 @@ import { connectDB } from "@/db/connection";
 import { env } from "@/config/env";
 import { logger } from "@/utils/logger";
 import { startEmployeeLifecycleJobs } from "./jobs/employeeLifecycle.job";
+import { startDocumentExpiryJob } from "./jobs/documentExpiry.job";
 import { startAnnouncementScheduler } from "@/modules/announcements/announcement.scheduler";
 
 async function start() {
@@ -17,7 +18,8 @@ async function start() {
   ------------------------------------------------------- */
 
   startEmployeeLifecycleJobs();
-  startAnnouncementScheduler();
+startDocumentExpiryJob();
+startAnnouncementScheduler();
 
   /* -------------------------------------------------------
      EXPRESS APP

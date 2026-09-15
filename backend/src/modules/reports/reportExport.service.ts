@@ -151,6 +151,33 @@ export async function buildExcelReport(data: ReportData): Promise<Buffer> {
         Metric: "Estimated Overtime Hours",
         Value: data.attendance.estimatedOvertimeHours,
       },
+      {
+        Report: "Attendance",
+        Metric: "Late Records",
+        Value: data.attendance.lateRecords ?? 0,
+      },
+      {
+        Report: "Attendance",
+        Metric: "Late Minutes",
+        Value: data.attendance.lateMinutes ?? 0,
+      },
+      {
+        Report: "Attendance",
+        Metric: "Overtime Hours",
+        Value:
+          data.attendance.overtimeHours ??
+          data.attendance.estimatedOvertimeHours,
+      },
+      {
+        Report: "Attendance",
+        Metric: "Comp-Off Credited Records",
+        Value: data.attendance.compOffCreditedRecords ?? 0,
+      },
+      {
+        Report: "Attendance",
+        Metric: "Comp-Off Earned Hours",
+        Value: data.attendance.compOffEarnedHours ?? 0,
+      },
       { Report: "Leave", Metric: "Requests", Value: data.leave.total },
       { Report: "Leave", Metric: "Leave Days", Value: data.leave.totalDays },
       { Report: "Payroll", Metric: "Gross", Value: data.payroll.totalGross },
@@ -172,6 +199,16 @@ export async function buildExcelReport(data: ReportData): Promise<Buffer> {
         Value: data.tickets.averageResolutionHours,
       },
       { Report: "Documents", Metric: "Total", Value: data.documents.total },
+      {
+        Report: "Documents",
+        Metric: "Verified",
+        Value: data.documents.verified,
+      },
+      {
+        Report: "Documents",
+        Metric: "Compliance Rate",
+        Value: `${data.documents.complianceRate ?? 0}%`,
+      },
       ...(data.recruitment
         ? [
             {
@@ -212,6 +249,42 @@ export async function buildExcelReport(data: ReportData): Promise<Buffer> {
   if (hasSection(sections, "attendance")) {
     addSheet("Attendance Daily", data.attendance.daily ?? []);
     addSheet("Attendance Employees", data.attendance.employeeSummary ?? []);
+    addSheet("Attendance Exceptions", [
+      { Metric: "Late Records", Value: data.attendance.lateRecords ?? 0 },
+      { Metric: "Late Minutes", Value: data.attendance.lateMinutes ?? 0 },
+      {
+        Metric: "Early Departure Records",
+        Value: data.attendance.earlyDepartureRecords ?? 0,
+      },
+      {
+        Metric: "Early Departure Minutes",
+        Value: data.attendance.earlyDepartureMinutes ?? 0,
+      },
+      {
+        Metric: "Overtime Hours",
+        Value:
+          data.attendance.overtimeHours ??
+          data.attendance.estimatedOvertimeHours ??
+          0,
+      },
+      {
+        Metric: "Comp-Off Credited Records",
+        Value: data.attendance.compOffCreditedRecords ?? 0,
+      },
+      {
+        Metric: "Comp-Off Earned Hours",
+        Value: data.attendance.compOffEarnedHours ?? 0,
+      },
+      {
+        Metric: "Comp-Off Remaining Hours",
+        Value: data.attendance.compOffRemainingHours ?? 0,
+      },
+    ]);
+    addSheet("Attendance Late Patterns", data.attendance.lateByWeekday ?? []);
+    addSheet(
+      "Attendance Exceptions by Employee",
+      data.attendance.lateEmployeeSummary ?? [],
+    );
   }
 
   if (hasSection(sections, "leave")) {
@@ -261,6 +334,10 @@ export async function buildExcelReport(data: ReportData): Promise<Buffer> {
       {
         Metric: "Assigned Assets",
         Value: data.documents.assignedAssets,
+      },
+      {
+        Metric: "Compliance Rate",
+        Value: `${data.documents.complianceRate ?? 0}%`,
       },
     ]);
   }
@@ -327,6 +404,13 @@ export function buildPdfReport(data: ReportData): Promise<Buffer> {
         data.attendance.estimatedOvertimeHours,
       );
       metric("Regularized Records", data.attendance.regularized);
+      metric("Late Records", data.attendance.lateRecords ?? 0);
+      metric("Late Minutes", data.attendance.lateMinutes ?? 0);
+      metric(
+        "Overtime Hours",
+        data.attendance.overtimeHours ?? data.attendance.estimatedOvertimeHours,
+      );
+      metric("Comp-Off Earned Hours", data.attendance.compOffEarnedHours ?? 0);
     }
 
     if (hasSection(sections, "leave")) {
@@ -378,6 +462,7 @@ export function buildPdfReport(data: ReportData): Promise<Buffer> {
       metric("Verified", data.documents.verified);
       metric("Pending", data.documents.pending);
       metric("Assigned Assets", data.documents.assignedAssets);
+      metric("Compliance Rate", `${data.documents.complianceRate ?? 0}%`);
     }
 
     if (hasSection(sections, "audit") && data.audit) {

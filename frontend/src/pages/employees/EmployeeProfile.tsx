@@ -18,6 +18,7 @@ import {
   Target,
   Clock,
   AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import {
   EmployeesApi,
@@ -51,14 +52,29 @@ import {
 const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
 
 const salarySchema = z.object({
-  basic: z.coerce.number().min(0),
-  hra: z.coerce.number().min(0),
+  ctc: z.coerce.number().positive(),
+  basicPercentage: z.coerce.number().min(40).max(50),
+  hraPercentage: z.coerce.number().min(20).max(40),
+  basic: z.coerce.number().min(0).default(0),
+  hra: z.coerce.number().min(0).default(0),
   conveyance: z.coerce.number().min(0),
   medical: z.coerce.number().min(0),
-  specialAllowance: z.coerce.number().min(0),
-  pf: z.coerce.number().min(0),
-  professionalTax: z.coerce.number().min(0),
-  incomeTax: z.coerce.number().min(0),
+  specialAllowance: z.coerce.number().min(0).default(0),
+  performanceBonus: z.coerce.number().min(0).default(0),
+  advanceRecovery: z.coerce.number().min(0).default(0),
+  overtimeRate: z.coerce.number().min(0).default(1.5),
+  pf: z.coerce.number().min(0).optional(),
+  professionalTax: z.coerce.number().min(0).optional(),
+  incomeTax: z.coerce.number().min(0).optional(),
+  taxRegime: z.enum(["NEW", "OLD"]).default("NEW"),
+  taxYear: z.coerce.number().int().min(2020).default(2026),
+  taxOtherIncome: z.coerce.number().min(0).default(0),
+  taxHraExemption: z.coerce.number().min(0).default(0),
+  taxDeduction80C: z.coerce.number().min(0).default(0),
+  taxDeduction80D: z.coerce.number().min(0).default(0),
+  taxDeduction80CCD1B: z.coerce.number().min(0).default(0),
+  taxDeduction80TTA: z.coerce.number().min(0).default(0),
+  taxPreviousTds: z.coerce.number().min(0).default(0),
 });
 type SalaryForm = z.infer<typeof salarySchema>;
 
@@ -74,16 +90,35 @@ export default function EmployeeProfile() {
   const [docTypeOpen, setDocTypeOpen] = useState(false);
 
   const effectiveId = id ?? user?.employee?.id;
-  const {
-    data: employee,
-    isLoading,
-    isError,
-    error,
-  } = useQuery({
+  const employeeQuery = useQuery({
     queryKey: ["employee", effectiveId],
     queryFn: () => EmployeesApi.get(effectiveId!),
     enabled: !!effectiveId,
   });
+
+  // Admin employee-profile pages must not remain on the skeleton forever if
+  // the single-employee endpoint fails. The Employees directory endpoint is
+  // already available to SUPER_ADMIN/HR_ADMIN, so use it as a safe fallback.
+  const employeeListFallbackQuery = useQuery({
+    queryKey: ["employee", "profile-fallback", effectiveId],
+    queryFn: () => EmployeesApi.list({ page: 1, pageSize: 100 }),
+    enabled:
+      !!effectiveId &&
+      employeeQuery.isError &&
+      !!user &&
+      ADMIN_ROLES.includes(user.role),
+  });
+
+  const employee =
+    employeeQuery.data ??
+    employeeListFallbackQuery.data?.employees.find(
+      (item) => item.id === effectiveId,
+    );
+  const isLoading =
+    employeeQuery.isLoading ||
+    (employeeQuery.isError && employeeListFallbackQuery.isLoading);
+  const isError = employeeQuery.isError && !employee;
+  const error = employeeQuery.error;
 
   const isSelf = user?.employee?.id === effectiveId;
   const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
@@ -100,110 +135,106 @@ export default function EmployeeProfile() {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
       showToast("Employee onboarding completed successfully.");
     },
-    
+
     onError: (error) => {
       showToast(getErrorMessage(error), "error");
     },
   });
 
   const confirmProbationMutation = useMutation({
-  mutationFn: async () => {
-    if (!employee) throw new Error("Employee not found.");
-    return EmployeesApi.confirmProbation(employee.id);
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({
-      queryKey: ["employee", effectiveId],
-    });
-    queryClient.invalidateQueries({ queryKey: ["employees"] });
-    showToast("Employee probation confirmed successfully.");
-  },
-  onError: (error) => {
-    showToast(getErrorMessage(error), "error");
-  },
-});
+    mutationFn: async () => {
+      if (!employee) throw new Error("Employee not found.");
+      return EmployeesApi.confirmProbation(employee.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["employee", effectiveId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      showToast("Employee probation confirmed successfully.");
+    },
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
 
-const startNoticePeriodMutation = useMutation({
-  mutationFn: (data: {
-    noticeDays: number;
-    resignationDate: string;
-    resignationReason: string;
-    employeeRemarks: string;
-    hrRemarks: string;
-  }) =>
-    api.post(`/employees/${employee?.id}/start-notice-period`, data),
+  const startNoticePeriodMutation = useMutation({
+    mutationFn: (data: {
+      noticeDays: number;
+      resignationDate: string;
+      resignationReason: string;
+      employeeRemarks: string;
+      hrRemarks: string;
+    }) => api.post(`/employees/${employee?.id}/start-notice-period`, data),
 
-  onSuccess: () => {
-    queryClient.invalidateQueries({
-      queryKey: ["employee", effectiveId],
-    });
-    queryClient.invalidateQueries({ queryKey: ["employees"] });
-    showToast("Employee notice period started successfully.");
-  },
-  onError: (error) => {
-    showToast(getErrorMessage(error), "error");
-  },
-});
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["employee", effectiveId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      showToast("Employee notice period started successfully.");
+    },
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
 
-const extendProbationMutation = useMutation({
-  mutationFn: async (data: {
-    extensionDays: number;
-    remarks?: string;
-  }) => {
-    if (!employee) {
-      throw new Error("Employee not found.");
-    }
+  const extendProbationMutation = useMutation({
+    mutationFn: async (data: { extensionDays: number; remarks?: string }) => {
+      if (!employee) {
+        throw new Error("Employee not found.");
+      }
 
-    return EmployeesApi.extendProbation(employee.id, data);
-  },
+      return EmployeesApi.extendProbation(employee.id, data);
+    },
 
-  onSuccess: () => {
-    queryClient.invalidateQueries({
-      queryKey: ["employee", effectiveId],
-    });
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["employee", effectiveId],
+      });
 
-    queryClient.invalidateQueries({
-      queryKey: ["employees"],
-    });
+      queryClient.invalidateQueries({
+        queryKey: ["employees"],
+      });
 
-    showToast("Employee probation extended successfully.");
-  },
+      showToast("Employee probation extended successfully.");
+    },
 
-  onError: (error) => {
-    showToast(getErrorMessage(error), "error");
-  },
-});
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
 
-const terminateEmployeeMutation = useMutation({
-  mutationFn: async (data: {
-    terminationDate: string;
-    terminationReason: string;
-    employeeRemarks: string;
-    hrRemarks: string;
-  }) => {
-    if (!employee) {
-      throw new Error("Employee not found.");
-    }
+  const terminateEmployeeMutation = useMutation({
+    mutationFn: async (data: {
+      terminationDate: string;
+      terminationReason: string;
+      employeeRemarks: string;
+      hrRemarks: string;
+    }) => {
+      if (!employee) {
+        throw new Error("Employee not found.");
+      }
 
-    return api.post(`/employees/${employee.id}/terminate`, data);
-  },
+      return api.post(`/employees/${employee.id}/terminate`, data);
+    },
 
-  onSuccess: () => {
-    queryClient.invalidateQueries({
-      queryKey: ["employee", effectiveId],
-    });
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["employee", effectiveId],
+      });
 
-    queryClient.invalidateQueries({
-      queryKey: ["employees"],
-    });
+      queryClient.invalidateQueries({
+        queryKey: ["employees"],
+      });
 
-    showToast("Employee terminated successfully.");
-  },
+      showToast("Employee terminated successfully.");
+    },
 
-  onError: (error) => {
-    showToast(getErrorMessage(error), "error");
-  },
-});
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
 
   const updateOffboardingChecklistMutation = useMutation({
     mutationFn: async (payload: {
@@ -214,10 +245,7 @@ const terminateEmployeeMutation = useMutation({
     }) => {
       if (!employee) throw new Error("Employee not found.");
 
-      return EmployeesApi.updateOffboardingChecklist(
-        employee.id,
-        payload,
-      );
+      return EmployeesApi.updateOffboardingChecklist(employee.id, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -235,33 +263,32 @@ const terminateEmployeeMutation = useMutation({
   });
 
   const completeOffboardingMutation = useMutation({
-  mutationFn: async () => {
-    if (!employee) {
-      throw new Error("Employee not found.");
-    }
+    mutationFn: async () => {
+      if (!employee) {
+        throw new Error("Employee not found.");
+      }
 
-    return EmployeesApi.completeOffboarding(employee.id);
-  },
+      return EmployeesApi.completeOffboarding(employee.id);
+    },
 
-  onSuccess: () => {
-    queryClient.invalidateQueries({
-      queryKey: ["employee", effectiveId],
-    });
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["employee", effectiveId],
+      });
 
-    queryClient.invalidateQueries({
-      queryKey: ["employees"],
-    });
+      queryClient.invalidateQueries({
+        queryKey: ["employees"],
+      });
 
-    showToast(
-      "Employee offboarding completed successfully. Status changed to RESIGNED.",
-    );
-  },
+      showToast(
+        "Employee offboarding completed successfully. Status changed to RESIGNED.",
+      );
+    },
 
-  onError: (error) => {
-    showToast(getErrorMessage(error), "error");
-  },
-});
-  
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
 
   useEffect(() => {
     if (!effectiveId || !user || isAdmin || isSelf) return;
@@ -279,6 +306,18 @@ const terminateEmployeeMutation = useMutation({
         icon={AlertCircle}
         title="Unable to load profile"
         description={getErrorMessage(error)}
+        action={
+          <Button
+            variant="outline"
+            leftIcon={<RefreshCw size={14} />}
+            onClick={() => {
+              void employeeQuery.refetch();
+              if (isAdmin) void employeeListFallbackQuery.refetch();
+            }}
+          >
+            Try again
+          </Button>
+        }
       />
     );
   }
@@ -304,7 +343,7 @@ const terminateEmployeeMutation = useMutation({
   return (
     <div>
       <Card className="mb-6 bg-gradient-to-br from-white to-canvas">
-  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-col items-center gap-4 sm:flex-row">
             <Avatar
               firstName={employee.firstName}
@@ -345,16 +384,16 @@ const terminateEmployeeMutation = useMutation({
           </div>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
             <Badge
-  tone="brand"
-  className="shrink-0 whitespace-nowrap px-3 py-1.5 font-mono text-[12px]"
->
+              tone="brand"
+              className="shrink-0 whitespace-nowrap px-3 py-1.5 font-mono text-[12px]"
+            >
               {employee.employeeCode}
             </Badge>
             {isAdmin && employee.status === "ONBOARDING" && (
               <Button
-  size="sm"
-  className="whitespace-nowrap"
-  onClick={() => {
+                size="sm"
+                className="whitespace-nowrap"
+                onClick={() => {
                   if (
                     window.confirm(
                       "Are you sure you want to complete onboarding for this employee?",
@@ -368,199 +407,205 @@ const terminateEmployeeMutation = useMutation({
                 Complete Onboarding
               </Button>
             )}
-{isAdmin && employee.status === "ON_PROBATION" && (
-  <Button
-    size="sm"
-    onClick={() => {
-      if (
-        window.confirm(
-          "Are you sure you want to confirm this employee after probation?",
-        )
-      ) {
-        confirmProbationMutation.mutate();
-      }
-    }}
-    isLoading={confirmProbationMutation.isPending}
-  >
-    Confirm Employee
-  </Button>
-)}
+            {isAdmin && employee.status === "ON_PROBATION" && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Are you sure you want to confirm this employee after probation?",
+                    )
+                  ) {
+                    confirmProbationMutation.mutate();
+                  }
+                }}
+                isLoading={confirmProbationMutation.isPending}
+              >
+                Confirm Employee
+              </Button>
+            )}
 
-{isAdmin && employee.status === "ON_PROBATION" && (
-  <Button
-  size="sm"
-  variant="outline"
-  className="whitespace-nowrap"
-  onClick={() => {
-      const value = window.prompt(
-        "Enter probation extension in days:",
-        "30",
-      );
+            {isAdmin && employee.status === "ON_PROBATION" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="whitespace-nowrap"
+                onClick={() => {
+                  const value = window.prompt(
+                    "Enter probation extension in days:",
+                    "30",
+                  );
 
-      if (value === null) return;
+                  if (value === null) return;
 
-      const extensionDays = Number(value);
+                  const extensionDays = Number(value);
 
-      if (!Number.isInteger(extensionDays) || extensionDays < 1) {
-        showToast(
-          "Please enter a valid extension of at least 1 day.",
-          "error",
-        );
-        return;
-      }
+                  if (!Number.isInteger(extensionDays) || extensionDays < 1) {
+                    showToast(
+                      "Please enter a valid extension of at least 1 day.",
+                      "error",
+                    );
+                    return;
+                  }
 
-      const remarks =
-        window.prompt("Enter probation extension remarks (optional):") || "";
+                  const remarks =
+                    window.prompt(
+                      "Enter probation extension remarks (optional):",
+                    ) || "";
 
-      if (
-        window.confirm(
-          `Extend this employee's probation by ${extensionDays} day(s)?`,
-        )
-      ) {
-        extendProbationMutation.mutate({
-          extensionDays,
-          remarks: remarks.trim() || undefined,
-        });
-      }
-    }}
-    isLoading={extendProbationMutation.isPending}
-  >
-    Extend Probation
-  </Button>
-)}
+                  if (
+                    window.confirm(
+                      `Extend this employee's probation by ${extensionDays} day(s)?`,
+                    )
+                  ) {
+                    extendProbationMutation.mutate({
+                      extensionDays,
+                      remarks: remarks.trim() || undefined,
+                    });
+                  }
+                }}
+                isLoading={extendProbationMutation.isPending}
+              >
+                Extend Probation
+              </Button>
+            )}
 
-{isAdmin &&
-  (employee.status === "ACTIVE" ||
-    employee.status === "ON_PROBATION") && (
-    <Button
-  size="sm"
-  variant="outline"
-  className="whitespace-nowrap"
-  onClick={() => {
-        const value = window.prompt(
-          "Enter notice period in days:",
-          "30",
-        );
+            {isAdmin &&
+              (employee.status === "ACTIVE" ||
+                employee.status === "ON_PROBATION") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="whitespace-nowrap"
+                  onClick={() => {
+                    const value = window.prompt(
+                      "Enter notice period in days:",
+                      "30",
+                    );
 
-        if (value === null) return;
+                    if (value === null) return;
 
-        const noticeDays = Number(value);
+                    const noticeDays = Number(value);
 
-        if (!Number.isInteger(noticeDays) || noticeDays < 1) {
-          showToast(
-            "Please enter a valid notice period of at least 1 day.",
-            "error",
-          );
-          return;
-        }
+                    if (!Number.isInteger(noticeDays) || noticeDays < 1) {
+                      showToast(
+                        "Please enter a valid notice period of at least 1 day.",
+                        "error",
+                      );
+                      return;
+                    }
 
-        const resignationDate = window.prompt(
-          "Enter resignation date (YYYY-MM-DD):",
-          new Date().toISOString().split("T")[0],
-        );
+                    const resignationDate = window.prompt(
+                      "Enter resignation date (YYYY-MM-DD):",
+                      new Date().toISOString().split("T")[0],
+                    );
 
-        if (!resignationDate) {
-          showToast("Please enter the resignation date.", "error");
-          return;
-        }
+                    if (!resignationDate) {
+                      showToast("Please enter the resignation date.", "error");
+                      return;
+                    }
 
-        const resignationReason = window.prompt(
-          "Enter resignation reason:",
-        );
+                    const resignationReason = window.prompt(
+                      "Enter resignation reason:",
+                    );
 
-        if (!resignationReason?.trim()) {
-          showToast("Please enter the resignation reason.", "error");
-          return;
-        }
+                    if (!resignationReason?.trim()) {
+                      showToast(
+                        "Please enter the resignation reason.",
+                        "error",
+                      );
+                      return;
+                    }
 
-        const employeeRemarks =
-          window.prompt("Enter employee remarks (optional):") ?? "";
+                    const employeeRemarks =
+                      window.prompt("Enter employee remarks (optional):") ?? "";
 
-        const hrRemarks =
-          window.prompt("Enter HR remarks (optional):") ?? "";
+                    const hrRemarks =
+                      window.prompt("Enter HR remarks (optional):") ?? "";
 
-        if (
-          window.confirm(
-            `Start ${noticeDays}-day notice period for this employee?`,
-          )
-        ) {
-          startNoticePeriodMutation.mutate({
-            noticeDays,
-            resignationDate,
-            resignationReason: resignationReason.trim(),
-            employeeRemarks: employeeRemarks.trim(),
-            hrRemarks: hrRemarks.trim(),
-          });
-        }
-      }}
-      isLoading={startNoticePeriodMutation.isPending}
-    >
-      Start Notice Period
-    </Button>
-  )}
+                    if (
+                      window.confirm(
+                        `Start ${noticeDays}-day notice period for this employee?`,
+                      )
+                    ) {
+                      startNoticePeriodMutation.mutate({
+                        noticeDays,
+                        resignationDate,
+                        resignationReason: resignationReason.trim(),
+                        employeeRemarks: employeeRemarks.trim(),
+                        hrRemarks: hrRemarks.trim(),
+                      });
+                    }
+                  }}
+                  isLoading={startNoticePeriodMutation.isPending}
+                >
+                  Start Notice Period
+                </Button>
+              )}
 
-  {isAdmin &&
-  (employee.status === "ACTIVE" ||
-    employee.status === "ON_PROBATION") && (
-    <Button
-  size="sm"
-  variant="danger"
-  className="whitespace-nowrap"
-  onClick={() => {
-        const terminationDate = window.prompt(
-          "Enter termination date (YYYY-MM-DD):",
-          new Date().toISOString().split("T")[0],
-        );
+            {isAdmin &&
+              (employee.status === "ACTIVE" ||
+                employee.status === "ON_PROBATION") && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  className="whitespace-nowrap"
+                  onClick={() => {
+                    const terminationDate = window.prompt(
+                      "Enter termination date (YYYY-MM-DD):",
+                      new Date().toISOString().split("T")[0],
+                    );
 
-        if (!terminationDate) return;
+                    if (!terminationDate) return;
 
-        const terminationReason = window.prompt(
-          "Enter termination reason:",
-        );
+                    const terminationReason = window.prompt(
+                      "Enter termination reason:",
+                    );
 
-        if (!terminationReason?.trim()) {
-          showToast("Please enter the termination reason.", "error");
-          return;
-        }
+                    if (!terminationReason?.trim()) {
+                      showToast(
+                        "Please enter the termination reason.",
+                        "error",
+                      );
+                      return;
+                    }
 
-        const employeeRemarks =
-          window.prompt("Enter employee remarks (optional):") ?? "";
+                    const employeeRemarks =
+                      window.prompt("Enter employee remarks (optional):") ?? "";
 
-        const hrRemarks =
-          window.prompt("Enter HR remarks (optional):") ?? "";
+                    const hrRemarks =
+                      window.prompt("Enter HR remarks (optional):") ?? "";
 
-        if (
-          window.confirm(
-            "Are you sure you want to terminate this employee?",
-          )
-        ) {
-          terminateEmployeeMutation.mutate({
-            terminationDate,
-            terminationReason: terminationReason.trim(),
-            employeeRemarks: employeeRemarks.trim(),
-            hrRemarks: hrRemarks.trim(),
-          });
-        }
-      }}
-      isLoading={terminateEmployeeMutation.isPending}
-    >
-      Terminate Employee
-    </Button>
-  )}
-            
-           {canEdit && employee.status !== "RESIGNED" && (
-  <Button
-    size="sm"
-    variant="outline"
-    className="whitespace-nowrap"
-    leftIcon={<Edit3 size={14} />}
-    onClick={() => setEditOpen(true)}
-  >
-    Edit
-  </Button>
-)}
+                    if (
+                      window.confirm(
+                        "Are you sure you want to terminate this employee?",
+                      )
+                    ) {
+                      terminateEmployeeMutation.mutate({
+                        terminationDate,
+                        terminationReason: terminationReason.trim(),
+                        employeeRemarks: employeeRemarks.trim(),
+                        hrRemarks: hrRemarks.trim(),
+                      });
+                    }
+                  }}
+                  isLoading={terminateEmployeeMutation.isPending}
+                >
+                  Terminate Employee
+                </Button>
+              )}
 
-            
+            {canEdit && employee.status !== "RESIGNED" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="whitespace-nowrap"
+                leftIcon={<Edit3 size={14} />}
+                onClick={() => setEditOpen(true)}
+              >
+                Edit
+              </Button>
+            )}
           </div>
         </div>
         {employee.managerFirstName && (
@@ -574,32 +619,28 @@ const terminateEmployeeMutation = useMutation({
       </Card>
 
       <div className="mb-6 w-full overflow-x-auto pb-1">
-  <Tabs
-    tabs={tabs}
-    active={tab}
-    onChange={setTab}
-    className="w-max min-w-full"
-  />
-</div>
+        <Tabs
+          tabs={tabs}
+          active={tab}
+          onChange={setTab}
+          className="w-max min-w-full"
+        />
+      </div>
 
- {tab === "overview" && (
-  <OverviewTab
-    employee={employee}
-    isAdmin={isAdmin}
-    onUpdateOffboardingChecklist={(payload) =>
-      updateOffboardingChecklistMutation.mutate(payload)
-    }
-    isUpdatingOffboardingChecklist={
-      updateOffboardingChecklistMutation.isPending
-    }
-    onCompleteOffboarding={() =>
-      completeOffboardingMutation.mutate()
-    }
-    isCompletingOffboarding={
-      completeOffboardingMutation.isPending
-    }
-  />
-)}
+      {tab === "overview" && (
+        <OverviewTab
+          employee={employee}
+          isAdmin={isAdmin}
+          onUpdateOffboardingChecklist={(payload) =>
+            updateOffboardingChecklistMutation.mutate(payload)
+          }
+          isUpdatingOffboardingChecklist={
+            updateOffboardingChecklistMutation.isPending
+          }
+          onCompleteOffboarding={() => completeOffboardingMutation.mutate()}
+          isCompletingOffboarding={completeOffboardingMutation.isPending}
+        />
+      )}
       {tab === "attendance" && <AttendanceTab employeeId={employee.id} />}
       {tab === "leave" && (
         <LeaveTab employeeId={employee.id} canManage={isAdmin} />
@@ -631,6 +672,8 @@ const terminateEmployeeMutation = useMutation({
           open={salaryOpen}
           onClose={() => setSalaryOpen(false)}
           employeeId={employee.id}
+          employeeState={employee.state}
+          dateOfBirth={employee.dateOfBirth}
         />
       )}
       {isAdmin && (
@@ -657,7 +700,11 @@ function getNoticePeriodEndDate(employee: any): string | null {
   const startDate = new Date(employee.noticeStartDate);
   const noticeDays = Number(employee.noticeDays);
 
-  if (Number.isNaN(startDate.getTime()) || !Number.isInteger(noticeDays) || noticeDays < 1) {
+  if (
+    Number.isNaN(startDate.getTime()) ||
+    !Number.isInteger(noticeDays) ||
+    noticeDays < 1
+  ) {
     return null;
   }
 
@@ -686,8 +733,6 @@ function OverviewTab({
   onCompleteOffboarding: () => void;
   isCompletingOffboarding: boolean;
 }) {
-
-
   const education = Array.isArray(employee.education) ? employee.education : [];
   const certifications = Array.isArray(employee.certifications)
     ? employee.certifications
@@ -698,10 +743,10 @@ function OverviewTab({
   const skills = Array.isArray(employee.skills) ? employee.skills : [];
 
   const offboardingCompleted =
-  employee.offboardingChecklist?.assetReturn === true &&
-  employee.offboardingChecklist?.accessRevoked === true &&
-  employee.offboardingChecklist?.exitInterview === true &&
-  employee.offboardingChecklist?.finalSettlement === true;
+    employee.offboardingChecklist?.assetReturn === true &&
+    employee.offboardingChecklist?.accessRevoked === true &&
+    employee.offboardingChecklist?.exitInterview === true &&
+    employee.offboardingChecklist?.finalSettlement === true;
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -773,33 +818,33 @@ function OverviewTab({
         </Card>
 
         <Card className="h-fit self-start bg-gradient-to-br from-brand-600 to-brand-800 p-5 text-white">
-  <div className="space-y-4">
-    <div>
-      <p className="text-[12px] font-medium uppercase tracking-wide text-white/70">
-        System role
-      </p>
-      <p className="mt-1.5 font-display text-xl font-medium">
-        {employee.role ? employee.role.replace(/_/g, " ") : "—"}
-      </p>
-    </div>
+          <div className="space-y-4">
+            <div>
+              <p className="text-[12px] font-medium uppercase tracking-wide text-white/70">
+                System role
+              </p>
+              <p className="mt-1.5 font-display text-xl font-medium">
+                {employee.role ? employee.role.replace(/_/g, " ") : "—"}
+              </p>
+            </div>
 
-    <div className="h-px bg-white/15" />
+            <div className="h-px bg-white/15" />
 
-    <div>
-      <p className="text-[12px] font-medium uppercase tracking-wide text-white/70">
-        Designation level
-      </p>
-      <p className="mt-1.5 break-words text-[14px] leading-6">
-        {employee.designationTitle ?? "—"} · Level{" "}
-        {employee.designationLevel ?? "—"}
-      </p>
-    </div>
-  </div>
-</Card>
+            <div>
+              <p className="text-[12px] font-medium uppercase tracking-wide text-white/70">
+                Designation level
+              </p>
+              <p className="mt-1.5 break-words text-[14px] leading-6">
+                {employee.designationTitle ?? "—"} · Level{" "}
+                {employee.designationLevel ?? "—"}
+              </p>
+            </div>
+          </div>
+        </Card>
       </div>
 
-            {(employee.status === "NOTICE_PERIOD" ||
-  employee.status === "RESIGNED") && (
+      {(employee.status === "NOTICE_PERIOD" ||
+        employee.status === "RESIGNED") && (
         <Card>
           <CardHeader title="Notice Period Details" />
 
@@ -843,79 +888,73 @@ function OverviewTab({
 
             <Info
               label="Resignation reason"
-              value={
-                employee.resignationDetails?.resignationReason || "—"
-              }
+              value={employee.resignationDetails?.resignationReason || "—"}
             />
 
             <Info
               label="Employee remarks"
-              value={
-                employee.resignationDetails?.employeeRemarks || "—"
-              }
+              value={employee.resignationDetails?.employeeRemarks || "—"}
             />
 
             <Info
               label="HR remarks"
-              value={
-                employee.resignationDetails?.hrRemarks || "—"
-              }
+              value={employee.resignationDetails?.hrRemarks || "—"}
             />
           </dl>
         </Card>
       )}
 
       <Info
-  label="Offboarding completed"
-  value={
-    employee.offboardingChecklist?.completedAt
-      ? formatDate(employee.offboardingChecklist.completedAt)
-      : "—"
-  }
-/>
-
-{employee.status === "TERMINATED" && (
-  <div className="mt-6 border-t border-line pt-5">
-    <h4 className="mb-4 text-sm font-semibold text-ink">
-      Termination Details
-    </h4>
-
-    <dl className="grid grid-cols-1 gap-y-4 text-[13.5px] sm:grid-cols-2 lg:grid-cols-4">
-      <Info
-        label="Termination date"
+        label="Offboarding completed"
         value={
-          employee.terminationDetails?.terminationDate
-            ? formatDate(employee.terminationDetails.terminationDate)
+          employee.offboardingChecklist?.completedAt
+            ? formatDate(employee.offboardingChecklist.completedAt)
             : "—"
         }
       />
 
-      <Info
-        label="Termination reason"
-        value={employee.terminationDetails?.terminationReason || "—"}
-      />
+      {employee.status === "TERMINATED" && (
+        <div className="mt-6 border-t border-line pt-5">
+          <h4 className="mb-4 text-sm font-semibold text-ink">
+            Termination Details
+          </h4>
 
-      <Info
-        label="Employee remarks"
-        value={employee.terminationDetails?.employeeRemarks || "—"}
-      />
+          <dl className="grid grid-cols-1 gap-y-4 text-[13.5px] sm:grid-cols-2 lg:grid-cols-4">
+            <Info
+              label="Termination date"
+              value={
+                employee.terminationDetails?.terminationDate
+                  ? formatDate(employee.terminationDetails.terminationDate)
+                  : "—"
+              }
+            />
 
-      <Info
-        label="HR remarks"
-        value={employee.terminationDetails?.hrRemarks || "—"}
-      />
-    </dl>
-  </div>
-)}
+            <Info
+              label="Termination reason"
+              value={employee.terminationDetails?.terminationReason || "—"}
+            />
 
-            {/* Employee Lifecycle */}
+            <Info
+              label="Employee remarks"
+              value={employee.terminationDetails?.employeeRemarks || "—"}
+            />
+
+            <Info
+              label="HR remarks"
+              value={employee.terminationDetails?.hrRemarks || "—"}
+            />
+          </dl>
+        </div>
+      )}
+
+      {/* Employee Lifecycle */}
       <Card className="overflow-hidden">
-  <div className="mb-6 border-b border-line/70 pb-4">
-    <CardHeader
-      title="Employee Lifecycle"
-      subtitle="Current employment journey and lifecycle details"
-    />
-  </div>
+        <div className="mb-6 border-b border-line/70 pb-4">
+          <CardHeader
+            title="Employee Lifecycle"
+            subtitle="Current employment journey and lifecycle details"
+          />
+        </div>
 
         <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
           <Info
@@ -926,9 +965,7 @@ function OverviewTab({
           <Info
             label="Joining date"
             value={
-              employee.dateOfJoining
-                ? formatDate(employee.dateOfJoining)
-                : "—"
+              employee.dateOfJoining ? formatDate(employee.dateOfJoining) : "—"
             }
           />
 
@@ -951,344 +988,332 @@ function OverviewTab({
           />
         </div>
 
-
         {employee.status === "NOTICE_PERIOD" && (
-  <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-    <Info
-      label="Notice period start"
-      value={
-        employee.noticeStartDate
-          ? formatDate(employee.noticeStartDate)
-          : "—"
-      }
-    />
-
-    <Info
-      label="Last working date"
-      value={
-        getNoticePeriodEndDate(employee)
-          ? formatDate(getNoticePeriodEndDate(employee)!)
-          : "—"
-      }
-    />
-
-    <Info
-      label="Notice period"
-      value={
-        employee.noticeDays !== null &&
-        employee.noticeDays !== undefined
-          ? `${employee.noticeDays} days`
-          : "—"
-      }
-    />
-
-    <Info
-  label="Days remaining"
-  value={
-    employee.lastWorkingDate
-      ? `${Math.max(
-          0,
-          Math.ceil(
-            (new Date(employee.lastWorkingDate).getTime() -
-              new Date().setHours(0, 0, 0, 0)) /
-              (1000 * 60 * 60 * 24),
-          ),
-        )} days`
-      : "—"
-  }
-/>
-
-<div className="sm:col-span-2 lg:col-span-3">
-  <p className="text-sm text-muted-foreground">
-    Notice Period Progress
-  </p>
-
-  {employee.noticeStartDate && employee.lastWorkingDate ? (
-    <>
-      {(() => {
-        const progress = Math.min(
-          100,
-          Math.max(
-            0,
-            Math.round(
-              ((new Date().getTime() -
-                new Date(employee.noticeStartDate).getTime()) /
-                (new Date(employee.lastWorkingDate).getTime() -
-                  new Date(employee.noticeStartDate).getTime())) *
-                100,
-            ),
-          ),
-        );
-
-        return (
-          <>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-
-            <p className="mt-2 text-sm font-medium">
-              {progress}% completed
-            </p>
-          </>
-        );
-      })()}
-    </>
-  ) : (
-    <p className="font-medium">—</p>
-  )}
-</div>
-
-    <Info
-      label="Resignation date"
-      value={
-        employee.resignationDetails?.resignationDate
-          ? formatDate(employee.resignationDetails.resignationDate)
-          : "—"
-      }
-    />
-
-    <Info
-      label="Resignation reason"
-      value={
-        employee.resignationDetails?.resignationReason || "—"
-      }
-    />
-
-    <Info
-      label="Employee remarks"
-      value={
-        employee.resignationDetails?.employeeRemarks || "—"
-      }
-    />
-
-    <Info
-      label="HR remarks"
-      value={
-        employee.resignationDetails?.hrRemarks || "—"
-      }
-    />
-  </div>
-)}
-
-        <div className="mt-8 border-t border-line/70 pt-6">
-  <h3 className="mb-5 text-sm font-semibold text-ink">
-    Lifecycle progress
-  </h3>
-
-  <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
-    {[
-      "ONBOARDING",
-      "ACTIVE",
-      "ON_PROBATION",
-      "NOTICE_PERIOD",
-      "RESIGNED",
-      "TERMINATED",
-    ].map((stage, index, stages) => (
-      <div key={stage} className="flex items-center gap-x-2">
-        <span
-          className={`rounded-full px-3 py-1.5 text-[11px] font-semibold whitespace-nowrap ${
-            employee.status === stage
-              ? "bg-brand-600 text-white"
-              : "bg-canvas text-ink-faint"
-          }`}
-        >
-          {stage.replace(/_/g, " ")}
-        </span>
-
-        {index < stages.length - 1 && (
-          <span className="text-sm text-ink-faint">→</span>
-        )}
-      </div>
-    ))}
-  </div>
-</div>
-
-        {employee.status === "ON_PROBATION" && (
-  <div className="mt-5 rounded-2xl border border-line/60 p-4">
-    <p className="text-sm font-medium text-ink">
-      Probation Period
-    </p>
-
-    {employee.probationExtensionDetails ? (
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Info
-          label="Extension days"
-          value={`${employee.probationExtensionDetails.extensionDays} days`}
-        />
-
-        <Info
-          label="Extended from"
-          value={
-            employee.probationExtensionDetails.extendedFrom
-              ? formatDate(
-                  employee.probationExtensionDetails.extendedFrom,
-                )
-              : "—"
-          }
-        />
-
-        <Info
-          label="Extended to"
-          value={formatDate(employee.probationExtensionDetails.extendedTo)}
-        />
-
-        <Info
-          label="Remarks"
-          value={employee.probationExtensionDetails.remarks || "—"}
-        />
-
-        <Info
-          label="Extended at"
-          value={formatDate(employee.probationExtensionDetails.extendedAt)}
-        />
-      </div>
-    ) : (
-      <p className="mt-1 text-[13px] text-ink-soft">
-        No probation extension has been applied.
-      </p>
-    )}
-  </div>
-)}
-
-       {employee.status === "NOTICE_PERIOD" && (
-  <div className="mt-5 rounded-2xl border border-line/60 p-4">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p className="text-sm font-medium text-ink">
-          Offboarding Checklist
-        </p>
-
-        <p className="mt-1 text-[12px] text-ink-faint">
-          Complete all required offboarding activities before closing the
-          employee lifecycle.
-        </p>
-      </div>
-
-      {employee.offboardingChecklist?.completedAt && (
-        <Badge tone="success">
-          All tasks completed
-        </Badge>
-      )}
-    </div>
-    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line/60 pt-4">
-  <div>
-    <p className="text-sm font-medium text-ink">
-      Ready to complete offboarding?
-    </p>
-
-    <p className="mt-1 text-[12px] text-ink-faint">
-      {offboardingCompleted
-        ? "All offboarding activities are completed."
-        : "Complete all checklist items to enable offboarding completion."}
-    </p>
-  </div>
-
-  {isAdmin && (
-    <Button
-      onClick={onCompleteOffboarding}
-      disabled={
-        !offboardingCompleted ||
-        isCompletingOffboarding ||
-        isUpdatingOffboardingChecklist
-      }
-    >
-      {isCompletingOffboarding
-        ? "Completing..."
-        : "Complete Offboarding"}
-    </Button>
-  )}
-</div>
-
-    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-      {[
-        {
-          key: "assetReturn",
-          label: "Asset return",
-          completed:
-            employee.offboardingChecklist?.assetReturn ?? false,
-        },
-        {
-          key: "accessRevoked",
-          label: "Access revoked",
-          completed:
-            employee.offboardingChecklist?.accessRevoked ?? false,
-        },
-        {
-          key: "exitInterview",
-          label: "Exit interview",
-          completed:
-            employee.offboardingChecklist?.exitInterview ?? false,
-        },
-        {
-          key: "finalSettlement",
-          label: "Final settlement",
-          completed:
-            employee.offboardingChecklist?.finalSettlement ?? false,
-        },
-      ].map((item) => (
-        <div
-          key={item.key}
-          className={cx(
-            "flex items-center justify-between gap-3 rounded-xl border px-3 py-3 transition",
-            item.completed
-              ? "border-success-500/30 bg-success-50/40"
-              : "border-line/60",
-          )}
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            <input
-              type="checkbox"
-              checked={item.completed}
-              disabled={
-                !isAdmin || isUpdatingOffboardingChecklist
+          <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <Info
+              label="Notice period start"
+              value={
+                employee.noticeStartDate
+                  ? formatDate(employee.noticeStartDate)
+                  : "—"
               }
-              onChange={() => {
-                if (!isAdmin) return;
-
-                onUpdateOffboardingChecklist({
-                  [item.key]: !item.completed,
-                });
-              }}
-              className="h-4 w-4 shrink-0 cursor-pointer rounded border-line accent-brand-600 disabled:cursor-not-allowed"
             />
 
-            <span
-              className={cx(
-                "text-[13px] font-medium",
-                item.completed
-                  ? "text-success-700"
-                  : "text-ink",
+            <Info
+              label="Last working date"
+              value={
+                getNoticePeriodEndDate(employee)
+                  ? formatDate(getNoticePeriodEndDate(employee)!)
+                  : "—"
+              }
+            />
+
+            <Info
+              label="Notice period"
+              value={
+                employee.noticeDays !== null &&
+                employee.noticeDays !== undefined
+                  ? `${employee.noticeDays} days`
+                  : "—"
+              }
+            />
+
+            <Info
+              label="Days remaining"
+              value={
+                employee.lastWorkingDate
+                  ? `${Math.max(
+                      0,
+                      Math.ceil(
+                        (new Date(employee.lastWorkingDate).getTime() -
+                          new Date().setHours(0, 0, 0, 0)) /
+                          (1000 * 60 * 60 * 24),
+                      ),
+                    )} days`
+                  : "—"
+              }
+            />
+
+            <div className="sm:col-span-2 lg:col-span-3">
+              <p className="text-sm text-muted-foreground">
+                Notice Period Progress
+              </p>
+
+              {employee.noticeStartDate && employee.lastWorkingDate ? (
+                <>
+                  {(() => {
+                    const progress = Math.min(
+                      100,
+                      Math.max(
+                        0,
+                        Math.round(
+                          ((new Date().getTime() -
+                            new Date(employee.noticeStartDate).getTime()) /
+                            (new Date(employee.lastWorkingDate).getTime() -
+                              new Date(employee.noticeStartDate).getTime())) *
+                            100,
+                        ),
+                      ),
+                    );
+
+                    return (
+                      <>
+                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all duration-500"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+
+                        <p className="mt-2 text-sm font-medium">
+                          {progress}% completed
+                        </p>
+                      </>
+                    );
+                  })()}
+                </>
+              ) : (
+                <p className="font-medium">—</p>
               )}
-            >
-              {item.label}
-            </span>
+            </div>
+
+            <Info
+              label="Resignation date"
+              value={
+                employee.resignationDetails?.resignationDate
+                  ? formatDate(employee.resignationDetails.resignationDate)
+                  : "—"
+              }
+            />
+
+            <Info
+              label="Resignation reason"
+              value={employee.resignationDetails?.resignationReason || "—"}
+            />
+
+            <Info
+              label="Employee remarks"
+              value={employee.resignationDetails?.employeeRemarks || "—"}
+            />
+
+            <Info
+              label="HR remarks"
+              value={employee.resignationDetails?.hrRemarks || "—"}
+            />
           </div>
+        )}
 
-          <Badge tone={item.completed ? "success" : undefined}>
-            {item.completed ? "Completed" : "Pending"}
-          </Badge>
+        <div className="mt-8 border-t border-line/70 pt-6">
+          <h3 className="mb-5 text-sm font-semibold text-ink">
+            Lifecycle progress
+          </h3>
+
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+            {[
+              "ONBOARDING",
+              "ACTIVE",
+              "ON_PROBATION",
+              "NOTICE_PERIOD",
+              "RESIGNED",
+              "TERMINATED",
+            ].map((stage, index, stages) => (
+              <div key={stage} className="flex items-center gap-x-2">
+                <span
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold whitespace-nowrap ${
+                    employee.status === stage
+                      ? "bg-brand-600 text-white"
+                      : "bg-canvas text-ink-faint"
+                  }`}
+                >
+                  {stage.replace(/_/g, " ")}
+                </span>
+
+                {index < stages.length - 1 && (
+                  <span className="text-sm text-ink-faint">→</span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      ))}
-    </div>
 
-    {!isAdmin && (
-      <p className="mt-4 text-[12px] text-ink-faint">
-        Only HR administrators can update the offboarding checklist.
-      </p>
-    )}
+        {employee.status === "ON_PROBATION" && (
+          <div className="mt-5 rounded-2xl border border-line/60 p-4">
+            <p className="text-sm font-medium text-ink">Probation Period</p>
 
-    {isUpdatingOffboardingChecklist && (
-      <p className="mt-4 text-[12px] text-brand-600">
-        Updating checklist...
-      </p>
-    )}
-  </div>
-)}
+            {employee.probationExtensionDetails ? (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Info
+                  label="Extension days"
+                  value={`${employee.probationExtensionDetails.extensionDays} days`}
+                />
+
+                <Info
+                  label="Extended from"
+                  value={
+                    employee.probationExtensionDetails.extendedFrom
+                      ? formatDate(
+                          employee.probationExtensionDetails.extendedFrom,
+                        )
+                      : "—"
+                  }
+                />
+
+                <Info
+                  label="Extended to"
+                  value={formatDate(
+                    employee.probationExtensionDetails.extendedTo,
+                  )}
+                />
+
+                <Info
+                  label="Remarks"
+                  value={employee.probationExtensionDetails.remarks || "—"}
+                />
+
+                <Info
+                  label="Extended at"
+                  value={formatDate(
+                    employee.probationExtensionDetails.extendedAt,
+                  )}
+                />
+              </div>
+            ) : (
+              <p className="mt-1 text-[13px] text-ink-soft">
+                No probation extension has been applied.
+              </p>
+            )}
+          </div>
+        )}
+
+        {employee.status === "NOTICE_PERIOD" && (
+          <div className="mt-5 rounded-2xl border border-line/60 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-ink">
+                  Offboarding Checklist
+                </p>
+
+                <p className="mt-1 text-[12px] text-ink-faint">
+                  Complete all required offboarding activities before closing
+                  the employee lifecycle.
+                </p>
+              </div>
+
+              {employee.offboardingChecklist?.completedAt && (
+                <Badge tone="success">All tasks completed</Badge>
+              )}
+            </div>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line/60 pt-4">
+              <div>
+                <p className="text-sm font-medium text-ink">
+                  Ready to complete offboarding?
+                </p>
+
+                <p className="mt-1 text-[12px] text-ink-faint">
+                  {offboardingCompleted
+                    ? "All offboarding activities are completed."
+                    : "Complete all checklist items to enable offboarding completion."}
+                </p>
+              </div>
+
+              {isAdmin && (
+                <Button
+                  onClick={onCompleteOffboarding}
+                  disabled={
+                    !offboardingCompleted ||
+                    isCompletingOffboarding ||
+                    isUpdatingOffboardingChecklist
+                  }
+                >
+                  {isCompletingOffboarding
+                    ? "Completing..."
+                    : "Complete Offboarding"}
+                </Button>
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {[
+                {
+                  key: "assetReturn",
+                  label: "Asset return",
+                  completed:
+                    employee.offboardingChecklist?.assetReturn ?? false,
+                },
+                {
+                  key: "accessRevoked",
+                  label: "Access revoked",
+                  completed:
+                    employee.offboardingChecklist?.accessRevoked ?? false,
+                },
+                {
+                  key: "exitInterview",
+                  label: "Exit interview",
+                  completed:
+                    employee.offboardingChecklist?.exitInterview ?? false,
+                },
+                {
+                  key: "finalSettlement",
+                  label: "Final settlement",
+                  completed:
+                    employee.offboardingChecklist?.finalSettlement ?? false,
+                },
+              ].map((item) => (
+                <div
+                  key={item.key}
+                  className={cx(
+                    "flex items-center justify-between gap-3 rounded-xl border px-3 py-3 transition",
+                    item.completed
+                      ? "border-success-500/30 bg-success-50/40"
+                      : "border-line/60",
+                  )}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={item.completed}
+                      disabled={!isAdmin || isUpdatingOffboardingChecklist}
+                      onChange={() => {
+                        if (!isAdmin) return;
+
+                        onUpdateOffboardingChecklist({
+                          [item.key]: !item.completed,
+                        });
+                      }}
+                      className="h-4 w-4 shrink-0 cursor-pointer rounded border-line accent-brand-600 disabled:cursor-not-allowed"
+                    />
+
+                    <span
+                      className={cx(
+                        "text-[13px] font-medium",
+                        item.completed ? "text-success-700" : "text-ink",
+                      )}
+                    >
+                      {item.label}
+                    </span>
+                  </div>
+
+                  <Badge tone={item.completed ? "success" : undefined}>
+                    {item.completed ? "Completed" : "Pending"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+
+            {!isAdmin && (
+              <p className="mt-4 text-[12px] text-ink-faint">
+                Only HR administrators can update the offboarding checklist.
+              </p>
+            )}
+
+            {isUpdatingOffboardingChecklist && (
+              <p className="mt-4 text-[12px] text-brand-600">
+                Updating checklist...
+              </p>
+            )}
+          </div>
+        )}
       </Card>
-
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Education */}
@@ -1733,7 +1758,10 @@ function PayrollTab({
                 label="Special allowance"
                 value={formatCurrencyINR(structure.specialAllowance)}
               />
-              <Info label="PF" value={formatCurrencyINR(structure.pf)} />
+              <Info
+                label="PF"
+                value={formatCurrencyINR((Number(structure.basic) || 0) * 0.12)}
+              />
             </div>
           )}
         </Card>
@@ -1952,8 +1980,9 @@ function EditEmployeeModal({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const { register, handleSubmit, control, watch, setValue, reset } =
+  const { register, handleSubmit, control, watch, setValue, reset, formState: { errors } } =
     useForm<EmployeeForm>({
+      mode: "onSubmit",
       defaultValues: {
         firstName: employee.firstName ?? "",
         lastName: employee.lastName ?? "",
@@ -2106,17 +2135,17 @@ function EditEmployeeModal({
       }
 
       const updatedPayload = {
-  ...payload,
-  avatarUrl,
-  dateOfBirth: payload.dateOfBirth || null,
-  state: payload.state || null,
-  emergencyContactRelationship:
-    payload.emergencyContactRelationship || null,
-  emergencyContactEmail: payload.emergencyContactEmail || null,
-  employeeAadhaar: payload.employeeAadhaar || null,
-  employeePan: payload.employeePan || null,
-  signature: payload.signature || null,
-};
+        ...payload,
+        avatarUrl,
+        dateOfBirth: payload.dateOfBirth || null,
+        state: payload.state || null,
+        emergencyContactRelationship:
+          payload.emergencyContactRelationship || null,
+        emergencyContactEmail: payload.emergencyContactEmail || null,
+        employeeAadhaar: payload.employeeAadhaar || null,
+        employeePan: payload.employeePan || null,
+        signature: payload.signature || null,
+      };
 
       return isAdmin
         ? EmployeesApi.update(employee.id, updatedPayload)
@@ -2167,11 +2196,12 @@ function EditEmployeeModal({
               {/* Department */}
               <div>
                 <label className="text-[13px] font-medium text-ink-soft">
-                  Department
+                  Department <span className="text-danger-500">*</span>
                 </label>
 
                 <select
                   {...register("departmentId", {
+                    required: "Department is required",
                     onChange: () => {
                       setValue("designationId", "");
                     },
@@ -2191,11 +2221,13 @@ function EditEmployeeModal({
               {/* Designation */}
               <div>
                 <label className="text-[13px] font-medium text-ink-soft">
-                  Designation
+                  Designation <span className="text-danger-500">*</span>
                 </label>
 
                 <select
-                  {...register("designationId")}
+                  {...register("designationId", {
+                    required: "Designation is required",
+                  })}
                   disabled={!selectedDepartmentId}
                   className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm disabled:opacity-50"
                 >
@@ -2216,11 +2248,13 @@ function EditEmployeeModal({
               {/* Reporting Manager */}
               <div className="sm:col-span-2">
                 <label className="text-[13px] font-medium text-ink-soft">
-                  Reporting Manager
+                  Reporting Manager <span className="text-danger-500">*</span>
                 </label>
 
                 <select
-                  {...register("managerId")}
+                  {...register("managerId", {
+                    required: "Reporting Manager is required",
+                  })}
                   className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
                 >
                   <option value="">Select reporting manager</option>
@@ -2237,15 +2271,15 @@ function EditEmployeeModal({
             </div>
           </div>
         )}
-        <TextField label="First name" {...register("firstName")} />
-        <TextField label="Last name" {...register("lastName")} />
+        <TextField label="First name" required {...register("firstName", { required: "First name is required" })} />
+        <TextField label="Last name" required {...register("lastName", { required: "Last name is required" })} />
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
-            Gender
+            Gender <span className="text-danger-500">*</span>
           </label>
 
           <select
-            {...register("gender")}
+            {...register("gender", { required: "Gender is required" })}
             className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
           >
             <option value="">Select gender</option>
@@ -2253,14 +2287,15 @@ function EditEmployeeModal({
             <option value="FEMALE">FEMALE</option>
             <option value="NOT_MENTIONED">NOT MENTIONED</option>
           </select>
+          {errors.gender && <p className="mt-1 text-xs text-danger-500">{errors.gender.message}</p>}
         </div>
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
-            Marital Status
+            Marital Status <span className="text-danger-500">*</span>
           </label>
 
           <select
-            {...register("maritalStatus")}
+            {...register("maritalStatus", { required: "Marital Status is required" })}
             className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
           >
             <option value="">Select marital status</option>
@@ -2269,6 +2304,7 @@ function EditEmployeeModal({
             <option value="DIVORCED">DIVORCED</option>
             <option value="WIDOWED">WIDOWED</option>
           </select>
+          {errors.maritalStatus && <p className="mt-1 text-xs text-danger-500">{errors.maritalStatus.message}</p>}
         </div>
         <TextField
           label="Date of birth"
@@ -2631,13 +2667,13 @@ function EditEmployeeModal({
               className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
             >
               <option value="ACTIVE">Active</option>
-<option value="ON_PROBATION">On probation</option>
-<option value="ON_LEAVE">On leave</option>
-<option value="NOTICE_PERIOD">Notice period</option>
-<option value="RESIGNED">Resigned</option>
-<option value="TERMINATED">Terminated</option>
-<option value="INACTIVE">Inactive</option>
-<option value="ON_HOLD">On hold</option>
+              <option value="ON_PROBATION">On probation</option>
+              <option value="ON_LEAVE">On leave</option>
+              <option value="NOTICE_PERIOD">Notice period</option>
+              <option value="RESIGNED">Resigned</option>
+              <option value="TERMINATED">Terminated</option>
+              <option value="INACTIVE">Inactive</option>
+              <option value="ON_HOLD">On hold</option>
             </select>
           </div>
         )}
@@ -2650,10 +2686,13 @@ function SalaryModal({
   open,
   onClose,
   employeeId,
+  employeeState,
 }: {
   open: boolean;
   onClose: () => void;
   employeeId: string;
+  employeeState: string | null;
+  dateOfBirth: string | null;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -2662,13 +2701,110 @@ function SalaryModal({
     queryFn: () => PayrollApi.getSalaryStructure(employeeId),
     enabled: open,
   });
-  const { register, handleSubmit } = useForm<SalaryForm>({
+  const { register, handleSubmit, watch, setValue } = useForm<SalaryForm>({
     resolver: zodResolver(salarySchema),
+    mode: "onSubmit",
   });
+  const [taxPreview, setTaxPreview] = useState<Awaited<
+    ReturnType<typeof PayrollApi.calculateTax>
+  > | null>(null);
+  const taxPreviewMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      PayrollApi.calculateTax(payload),
+    onSuccess: (result) => {
+      setTaxPreview(result);
+      setValue("incomeTax", Math.round((result.annualTax / 12) * 100) / 100, {
+        shouldDirty: true,
+      });
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const calculateTaxPreview = () => {
+    taxPreviewMutation.mutate({
+      employeeId,
+      basic:
+        ((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+          Number(watch("basicPercentage", existing?.basicPercentage ?? 50))) /
+        100,
+      hra:
+        ((((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+          Number(watch("basicPercentage", existing?.basicPercentage ?? 50))) /
+          100) *
+          Number(watch("hraPercentage", existing?.hraPercentage ?? 40))) /
+        100,
+      conveyance: Number(watch("conveyance", existing?.conveyance ?? 0)),
+      medical: Number(watch("medical", existing?.medical ?? 0)),
+      specialAllowance: Math.max(
+        0,
+        Number(watch("ctc", existing?.ctc ?? 0)) / 12 -
+          ((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+            Number(watch("basicPercentage", existing?.basicPercentage ?? 50))) /
+            100 -
+          ((((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+            Number(watch("basicPercentage", existing?.basicPercentage ?? 50))) /
+            100) *
+            Number(watch("hraPercentage", existing?.hraPercentage ?? 40))) /
+            100 -
+          Number(watch("conveyance", existing?.conveyance ?? 0)) -
+          Number(watch("medical", existing?.medical ?? 0)),
+      ),
+      performanceBonus: Number(
+        watch("performanceBonus", existing?.performanceBonus ?? 0),
+      ),
+      taxRegime: watch("taxRegime", existing?.taxRegime ?? "NEW"),
+      taxYear: Number(watch("taxYear", existing?.taxYear ?? 2026)),
+      taxOtherIncome: Number(
+        watch("taxOtherIncome", existing?.taxOtherIncome ?? 0),
+      ),
+      taxHraExemption: Number(
+        watch("taxHraExemption", existing?.taxHraExemption ?? 0),
+      ),
+      taxDeduction80C: Number(
+        watch("taxDeduction80C", existing?.taxDeduction80C ?? 0),
+      ),
+      taxDeduction80D: Number(
+        watch("taxDeduction80D", existing?.taxDeduction80D ?? 0),
+      ),
+      taxDeduction80CCD1B: Number(
+        watch("taxDeduction80CCD1B", existing?.taxDeduction80CCD1B ?? 0),
+      ),
+      taxDeduction80TTA: Number(
+        watch("taxDeduction80TTA", existing?.taxDeduction80TTA ?? 0),
+      ),
+    });
+  };
 
   const mutation = useMutation({
     mutationFn: (payload: SalaryForm) =>
-      PayrollApi.upsertSalaryStructure({ employeeId, ...payload }),
+      PayrollApi.upsertSalaryStructure({
+        employeeId,
+        ...payload,
+        ctc: Number(payload.ctc),
+        basicPercentage: Number(payload.basicPercentage),
+        hraPercentage: Number(payload.hraPercentage),
+        basic:
+          ((Number(payload.ctc) / 12) * Number(payload.basicPercentage)) / 100,
+        hra:
+          ((((Number(payload.ctc) / 12) * Number(payload.basicPercentage)) /
+            100) *
+            Number(payload.hraPercentage)) /
+          100,
+        specialAllowance: Math.max(
+          0,
+          Number(payload.ctc) / 12 -
+            ((Number(payload.ctc) / 12) * Number(payload.basicPercentage)) /
+              100 -
+            ((((Number(payload.ctc) / 12) * Number(payload.basicPercentage)) /
+              100) *
+              Number(payload.hraPercentage)) /
+              100 -
+            Number(payload.conveyance) -
+            Number(payload.medical),
+        ),
+        pf: 0,
+        professionalTax: 0,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["salary-structure", employeeId],
@@ -2691,7 +2827,21 @@ function SalaryModal({
             Cancel
           </Button>
           <Button
-            onClick={handleSubmit((v) => mutation.mutate(v))}
+            onClick={handleSubmit(
+              (v) => mutation.mutate(v),
+              (formErrors) => {
+                const messages = Object.values(formErrors)
+                  .map((error) => error?.message)
+                  .filter(Boolean);
+
+                showToast(
+                  messages.length > 0
+                    ? messages.join(" ")
+                    : "Please fill in all required salary fields.",
+                  "error",
+                );
+              },
+            )}
             isLoading={mutation.isPending}
           >
             Save
@@ -2701,53 +2851,309 @@ function SalaryModal({
     >
       <form className="grid gap-4 sm:grid-cols-2" key={existing?.id ?? "new"}>
         <TextField
-          label="Basic"
+          required
+          label="Annual CTC"
           type="number"
-          defaultValue={existing?.basic}
-          {...register("basic")}
+          defaultValue={existing?.ctc || undefined}
+          {...register("ctc")}
         />
         <TextField
-          label="HRA"
+          required
+          label="Basic — % of CTC (40–50%)"
           type="number"
-          defaultValue={existing?.hra}
-          {...register("hra")}
+          min={40}
+          max={50}
+          defaultValue={existing?.basicPercentage ?? 50}
+          {...register("basicPercentage")}
         />
         <TextField
-          label="Conveyance"
+          required
+          label="HRA — % of Basic (20–40%)"
           type="number"
-          defaultValue={existing?.conveyance}
+          min={20}
+          max={40}
+          defaultValue={existing?.hraPercentage ?? 40}
+          {...register("hraPercentage")}
+        />
+        <TextField
+          label="Basic / month"
+          type="number"
+          value={
+            Math.round(
+              (((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+                Number(
+                  watch("basicPercentage", existing?.basicPercentage ?? 50),
+                )) /
+                100) *
+                100,
+            ) / 100 || 0
+          }
+          readOnly
+        />
+        <TextField
+          label="HRA / month"
+          type="number"
+          value={
+            Math.round(
+              (((((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+                Number(
+                  watch("basicPercentage", existing?.basicPercentage ?? 50),
+                )) /
+                100) *
+                Number(watch("hraPercentage", existing?.hraPercentage ?? 40))) /
+                100) *
+                100,
+            ) / 100 || 0
+          }
+          readOnly
+        />
+        <TextField
+          required
+          label="Conveyance / month"
+          type="number"
+          defaultValue={existing?.conveyance ?? 0}
           {...register("conveyance")}
         />
         <TextField
-          label="Medical"
+          required
+          label="Medical / month"
           type="number"
-          defaultValue={existing?.medical}
+          defaultValue={existing?.medical ?? 0}
           {...register("medical")}
         />
         <TextField
-          label="Special allowance"
+          label="Special allowance / month — CTC balance"
           type="number"
-          defaultValue={existing?.specialAllowance}
-          {...register("specialAllowance")}
+          value={Math.max(
+            0,
+            Math.round(
+              (Number(watch("ctc", existing?.ctc ?? 0)) / 12 -
+                ((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+                  Number(
+                    watch("basicPercentage", existing?.basicPercentage ?? 50),
+                  )) /
+                  100 -
+                ((((Number(watch("ctc", existing?.ctc ?? 0)) / 12) *
+                  Number(
+                    watch("basicPercentage", existing?.basicPercentage ?? 50),
+                  )) /
+                  100) *
+                  Number(
+                    watch("hraPercentage", existing?.hraPercentage ?? 40),
+                  )) /
+                  100 -
+                Number(watch("conveyance", existing?.conveyance ?? 0)) -
+                Number(watch("medical", existing?.medical ?? 0))) *
+                100,
+            ) / 100,
+          )}
+          readOnly
         />
         <TextField
-          label="Provident Fund (PF)"
+          label="Performance bonus target / month"
           type="number"
-          defaultValue={existing?.pf}
-          {...register("pf")}
+          defaultValue={existing?.performanceBonus ?? 0}
+          {...register("performanceBonus")}
         />
         <TextField
-          label="Professional tax"
+          label="Advance recovery"
           type="number"
-          defaultValue={existing?.professionalTax}
-          {...register("professionalTax")}
+          defaultValue={existing?.advanceRecovery ?? 0}
+          {...register("advanceRecovery")}
         />
         <TextField
-          label="Income tax (TDS)"
+          label="Overtime rate multiplier"
           type="number"
-          defaultValue={existing?.incomeTax}
-          {...register("incomeTax")}
+          step="0.1"
+          defaultValue={existing?.overtimeRate ?? 1.5}
+          {...register("overtimeRate")}
         />
+        <TextField
+          label="Income tax / TDS — monthly"
+          type="number"
+          value={Number(watch("incomeTax", existing?.incomeTax ?? 0)) || 0}
+          readOnly
+        />
+        <TextField
+          label="Provident Fund (PF) — 12% of Basic"
+          type="number"
+          value={
+            Math.round(
+              (Number(watch("basic", existing?.basic ?? 0)) || 0) * 0.12 * 100,
+            ) / 100
+          }
+          readOnly
+        />
+        <TextField
+          label="Professional tax — state slab"
+          type="number"
+          value={(() => {
+            const gross =
+              Number(watch("basic", existing?.basic ?? 0)) +
+              Number(watch("hra", existing?.hra ?? 0)) +
+              Number(watch("conveyance", existing?.conveyance ?? 0)) +
+              Number(watch("medical", existing?.medical ?? 0)) +
+              Number(
+                watch("specialAllowance", existing?.specialAllowance ?? 0),
+              ) +
+              Number(
+                watch("performanceBonus", existing?.performanceBonus ?? 0),
+              );
+            const state = String(employeeState ?? "")
+              .trim()
+              .toLowerCase();
+            if (["telangana", "andhra pradesh"].includes(state))
+              return gross <= 15000 ? 0 : gross <= 20000 ? 150 : 200;
+            if (state === "karnataka") return gross > 15000 ? 200 : 0;
+            if (state === "maharashtra")
+              return gross <= 7500 ? 0 : gross <= 10000 ? 175 : 200;
+            return Number(existing?.professionalTax ?? 0);
+          })()}
+          readOnly
+        />
+        <div className="sm:col-span-2 rounded-2xl border border-line/60 bg-black/[0.015] p-4">
+          <p className="text-[12px] font-medium uppercase tracking-wide text-ink-faint">
+            Income tax & TDS
+          </p>
+          <p className="mt-1 text-[12px] text-ink-faint">
+            TDS is calculated automatically from the selected tax regime,
+            tax-year slabs and declarations during payroll processing.
+          </p>
+        </div>
+        <label className="block">
+          <span className="mb-1.5 block text-[12px] font-medium text-ink-faint">
+            Tax regime
+          </span>
+          <select
+            className="w-full rounded-xl border border-line bg-white px-3 py-2 text-[13px] text-ink outline-none"
+            defaultValue={existing?.taxRegime ?? "NEW"}
+            {...register("taxRegime")}
+          >
+            <option value="NEW">New tax regime (default)</option>
+            <option value="OLD">Old tax regime</option>
+          </select>
+        </label>
+        <TextField
+          label="Tax year (FY start)"
+          type="number"
+          defaultValue={existing?.taxYear ?? 2026}
+          {...register("taxYear")}
+        />
+        <TextField
+          label="Other taxable income — annual"
+          type="number"
+          defaultValue={existing?.taxOtherIncome ?? 0}
+          {...register("taxOtherIncome")}
+        />
+        <TextField
+          label="HRA exemption — annual (old regime)"
+          type="number"
+          defaultValue={existing?.taxHraExemption ?? 0}
+          {...register("taxHraExemption")}
+        />
+        <TextField
+          label="80C deductions — annual (old regime)"
+          type="number"
+          defaultValue={existing?.taxDeduction80C ?? 0}
+          {...register("taxDeduction80C")}
+        />
+        <TextField
+          label="80D deductions — annual (old regime)"
+          type="number"
+          defaultValue={existing?.taxDeduction80D ?? 0}
+          {...register("taxDeduction80D")}
+        />
+        <TextField
+          label="80CCD(1B) — annual (old regime)"
+          type="number"
+          defaultValue={existing?.taxDeduction80CCD1B ?? 0}
+          {...register("taxDeduction80CCD1B")}
+        />
+        <TextField
+          label="80TTA — annual (old regime)"
+          type="number"
+          defaultValue={existing?.taxDeduction80TTA ?? 0}
+          {...register("taxDeduction80TTA")}
+        />
+        <TextField
+          label="TDS already deducted this tax year"
+          type="number"
+          defaultValue={existing?.taxPreviousTds ?? 0}
+          {...register("taxPreviousTds")}
+        />
+        <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-[12px] font-medium uppercase tracking-wide text-ink-faint">
+                Tax slab calculation
+              </p>
+              <p className="mt-1 text-[12px] text-ink-faint">
+                Calculate the employee's tax using the selected regime and the
+                applicable income-tax slabs.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={calculateTaxPreview}
+              isLoading={taxPreviewMutation.isPending}
+              className="w-full sm:w-auto sm:shrink-0"
+            >
+              Calculate tax
+            </Button>
+          </div>
+          {taxPreview && (
+            <div className="mt-4 space-y-2 text-[12px]">
+              {taxPreview.slabBreakdown.map((slab, index) => (
+                <div
+                  key={`${slab.from}-${slab.to}-${index}`}
+                  className="flex flex-col gap-1 rounded-xl bg-black/[0.02] px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <span className="min-w-0 break-words">
+                    {formatCurrencyINR(slab.from)} –{" "}
+                    {slab.to == null ? "above" : formatCurrencyINR(slab.to)} @{" "}
+                    {(slab.rate * 100).toFixed(0)}%
+                  </span>
+                  <span className="font-medium sm:shrink-0">
+                    {formatCurrencyINR(slab.tax)}
+                  </span>
+                </div>
+              ))}
+              <div className="flex flex-col gap-1 border-t border-line/60 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                <span>Taxable annual income</span>
+                <span className="font-medium">
+                  {formatCurrencyINR(taxPreview.taxableIncome)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <span>Tax after slab calculation/rebate</span>
+                <span className="font-medium">
+                  {formatCurrencyINR(
+                    Math.max(0, taxPreview.slabTax - taxPreview.rebate),
+                  )}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <span>Cess + surcharge</span>
+                <span className="font-medium">
+                  {formatCurrencyINR(taxPreview.cess + taxPreview.surcharge)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 border-t border-line/60 pt-2 text-[13px] font-medium sm:flex-row sm:items-center sm:justify-between">
+                <span>Annual tax</span>
+                <span>{formatCurrencyINR(taxPreview.annualTax)}</span>
+              </div>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <span>Monthly TDS added to form</span>
+                <span className="font-medium">
+                  {formatCurrencyINR(
+                    Math.round((taxPreview.annualTax / 12) * 100) / 100,
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       </form>
     </Modal>
   );

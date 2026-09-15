@@ -5,7 +5,7 @@ export interface UserRow {
   id: string;
   email: string;
   passwordHash: string;
-  role: "SUPER_ADMIN" | "HR_ADMIN" | "MANAGER" | "RECRUITER" | "FINANCE" | "EMPLOYEE";
+  role: "SUPER_ADMIN" | "HR_ADMIN" | "MANAGER" | "RECRUITER" | "FINANCE" | "IT_SUPPORT" | "EMPLOYEE";
   isActive: boolean;
   mustResetPwd: boolean;
   lastLoginAt: string | null;

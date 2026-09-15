@@ -3,6 +3,7 @@ import {
   Attendance,
   AuditLog,
   Candidate,
+  CompOff,
   Department,
   DocumentRecord,
   DocumentRequest,
@@ -206,15 +207,7 @@ async function attendance(filters: ReportFilters, employeeIds?: string[]) {
             workHours: {
               $sum: { $ifNull: ["$workHours", 0] },
             },
-            overtimeHours: {
-              $sum: {
-                $cond: [
-                  { $gt: [{ $ifNull: ["$workHours", 0] }, 8] },
-                  { $subtract: [{ $ifNull: ["$workHours", 0] }, 8] },
-                  0,
-                ],
-              },
-            },
+            overtimeHours: { $sum: { $ifNull: ["$overtimeHours", 0] } },
           },
         },
         { $sort: { _id: 1 } },
@@ -244,20 +237,114 @@ async function attendance(filters: ReportFilters, employeeIds?: string[]) {
               $sum: { $cond: [{ $eq: ["$status", "ON_LEAVE"] }, 1, 0] },
             },
             workHours: { $sum: { $ifNull: ["$workHours", 0] } },
-            overtimeHours: {
-              $sum: {
-                $cond: [
-                  { $gt: [{ $ifNull: ["$workHours", 0] }, 8] },
-                  { $subtract: [{ $ifNull: ["$workHours", 0] }, 8] },
-                  0,
-                ],
-              },
-            },
+            overtimeHours: { $sum: { $ifNull: ["$overtimeHours", 0] } },
           },
         },
         { $sort: { records: -1 } },
       ]),
     ]);
+
+  const [lateMetrics, compOffMetrics, lateByWeekday, lateByEmployee] = await Promise.all([
+    Attendance.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          lateRecords: {
+            $sum: {
+              $cond: [{ $gt: [{ $ifNull: ["$lateMinutes", 0] }, 0] }, 1, 0],
+            },
+          },
+          lateMinutes: { $sum: { $ifNull: ["$lateMinutes", 0] } },
+          overtimeHours: { $sum: { $ifNull: ["$overtimeHours", 0] } },
+          compOffCreditedRecords: {
+            $sum: { $cond: [{ $eq: ["$compOffCredited", true] }, 1, 0] },
+          },
+        },
+      },
+    ]),
+    CompOff.aggregate([
+      {
+        $match: {
+          ...(employeeIds?.length ? { employeeId: { $in: employeeIds } } : {}),
+          ...(filters.from || filters.to
+            ? { earnedDate: dateRange(filters.from, filters.to) }
+            : {}),
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          earnedHours: { $sum: "$earnedHours" },
+          remainingHours: { $sum: "$remainingHours" },
+        },
+      },
+    ]),
+    Attendance.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: { $dayOfWeek: { $dateFromString: { dateString: "$date" } } },
+          lateRecords: {
+            $sum: {
+              $cond: [{ $gt: [{ $ifNull: ["$lateMinutes", 0] }, 0] }, 1, 0],
+            },
+          },
+          lateMinutes: { $sum: { $ifNull: ["$lateMinutes", 0] } },
+          earlyDepartureRecords: {
+            $sum: {
+              $cond: [
+                { $gt: [{ $ifNull: ["$earlyDepartureMinutes", 0] }, 0] },
+                1,
+                0,
+              ],
+            },
+          },
+          earlyDepartureMinutes: {
+            $sum: { $ifNull: ["$earlyDepartureMinutes", 0] },
+          },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    Attendance.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: "$employeeId",
+          lateRecords: {
+            $sum: {
+              $cond: [{ $gt: [{ $ifNull: ["$lateMinutes", 0] }, 0] }, 1, 0],
+            },
+          },
+          lateMinutes: { $sum: { $ifNull: ["$lateMinutes", 0] } },
+          earlyDepartureRecords: {
+            $sum: {
+              $cond: [
+                { $gt: [{ $ifNull: ["$earlyDepartureMinutes", 0] }, 0] },
+                1,
+                0,
+              ],
+            },
+          },
+          earlyDepartureMinutes: {
+            $sum: { $ifNull: ["$earlyDepartureMinutes", 0] } },
+        },
+      },
+      { $sort: { lateRecords: -1, lateMinutes: -1 } },
+      { $limit: 20 },
+    ]),
+  ]);
+
+  const weekdayNames = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
 
   const present = byStatus
     .filter((x) => ["PRESENT", "WORK_FROM_HOME"].includes(x._id))
@@ -282,6 +369,31 @@ async function attendance(filters: ReportFilters, employeeIds?: string[]) {
     present,
     attendanceRate: total ? Math.round((present / total) * 1000) / 10 : 0,
     regularized,
+    lateRecords: lateMetrics[0]?.lateRecords ?? 0,
+    lateMinutes: Math.round((lateMetrics[0]?.lateMinutes ?? 0) * 100) / 100,
+    earlyDepartureRecords: lateMetrics[0]?.earlyDepartureRecords ?? 0,
+    earlyDepartureMinutes:
+      Math.round((lateMetrics[0]?.earlyDepartureMinutes ?? 0) * 100) / 100,
+    lateByWeekday: lateByWeekday.map((x) => ({
+      label: weekdayNames[(x._id ?? 1) - 1] ?? "Unknown",
+      lateRecords: x.lateRecords ?? 0,
+      lateMinutes: Math.round((x.lateMinutes ?? 0) * 100) / 100,
+      earlyDepartureRecords: x.earlyDepartureRecords ?? 0,
+      earlyDepartureMinutes: Math.round((x.earlyDepartureMinutes ?? 0) * 100) / 100,
+    })),
+    lateEmployeeSummary: lateByEmployee.map((x) => ({
+      employeeId: x._id,
+      lateRecords: x.lateRecords ?? 0,
+      lateMinutes: Math.round((x.lateMinutes ?? 0) * 100) / 100,
+      earlyDepartureRecords: x.earlyDepartureRecords ?? 0,
+      earlyDepartureMinutes: Math.round((x.earlyDepartureMinutes ?? 0) * 100) / 100,
+    })),
+    overtimeHours: Math.round((lateMetrics[0]?.overtimeHours ?? 0) * 100) / 100,
+    compOffCreditedRecords: lateMetrics[0]?.compOffCreditedRecords ?? 0,
+    compOffEarnedHours:
+      Math.round((compOffMetrics[0]?.earnedHours ?? 0) * 100) / 100,
+    compOffRemainingHours:
+      Math.round((compOffMetrics[0]?.remainingHours ?? 0) * 100) / 100,
     totalWorkHours: Math.round((workHours[0]?.total ?? 0) * 100) / 100,
     averageWorkHours: Math.round((workHours[0]?.average ?? 0) * 100) / 100,
     estimatedOvertimeHours:
@@ -690,7 +802,14 @@ async function documents(filters: ReportFilters, employeeIds?: string[]) {
     }),
   ]);
 
-  return { total, verified, pending, requests, assignedAssets: assets };
+  return {
+    total,
+    verified,
+    pending,
+    requests,
+    assignedAssets: assets,
+    complianceRate: total ? Math.round((verified / total) * 1000) / 10 : 100,
+  };
 }
 
 async function audit(filters: ReportFilters, role: string) {
