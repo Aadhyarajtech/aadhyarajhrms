@@ -253,7 +253,7 @@ export default function Documents() {
           </Card>
 
           <Card>
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <CardHeader
                 title="Documents I requested"
                 subtitle="Company-issued documents you've requested from HR."
@@ -262,6 +262,7 @@ export default function Documents() {
                 size="sm"
                 variant="outline"
                 leftIcon={<Send size={14} />}
+                className="whitespace-nowrap px-4"
                 onClick={() => setIsRequestCompanyOpen(true)}
               >
                 New request
@@ -648,7 +649,7 @@ function UploadDocumentModal({
       <div className="space-y-4">
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
-            Employee
+            Employee <span className="text-danger-500">*</span>
           </label>
           <select
             value={targetEmployeeId}
@@ -667,7 +668,7 @@ function UploadDocumentModal({
         </div>
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
-            Document type
+            Document type <span className="text-danger-500">*</span>
           </label>
           <select
             value={type}
@@ -684,7 +685,9 @@ function UploadDocumentModal({
           </select>
         </div>
         <div>
-          <label className="text-[13px] font-medium text-ink-soft">File</label>
+          <label className="text-[13px] font-medium text-ink-soft">
+            File <span className="text-danger-500">*</span>
+          </label>
           <input
             type="file"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -753,7 +756,7 @@ function FulfillRequestModal({
       <div className="space-y-4">
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
-            Document type
+            Document type <span className="text-danger-500">*</span>
           </label>
           <div className="mt-1.5 flex h-10 w-full items-center rounded-xl border border-line bg-surface px-3.5 text-sm text-ink-soft">
             {typeLabel(request.type)}
@@ -768,7 +771,9 @@ function FulfillRequestModal({
           </div>
         )}
         <div>
-          <label className="text-[13px] font-medium text-ink-soft">File</label>
+          <label className="text-[13px] font-medium text-ink-soft">
+            File <span className="text-danger-500">*</span>
+          </label>
           <input
             type="file"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -876,7 +881,7 @@ function RequestDocumentModal({
       <div className="space-y-4">
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
-            Employee
+            Employee <span className="text-danger-500">*</span>
           </label>
           <input
             type="text"

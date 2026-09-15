@@ -1,17 +1,20 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { isAdmin, isAdminOrFinance } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./payroll.repository";
+import { explainPayslip, askPayslipQuestion } from "../../services/payslipExplainer.service";
+import { validatePayrollReadiness } from "../../services/payrollValidation.service";
+import { detectPayrollAnomalies } from "../../services/payrollAnomaly.service";
 
 export const payrollRouter = Router();
 payrollRouter.use(authenticate);
 
 payrollRouter.get(
   "/salary-structure/:employeeId",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({
@@ -26,19 +29,65 @@ payrollRouter.get(
 
 const structureSchema = z.object({
   employeeId: z.string(),
+  ctc: z.number().nonnegative().optional(),
+  basicPercentage: z.number().min(40).max(50).optional(),
+  hraPercentage: z.number().min(20).max(40).optional(),
   basic: z.number().min(0),
   hra: z.number().min(0),
   conveyance: z.number().min(0),
   medical: z.number().min(0),
   specialAllowance: z.number().min(0),
-  pf: z.number().min(0),
-  professionalTax: z.number().min(0),
-  incomeTax: z.number().min(0),
+  performanceBonus: z.number().min(0).optional(),
+  advanceRecovery: z.number().min(0).optional(),
+  overtimeRate: z.number().min(0).optional(),
+  pf: z.number().min(0).optional(),
+  professionalTax: z.number().min(0).optional(),
+  incomeTax: z.number().min(0).optional(),
+  taxRegime: z.enum(["NEW", "OLD"]).optional(),
+  taxYear: z.number().int().min(2020).optional(),
+  taxOtherIncome: z.number().min(0).optional(),
+  taxHraExemption: z.number().min(0).optional(),
+  taxDeduction80C: z.number().min(0).optional(),
+  taxDeduction80D: z.number().min(0).optional(),
+  taxDeduction80CCD1B: z.number().min(0).optional(),
+  taxDeduction80TTA: z.number().min(0).optional(),
+  taxPreviousTds: z.number().min(0).optional(),
 });
+
+const taxPreviewSchema = structureSchema.pick({
+  employeeId: true,
+  basic: true,
+  hra: true,
+  conveyance: true,
+  medical: true,
+  specialAllowance: true,
+  performanceBonus: true,
+  taxRegime: true,
+  taxYear: true,
+  taxOtherIncome: true,
+  taxHraExemption: true,
+  taxDeduction80C: true,
+  taxDeduction80D: true,
+  taxDeduction80CCD1B: true,
+  taxDeduction80TTA: true,
+});
+
+payrollRouter.post(
+  "/tax-preview",
+  requirePermission("payroll.manage"),
+  validate(taxPreviewSchema),
+  async (req, res, next) => {
+    try {
+      res.json({ tax: await repo.previewTax(req.body) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 payrollRouter.put(
   "/salary-structure",
-  isAdmin,
+  requirePermission("payroll.manage"),
   validate(structureSchema),
   async (req, res, next) => {
     try {
@@ -49,29 +98,109 @@ payrollRouter.put(
   },
 );
 
-payrollRouter.get("/runs", isAdminOrFinance, async (_req, res, next) => {
-  try {
-    res.json({ runs: await repo.listPayrollRuns() });
-  } catch (err) {
-    next(err);
-  }
-});
+payrollRouter.get(
+  "/runs",
+  requirePermission("payroll.manage"),
+  async (_req, res, next) => {
+    try {
+      res.json({ runs: await repo.listPayrollRuns() });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 const processSchema = z.object({
   month: z.number().int().min(1).max(12),
   year: z.number().int().min(2020),
 });
 payrollRouter.post(
-  "/runs/process",
-  isAdminOrFinance,
+  "/runs/lock-attendance",
+  requirePermission("payroll.manage"),
   validate(processSchema),
   async (req, res, next) => {
     try {
-      res
-        .status(201)
-        .json({
-          run: await repo.processPayrollRun(req.body.month, req.body.year),
-        });
+      res.status(201).json({
+        run: await repo.lockAttendanceForPayroll(req.body.month, req.body.year),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
+  "/runs/process",
+  requirePermission("payroll.manage"),
+  validate(processSchema),
+  async (req, res, next) => {
+    try {
+      res.status(201).json({
+        run: await repo.processPayrollRun(req.body.month, req.body.year),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
+  "/validate-readiness",
+  requirePermission("payroll.manage"),
+  validate(processSchema),
+  async (req, res, next) => {
+    try {
+      const result = await validatePayrollReadiness(
+        Number(req.body.month),
+        Number(req.body.year),
+      );
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
+  "/runs/:id/submit-review",
+  requirePermission("payroll.manage"),
+  async (req, res, next) => {
+    try {
+      res.json({
+        run: await repo.submitPayrollForReview(req.params.id, req.user!.userId),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
+  "/runs/:id/approve",
+  requirePermission("payroll.manage"),
+  async (req, res, next) => {
+    try {
+      res.json({
+        run: await repo.approvePayrollRun(req.params.id, req.user!.userId),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
+  "/runs/:id/reprocess",
+  requirePermission("payroll.manage"),
+  async (req, res, next) => {
+    try {
+      const payrollRun = await repo.reprocessPayrollRun(req.params.id);
+
+      return res.json({
+        success: true,
+        message: "Payroll run recalculated successfully.",
+        payrollRun,
+      });
     } catch (err) {
       next(err);
     }
@@ -80,10 +209,26 @@ payrollRouter.post(
 
 payrollRouter.post(
   "/runs/:id/mark-paid",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
-      res.json({ run: await repo.markRunPaid(req.params.id) });
+      res.json({
+        run: await repo.markRunPaid(req.params.id, req.user!.userId),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.post(
+  "/runs/:id/send-payslips",
+  requirePermission("payroll.manage"),
+  async (req, res, next) => {
+    try {
+      res.json({
+        run: await repo.sendPayslipsForRun(req.params.id, req.user!.userId),
+      });
     } catch (err) {
       next(err);
     }
@@ -92,10 +237,24 @@ payrollRouter.post(
 
 payrollRouter.get(
   "/runs/:id/payslips",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({ payslips: await repo.listPayslipsForRun(req.params.id) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+payrollRouter.get(
+  "/runs/:id/anomalies",
+  requirePermission("payroll.manage"),
+  async (req, res, next) => {
+    try {
+      res.json({
+        audit: await detectPayrollAnomalies(req.params.id),
+      });
     } catch (err) {
       next(err);
     }
@@ -115,7 +274,7 @@ payrollRouter.get("/payslips/mine", async (req, res, next) => {
 
 payrollRouter.get(
   "/payslips/employee/:employeeId",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({
@@ -135,6 +294,8 @@ payrollRouter.get("/payslips/:id", async (req, res, next) => {
     const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
       req.user!.role,
     );
+    if (isOwner && payslip.runStatus !== "PAID" && !isPrivileged)
+      throw AppError.forbidden();
     if (!isOwner && !isPrivileged) throw AppError.forbidden();
     res.json({ payslip });
   } catch (err) {
@@ -142,9 +303,52 @@ payrollRouter.get("/payslips/:id", async (req, res, next) => {
   }
 });
 
+payrollRouter.get("/payslips/:id/explain", async (req, res, next) => {
+  try {
+    const payslip = (await repo.getPayslip(req.params.id)) as any;
+    if (!payslip) throw AppError.notFound("Payslip not found.");
+    const isOwner = payslip.employeeId === req.user!.employeeId;
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
+      req.user!.role,
+    );
+    if (isOwner && payslip.runStatus !== "PAID" && !isPrivileged)
+      throw AppError.forbidden();
+    if (!isOwner && !isPrivileged) throw AppError.forbidden();
+
+    const explanation = await explainPayslip(req.params.id);
+    res.json({ explanation });
+  } catch (err) {
+    next(err);
+  }
+});
+
+payrollRouter.post("/payslips/:id/ask", async (req, res, next) => {
+  try {
+    const payslip = (await repo.getPayslip(req.params.id)) as any;
+    if (!payslip) throw AppError.notFound("Payslip not found.");
+    const isOwner = payslip.employeeId === req.user!.employeeId;
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
+      req.user!.role,
+    );
+    if (isOwner && payslip.runStatus !== "PAID" && !isPrivileged)
+      throw AppError.forbidden();
+    if (!isOwner && !isPrivileged) throw AppError.forbidden();
+
+    const { question } = req.body;
+    if (!question || typeof question !== "string") {
+      throw AppError.badRequest("Question must be a non-empty string.");
+    }
+
+    const answer = await askPayslipQuestion(req.params.id, question);
+    res.json(answer);
+  } catch (err) {
+    next(err);
+  }
+});
+
 payrollRouter.get(
   "/analytics/cost-trend",
-  isAdminOrFinance,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       const months = req.query.months ? Number(req.query.months) : 6;
@@ -192,27 +396,35 @@ payrollRouter.get("/payslip-requests/mine", async (req, res, next) => {
   }
 });
 
-payrollRouter.get("/payslip-requests", isAdmin, async (_req, res, next) => {
-  try {
-    res.json({ requests: await repo.listPayslipRequests() });
-  } catch (err) {
-    next(err);
-  }
-});
+payrollRouter.get(
+  "/payslip-requests",
+  requirePermission("payroll.manage"),
+  async (_req, res, next) => {
+    try {
+      res.json({ requests: await repo.listPayslipRequests() });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-payrollRouter.get("/payslip-requests/:id", isAdmin, async (req, res, next) => {
-  try {
-    const request = await repo.getPayslipRequest(req.params.id);
-    if (!request) throw AppError.notFound("Payslip request not found.");
-    res.json({ request });
-  } catch (err) {
-    next(err);
-  }
-});
+payrollRouter.get(
+  "/payslip-requests/:id",
+  requirePermission("payroll.manage"),
+  async (req, res, next) => {
+    try {
+      const request = await repo.getPayslipRequest(req.params.id);
+      if (!request) throw AppError.notFound("Payslip request not found.");
+      res.json({ request });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 payrollRouter.post(
   "/payslip-requests/:id/send",
-  isAdmin,
+  requirePermission("payroll.manage"),
   async (req, res, next) => {
     try {
       res.json({

@@ -1,36 +1,198 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { isManagerOrAbove } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./attendance.repository";
 import { askAttendanceAI } from "./attendance.askai";
-import {getEmployeeAttendanceAnomalies,} from "./attendance.anomaly";
-import {  generateAttendanceAnomalyInsights,} from "./attendance.ai";
-import { getEmployeeById } from "../employees/employees.repository";
-import {
-  getAttendanceForecast,
-} from "./attendance.forecast";
+import { getEmployeeAttendanceAnomalies } from "./attendance.anomaly";
+import { generateAttendanceAnomalyInsights } from "./attendance.ai";
+import { getAttendanceForecast } from "./attendance.forecast";
 import { generateAttendanceForecastInsights } from "./attendance.forecast.ai";
 import { getAttendancePatterns } from "./attendance.pattern";
-import {analyzeAttendanceForRegularization,} from "./attendance.regularization.ai";
+import { analyzeAttendanceForRegularization } from "./attendance.regularization.ai";
 import { resolveAttendanceScope } from "./attendance.scope";
+import {
+  createAttendanceExcel,
+  createAttendancePdf,
+  buildAttendanceRows,
+} from "./attendance.export";
+import { getEmployeeById } from "../employees/employees.repository";
+import * as shiftRepo from "./shift.repository";
 
 export const attendanceRouter = Router();
+const regularizationSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid attendance date."),
+  note: z
+    .string()
+    .trim()
+    .min(3, "Please describe the reason for regularization.")
+    .max(1000, "Regularization reason must not exceed 1000 characters."),
+});
+
+const regularizationDecisionSchema = z.object({
+  decisionNote: z
+    .string()
+    .trim()
+    .max(1000, "Decision note must not exceed 1000 characters.")
+    .optional()
+    .default(""),
+});
 
 attendanceRouter.use(authenticate);
 
-// ===========================================================================
-// TODAY
-// ===========================================================================
+function parseExportFormat(value: unknown): "xlsx" | "pdf" {
+  const format = typeof value === "string" ? value.toLowerCase() : "xlsx";
+  if (format !== "xlsx" && format !== "pdf") {
+    throw AppError.badRequest("Export format must be xlsx or pdf.");
+  }
+  return format;
+}
+
+async function sendAttendanceExport(
+  res: any,
+  rows: any[],
+  format: "xlsx" | "pdf",
+  filenameBase: string,
+) {
+  const exportRows = buildAttendanceRows(rows);
+  if (format === "xlsx") {
+    const buffer = await createAttendanceExcel(exportRows);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filenameBase}.xlsx"`,
+    );
+    res.send(buffer);
+    return;
+  }
+  const buffer = await createAttendancePdf(exportRows);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${filenameBase}.pdf"`,
+  );
+  res.send(buffer);
+}
+
+const shiftGeofenceSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusMeters: z.number().positive().max(100000),
+});
+
+const shiftPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  code: z.string().trim().max(30).optional().nullable(),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  standardHours: z.number().positive().max(24),
+  graceMinutes: z.number().min(0).max(1440).optional(),
+  breakMinutes: z.number().min(0).max(1440).optional(),
+  overtimeAfterHours: z.number().positive().max(24).optional(),
+  departmentId: z.string().trim().nullable().optional(),
+  employeeIds: z.array(z.string().trim()).optional(),
+  geofence: shiftGeofenceSchema.nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const shiftUpdateSchema = shiftPayloadSchema.partial();
+
+// Shift configuration is restricted to HR/admin users. Attendance punching
+// continues to use the shift data independently of these management routes.
+attendanceRouter.get(
+  "/shifts",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const includeInactive = req.query.includeInactive === "true";
+      res.json({ shifts: await shiftRepo.listShifts(includeInactive) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/shifts/employee/:employeeId",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      res.json({
+        shift:
+          (await shiftRepo.getEmployeeShift(req.params.employeeId)) ?? null,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/shifts/:id",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const shift = await shiftRepo.getShift(req.params.id);
+      if (!shift) throw AppError.notFound("Shift not found.");
+      res.json({ shift });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.post(
+  "/shifts",
+  requirePermission("attendance.manage"),
+  validate(shiftPayloadSchema),
+  async (req, res, next) => {
+    try {
+      res.status(201).json({ shift: await shiftRepo.createShift(req.body) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.patch(
+  "/shifts/:id",
+  requirePermission("attendance.manage"),
+  validate(shiftUpdateSchema),
+  async (req, res, next) => {
+    try {
+      res.json({ shift: await shiftRepo.updateShift(req.params.id, req.body) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.post(
+  "/shifts/:id/assign",
+  requirePermission("attendance.manage"),
+  validate(z.object({ employeeIds: z.array(z.string().trim()) })),
+  async (req, res, next) => {
+    try {
+      res.json({
+        shift: await shiftRepo.assignShiftToEmployees(
+          req.params.id,
+          req.body.employeeIds,
+        ),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 attendanceRouter.get("/today", async (req, res, next) => {
   try {
-    if (!req.user!.employeeId) {
-      return res.json({ record: null });
-    }
-
+    if (!req.user!.employeeId) return res.json({ record: null });
     res.json({
       record: (await repo.getTodayRecord(req.user!.employeeId)) ?? null,
     });
@@ -39,9 +201,16 @@ attendanceRouter.get("/today", async (req, res, next) => {
   }
 });
 
-// ===========================================================================
-// CHECK IN
-// ===========================================================================
+const attendanceLocationSchema = z.object({
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  accuracy: z.number().min(0).max(100000).optional(),
+});
+
+const checkOutSchema = attendanceLocationSchema.extend({
+  breakMinutes: z.number().min(0).max(1440).optional(),
+  earlyDepartureReason: z.string().trim().max(1000).optional(),
+});
 
 attendanceRouter.post("/check-in", async (req, res, next) => {
   try {
@@ -49,23 +218,23 @@ attendanceRouter.post("/check-in", async (req, res, next) => {
       throw AppError.forbidden("Only employees can check in.");
     }
 
+    const record = await repo.checkIn(req.user!.employeeId);
+
     res.json({
-      record: await repo.checkIn(req.user!.employeeId),
+      record,
     });
   } catch (err) {
     next(err);
   }
 });
 
-// ===========================================================================
-// CHECK OUT
-// ===========================================================================
-
 attendanceRouter.post("/check-out", async (req, res, next) => {
   try {
     if (!req.user!.employeeId) {
       throw AppError.forbidden("Only employees can check out.");
     }
+
+    const options = req.body as z.infer<typeof checkOutSchema>;
 
     const record = await repo.checkOut(req.user!.employeeId);
 
@@ -77,40 +246,318 @@ attendanceRouter.post("/check-out", async (req, res, next) => {
 
     res.json({ record });
   } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message === "A reason is required for early departure."
+    ) {
+      next(AppError.badRequest(err.message));
+      return;
+    }
+
     next(err);
   }
 });
 
-// ===========================================================================
-// MY ATTENDANCE
-// ===========================================================================
-
-attendanceRouter.get("/me", async (req, res, next) => {
+attendanceRouter.post("/break/start", async (req, res, next) => {
   try {
-    const month = req.query.month ? Number(req.query.month) : undefined;
-    const year = req.query.year ? Number(req.query.year) : undefined;
+    if (!req.user!.employeeId)
+      throw AppError.forbidden("Only employees can start a break.");
 
     res.json({
-      records: await repo.listForEmployee(
-        req.user!.employeeId!,
-        month,
-        year,
-      ),
+      record: await repo.startBreak(req.user!.employeeId),
     });
   } catch (err) {
     next(err);
   }
 });
 
+attendanceRouter.post("/break/end", async (req, res, next) => {
+  try {
+    if (!req.user!.employeeId)
+      throw AppError.forbidden("Only employees can end a break.");
+
+    res.json({
+      record: await repo.endBreak(req.user!.employeeId),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+attendanceRouter.get("/me", async (req, res, next) => {
+  try {
+    if (!req.user!.employeeId) {
+      throw AppError.forbidden("Employee profile not found.");
+    }
+
+    const month = req.query.month ? Number(req.query.month) : undefined;
+    const year = req.query.year ? Number(req.query.year) : undefined;
+
+    if (
+      month !== undefined &&
+      (!Number.isInteger(month) || month < 1 || month > 12)
+    ) {
+      throw AppError.badRequest("Invalid attendance month.");
+    }
+
+    if (
+      year !== undefined &&
+      (!Number.isInteger(year) || year < 2000 || year > 2100)
+    ) {
+      throw AppError.badRequest("Invalid attendance year.");
+    }
+
+    res.json({
+      records: await repo.listForEmployee(req.user!.employeeId, month, year),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+attendanceRouter.get(
+  "/employee/:employeeId",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId: requesterEmployeeId } = req.user!;
+
+      // Managers can only view attendance of their direct reports
+      if (role === "MANAGER") {
+        if (!requesterEmployeeId) {
+          throw AppError.forbidden("Manager employee profile not found.");
+        }
+
+        const employee = (await getEmployeeById(req.params.employeeId)) as any;
+
+        if (!employee) {
+          throw AppError.notFound("Employee not found.");
+        }
+
+        if (employee.managerId !== requesterEmployeeId) {
+          throw AppError.forbidden(
+            "You can only view attendance of your direct reports.",
+          );
+        }
+      }
+
+      const month = req.query.month ? Number(req.query.month) : undefined;
+      const year = req.query.year ? Number(req.query.year) : undefined;
+
+      if (
+        month !== undefined &&
+        (!Number.isInteger(month) || month < 1 || month > 12)
+      ) {
+        throw AppError.badRequest("Invalid attendance month.");
+      }
+
+      if (
+        year !== undefined &&
+        (!Number.isInteger(year) || year < 2000 || year > 2100)
+      ) {
+        throw AppError.badRequest("Invalid attendance year.");
+      }
+
+      res.json({
+        records: await repo.listForEmployee(req.params.employeeId, month, year),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/by-date/:date",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+
+      // Managers may only receive records for their own direct reports.
+      // The manager ID always comes from the authenticated user; it is never
+      // accepted from query/body input.
+      let managerId: string | undefined;
+
+      if (role === "MANAGER") {
+        if (!employeeId) {
+          throw AppError.forbidden("Manager employee profile not found.");
+        }
+        managerId = employeeId;
+      }
+
+      const date = req.params.date;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw AppError.badRequest("Invalid attendance date.");
+      }
+
+      const parsedDate = new Date(`${date}T00:00:00.000Z`);
+      if (
+        Number.isNaN(parsedDate.getTime()) ||
+        parsedDate.toISOString().slice(0, 10) !== date
+      ) {
+        throw AppError.badRequest("Invalid attendance date.");
+      }
+
+      res.json({
+        records: await repo.listForDate(date, managerId),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.get("/export/me", async (req, res, next) => {
+  try {
+    if (!req.user!.employeeId)
+      throw AppError.forbidden("Employee profile not found.");
+    const month = req.query.month ? Number(req.query.month) : undefined;
+    const year = req.query.year ? Number(req.query.year) : undefined;
+    if (
+      month !== undefined &&
+      (!Number.isInteger(month) || month < 1 || month > 12)
+    ) {
+      throw AppError.badRequest("Invalid attendance month.");
+    }
+    if (
+      year !== undefined &&
+      (!Number.isInteger(year) || year < 2000 || year > 2100)
+    ) {
+      throw AppError.badRequest("Invalid attendance year.");
+    }
+    const format = parseExportFormat(req.query.format);
+    const employee = (await getEmployeeById(req.user!.employeeId)) as any;
+    const records = await repo.listForEmployee(
+      req.user!.employeeId,
+      month,
+      year,
+    );
+    const rows = (records ?? []).map((record: any) => ({
+      ...record,
+      firstName: employee?.firstName ?? "",
+      lastName: employee?.lastName ?? "",
+      employeeCode: employee?.employeeCode ?? "",
+      departmentName: employee?.departmentName ?? "",
+    }));
+    await sendAttendanceExport(
+      res,
+      rows,
+      format,
+      `attendance-${year ?? "current"}-${month ?? "month"}`,
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+attendanceRouter.get(
+  "/export/team",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+      const date = typeof req.query.date === "string" ? req.query.date : "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+        throw AppError.badRequest("Invalid attendance date.");
+      if (role === "MANAGER" && !employeeId)
+        throw AppError.forbidden("Manager employee profile not found.");
+      const format = parseExportFormat(req.query.format);
+      const records = await repo.listForDate(
+        date,
+        role === "MANAGER" ? (employeeId ?? undefined) : undefined,
+      );
+      await sendAttendanceExport(
+        res,
+        records,
+        format,
+        `team-attendance-${date}`,
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/export/team/monthly",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+      const month = req.query.month ? Number(req.query.month) : NaN;
+      const year = req.query.year ? Number(req.query.year) : NaN;
+      if (!Number.isInteger(month) || month < 1 || month > 12) {
+        throw AppError.badRequest("Invalid attendance month.");
+      }
+      if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+        throw AppError.badRequest("Invalid attendance year.");
+      }
+      if (role === "MANAGER" && !employeeId) {
+        throw AppError.forbidden("Manager employee profile not found.");
+      }
+      const format = parseExportFormat(req.query.format);
+      const records = await repo.listForMonth(
+        month,
+        year,
+        role === "MANAGER" ? (employeeId ?? undefined) : undefined,
+      );
+      await sendAttendanceExport(
+        res,
+        records,
+        format,
+        `team-attendance-${year}-${String(month).padStart(2, "0")}`,
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/summary/today",
+  requirePermission("attendance.manage"),
+  async (_req, res, next) => {
+    try {
+      res.json(await repo.getTodaySummary());
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/analytics/trend",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const months = req.query.months ? Number(req.query.months) : 6;
+
+      if (!Number.isInteger(months) || months < 1 || months > 24) {
+        throw AppError.badRequest(
+          "Months must be an integer between 1 and 24.",
+        );
+      }
+
+      const { role, employeeId } = req.user!;
+
+      const managerId =
+        role === "MANAGER" && employeeId ? employeeId : undefined;
+
+      res.json({
+        data: await repo.getMonthlyAttendanceTrend(months, managerId),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 attendanceRouter.get("/ai-anomalies", async (req, res, next) => {
   try {
-    const month = req.query.month
-      ? Number(req.query.month)
-      : undefined;
+    const month = req.query.month ? Number(req.query.month) : undefined;
 
-    const year = req.query.year
-      ? Number(req.query.year)
-      : undefined;
+    const year = req.query.year ? Number(req.query.year) : undefined;
 
     if (
       month !== undefined &&
@@ -195,8 +642,7 @@ attendanceRouter.get("/ai-anomalies", async (req, res, next) => {
     // The deterministic anomaly detection remains the source of truth.
     let ai = {
       summary: "No significant attendance anomalies were detected.",
-      recommendation:
-        "Continue maintaining a consistent attendance pattern.",
+      recommendation: "Continue maintaining a consistent attendance pattern.",
     };
 
     if (firstResult) {
@@ -224,17 +670,12 @@ attendanceRouter.get("/ai-anomalies", async (req, res, next) => {
     next(err);
   }
 });
+
 attendanceRouter.get("/ai-forecast", async (req, res, next) => {
   try {
-    const months = req.query.months
-      ? Number(req.query.months)
-      : 6;
+    const months = req.query.months ? Number(req.query.months) : 6;
 
-    if (
-      !Number.isInteger(months) ||
-      months < 3 ||
-      months > 12
-    ) {
+    if (!Number.isInteger(months) || months < 3 || months > 12) {
       throw AppError.badRequest(
         "Forecast history must be between 3 and 12 months.",
       );
@@ -262,10 +703,7 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
     const forecastResults = [];
 
     for (const employeeId of scope.employeeIds) {
-      const result = await getAttendanceForecast(
-        employeeId,
-        months,
-      );
+      const result = await getAttendanceForecast(employeeId, months);
 
       forecastResults.push(result);
     }
@@ -351,18 +789,14 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
       }
     }
 
-    const historicalData = Array.from(
-      historicalMap.entries(),
-    ).map(([month, value]) => ({
-      month,
-      attendanceRate:
-        value.count > 0
-          ? Math.round(
-              value.totalRate / value.count,
-            )
-          : 0,
-      workingDays: value.workingDays,
-    }));
+    const historicalData = Array.from(historicalMap.entries()).map(
+      ([month, value]) => ({
+        month,
+        attendanceRate:
+          value.count > 0 ? Math.round(value.totalRate / value.count) : 0,
+        workingDays: value.workingDays,
+      }),
+    );
 
     // -----------------------------------------------------------------------
     // Aggregate forecast
@@ -370,29 +804,20 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
 
     const predictedAttendanceRate = Math.round(
       forecastResults.reduce(
-        (sum, result) =>
-          sum +
-          result.forecast.predictedAttendanceRate,
+        (sum, result) => sum + result.forecast.predictedAttendanceRate,
         0,
       ) / forecastResults.length,
     );
 
-    const improvingCount =
-      forecastResults.filter(
-        (result) =>
-          result.forecast.direction === "IMPROVING",
-      ).length;
+    const improvingCount = forecastResults.filter(
+      (result) => result.forecast.direction === "IMPROVING",
+    ).length;
 
-    const decliningCount =
-      forecastResults.filter(
-        (result) =>
-          result.forecast.direction === "DECLINING",
-      ).length;
+    const decliningCount = forecastResults.filter(
+      (result) => result.forecast.direction === "DECLINING",
+    ).length;
 
-    let direction:
-      | "IMPROVING"
-      | "DECLINING"
-      | "STABLE" = "STABLE";
+    let direction: "IMPROVING" | "DECLINING" | "STABLE" = "STABLE";
 
     if (improvingCount > decliningCount) {
       direction = "IMPROVING";
@@ -400,33 +825,21 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
       direction = "DECLINING";
     }
 
-    const highConfidenceCount =
-      forecastResults.filter(
-        (result) =>
-          result.forecast.confidence === "HIGH",
-      ).length;
+    const highConfidenceCount = forecastResults.filter(
+      (result) => result.forecast.confidence === "HIGH",
+    ).length;
 
-    const mediumOrHighConfidenceCount =
-      forecastResults.filter(
-        (result) =>
-          result.forecast.confidence === "HIGH" ||
-          result.forecast.confidence === "MEDIUM",
-      ).length;
+    const mediumOrHighConfidenceCount = forecastResults.filter(
+      (result) =>
+        result.forecast.confidence === "HIGH" ||
+        result.forecast.confidence === "MEDIUM",
+    ).length;
 
-    let confidence:
-      | "HIGH"
-      | "MEDIUM"
-      | "LOW" = "LOW";
+    let confidence: "HIGH" | "MEDIUM" | "LOW" = "LOW";
 
-    if (
-      highConfidenceCount ===
-      forecastResults.length
-    ) {
+    if (highConfidenceCount === forecastResults.length) {
       confidence = "HIGH";
-    } else if (
-      mediumOrHighConfidenceCount >
-      0
-    ) {
+    } else if (mediumOrHighConfidenceCount > 0) {
       confidence = "MEDIUM";
     }
 
@@ -434,24 +847,17 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
     // Best / lowest month
     // -----------------------------------------------------------------------
 
-    const monthsWithData =
-      historicalData.filter(
-        (item) => item.workingDays > 0,
-      );
+    const monthsWithData = historicalData.filter(
+      (item) => item.workingDays > 0,
+    );
 
-    const best =
-      [...monthsWithData].sort(
-        (a, b) =>
-          b.attendanceRate -
-          a.attendanceRate,
-      )[0];
+    const best = [...monthsWithData].sort(
+      (a, b) => b.attendanceRate - a.attendanceRate,
+    )[0];
 
-    const lowest =
-      [...monthsWithData].sort(
-        (a, b) =>
-          a.attendanceRate -
-          b.attendanceRate,
-      )[0];
+    const lowest = [...monthsWithData].sort(
+      (a, b) => a.attendanceRate - b.attendanceRate,
+    )[0];
 
     // -----------------------------------------------------------------------
     // Recommendation
@@ -491,18 +897,14 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
       summary: {
         averageAttendanceRate: Math.round(
           forecastResults.reduce(
-            (sum, result) =>
-              sum +
-              result.summary.averageAttendanceRate,
+            (sum, result) => sum + result.summary.averageAttendanceRate,
             0,
           ) / forecastResults.length,
         ),
 
-        bestMonth:
-          best?.month ?? null,
+        bestMonth: best?.month ?? null,
 
-        lowestMonth:
-          lowest?.month ?? null,
+        lowestMonth: lowest?.month ?? null,
       },
 
       recommendation,
@@ -519,471 +921,339 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
   }
 });
 // ===========================================================================
+
 // AI ATTENDANCE PATTERN ANALYSIS
 // ===========================================================================
 
-attendanceRouter.get(
-  "/ai-patterns",
-  async (req, res, next) => {
-    try {
-      const months = req.query.months
-        ? Number(req.query.months)
-        : 6;
+attendanceRouter.get("/ai-patterns", async (req, res, next) => {
+  try {
+    const months = req.query.months ? Number(req.query.months) : 6;
 
-      if (
-        !Number.isInteger(months) ||
-        months < 3 ||
-        months > 12
-      ) {
-        throw AppError.badRequest(
-          "Months must be between 3 and 12.",
-        );
-      }
+    if (!Number.isInteger(months) || months < 3 || months > 12) {
+      throw AppError.badRequest("Months must be between 3 and 12.");
+    }
 
-      const requestedEmployeeId =
-        typeof req.query.employeeId === "string"
-          ? req.query.employeeId
-          : undefined;
+    const requestedEmployeeId =
+      typeof req.query.employeeId === "string"
+        ? req.query.employeeId
+        : undefined;
 
-      console.log("AI PATTERN REQUEST:", {
-        months,
-        requestedEmployeeId,
-      });
+    console.log("AI PATTERN REQUEST:", {
+      months,
+      requestedEmployeeId,
+    });
 
-      // ---------------------------------------------------------------------
-      // Resolve the correct attendance scope
-      //
-      // SUPER_ADMIN / HR_ADMIN:
-      //   no employee -> All Employees
-      //   employee     -> selected employee
-      //
-      // MANAGER:
-      //   no employee -> My Team
-      //   employee     -> selected team employee
-      //
-      // EMPLOYEE:
-      //   own attendance only
-      // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Resolve the correct attendance scope
+    //
+    // SUPER_ADMIN / HR_ADMIN:
+    //   no employee -> All Employees
+    //   employee     -> selected employee
+    //
+    // MANAGER:
+    //   no employee -> My Team
+    //   employee     -> selected team employee
+    //
+    // EMPLOYEE:
+    //   own attendance only
+    // ---------------------------------------------------------------------
 
-      const scope = await resolveAttendanceScope(
-        {
-          userId: req.user!.userId,
-          employeeId: req.user!.employeeId,
-          role: req.user!.role,
-        },
-        requestedEmployeeId,
-      );
+    const scope = await resolveAttendanceScope(
+      {
+        userId: req.user!.userId,
+        employeeId: req.user!.employeeId,
+        role: req.user!.role,
+      },
+      requestedEmployeeId,
+    );
 
-      // ---------------------------------------------------------------------
-      // Generate pattern analysis for every employee in scope
-      // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Generate pattern analysis for every employee in scope
+    // ---------------------------------------------------------------------
 
-      const patternResults = await Promise.all(
-  scope.employeeIds.map((employeeId) =>
-    getAttendancePatterns(employeeId, months)
-  )
-);
-      // ---------------------------------------------------------------------
-      // No employees in scope
-      // ---------------------------------------------------------------------
+    const patternResults = await Promise.all(
+      scope.employeeIds.map((employeeId) =>
+        getAttendancePatterns(employeeId, months),
+      ),
+    );
+    // ---------------------------------------------------------------------
+    // No employees in scope
+    // ---------------------------------------------------------------------
 
-      if (patternResults.length === 0) {
-        return res.json({
-          period: {
-            start: "",
-            end: new Date()
-              .toISOString()
-              .slice(0, 10),
-            months,
-          },
-
-          summary: {
-            attendanceRate: 0,
-            recent30DayRate: 0,
-            strongestDay: null,
-            weakestDay: null,
-          },
-
-          weekdayAnalysis: [],
-          
-          variations: {
-            attendancePercentagePoints: 0,
-            checkInMinutes: 0,
-            workHours: 0,
-          },
-
-          patterns: [],
-
-          recommendations: [
-            "No attendance data is available for the selected scope.",
-          ],
-
-          scope: {
-            mode: scope.mode,
-            employeeId: scope.employeeId,
-            label: scope.label,
-            employeeCount:
-              scope.employeeIds.length,
-          },
-        });
-      }
-
-      // ---------------------------------------------------------------------
-      // Single employee
-      //
-      // Preserve the existing service response.
-      // ---------------------------------------------------------------------
-
-      if (patternResults.length === 1) {
-        return res.json({
-          ...patternResults[0],
-
-          scope: {
-            mode: scope.mode,
-            employeeId: scope.employeeId,
-            label: scope.label,
-            employeeCount:
-              scope.employeeIds.length,
-          },
-        });
-      }
-
-      // ---------------------------------------------------------------------
-      // Overall / Team aggregation
-      // ---------------------------------------------------------------------
-
-      const weekdays = [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-      ];
-
-      const weekdayAnalysis =
-        weekdays.map((day) => {
-          const dayResults =
-            patternResults
-              .map((result) =>
-                result.weekdayAnalysis.find(
-                  (item) => item.day === day,
-                ),
-              )
-              .filter(Boolean);
-
-          const totalDays =
-            dayResults.reduce(
-              (sum, item) =>
-                sum + item!.totalDays,
-              0,
-            );
-
-          const attendedEquivalent =
-            dayResults.reduce(
-              (sum, item) =>
-                sum +
-                item!.attendedEquivalent,
-              0,
-            );
-
-          const checkInValues =
-            dayResults
-              .filter(
-                (item) =>
-                  item!.averageCheckInMinutes !==
-                  null,
-              )
-              .map(
-                (item) =>
-                  item!.averageCheckInMinutes!,
-              );
-
-          const workHourValues =
-            dayResults
-              .filter(
-                (item) =>
-                  item!.averageWorkHours !==
-                  null,
-              )
-              .map(
-                (item) =>
-                  item!.averageWorkHours!,
-              );
-
-          return {
-            day,
-            totalDays,
-            attendedEquivalent,
-
-            attendanceRate:
-              totalDays > 0
-                ? Math.round(
-                    (attendedEquivalent /
-                      totalDays) *
-                      100,
-                  )
-                : 0,
-
-            averageCheckInMinutes:
-              checkInValues.length > 0
-                ? Math.round(
-                    checkInValues.reduce(
-                      (sum, value) =>
-                        sum + value,
-                      0,
-                    ) /
-                      checkInValues.length,
-                  )
-                : null,
-
-            averageWorkHours:
-              workHourValues.length > 0
-                ? Math.round(
-                    (workHourValues.reduce(
-                      (sum, value) =>
-                        sum + value,
-                      0,
-                    ) /
-                      workHourValues.length) *
-                      100,
-                  ) / 100
-                : null,
-          };
-        });
-
-      // ---------------------------------------------------------------------
-      // Overall attendance
-      // ---------------------------------------------------------------------
-
-      const totalDays =
-        weekdayAnalysis.reduce(
-          (sum, item) =>
-            sum + item.totalDays,
-          0,
-        );
-
-      const totalAttendedEquivalent =
-        weekdayAnalysis.reduce(
-          (sum, item) =>
-            sum +
-            item.attendedEquivalent,
-          0,
-        );
-
-      const attendanceRate =
-        totalDays > 0
-          ? Math.round(
-              (totalAttendedEquivalent /
-                totalDays) *
-                100,
-            )
-          : 0;
-
-      // ---------------------------------------------------------------------
-      // Recent 30-day attendance
-      // ---------------------------------------------------------------------
-
-      const recent30DayRate =
-        Math.round(
-          patternResults.reduce(
-            (sum, result) =>
-              sum +
-              result.summary.recent30DayRate,
-            0,
-          ) /
-            patternResults.length,
-        );
-
-      // ---------------------------------------------------------------------
-      // Strongest / weakest day
-      // ---------------------------------------------------------------------
-
-      const activeWeekdays =
-        weekdayAnalysis.filter(
-          (item) =>
-            item.totalDays > 0,
-        );
-
-      const strongestDay =
-        activeWeekdays.length > 0
-          ? [...activeWeekdays].sort(
-              (a, b) =>
-                b.attendanceRate -
-                a.attendanceRate,
-            )[0].day
-          : null;
-
-      const weakestDay =
-        activeWeekdays.length > 0
-          ? [...activeWeekdays].sort(
-              (a, b) =>
-                a.attendanceRate -
-                b.attendanceRate,
-            )[0].day
-          : null;
-
-      // ---------------------------------------------------------------------
-      // Overall variations
-      // ---------------------------------------------------------------------
-
-      const attendanceRates =
-        activeWeekdays.map(
-          (item) =>
-            item.attendanceRate,
-        );
-
-      const attendanceVariation =
-        attendanceRates.length > 0
-          ? Math.max(
-              ...attendanceRates,
-            ) -
-            Math.min(
-              ...attendanceRates,
-            )
-          : 0;
-
-      const checkInValues =
-        activeWeekdays
-          .filter(
-            (item) =>
-              item.averageCheckInMinutes !==
-              null,
-          )
-          .map(
-            (item) =>
-              item.averageCheckInMinutes!,
-          );
-
-      const checkInVariation =
-        checkInValues.length > 0
-          ? Math.max(
-              ...checkInValues,
-            ) -
-            Math.min(
-              ...checkInValues,
-            )
-          : 0;
-
-      const workHourValues =
-        activeWeekdays
-          .filter(
-            (item) =>
-              item.averageWorkHours !==
-              null,
-          )
-          .map(
-            (item) =>
-              item.averageWorkHours!,
-          );
-
-      const workHourVariation =
-        workHourValues.length > 0
-          ? Math.max(
-              ...workHourValues,
-            ) -
-            Math.min(
-              ...workHourValues,
-            )
-          : 0;
-
-      // ---------------------------------------------------------------------
-      // Aggregate detected patterns
-      // ---------------------------------------------------------------------
-
-      const patterns = patternResults
-        .flatMap(
-          (result) =>
-            result.patterns,
-        )
-        .filter(
-          (pattern, index, array) =>
-            index ===
-            array.findIndex(
-              (item) =>
-                item.title ===
-                pattern.title,
-            ),
-        );
-
-      // ---------------------------------------------------------------------
-      // Aggregate recommendations
-      // ---------------------------------------------------------------------
-
-      const recommendations =
-        patternResults
-          .flatMap(
-            (result) =>
-              result.recommendations,
-          )
-          .filter(
-            (recommendation, index, array) =>
-              index ===
-              array.indexOf(
-                recommendation,
-              ),
-          )
-          .slice(0, 5);
-
-      if (
-        recommendations.length === 0
-      ) {
-        recommendations.push(
-          "Attendance patterns are relatively consistent across the selected scope.",
-        );
-      }
-
-      // ---------------------------------------------------------------------
-      // Return
-      // ---------------------------------------------------------------------
-
-      const firstResult =
-        patternResults[0];
-
+    if (patternResults.length === 0) {
       return res.json({
-        period: firstResult.period,
+        period: {
+          start: "",
+          end: new Date().toISOString().slice(0, 10),
+          months,
+        },
 
         summary: {
-          attendanceRate,
-          recent30DayRate,
-          strongestDay,
-          weakestDay,
+          attendanceRate: 0,
+          recent30DayRate: 0,
+          strongestDay: null,
+          weakestDay: null,
         },
 
-        weekdayAnalysis,
+        weekdayAnalysis: [],
 
         variations: {
-          attendancePercentagePoints:
-            attendanceVariation,
-
-          checkInMinutes:
-            checkInVariation,
-
-          workHours:
-            Math.round(
-              workHourVariation *
-                100,
-            ) / 100,
+          attendancePercentagePoints: 0,
+          checkInMinutes: 0,
+          workHours: 0,
         },
 
-        patterns,
+        patterns: [],
 
-        recommendations,
+        recommendations: [
+          "No attendance data is available for the selected scope.",
+        ],
 
         scope: {
           mode: scope.mode,
           employeeId: scope.employeeId,
           label: scope.label,
-          employeeCount:
-            scope.employeeIds.length,
+          employeeCount: scope.employeeIds.length,
         },
       });
-    } catch (err) {
-      next(err);
     }
-  },
-);
+
+    // ---------------------------------------------------------------------
+    // Single employee
+    //
+    // Preserve the existing service response.
+    // ---------------------------------------------------------------------
+
+    if (patternResults.length === 1) {
+      return res.json({
+        ...patternResults[0],
+
+        scope: {
+          mode: scope.mode,
+          employeeId: scope.employeeId,
+          label: scope.label,
+          employeeCount: scope.employeeIds.length,
+        },
+      });
+    }
+
+    // ---------------------------------------------------------------------
+    // Overall / Team aggregation
+    // ---------------------------------------------------------------------
+
+    const weekdays = [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ];
+
+    const weekdayAnalysis = weekdays.map((day) => {
+      const dayResults = patternResults
+        .map((result) =>
+          result.weekdayAnalysis.find((item) => item.day === day),
+        )
+        .filter(Boolean);
+
+      const totalDays = dayResults.reduce(
+        (sum, item) => sum + item!.totalDays,
+        0,
+      );
+
+      const attendedEquivalent = dayResults.reduce(
+        (sum, item) => sum + item!.attendedEquivalent,
+        0,
+      );
+
+      const checkInValues = dayResults
+        .filter((item) => item!.averageCheckInMinutes !== null)
+        .map((item) => item!.averageCheckInMinutes!);
+
+      const workHourValues = dayResults
+        .filter((item) => item!.averageWorkHours !== null)
+        .map((item) => item!.averageWorkHours!);
+
+      return {
+        day,
+        totalDays,
+        attendedEquivalent,
+
+        attendanceRate:
+          totalDays > 0
+            ? Math.round((attendedEquivalent / totalDays) * 100)
+            : 0,
+
+        averageCheckInMinutes:
+          checkInValues.length > 0
+            ? Math.round(
+                checkInValues.reduce((sum, value) => sum + value, 0) /
+                  checkInValues.length,
+              )
+            : null,
+
+        averageWorkHours:
+          workHourValues.length > 0
+            ? Math.round(
+                (workHourValues.reduce((sum, value) => sum + value, 0) /
+                  workHourValues.length) *
+                  100,
+              ) / 100
+            : null,
+      };
+    });
+
+    // ---------------------------------------------------------------------
+    // Overall attendance
+    // ---------------------------------------------------------------------
+
+    const totalDays = weekdayAnalysis.reduce(
+      (sum, item) => sum + item.totalDays,
+      0,
+    );
+
+    const totalAttendedEquivalent = weekdayAnalysis.reduce(
+      (sum, item) => sum + item.attendedEquivalent,
+      0,
+    );
+
+    const attendanceRate =
+      totalDays > 0
+        ? Math.round((totalAttendedEquivalent / totalDays) * 100)
+        : 0;
+
+    // ---------------------------------------------------------------------
+    // Recent 30-day attendance
+    // ---------------------------------------------------------------------
+
+    const recent30DayRate = Math.round(
+      patternResults.reduce(
+        (sum, result) => sum + result.summary.recent30DayRate,
+        0,
+      ) / patternResults.length,
+    );
+
+    // ---------------------------------------------------------------------
+    // Strongest / weakest day
+    // ---------------------------------------------------------------------
+
+    const activeWeekdays = weekdayAnalysis.filter((item) => item.totalDays > 0);
+
+    const strongestDay =
+      activeWeekdays.length > 0
+        ? [...activeWeekdays].sort(
+            (a, b) => b.attendanceRate - a.attendanceRate,
+          )[0].day
+        : null;
+
+    const weakestDay =
+      activeWeekdays.length > 0
+        ? [...activeWeekdays].sort(
+            (a, b) => a.attendanceRate - b.attendanceRate,
+          )[0].day
+        : null;
+
+    // ---------------------------------------------------------------------
+    // Overall variations
+    // ---------------------------------------------------------------------
+
+    const attendanceRates = activeWeekdays.map((item) => item.attendanceRate);
+
+    const attendanceVariation =
+      attendanceRates.length > 0
+        ? Math.max(...attendanceRates) - Math.min(...attendanceRates)
+        : 0;
+
+    const checkInValues = activeWeekdays
+      .filter((item) => item.averageCheckInMinutes !== null)
+      .map((item) => item.averageCheckInMinutes!);
+
+    const checkInVariation =
+      checkInValues.length > 0
+        ? Math.max(...checkInValues) - Math.min(...checkInValues)
+        : 0;
+
+    const workHourValues = activeWeekdays
+      .filter((item) => item.averageWorkHours !== null)
+      .map((item) => item.averageWorkHours!);
+
+    const workHourVariation =
+      workHourValues.length > 0
+        ? Math.max(...workHourValues) - Math.min(...workHourValues)
+        : 0;
+
+    // ---------------------------------------------------------------------
+    // Aggregate detected patterns
+    // ---------------------------------------------------------------------
+
+    const patterns = patternResults
+      .flatMap((result) => result.patterns)
+      .filter(
+        (pattern, index, array) =>
+          index === array.findIndex((item) => item.title === pattern.title),
+      );
+
+    // ---------------------------------------------------------------------
+    // Aggregate recommendations
+    // ---------------------------------------------------------------------
+
+    const recommendations = patternResults
+      .flatMap((result) => result.recommendations)
+      .filter(
+        (recommendation, index, array) =>
+          index === array.indexOf(recommendation),
+      )
+      .slice(0, 5);
+
+    if (recommendations.length === 0) {
+      recommendations.push(
+        "Attendance patterns are relatively consistent across the selected scope.",
+      );
+    }
+
+    // ---------------------------------------------------------------------
+    // Return
+    // ---------------------------------------------------------------------
+
+    const firstResult = patternResults[0];
+
+    return res.json({
+      period: firstResult.period,
+
+      summary: {
+        attendanceRate,
+        recent30DayRate,
+        strongestDay,
+        weakestDay,
+      },
+
+      weekdayAnalysis,
+
+      variations: {
+        attendancePercentagePoints: attendanceVariation,
+
+        checkInMinutes: checkInVariation,
+
+        workHours: Math.round(workHourVariation * 100) / 100,
+      },
+
+      patterns,
+
+      recommendations,
+
+      scope: {
+        mode: scope.mode,
+        employeeId: scope.employeeId,
+        label: scope.label,
+        employeeCount: scope.employeeIds.length,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // ===========================================================================
 // EMPLOYEE ATTENDANCE
@@ -991,7 +1261,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/employee/:employeeId",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId: requesterEmployeeId } = req.user!;
@@ -1025,19 +1295,12 @@ attendanceRouter.get(
         throw AppError.badRequest("Invalid attendance month.");
       }
 
-      if (
-        year !== undefined &&
-        (!Number.isInteger(year) || year < 2000)
-      ) {
+      if (year !== undefined && (!Number.isInteger(year) || year < 2000)) {
         throw AppError.badRequest("Invalid attendance year.");
       }
 
       res.json({
-        records: await repo.listForEmployee(
-          req.params.employeeId,
-          month,
-          year,
-        ),
+        records: await repo.listForEmployee(req.params.employeeId, month, year),
       });
     } catch (err) {
       next(err);
@@ -1051,7 +1314,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/by-date/:date",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -1108,18 +1371,12 @@ attendanceRouter.get("/summary/today", async (_req, res, next) => {
 
 attendanceRouter.get(
   "/analytics/trend",
-  isManagerOrAbove,
+  requirePermission("attendance.manage"),
   async (req, res, next) => {
     try {
-      const months = req.query.months
-        ? Number(req.query.months)
-        : 6;
+      const months = req.query.months ? Number(req.query.months) : 6;
 
-      if (
-        !Number.isInteger(months) ||
-        months < 1 ||
-        months > 24
-      ) {
+      if (!Number.isInteger(months) || months < 1 || months > 24) {
         throw AppError.badRequest(
           "Months must be an integer between 1 and 24.",
         );
@@ -1128,15 +1385,10 @@ attendanceRouter.get(
       const { role, employeeId } = req.user!;
 
       const managerId =
-        role === "MANAGER" && employeeId
-          ? employeeId
-          : undefined;
+        role === "MANAGER" && employeeId ? employeeId : undefined;
 
       res.json({
-        data: await repo.getMonthlyAttendanceTrend(
-          months,
-          managerId,
-        ),
+        data: await repo.getMonthlyAttendanceTrend(months, managerId),
       });
     } catch (err) {
       next(err);
@@ -1144,277 +1396,58 @@ attendanceRouter.get(
   },
 );
 
-// ===========================================================================
-// REGULARIZATION SCHEMAS
-// ===========================================================================
-
-const regularizationSchema = z.object({
-  date: z.string(),
-  note: z
-    .string()
-    .min(3, "Please describe the reason for regularization."),
-});
-
-const regularizationDecisionSchema = z.object({
-  decisionNote: z
-    .string()
-    .trim()
-    .max(1000, "Decision note must not exceed 1000 characters.")
-    .optional()
-    .default(""),
-});
-
-// ===========================================================================
-// TEAM REGULARIZATION REQUESTS
-// ===========================================================================
-
-attendanceRouter.get(
-  "/regularization/team",
-  isManagerOrAbove,
-  async (req, res, next) => {
-    try {
-      const { role, employeeId } = req.user!;
-
-      const allowedRoles = [
-        "MANAGER",
-        "HR_ADMIN",
-        "SUPER_ADMIN",
-      ];
-
-      if (!allowedRoles.includes(role)) {
-        throw AppError.forbidden(
-          "You are not authorized to review regularization requests.",
-        );
-      }
-
-      const status =
-        typeof req.query.status === "string"
-          ? req.query.status.toUpperCase()
-          : undefined;
-
-      if (
-        status &&
-        ![
-          "PENDING",
-          "APPROVED",
-          "REJECTED",
-          "CANCELLED",
-        ].includes(status)
-      ) {
-        throw AppError.badRequest(
-          "Invalid regularization request status.",
-        );
-      }
-
-      // ---------------------------------------------------------------------
-      // Manager
-      // -> only their direct reports
-      //
-      // HR_ADMIN / SUPER_ADMIN
-      // -> all employees
-      // ---------------------------------------------------------------------
-
-      const includeAll =
-        role === "HR_ADMIN" ||
-        role === "SUPER_ADMIN";
-
-      if (!includeAll && !employeeId) {
-        throw AppError.forbidden(
-          "Manager employee profile not found.",
-        );
-      }
-
-      res.json({
-        requests:
-          await repo.listTeamRegularizationRequests(
-            employeeId ?? "",
-            status,
-            includeAll,
-          ),
-      });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-// ===========================================================================
-// APPROVE REGULARIZATION
-// ===========================================================================
-
-attendanceRouter.post(
-  "/regularization/:requestId/approve",
-  isManagerOrAbove,
-  validate(regularizationDecisionSchema),
-  async (req, res, next) => {
-    try {
-      const { role, employeeId } = req.user!;
-
-      const allowedRoles = [
-        "MANAGER",
-        "HR_ADMIN",
-        "SUPER_ADMIN",
-      ];
-
-      if (!allowedRoles.includes(role)) {
-        throw AppError.forbidden(
-          "You are not authorized to approve regularization requests.",
-        );
-      }
-
-      if (!employeeId) {
-        throw AppError.forbidden(
-          "Approver employee profile not found.",
-        );
-      }
-
-      const { decisionNote } = req.body as z.infer<
-        typeof regularizationDecisionSchema
-      >;
-
-      const includeAll =
-        role === "HR_ADMIN" ||
-        role === "SUPER_ADMIN";
-
-      res.json({
-        result: await repo.approveRegularization(
-          req.params.requestId,
-          employeeId,
-          decisionNote,
-          includeAll,
-        ),
-        message:
-          "Attendance regularization approved successfully.",
-      });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-// ===========================================================================
-// REJECT REGULARIZATION
-// ===========================================================================
-
-attendanceRouter.post(
-  "/regularization/:requestId/reject",
-  isManagerOrAbove,
-  validate(
-    regularizationDecisionSchema.extend({
-      decisionNote: z
-        .string()
-        .trim()
-        .min(3, "Please provide a rejection reason.")
-        .max(
-          1000,
-          "Decision note must not exceed 1000 characters.",
-        ),
-    }),
-  ),
-  async (req, res, next) => {
-    try {
-      const { role, employeeId } = req.user!;
-
-      const allowedRoles = [
-        "MANAGER",
-        "HR_ADMIN",
-        "SUPER_ADMIN",
-      ];
-
-      if (!allowedRoles.includes(role)) {
-        throw AppError.forbidden(
-          "You are not authorized to reject regularization requests.",
-        );
-      }
-
-      if (!employeeId) {
-        throw AppError.forbidden(
-          "Approver employee profile not found.",
-        );
-      }
-
-      const { decisionNote } = req.body as {
-        decisionNote: string;
-      };
-
-      const includeAll =
-        role === "HR_ADMIN" ||
-        role === "SUPER_ADMIN";
-
-      res.json({
-        request: await repo.rejectRegularization(
-          req.params.requestId,
-          employeeId,
-          decisionNote,
-          includeAll,
-        ),
-        message:
-          "Attendance regularization rejected successfully.",
-      });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
 // ===========================================================================
 // SMART REGULARIZATION ASSISTANT
 // ===========================================================================
 
-attendanceRouter.get(
-  "/smart-regularization",
-  async (req, res, next) => {
-    try {
-      const requestedEmployeeId =
-        typeof req.query.employeeId === "string"
-          ? req.query.employeeId
-          : undefined;
+attendanceRouter.get("/smart-regularization", async (req, res, next) => {
+  try {
+    const requestedEmployeeId =
+      typeof req.query.employeeId === "string"
+        ? req.query.employeeId
+        : undefined;
 
-      const date =
-        typeof req.query.date === "string"
-          ? req.query.date
-          : "";
+    const date = typeof req.query.date === "string" ? req.query.date : "";
 
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        throw AppError.badRequest(
-          "Invalid attendance date.",
-        );
-      }
-
-      const scope = await resolveAttendanceScope(
-        {
-          userId: req.user!.userId,
-          employeeId: req.user!.employeeId,
-          role: req.user!.role,
-        },
-        requestedEmployeeId,
-      );
-
-      // Smart Regularization is date-specific,
-      // so it can only analyze one employee at a time.
-      if (scope.employeeIds.length !== 1) {
-        throw AppError.badRequest(
-          "Please select a specific employee for Smart Regularization.",
-        );
-      }
-
-      const result =
-        await analyzeAttendanceForRegularization(
-          scope.employeeIds[0],
-          date,
-        );
-
-      return res.json({
-        ...result,
-        scope: {
-          mode: scope.mode,
-          employeeId: scope.employeeId,
-          label: scope.label,
-          employeeCount: scope.employeeIds.length,
-        },
-      });
-    } catch (err) {
-      next(err);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw AppError.badRequest("Invalid attendance date.");
     }
-  },
-);
+
+    const scope = await resolveAttendanceScope(
+      {
+        userId: req.user!.userId,
+        employeeId: req.user!.employeeId,
+        role: req.user!.role,
+      },
+      requestedEmployeeId,
+    );
+
+    // Smart Regularization is date-specific,
+    // so it can only analyze one employee at a time.
+    if (scope.employeeIds.length !== 1) {
+      throw AppError.badRequest(
+        "Please select a specific employee for Smart Regularization.",
+      );
+    }
+
+    const result = await analyzeAttendanceForRegularization(
+      scope.employeeIds[0],
+      date,
+    );
+
+    return res.json({
+      ...result,
+      scope: {
+        mode: scope.mode,
+        employeeId: scope.employeeId,
+        label: scope.label,
+        employeeCount: scope.employeeIds.length,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 // ===========================================================================
 // REQUEST REGULARIZATION
 // ===========================================================================
@@ -1425,14 +1458,10 @@ attendanceRouter.post(
   async (req, res, next) => {
     try {
       if (!req.user!.employeeId) {
-        throw AppError.forbidden(
-          "Employee profile not found.",
-        );
+        throw AppError.forbidden("Employee profile not found.");
       }
 
-      const { date, note } = req.body as z.infer<
-        typeof regularizationSchema
-      >;
+      const { date, note } = req.body as z.infer<typeof regularizationSchema>;
 
       res.json({
         record: await repo.requestRegularization(
@@ -1447,7 +1476,6 @@ attendanceRouter.post(
   },
 );
 
-// ===========================================================================
 // AI ATTENDANCE INSIGHTS
 // ===========================================================================
 //
@@ -1470,9 +1498,7 @@ attendanceRouter.get("/ai-insights", async (req, res, next) => {
     const endDate = String(req.query.endDate || "");
 
     if (!startDate || !endDate) {
-      throw AppError.badRequest(
-        "startDate and endDate are required",
-      );
+      throw AppError.badRequest("startDate and endDate are required");
     }
 
     const requestedEmployeeId =
@@ -1493,27 +1519,27 @@ attendanceRouter.get("/ai-insights", async (req, res, next) => {
       requestedEmployeeId,
     );
 
-    const insights =
-      await repo.getAiAttendanceInsightsForEmployees(
-        scope.employeeIds,
-        startDate,
-        endDate,
-      );
+    const insights = await repo.getAiAttendanceInsightsForEmployees(
+      scope.employeeIds,
+      startDate,
+      endDate,
+    );
 
-   res.json({
-  insights,
-  scope: {
-    mode: scope.mode,
-    employeeId: scope.employeeId,
-    label: scope.label,
-    employeeCount: scope.employeeIds.length,
-  },
-});
+    res.json({
+      insights,
+      scope: {
+        mode: scope.mode,
+        employeeId: scope.employeeId,
+        label: scope.label,
+        employeeCount: scope.employeeIds.length,
+      },
+    });
   } catch (error) {
     next(error);
   }
 });
 // ===========================================================================
+
 // ASK AI
 // ===========================================================================
 
@@ -1524,10 +1550,7 @@ const askAISchema = z.object({
     .min(2, "Please enter a question.")
     .max(500, "Question must not exceed 500 characters."),
 
-  employeeId: z
-    .string()
-    .trim()
-    .optional(),
+  employeeId: z.string().trim().optional(),
 });
 
 attendanceRouter.post(
@@ -1535,10 +1558,7 @@ attendanceRouter.post(
   validate(askAISchema),
   async (req, res, next) => {
     try {
-      const {
-        question,
-        employeeId: requestedEmployeeId,
-      } = req.body as z.infer<
+      const { question, employeeId: requestedEmployeeId } = req.body as z.infer<
         typeof askAISchema
       >;
 
@@ -1563,10 +1583,7 @@ attendanceRouter.post(
         requestedEmployeeId,
       );
 
-      const result = await askAttendanceAI(
-        scope.employeeIds,
-        question,
-      );
+      const result = await askAttendanceAI(scope.employeeIds, question);
 
       return res.json({
         answer: result.answer,
@@ -1575,9 +1592,136 @@ attendanceRouter.post(
           mode: scope.mode,
           employeeId: scope.employeeId,
           label: scope.label,
-          employeeCount:
-            scope.employeeIds.length,
+          employeeCount: scope.employeeIds.length,
         },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/regularization/team",
+  requirePermission("attendance.manage"),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+
+      const allowedRoles = ["MANAGER", "HR_ADMIN", "SUPER_ADMIN"];
+      if (!allowedRoles.includes(role)) {
+        throw AppError.forbidden(
+          "You are not authorized to review regularization requests.",
+        );
+      }
+
+      const includeAll = role === "HR_ADMIN" || role === "SUPER_ADMIN";
+      if (!includeAll && !employeeId) {
+        throw AppError.forbidden("Manager employee profile not found.");
+      }
+
+      const status =
+        typeof req.query.status === "string"
+          ? req.query.status.toUpperCase()
+          : undefined;
+
+      if (
+        status &&
+        !["PENDING", "APPROVED", "REJECTED", "CANCELLED"].includes(status)
+      ) {
+        throw AppError.badRequest("Invalid regularization request status.");
+      }
+
+      res.json({
+        requests: await repo.listTeamRegularizationRequests(
+          employeeId ?? "",
+          status,
+          includeAll,
+        ),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.post(
+  "/regularization/:requestId/approve",
+  requirePermission("attendance.manage"),
+  validate(regularizationDecisionSchema),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+
+      const allowedRoles = ["MANAGER", "HR_ADMIN", "SUPER_ADMIN"];
+      if (!allowedRoles.includes(role)) {
+        throw AppError.forbidden(
+          "You are not authorized to approve regularization requests.",
+        );
+      }
+
+      const includeAll = role === "HR_ADMIN" || role === "SUPER_ADMIN";
+      if (!employeeId) {
+        throw AppError.forbidden("Approver employee profile not found.");
+      }
+
+      const { decisionNote } = req.body as z.infer<
+        typeof regularizationDecisionSchema
+      >;
+
+      res.json({
+        result: await repo.approveRegularization(
+          req.params.requestId,
+          employeeId,
+          decisionNote,
+          includeAll,
+        ),
+        message: "Attendance regularization approved successfully.",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+attendanceRouter.post(
+  "/regularization/:requestId/reject",
+  requirePermission("attendance.manage"),
+  validate(
+    regularizationDecisionSchema.extend({
+      decisionNote: z
+        .string()
+        .trim()
+        .min(3, "Please provide a rejection reason.")
+        .max(1000, "Decision note must not exceed 1000 characters."),
+    }),
+  ),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+
+      const allowedRoles = ["MANAGER", "HR_ADMIN", "SUPER_ADMIN"];
+      if (!allowedRoles.includes(role)) {
+        throw AppError.forbidden(
+          "You are not authorized to reject regularization requests.",
+        );
+      }
+
+      const includeAll = role === "HR_ADMIN" || role === "SUPER_ADMIN";
+      if (!employeeId) {
+        throw AppError.forbidden("Approver employee profile not found.");
+      }
+
+      const { decisionNote } = req.body as { decisionNote: string };
+
+      res.json({
+        request: await repo.rejectRegularization(
+          req.params.requestId,
+          employeeId,
+          decisionNote,
+          includeAll,
+        ),
+        message: "Attendance regularization rejected successfully.",
       });
     } catch (err) {
       next(err);

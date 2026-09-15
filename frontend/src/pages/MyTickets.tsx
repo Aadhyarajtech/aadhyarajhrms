@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, Plus } from "lucide-react";
 
 import { api, resolveAssetUrl } from "@/lib/api";
+import RaiseTicketModal from "@/components/ui/RaiseTicketModal";
 
 interface Ticket {
   _id: string;
@@ -16,6 +18,8 @@ interface Ticket {
 }
 
 export default function MyTickets() {
+  const [raiseModalOpen, setRaiseModalOpen] = useState(false);
+
   const {
     data,
     isLoading,
@@ -27,6 +31,8 @@ export default function MyTickets() {
 
       return res.data.tickets as Ticket[];
     },
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   if (isLoading) {
@@ -47,15 +53,31 @@ export default function MyTickets() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">
-          My Tickets
-        </h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            My Tickets
+          </h1>
 
-        <p className="mt-1 text-sm text-gray-500">
-          View and track the support tickets you have submitted.
-        </p>
+          <p className="mt-1 text-sm text-gray-500">
+            View and track the support tickets you have submitted.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setRaiseModalOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-xs hover:bg-brand-700 transition"
+        >
+          <Plus className="h-4 w-4" />
+          Raise Ticket
+        </button>
       </div>
+
+      <RaiseTicketModal
+        open={raiseModalOpen}
+        onClose={() => setRaiseModalOpen(false)}
+      />
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full min-w-[1050px]">
@@ -101,8 +123,15 @@ export default function MyTickets() {
                 key={ticket._id}
                 className="border-b last:border-b-0 hover:bg-gray-50"
               >
-                <td className="p-3 text-sm font-medium text-gray-900">
-                  {ticket.ticketId}
+                <td className="p-3 text-sm font-medium text-gray-900 whitespace-nowrap">
+                  <Link
+                    to={`/app/tickets/${ticket._id}`}
+                    className="inline-flex items-center gap-1.5 font-semibold text-brand-600 hover:text-brand-800 hover:underline"
+                    title="Click to open conversation"
+                  >
+                    <MessageCircle className="h-3.5 w-3.5 shrink-0 text-brand-500" />
+                    <span>{ticket.ticketId}</span>
+                  </Link>
                 </td>
 
                 <td className="p-3 text-sm text-gray-700">
@@ -114,7 +143,13 @@ export default function MyTickets() {
                 </td>
 
                 <td className="p-3 text-sm text-gray-700">
-                  {ticket.subject}
+                  <Link
+                    to={`/app/tickets/${ticket._id}`}
+                    className="font-medium text-gray-900 hover:text-brand-600 hover:underline"
+                    title="Click to open conversation"
+                  >
+                    {ticket.subject}
+                  </Link>
                 </td>
 
                 <td className="p-3">

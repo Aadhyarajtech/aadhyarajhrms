@@ -125,9 +125,34 @@ export async function listDirectReports(managerId: string) {
 
 async function nextEmployeeCode(): Promise<string> {
   const year = new Date().getFullYear();
-  const count = await Employee.countDocuments({});
-  const seq = count + 1;
-  return `ART-${year}-${String(seq).padStart(4, "0")}`;
+  const prefix = `ART-${year}-`;
+  const pattern = new RegExp(`^${prefix}\\d{4,}$`);
+
+  // Do not derive the next employee code from total document count.
+  // Archived/deleted records can make the count diverge from the actual
+  // sequence and can otherwise produce duplicate employee codes.
+  const latest = await Employee.findOne({ employeeCode: pattern })
+    .sort({ employeeCode: -1 })
+    .select("employeeCode")
+    .lean();
+
+  let sequence = 1;
+  if (latest?.employeeCode?.startsWith(prefix)) {
+    const parsed = Number(latest.employeeCode.slice(prefix.length));
+    if (Number.isSafeInteger(parsed) && parsed > 0) {
+      sequence = parsed + 1;
+    }
+  }
+
+  // The employeeCode field is unique. Check for an existing candidate so
+  // gaps in the sequence are handled safely when older records are present.
+  let candidate = `${prefix}${String(sequence).padStart(4, "0")}`;
+  while (await Employee.exists({ employeeCode: candidate })) {
+    sequence += 1;
+    candidate = `${prefix}${String(sequence).padStart(4, "0")}`;
+  }
+
+  return candidate;
 }
 
 export interface CreateEmployeeInput {
@@ -297,12 +322,12 @@ export interface UpdateEmployeeInput {
   probationEndDate?: string | null;
 
   probationExtensionDetails?: {
-  extensionDays: number;
-  extendedFrom: string | null;
-  extendedTo: string;
-  remarks: string | null;
-  extendedAt: string;
-} | null;
+    extensionDays: number;
+    extendedFrom: string | null;
+    extendedTo: string;
+    remarks: string | null;
+    extendedAt: string;
+  } | null;
 
   noticeDays?: number;
   noticeStartDate?: string;
@@ -316,14 +341,13 @@ export interface UpdateEmployeeInput {
   };
 
   terminationDetails?: {
-  terminationDate: string;
-  terminationReason: string;
-  employeeRemarks: string | null;
-  hrRemarks: string | null;
-};
+    terminationDate: string;
+    terminationReason: string;
+    employeeRemarks: string | null;
+    hrRemarks: string | null;
+  };
 
-
-status?: string;
+  status?: string;
   phone?: string;
   personalEmail?: string;
   address?: string;
@@ -402,13 +426,13 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         workLocation: merged.workLocation ?? null,
         probationPeriodMonths: merged.probationPeriodMonths ?? null,
         probationStartDate: merged.probationStartDate ?? null,
-probationEndDate: merged.probationEndDate ?? null,
+        probationEndDate: merged.probationEndDate ?? null,
 
-noticeStartDate: merged.noticeStartDate ?? null,
-lastWorkingDate: merged.lastWorkingDate ?? null,
-noticeDays: merged.noticeDays ?? null,
+        noticeStartDate: merged.noticeStartDate ?? null,
+        lastWorkingDate: merged.lastWorkingDate ?? null,
+        noticeDays: merged.noticeDays ?? null,
 
-probationReminderSentAt:
+        probationReminderSentAt:
           merged.probationEndDate !== current.probationEndDate ||
           merged.probationStartDate !== current.probationStartDate
             ? null
@@ -451,33 +475,29 @@ probationReminderSentAt:
               : nowIso()
             : (merged.archivedAt ?? current.archivedAt ?? null),
 
-       offboardingChecklist:
-  input.offboardingChecklist ??
-  current.offboardingChecklist ??
-  (merged.status === "NOTICE_PERIOD"
-    ? {
-        assetReturn: false,
-        accessRevoked: false,
-        exitInterview: false,
-        finalSettlement: false,
-        completedAt: null,
-      }
-    : null),
+        offboardingChecklist:
+          input.offboardingChecklist ??
+          current.offboardingChecklist ??
+          (merged.status === "NOTICE_PERIOD"
+            ? {
+                assetReturn: false,
+                accessRevoked: false,
+                exitInterview: false,
+                finalSettlement: false,
+                completedAt: null,
+              }
+            : null),
 
-resignationDetails:
-  input.resignationDetails ??
-  current.resignationDetails ??
-  null,
+        resignationDetails:
+          input.resignationDetails ?? current.resignationDetails ?? null,
 
-probationExtensionDetails:
-  input.probationExtensionDetails ??
-  current.probationExtensionDetails ??
-  null,
+        probationExtensionDetails:
+          input.probationExtensionDetails ??
+          current.probationExtensionDetails ??
+          null,
 
-  terminationDetails:
-  input.terminationDetails ??
-  current.terminationDetails ??
-  null,
+        terminationDetails:
+          input.terminationDetails ?? current.terminationDetails ?? null,
 
         updatedAt: nowIso(),
       },

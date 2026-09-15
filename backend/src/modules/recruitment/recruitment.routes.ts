@@ -2,10 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import {
-  isAdminOrRecruiter,
-  isAdminOrRecruiterOrManager,
-} from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
@@ -23,7 +20,7 @@ recruitmentRouter.use(authenticate);
 
 recruitmentRouter.get(
   "/jobs",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const status =
@@ -45,7 +42,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/jobs/:id",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const job = await repo.getJobPosting(req.params.id);
@@ -149,7 +146,7 @@ const jobSchema = z.object({
 
 recruitmentRouter.post(
   "/jobs",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(jobSchema),
   async (req, res, next) => {
     try {
@@ -262,7 +259,7 @@ const updateJobSchema = z
 
 recruitmentRouter.patch(
   "/jobs/:id",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(updateJobSchema),
   async (req, res, next) => {
     try {
@@ -288,7 +285,7 @@ recruitmentRouter.patch(
 
 recruitmentRouter.delete(
   "/jobs/:id",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const deleted = await repo.deleteJobPosting(req.params.id);
@@ -319,7 +316,7 @@ const approvalSchema = z.object({
 
 recruitmentRouter.patch(
   "/jobs/:id/approve",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(approvalSchema),
   async (req, res, next) => {
     try {
@@ -357,7 +354,7 @@ const rejectionSchema = z.object({
 
 recruitmentRouter.patch(
   "/jobs/:id/reject",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(rejectionSchema),
   async (req, res, next) => {
     try {
@@ -395,7 +392,7 @@ const statusSchema = z.object({
 
 recruitmentRouter.patch(
   "/jobs/:id/status",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(statusSchema),
   async (req, res, next) => {
     try {
@@ -418,7 +415,7 @@ recruitmentRouter.patch(
 
 recruitmentRouter.get(
   "/candidates",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const jobPostingId =
@@ -437,7 +434,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/candidates/:id",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const candidate = await repo.getCandidate(req.params.id);
@@ -483,7 +480,7 @@ const candidateSchema = z.object({
 
 recruitmentRouter.post(
   "/candidates",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(candidateSchema),
   async (req, res, next) => {
     try {
@@ -528,7 +525,7 @@ const updateCandidateSchema = z.object({
 
 recruitmentRouter.patch(
   "/candidates/:id",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(updateCandidateSchema),
   async (req, res, next) => {
     try {
@@ -561,7 +558,7 @@ const candidateResumeSchema = z.object({
 // The frontend/Postman must send the file in the "resume" field.
 recruitmentRouter.post(
   "/candidates/:id/resume/upload",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   upload.single("resume"),
   async (req, res, next) => {
     try {
@@ -592,7 +589,7 @@ recruitmentRouter.post(
 // Parse the uploaded resume and persist extracted resume data.
 recruitmentRouter.post(
   "/candidates/:id/resume/parse",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const candidate = await repo.getCandidate(req.params.id);
@@ -650,7 +647,7 @@ recruitmentRouter.post(
 
 recruitmentRouter.patch(
   "/candidates/:id/resume",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(candidateResumeSchema),
   async (req, res, next) => {
     try {
@@ -683,7 +680,7 @@ recruitmentRouter.patch(
 
 recruitmentRouter.delete(
   "/candidates/:id",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const deleted = await repo.deleteCandidate(req.params.id);
@@ -720,7 +717,7 @@ const stageSchema = z.object({
 
 recruitmentRouter.post(
   "/candidates/:id/select",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const candidate = await repo.getCandidate(req.params.id);
@@ -762,7 +759,7 @@ recruitmentRouter.post(
 
 recruitmentRouter.patch(
   "/candidates/:id/stage",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(stageSchema),
   async (req, res, next) => {
     try {
@@ -836,7 +833,7 @@ const ratingSchema = z.object({
 
 recruitmentRouter.patch(
   "/candidates/:id/rating",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(ratingSchema),
   async (req, res, next) => {
     try {
@@ -866,7 +863,7 @@ const screeningSchema = z.object({
 
 recruitmentRouter.post(
   "/candidates/:id/screen",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(screeningSchema),
   async (req, res, next) => {
     try {
@@ -895,7 +892,7 @@ recruitmentRouter.post(
 
 recruitmentRouter.get(
   "/interviews",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const candidateId =
@@ -926,7 +923,7 @@ const scheduleSchema = z.object({
 
 recruitmentRouter.post(
   "/interviews",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(scheduleSchema),
   async (req, res, next) => {
     try {
@@ -963,7 +960,7 @@ const interviewRecordingSchema = z.object({
 
 recruitmentRouter.patch(
   "/interviews/:id/recording",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   validate(interviewRecordingSchema),
   async (req, res, next) => {
     try {
@@ -981,7 +978,7 @@ recruitmentRouter.patch(
 
 recruitmentRouter.post(
   "/interviews/:id/feedback",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   validate(feedbackSchema),
   async (req, res, next) => {
     try {
@@ -1011,7 +1008,7 @@ recruitmentRouter.post(
 
 recruitmentRouter.get(
   "/analytics/pipeline",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (_req, res, next) => {
     try {
       const data = await repo.getPipelineSummary();
@@ -1025,7 +1022,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/sources",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (_req, res, next) => {
     try {
       const data = await repo.getSourceAnalytics();
@@ -1039,7 +1036,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/referrals",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (_req, res, next) => {
     try {
       const data = await repo.getReferralAnalytics();
@@ -1053,7 +1050,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/volume-hiring",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (_req, res, next) => {
     try {
       const data = await repo.getVolumeHiringAnalytics();
@@ -1067,7 +1064,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/open-roles",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (_req, res, next) => {
     try {
       const count = await repo.getOpenRolesCount();
@@ -1081,7 +1078,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/metrics",
-  isAdminOrRecruiterOrManager,
+  requirePermission("recruitment.manage"),
   async (_req, res, next) => {
     try {
       const data = await repo.getRecruitmentMetrics();
@@ -1111,7 +1108,7 @@ const offerSchema = z.object({
 
 recruitmentRouter.post(
   "/candidates/:id/offer",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(offerSchema),
   async (req, res, next) => {
     try {
@@ -1151,7 +1148,7 @@ const backgroundVerificationSchema = z.object({
 
 recruitmentRouter.patch(
   "/candidates/:id/background-verification",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(backgroundVerificationSchema),
   async (req, res, next) => {
     try {
@@ -1190,7 +1187,7 @@ const preboardingUploadSchema = z.object({
 
 recruitmentRouter.post(
   "/candidates/:id/preboarding/documents/upload",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   upload.single("document"),
   validate(preboardingUploadSchema),
   async (req, res, next) => {
@@ -1215,7 +1212,7 @@ recruitmentRouter.post(
 
 recruitmentRouter.post(
   "/candidates/:id/preboarding/documents",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(preboardingDocumentSchema),
   async (req, res, next) => {
     try {
@@ -1241,7 +1238,7 @@ recruitmentRouter.post(
 
 recruitmentRouter.patch(
   "/candidates/:id/preboarding/documents/:index/verify",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   async (req, res, next) => {
     try {
       const index = Number(req.params.index);
@@ -1279,7 +1276,7 @@ const referralBonusSchema = z.object({
 
 recruitmentRouter.patch(
   "/candidates/:id/referral-bonus",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(referralBonusSchema),
   async (req, res, next) => {
     try {
@@ -1310,7 +1307,7 @@ const hireCandidateSchema = z.object({
 
 recruitmentRouter.post(
   "/candidates/:id/hire",
-  isAdminOrRecruiter,
+  requirePermission("recruitment.manage"),
   validate(hireCandidateSchema),
   async (req, res, next) => {
     try {
