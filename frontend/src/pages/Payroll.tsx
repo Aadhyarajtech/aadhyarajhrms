@@ -26,7 +26,6 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { StatusBadge } from "@/components/ui/Badge";
-import { SelectField } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatCurrencyINR, monthName } from "@/lib/format";
@@ -329,12 +328,31 @@ function PayrollRuns() {
     queryKey: ["payroll", "runs"],
     queryFn: PayrollApi.runs,
   });
+  const today = new Date();
+  const previousMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+  const [lockDate, setLockDate] = useState(
+    `${previousMonthEnd.getFullYear()}-${String(previousMonthEnd.getMonth() + 1).padStart(2, "0")}-${String(previousMonthEnd.getDate()).padStart(2, "0")}`,
+  );
+
   const { register, handleSubmit, watch, setValue } = useForm({
     defaultValues: {
-      month: new Date().getMonth() + 1,
-      year: new Date().getFullYear(),
+      month: previousMonthEnd.getMonth() + 1,
+      year: previousMonthEnd.getFullYear(),
     },
   });
+
+  const handleLockDateChange = (value: string) => {
+    if (!value) return;
+    const [selectedYear, selectedMonth] = value.split("-").map(Number);
+    if (!selectedYear || !selectedMonth) return;
+
+    const monthEnd = new Date(selectedYear, selectedMonth, 0);
+    const normalizedDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(monthEnd.getDate()).padStart(2, "0")}`;
+
+    setLockDate(normalizedDate);
+    setValue("month", selectedMonth);
+    setValue("year", selectedYear);
+  };
 
   const lockMutation = useMutation({
     mutationFn: (v: { month: number; year: number }) =>
@@ -400,20 +418,23 @@ function PayrollRuns() {
           subtitle="Generates payslips for every active employee with a salary structure."
         />
         <form className="flex flex-wrap items-end gap-3">
-          <SelectField label="Month" required {...register("month")}>
-            {Array.from({ length: 12 }).map((_, i) => (
-              <option key={i} value={i + 1}>
-                {monthName(i + 1)}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField label="Year" required {...register("year")}>
-            {[2024, 2025, 2026, 2027].map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </SelectField>
+          <input type="hidden" {...register("month")} />
+          <input type="hidden" {...register("year")} />
+          <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-muted">
+            <span>
+              Lock attendance on <span className="text-red-500">*</span>
+            </span>
+            <input
+              type="date"
+              required
+              value={lockDate}
+              onChange={(event) => handleLockDateChange(event.target.value)}
+              className="h-12 w-[200px] rounded-2xl border border-line bg-white px-4 text-[15px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            />
+            <span className="text-[12px] font-normal text-ink-faint">
+              The selected date is always the last day of the payroll month.
+            </span>
+          </label>
           <Button
             type="button"
             variant="outline"

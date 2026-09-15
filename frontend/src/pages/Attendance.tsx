@@ -718,9 +718,60 @@ function TeamAttendance() {
     queryKey: ["attendance", "by-date", date],
     queryFn: () => AttendanceApi.byDate(date),
   });
+  const { data: todaySummary, isLoading: summaryLoading } = useQuery({
+    queryKey: ["attendance", "summary", "today"],
+    queryFn: () => AttendanceApi.summaryToday(),
+    refetchInterval: 30_000,
+  });
+
+  const summaryRecords = (data as TeamAttendanceRecord[] | undefined) ?? [];
+  const presentCount = summaryRecords.filter(
+    (record) =>
+      record.checkIn &&
+      ["PRESENT", "LATE", "HALF_DAY", "EARLY_DEPARTURE"].includes(
+        record.status,
+      ),
+  ).length;
+  const lateCount = summaryRecords.filter(
+    (record) => record.status === "LATE",
+  ).length;
+  const absentCount = summaryRecords.filter(
+    (record) => record.status === "ABSENT",
+  ).length;
 
   return (
-    <Card>
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard
+          icon={CheckCircle2}
+          tone="success"
+          label="Present today"
+          value={
+            summaryLoading
+              ? "—"
+              : `${todaySummary?.present ?? presentCount}/${todaySummary?.total ?? 0}`
+          }
+        />
+        <SummaryCard
+          icon={Clock}
+          tone="brand"
+          label="Team present"
+          value={presentCount}
+        />
+        <SummaryCard
+          icon={AlertCircle}
+          tone="warning"
+          label="Late today"
+          value={lateCount}
+        />
+        <SummaryCard
+          icon={XCircle}
+          tone="gold"
+          label="Absent today"
+          value={absentCount}
+        />
+      </div>
+      <Card>
       <CardHeader
         title="Team attendance"
         subtitle="View attendance for your direct reports on any date"
@@ -836,6 +887,7 @@ function TeamAttendance() {
         </div>
       )}
     </Card>
+    </div>
   );
 }
 

@@ -286,6 +286,20 @@ function monthPrefix(month: number, year: number) {
 }
 
 export async function lockAttendanceForPayroll(month: number, year: number) {
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw AppError.badRequest("A valid payroll month is required.");
+  }
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw AppError.badRequest("A valid payroll year is required.");
+  }
+
+  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
+  if (new Date() <= monthEnd) {
+    throw AppError.badRequest(
+      "Attendance can only be locked after the selected payroll month has ended.",
+    );
+  }
+
   let run = await PayrollRun.findOne({ month, year }).lean();
   const now = nowIso();
   if (run && run.status !== "DRAFT") {

@@ -3,6 +3,7 @@ import {
   PerformanceReview,
   Goal,
   PerformanceFeedback,
+  PerformanceFeedbackRequest,
   PerformanceOutcome,
   PerformanceImprovementPlan,
   Employee,
@@ -30,8 +31,33 @@ export async function createCycle(input: {
   type?: string;
   purpose?: string;
 }) {
+  const start = new Date(input.startDate);
+  const end = new Date(input.endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+    throw new Error("Performance cycle start date must be before end date.");
+  }
+
+  await PerformanceCycle.updateMany({ isActive: true }, { $set: { isActive: false } });
   const doc = await PerformanceCycle.create({ ...input, isActive: true });
   return toApiDoc((await PerformanceCycle.findById(doc._id).lean())!);
+}
+
+export async function activateCycle(id: string) {
+  const cycle = await PerformanceCycle.findById(id).lean();
+  if (!cycle) return undefined;
+  const start = new Date(cycle.startDate);
+  const end = new Date(cycle.endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+    throw new Error("Performance cycle has invalid dates.");
+  }
+  await PerformanceCycle.updateMany({ _id: { $ne: id }, isActive: true }, { $set: { isActive: false } });
+  await PerformanceCycle.updateOne({ _id: id }, { $set: { isActive: true } });
+  return toApiDoc(await PerformanceCycle.findById(id).lean());
+}
+
+export async function deactivateCycle(id: string) {
+  const updated = await PerformanceCycle.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true }).lean();
+  return toApiDoc(updated);
 }
 
 export async function getActiveCycle() {
@@ -620,7 +646,88 @@ export async function getGoalTrend(employeeId: string) {
   }));
 }
 
-export async function submitFeedback(input: { reviewId: string; reviewerEmployeeId: string; type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) { const doc = await PerformanceFeedback.findOneAndUpdate({ reviewId: input.reviewId, reviewerEmployeeId: input.reviewerEmployeeId }, { $set: { ...input, comments: input.comments ?? null, submittedAt: nowIso() } }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean(); return toApiDoc(doc); }
+export async function listFeedbackRequests(reviewerEmployeeId: string, cycleId?: string) {
+  const query: Record<string, any> = { reviewerEmployeeId };
+  if (cycleId) query.cycleId = cycleId;
+  const rows = await PerformanceFeedbackRequest.find(query).sort({ createdAt: -1 }).lean();
+  const employeeIds = [...new Set(rows.flatMap((r) => [r.revieweeEmployeeId, r.reviewerEmployeeId]))];
+  const employees = await Employee.find({ _id: { $in: employeeIds } }).select("firstName lastName avatarUrl designationId").lean();
+  const map = new Map(employees.map((e) => [e._id, e]));
+  return rows.map((r) => ({
+    ...toApiDoc(r),
+    revieweeFirstName: map.get(r.revieweeEmployeeId)?.firstName ?? null,
+    revieweeLastName: map.get(r.revieweeEmployeeId)?.lastName ?? null,
+    revieweeAvatar: map.get(r.revieweeEmployeeId)?.avatarUrl ?? null,
+  }));
+}
+
+export async function createFeedbackRequest(input: {
+  cycleId: string;
+  reviewId: string;
+  reviewerEmployeeId: string;
+  revieweeEmployeeId: string;
+  type: "PEER" | "SUBORDINATE";
+  dueDate?: string;
+  createdBy?: string | null;
+}) {
+  if (input.reviewerEmployeeId === input.revieweeEmployeeId) {
+    throw new Error("A feedback reviewer must be different from the reviewee.");
+  }
+  const [cycle, review, reviewer, reviewee] = await Promise.all([
+    PerformanceCycle.findById(input.cycleId).lean(),
+    PerformanceReview.findById(input.reviewId).lean(),
+    Employee.findById(input.reviewerEmployeeId).lean(),
+    Employee.findById(input.revieweeEmployeeId).lean(),
+  ]);
+  if (!cycle) throw new Error("Performance cycle not found.");
+  if (!cycle.isActive) throw new Error("360 feedback can only be assigned in an active performance cycle.");
+  if (!review) throw new Error("Performance review not found.");
+  if (review.cycleId !== input.cycleId || review.revieweeId !== input.revieweeEmployeeId) {
+    throw new Error("The selected review does not belong to the selected cycle and reviewee.");
+  }
+  if (!reviewer || !reviewee) throw new Error("Reviewer or reviewee not found.");
+  const doc = await PerformanceFeedbackRequest.findOneAndUpdate(
+    { reviewId: input.reviewId, reviewerEmployeeId: input.reviewerEmployeeId },
+    {
+      $setOnInsert: {
+        cycleId: input.cycleId,
+        reviewId: input.reviewId,
+        reviewerEmployeeId: input.reviewerEmployeeId,
+        revieweeEmployeeId: input.revieweeEmployeeId,
+        type: input.type,
+        status: "PENDING",
+        dueDate: input.dueDate ?? null,
+        createdBy: input.createdBy ?? null,
+        createdAt: nowIso(),
+        completedAt: null,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  ).lean();
+  if (reviewer.userId) {
+    await notify({ userId: reviewer.userId, type: "PERFORMANCE", title: "360 feedback assigned", message: `You have been asked to provide ${input.type.toLowerCase()} feedback for ${reviewee.firstName ?? "an employee"} ${reviewee.lastName ?? ""}.`, link: "/app/performance", dedupeKey: `performance-feedback-request:${doc!._id}:${reviewer.userId}` });
+  }
+  return toApiDoc(doc);
+}
+
+export async function getFeedbackRequest(id: string) {
+  return toApiDoc(await PerformanceFeedbackRequest.findById(id).lean());
+}
+
+export async function submitFeedback(input: { requestId: string; reviewerEmployeeId: string; type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) {
+  const request = await PerformanceFeedbackRequest.findById(input.requestId).lean();
+  if (!request) throw new Error("Feedback request not found.");
+  if (request.reviewerEmployeeId !== input.reviewerEmployeeId) throw new Error("You are not authorized to submit this feedback request.");
+  if (request.status !== "PENDING") throw new Error("This feedback request is no longer pending.");
+  if (request.type !== input.type) throw new Error("Feedback relationship does not match the assigned request.");
+  const feedback = await PerformanceFeedback.findOneAndUpdate(
+    { reviewId: request.reviewId, reviewerEmployeeId: input.reviewerEmployeeId },
+    { $set: { reviewId: request.reviewId, reviewerEmployeeId: input.reviewerEmployeeId, type: input.type, competencyRatings: input.competencyRatings, comments: input.comments ?? null, submittedAt: nowIso() } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  ).lean();
+  await PerformanceFeedbackRequest.updateOne({ _id: request._id }, { $set: { status: "COMPLETED", completedAt: nowIso() } });
+  return toApiDoc(feedback);
+}
 export async function getFeedbackSummary(reviewId: string) { const feedback = await PerformanceFeedback.find({ reviewId }).lean(); const ratings = new Map<string, number[]>(); for (const entry of feedback) for (const item of entry.competencyRatings) { const values = ratings.get(item.competency) ?? []; values.push(item.rating); ratings.set(item.competency, values); } return { responseCount: feedback.length, competencies: [...ratings].map(([competency, values]) => ({ competency, averageRating: Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100 })), comments: feedback.map((entry) => entry.comments).filter(Boolean) }; }
 export async function getOutcome(reviewId: string) { return toApiDoc(await PerformanceOutcome.findOne({ reviewId }).lean()); }
 
@@ -816,9 +923,33 @@ export async function createPip(input: {
     return getPip(existing._id);
   }
 
-  const employee = await Employee.findById(input.employeeId).lean();
+  const [employee, review] = await Promise.all([
+    Employee.findById(input.employeeId).lean(),
+    PerformanceReview.findById(input.reviewId).lean(),
+  ]);
+
+  if (!employee) throw new Error("Employee not found.");
+  if (!review) throw new Error("Performance review not found.");
+  if (review.revieweeId !== input.employeeId) {
+    throw new Error("The PIP employee must match the completed review employee.");
+  }
+  if (review.status !== "COMPLETED") {
+    throw new Error("A PIP can only be created from a completed performance review.");
+  }
+
+  const startDate = new Date(input.startDate);
+  const endDate = new Date(input.endDate);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate >= endDate) {
+    throw new Error("PIP start date must be before end date.");
+  }
 
   const objectives = input.objectives.map(normalizePipObjective);
+  if (objectives.some((objective) => {
+    const due = new Date(objective.dueDate);
+    return Number.isNaN(due.getTime()) || due < startDate || due > endDate;
+  })) {
+    throw new Error("Every PIP objective due date must fall within the PIP period.");
+  }
   const frequency = input.checkInFrequency ?? "MONTHLY";
   const status =
     input.status === "COMPLETED" || input.status === "CANCELLED"

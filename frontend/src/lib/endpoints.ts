@@ -11,7 +11,6 @@ import type {
   JobPosting,
   Candidate,
   Interview,
-  PerformanceCycle,
   PerformanceReview,
   Goal,
   PerformanceOutcome,
@@ -1403,6 +1402,32 @@ export interface PipCheckIn {
   addedByRole?: string | null;
 }
 
+export interface PerformanceCycle {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  isActive: boolean;
+  type?: string;
+  purpose?: string | null;
+}
+
+export interface PerformanceFeedbackRequest {
+  id: string;
+  cycleId: string;
+  reviewId: string;
+  reviewerEmployeeId: string;
+  revieweeEmployeeId: string;
+  type: "PEER" | "SUBORDINATE";
+  status: "PENDING" | "COMPLETED" | "DECLINED";
+  dueDate?: string | null;
+  createdAt: string;
+  completedAt?: string | null;
+  revieweeFirstName?: string | null;
+  revieweeLastName?: string | null;
+  revieweeAvatar?: string | null;
+}
+
 export interface PerformancePip {
   id: string;
   reviewId: string;
@@ -1614,12 +1639,22 @@ export const PerformanceApi = {
       })
       .then((r) => r.data.data),
 
-  feedbackRequests: () =>
+  activateCycle: (id: string) =>
+    api.patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/activate`).then((r) => r.data.cycle),
+
+  deactivateCycle: (id: string) =>
+    api.patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/deactivate`).then((r) => r.data.cycle),
+
+  feedbackRequests: (cycleId?: string) =>
     api
-      .get<{
-        reviews: PerformanceReview[];
-      }>("/performance/feedback-requests")
-      .then((r) => r.data.reviews),
+      .get<{ requests: PerformanceFeedbackRequest[] }>("/performance/feedback-requests", { params: { cycleId } })
+      .then((r) => r.data.requests),
+
+  createFeedbackRequest: (payload: { cycleId: string; reviewId: string; reviewerEmployeeId: string; revieweeEmployeeId: string; type: "PEER" | "SUBORDINATE"; dueDate?: string }) =>
+    api.post<{ request: PerformanceFeedbackRequest }>("/performance/feedback-requests", payload).then((r) => r.data.request),
+
+  submitFeedbackRequest: (id: string, payload: { type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) =>
+    api.post(`/performance/feedback-requests/${id}/submit`, payload).then((r) => r.data.feedback),
 
   submitFeedback: (
     id: string,
