@@ -13,6 +13,7 @@ import {
   MessageSquare,
   TrendingUp,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { PerformanceApi, EmployeesApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
@@ -50,6 +51,10 @@ export default function Performance() {
     queryFn: () => PerformanceApi.cycles(),
   });
   const activeCycle = cycles?.find((c) => c.isActive);
+  const { data: journeyGoals } = useQuery({
+    queryKey: ["performance", "goals", "journey"],
+    queryFn: () => PerformanceApi.goals(),
+  });
 
   const tabs = [
     { key: "mine", label: "My Performance" },
@@ -68,7 +73,131 @@ export default function Performance() {
             : "No active review cycle"
         }
       />
-      <Tabs tabs={tabs} active={tab} onChange={setTab} className="mb-6 w-fit" />
+      <div className="mb-6 flex justify-end">
+        <div className="w-full max-w-md rounded-2xl border border-line/60 bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50">
+                  <Target size={18} className="text-brand-600" />
+                </div>
+
+                <div>
+                  <p className="text-[14px] font-semibold text-ink">
+                    Performance Journey
+                  </p>
+
+                  <p className="text-[11px] text-ink-faint">
+                    Track your progress
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <span className="text-[18px] font-bold text-brand-600">
+              {journeyGoals?.length
+                ? Math.round(
+                  journeyGoals.reduce(
+                    (sum, goal) => sum + (goal.progress ?? 0),
+                    0,
+                  ) / journeyGoals.length,
+                )
+                : 0}
+              %
+            </span>
+          </div>
+
+          <div className="mt-4">
+            <div className="h-2 overflow-hidden rounded-full bg-ink/[0.08]">
+              <div
+                className="h-full rounded-full bg-brand-500"
+                style={{
+                  width: `${journeyGoals?.length
+                    ? Math.round(
+                      journeyGoals.reduce(
+                        (sum, goal) => sum + (goal.progress ?? 0),
+                        0,
+                      ) / journeyGoals.length,
+                    )
+                    : 0
+                    }%`,
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="relative mt-5">
+            <div className="absolute left-5 right-5 top-3 h-[2px] bg-line/60" />
+
+            <div className="relative grid grid-cols-4">
+              <div className="flex flex-col items-center">
+                <div className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-brand-500 text-xs font-bold text-white">
+                  ✓
+                </div>
+                <p className="mt-2 text-[10px] font-medium text-ink">
+                  Review
+                </p>
+                <p className="text-[9px] text-brand-600">
+                  {activeCycle ? "Active" : "Not Started"}
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <div className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-brand-500 text-xs font-bold text-white">
+                  ✓
+                </div>
+                <p className="mt-2 text-[10px] font-medium text-ink">
+                  Goals
+                </p>
+                <p className="text-[9px] text-brand-600">
+                  {journeyGoals?.length
+                    ? `${journeyGoals.filter((goal) => goal.progress >= 100).length}/${journeyGoals.length} Complete`
+                    : "No goals"}
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <div className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-600">
+                  3
+                </div>
+                <p className="mt-2 text-[10px] font-medium text-ink">
+                  Development
+                </p>
+                <p className="text-[9px] text-amber-600">
+                  {activeCycle ? "In Progress" : "Not Started"}
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <div className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-ink/[0.08] text-xs font-bold text-ink-faint">
+                  4
+                </div>
+                <p className="mt-2 text-[10px] font-medium text-ink">
+                  Next Review
+                </p>
+                <p className="text-[9px] text-ink-faint">
+                  {activeCycle ? formatDate(activeCycle.endDate) : "Not scheduled"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl bg-brand-50 px-3 py-2">
+            <p className="text-[10px] font-medium text-brand-700">
+              Current Focus
+            </p>
+
+            <p className="mt-1 text-[11px] text-brand-600">
+              {journeyGoals?.length
+                ? journeyGoals.some((goal) => goal.progress < 100)
+                  ? "Focus on completing your active goals."
+                  : "All goals are complete. Focus on your next development step."
+                : "Set goals to define your current focus."}
+            </p>
+          </div>
+        </div>
+      </div>
+      <Tabs tabs={tabs} active={tab} onChange={setTab} className="-mt-16 mb-6 w-fit" />
       {tab === "mine" && <MyPerformance activeCycleId={activeCycle?.id} />}
       {tab === "feedback" && <FeedbackRequests />}
       {tab === "team" && isManager && (
@@ -81,10 +210,17 @@ export default function Performance() {
 
 function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
   const { showToast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [goalOpen, setGoalOpen] = useState(false);
   const [selfOpen, setSelfOpen] = useState(false);
-
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatQuestion, setChatQuestion] = useState("");
+  const [chatAnswer, setChatAnswer] = useState("");
+  const [goalCoachOpen, setGoalCoachOpen] = useState(false);
+  const [selectedGoal, setSelectedGoal] = useState<any | null>(null);
+  const [goalCoachQuestion, setGoalCoachQuestion] = useState("");
+  const [goalCoachAnswer, setGoalCoachAnswer] = useState("");
   const { data: review, isLoading: reviewLoading } = useQuery({
     queryKey: ["performance", "my-review", activeCycleId],
     queryFn: PerformanceApi.myReview,
@@ -99,7 +235,53 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
   });
   const { data: outcome } = useQuery({ queryKey: ["performance", "outcome", review?.id], queryFn: () => PerformanceApi.outcome(review!.id), enabled: !!review?.id && review.status === "COMPLETED" });
   const { data: feedback } = useQuery({ queryKey: ["performance", "feedback-summary", review?.id], queryFn: () => PerformanceApi.feedbackSummary(review!.id), enabled: !!review?.id });
+  const { data: aiInsights, isLoading: aiInsightsLoading } = useQuery({
+    queryKey: ["performance", "ai-insights", review?.id],
+    queryFn: () => PerformanceApi.aiInsights(review!.id),
+    enabled: !!review?.id && review.status === "COMPLETED",
+  });
 
+
+  const {
+    data: aiDevelopmentPlan,
+    isLoading: aiDevelopmentPlanLoading,
+  } = useQuery({
+    queryKey: ["performance", "ai-development-plan", review?.id],
+    queryFn: () => PerformanceApi.aiDevelopmentPlan(review!.id),
+    enabled: !!review?.id && review.status === "COMPLETED",
+  });
+  const { data: scorecard, isLoading: scorecardLoading } = useQuery({
+    queryKey: ["performance", "scorecard", user?.employee?.id],
+    queryFn: () => PerformanceApi.scorecard(user!.employee!.id),
+    enabled: !!user?.employee?.id,
+  });
+  const chatMutation = useMutation({
+    mutationFn: (question: string) =>
+      PerformanceApi.aiChat(review!.id, question),
+    onSuccess: (answer) => {
+      setChatAnswer(answer);
+    },
+    onError: (err) => {
+      showToast(getErrorMessage(err), "error");
+    },
+  });
+  const goalCoachMutation = useMutation({
+    mutationFn: ({
+      goalId,
+      question,
+    }: {
+      goalId: string;
+      question?: string;
+    }) => PerformanceApi.aiGoalCoach(goalId, question),
+
+    onSuccess: (answer) => {
+      setGoalCoachAnswer(answer);
+    },
+
+    onError: (err) => {
+      showToast(getErrorMessage(err), "error");
+    },
+  });
   const currentValueMutation = useMutation({
     mutationFn: ({ id, currentValue }: { id: string; currentValue: number }) =>
       PerformanceApi.updateGoalCurrentValue(id, currentValue),
@@ -124,9 +306,19 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
       }),
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
-
+  const performanceStatus =
+    scorecard?.overallRating === null ||
+      scorecard?.overallRating === undefined
+      ? "Not Rated"
+      : scorecard.overallRating >= 4.5
+        ? "Excellent"
+        : scorecard.overallRating >= 4
+          ? "Strong"
+          : scorecard.overallRating >= 3
+            ? "Developing"
+            : "Needs Improvement";
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="space-y-6">
       <Card>
         <CardHeader title="My review" />
         {reviewLoading ? (
@@ -173,12 +365,12 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
             )}
             {(review.status === "NOT_STARTED" ||
               review.status === "SELF_REVIEW") && (
-              <Button size="sm" onClick={() => setSelfOpen(true)}>
-                {review.selfRating
-                  ? "Update self-review"
-                  : "Complete self-review"}
-              </Button>
-            )}
+                <Button size="sm" onClick={() => setSelfOpen(true)}>
+                  {review.selfRating
+                    ? "Update self-review"
+                    : "Complete self-review"}
+                </Button>
+              )}
           </div>
         )}
       </Card>
@@ -210,6 +402,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
               Goal trends appear after goals are added to a cycle.
             </p>
           )}
+
           {feedback?.responseCount ? (
             <div className="rounded-2xl bg-ink/[0.03] p-4">
               <p className="text-[12px] font-medium text-ink-faint">
@@ -221,6 +414,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
               </p>
             </div>
           ) : null}
+
           {outcome ? (
             <div className="rounded-2xl bg-brand-50 p-4">
               <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
@@ -239,9 +433,574 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
               ) : null}
             </div>
           ) : null}
+
+          {review?.status === "COMPLETED" ? (
+            <div className="rounded-2xl bg-brand-50 p-4">
+              <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
+                <Sparkles size={14} /> AI Performance Insights
+              </p>
+
+              {aiInsightsLoading ? (
+                <p className="mt-2 text-[13px] text-ink-faint">
+                  Generating performance insights...
+                </p>
+              ) : aiInsights ? (
+                <div className="mt-3 space-y-3">
+                  <p className="text-[13px] text-ink">
+                    {aiInsights.summary}
+                  </p>
+
+                  {aiInsights.strengths.length ? (
+                    <div>
+                      <p className="text-[12px] font-medium text-ink-faint">
+                        Strengths
+                      </p>
+                      <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] text-ink-soft">
+                        {aiInsights.strengths.map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {aiInsights.developmentAreas.length ? (
+                    <div>
+                      <p className="text-[12px] font-medium text-ink-faint">
+                        Development areas
+                      </p>
+                      <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] text-ink-soft">
+                        {aiInsights.developmentAreas.map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {/* AI Development Plan */}
+                  <div className="mt-5 border-t border-brand-100 pt-4">
+                    <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
+                      <Sparkles size={14} /> AI Development Plan
+                    </p>
+
+                    {aiDevelopmentPlanLoading ? (
+                      <p className="mt-2 text-[13px] text-ink-faint">
+                        Generating development plan...
+                      </p>
+                    ) : aiDevelopmentPlan ? (
+                      <div className="mt-3 space-y-4">
+                        <div>
+                          <p className="text-[12px] font-medium text-ink-faint">
+                            Overall Focus
+                          </p>
+                          <p className="mt-1 text-[13px] text-ink">
+                            {aiDevelopmentPlan.overallFocus}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[12px] font-medium text-ink-faint">
+                            0–30 Days
+                          </p>
+
+                          <div className="mt-2 space-y-2">
+                            {aiDevelopmentPlan.days30.map((item, index) => (
+                              <div
+                                key={index}
+                                className="rounded-xl border border-brand-100 bg-white p-3"
+                              >
+                                <p className="text-[13px] font-medium text-ink">
+                                  {item.action}
+                                </p>
+                                <p className="mt-1 text-[12px] text-ink-faint">
+                                  Success measure: {item.successMeasure}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[12px] font-medium text-ink-faint">
+                            31–60 Days
+                          </p>
+
+                          <div className="mt-2 space-y-2">
+                            {aiDevelopmentPlan.days60.map((item, index) => (
+                              <div
+                                key={index}
+                                className="rounded-xl border border-brand-100 bg-white p-3"
+                              >
+                                <p className="text-[13px] font-medium text-ink">
+                                  {item.action}
+                                </p>
+                                <p className="mt-1 text-[12px] text-ink-faint">
+                                  Success measure: {item.successMeasure}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[12px] font-medium text-ink-faint">
+                            61–90 Days
+                          </p>
+
+                          <div className="mt-2 space-y-2">
+                            {aiDevelopmentPlan.days90.map((item, index) => (
+                              <div
+                                key={index}
+                                className="rounded-xl border border-brand-100 bg-white p-3"
+                              >
+                                <p className="text-[13px] font-medium text-ink">
+                                  {item.action}
+                                </p>
+                                <p className="mt-1 text-[12px] text-ink-faint">
+                                  Success measure: {item.successMeasure}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-[13px] text-ink-faint">
+                        Development plan is not available yet.
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="text-[12px] font-medium text-ink-faint">
+                      Goal insight
+                    </p>
+                    <p className="mt-1 text-[13px] text-ink-soft">
+                      {aiInsights.goalInsight}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[12px] font-medium text-ink-faint">
+                      Suggested focus
+                    </p>
+                    <p className="mt-1 text-[13px] text-ink-soft">
+                      {aiInsights.suggestedFocus}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-[13px] text-ink-faint">
+                  AI performance insights are not available yet.
+                </p>
+              )}
+            </div>
+          ) : null}
         </div>
       </Card>
+      <Card>
+        <CardHeader
+          title="Performance Scorecard"
+          action={
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setChatOpen(true);
+                  setChatAnswer("");
+                }}
+                disabled={!review || review.status !== "COMPLETED"}
+                className="inline-flex items-center gap-2 rounded-xl border border-line/60 bg-white px-3 py-2 text-[12px] font-medium text-ink shadow-sm hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <MessageSquare className="h-4 w-4" />
+                Ask AI
+              </button>
 
+              <Badge
+                tone={
+                  performanceStatus === "Excellent" ||
+                    performanceStatus === "Strong"
+                    ? "success"
+                    : performanceStatus === "Developing"
+                      ? "warning"
+                      : "neutral"
+                }
+              >
+                {performanceStatus}
+              </Badge>
+            </div>
+          }
+        />
+
+        {scorecardLoading ? (
+          <Skeleton className="h-64 rounded-2xl" />
+        ) : scorecard ? (
+          <div className="space-y-5">
+
+            {/* Overall Performance */}
+            <div className="rounded-3xl border border-line/60 bg-gradient-to-br from-brand-50 via-white to-ink/[0.02] p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
+                <div>
+                  <p className="text-[11.5px] font-medium uppercase tracking-wide text-ink-faint">
+                    Overall Performance
+                  </p>
+
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-4xl font-semibold tracking-tight text-ink">
+                      {scorecard.overallRating != null
+                        ? scorecard.overallRating
+                        : "—"}
+                    </span>
+
+                    <span className="text-sm text-ink-faint">
+                      / 5
+                    </span>
+                  </div>
+
+                  <p className="mt-2 max-w-md text-[12px] leading-5 text-ink-faint">
+                    Based on the latest completed performance review.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white/80 px-5 py-4 text-center shadow-sm ring-1 ring-line/50">
+                  <p className="text-2xl">
+                    {performanceStatus === "Excellent"
+                      ? "🏆"
+                      : performanceStatus === "Strong"
+                        ? "⭐"
+                        : performanceStatus === "Developing"
+                          ? "📈"
+                          : "🎯"}
+                  </p>
+
+                  <p className="mt-1 text-[12px] font-medium text-ink">
+                    {performanceStatus}
+                  </p>
+
+                  <p className="mt-0.5 text-[10.5px] text-ink-faint">
+                    Performance status
+                  </p>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Performance Metrics */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+
+
+              {/* Overall Rating */}
+              <div className="rounded-2xl border border-line/60 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11.5px] font-medium text-ink-faint">
+                    Overall Rating
+                  </p>
+                  <span className="text-sm">⭐</span>
+                </div>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <div
+                    className="relative h-16 w-16 shrink-0 rounded-full"
+                    style={{
+                      background: `conic-gradient(currentColor ${scorecard.overallRating != null
+                        ? (scorecard.overallRating / 5) * 100
+                        : 0
+                        }%, rgb(226 232 240) 0)`,
+                    }}
+                  >
+                    <div className="absolute inset-1 flex items-center justify-center rounded-full bg-white">
+                      <span className="text-sm font-semibold text-ink">
+                        {scorecard.overallRating != null
+                          ? scorecard.overallRating.toFixed(1)
+                          : "—"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs text-ink-faint">Out of 5</p>
+                    <p className="mt-1 text-sm font-medium text-ink">
+                      {scorecard.overallRating != null
+                        ? `${Math.round((scorecard.overallRating / 5) * 100)}%`
+                        : "—"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Manager Rating */}
+              <div className="rounded-2xl border border-line/60 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11.5px] font-medium text-ink-faint">
+                    Manager Rating
+                  </p>
+                  <span className="text-sm">👤</span>
+                </div>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <div
+                    className="relative h-16 w-16 shrink-0 rounded-full"
+                    style={{
+                      background: `conic-gradient(currentColor ${scorecard.managerRating != null
+                        ? (scorecard.managerRating / 5) * 100
+                        : 0
+                        }%, rgb(226 232 240) 0)`,
+                    }}
+                  >
+                    <div className="absolute inset-1 flex items-center justify-center rounded-full bg-white">
+                      <span className="text-sm font-semibold text-ink">
+                        {scorecard.managerRating != null
+                          ? scorecard.managerRating.toFixed(1)
+                          : "—"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs text-ink-faint">Out of 5</p>
+                    <p className="mt-1 text-sm font-medium text-ink">
+                      {scorecard.managerRating != null
+                        ? `${Math.round((scorecard.managerRating / 5) * 100)}%`
+                        : "—"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              {/* Goal Achievement */}
+              <div className="rounded-2xl border border-line/60 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11.5px] font-medium text-ink-faint">
+                    Goal Achievement
+                  </p>
+                  <span className="text-sm">🎯</span>
+                </div>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <div
+                    className="relative h-16 w-16 shrink-0 rounded-full"
+                    style={{
+                      background: `conic-gradient(currentColor ${scorecard.goalAchievement != null
+                        ? Math.min(100, Math.max(0, scorecard.goalAchievement))
+                        : 0
+                        }%, rgb(226 232 240) 0)`,
+                    }}
+                  >
+                    <div className="absolute inset-1 flex items-center justify-center rounded-full bg-white">
+                      <span className="text-sm font-semibold text-ink">
+                        {scorecard.goalAchievement != null
+                          ? `${Math.round(scorecard.goalAchievement)}%`
+                          : "—"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs text-ink-faint">Goals</p>
+                    <p className="mt-1 text-sm font-medium text-ink">
+                      {scorecard.goalAchievement != null
+                        ? scorecard.goalAchievement >= 80
+                          ? "Excellent"
+                          : scorecard.goalAchievement >= 60
+                            ? "Good"
+                            : "Needs Focus"
+                        : "—"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 360 Feedback */}
+              <div className="rounded-2xl border border-line/60 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11.5px] font-medium text-ink-faint">
+                    360° Feedback
+                  </p>
+                  <span className="text-sm">👥</span>
+                </div>
+
+                <p className="mt-3 text-2xl font-semibold text-ink">
+                  {scorecard.feedbackRating != null
+                    ? `${scorecard.feedbackRating}/5`
+                    : "—"}
+                </p>
+
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/10">
+                  <div
+                    className="h-full rounded-full bg-brand transition-all"
+                    style={{
+                      width:
+                        scorecard.feedbackRating != null
+                          ? `${Math.min(
+                            100,
+                            Math.max(
+                              0,
+                              (scorecard.feedbackRating / 5) * 100,
+                            ),
+                          )}%`
+                          : "0%",
+                    }}
+                  />
+                </div>
+              </div>
+
+            </div>
+
+            {/* Strengths & Development Areas */}
+            <div className="grid gap-4 sm:grid-cols-2">
+
+              {/* Strengths */}
+              <div className="rounded-2xl border border-line/60 bg-ink/[0.015] p-4">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-50 text-sm">
+                    ✓
+                  </span>
+
+                  <div>
+                    <p className="text-[12px] font-semibold text-ink">
+                      Strengths
+                    </p>
+                    <p className="text-[10.5px] text-ink-faint">
+                      Areas where you are performing well
+                    </p>
+                  </div>
+                </div>
+
+                {scorecard.strengths?.length ? (
+                  <div className="mt-4 space-y-2">
+                    {scorecard.strengths.map(
+                      (item: string, index: number) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 text-[12.5px] text-ink shadow-sm ring-1 ring-line/40"
+                        >
+                          <span className="text-brand">✓</span>
+                          <span>{item}</span>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-[12px] text-ink-faint">
+                    No strengths recorded yet.
+                  </p>
+                )}
+              </div>
+
+              {/* Development Areas */}
+              <div className="rounded-2xl border border-line/60 bg-ink/[0.015] p-4">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-sm">
+                    ↑
+                  </span>
+
+                  <div>
+                    <p className="text-[12px] font-semibold text-ink">
+                      Development Areas
+                    </p>
+                    <p className="text-[10.5px] text-ink-faint">
+                      Areas to focus on for improvement
+                    </p>
+                  </div>
+                </div>
+
+                {scorecard.developmentAreas?.length ? (
+                  <div className="mt-4 space-y-2">
+                    {scorecard.developmentAreas.map(
+                      (item: string, index: number) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 text-[12.5px] text-ink shadow-sm ring-1 ring-line/40"
+                        >
+                          <span className="text-amber-600">→</span>
+                          <span>{item}</span>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-[12px] text-ink-faint">
+                    No development areas recorded yet.
+                  </p>
+                )}
+              </div>
+
+            </div>
+            {/* Performance Trend */}
+            <div className="rounded-2xl border border-line/60 bg-white p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                Performance Trend
+              </p>
+              <p className="mt-1 text-[13px] text-ink-faint">
+                Completed performance review ratings over time
+              </p>
+              {scorecard.performanceHistory?.length > 0 ? (
+                <div className="mt-5 flex items-end gap-5 overflow-x-auto pb-2">
+                  {scorecard.performanceHistory.map((item: any) => {
+                    const percentage = Math.min(100, (item.rating / 5) * 100);
+
+                    return (
+                      <div
+                        key={`${item.cycleId}-${item.reviewNumber}`}
+                        className="flex min-w-[64px] flex-col items-center gap-2"
+                      >
+                        <span className="text-[12px] font-semibold text-ink">
+                          {item.rating.toFixed(1)}
+                        </span>
+
+                        <div className="flex h-28 items-end">
+                          <div
+                            className="w-8 rounded-t-xl"
+                            style={{
+                              height: `${Math.max(12, percentage * 1.12)}px`,
+                              backgroundColor: "#4f46e5",
+                            }}
+                          />
+                        </div>
+
+                        <span className="text-[10px] text-ink-faint">
+                          Review {item.reviewNumber}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-4 text-[12px] text-ink-faint">
+                  No completed review history available yet.
+                </p>
+              )}
+            </div>
+            {/* Review Summary */}
+            <div className="flex flex-col gap-3 rounded-2xl border border-line/60 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                  Review Summary
+                </p>
+
+                <p className="mt-1 text-[13px] font-medium text-ink">
+                  {scorecard.goalCount} goals tracked
+                </p>
+
+                <p className="mt-0.5 text-[11px] text-ink-faint">
+                  Latest completed performance review
+                </p>
+              </div>
+
+              <Badge tone="neutral">
+                {scorecard.review?.status ?? "No review"}
+              </Badge>
+
+            </div>
+
+          </div>
+
+        ) : (
+          <p className="text-[13px] text-ink-faint">
+            Performance scorecard is not available yet.
+          </p>
+        )
+        }
+      </Card >
       <Card>
         <CardHeader
           title="My goals"
@@ -268,6 +1027,9 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
           <div className="space-y-5">
             {goals.map((g) => {
               const goal = g as any;
+
+
+
               return (
                 <div key={g.id} className="rounded-2xl border border-line/60 p-4">
                   <div className="flex items-start justify-between gap-3 text-[13px]">
@@ -412,6 +1174,22 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
                   <p className="mt-3 text-[11.5px] text-ink-faint">
                     Due {formatDate(g.dueDate)}
                   </p>
+
+                  <div className="mt-3 flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedGoal(g);
+                        setGoalCoachOpen(true);
+                      }}
+                    >
+                      <Sparkles size={14} />
+                      AI Goal Coach
+                    </Button>
+                  </div>
+
+                  <GoalHealthCard goal={goal} />
                 </div>
               );
             })}
@@ -420,14 +1198,153 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
       </Card>
 
       <AddGoalModal open={goalOpen} onClose={() => setGoalOpen(false)} cycleId={activeCycleId} />
-      {review && (
-        <SelfReviewModal
-          open={selfOpen}
-          onClose={() => setSelfOpen(false)}
-          reviewId={review.id}
-        />
+      {
+        review && (
+          <SelfReviewModal
+            open={selfOpen}
+            onClose={() => setSelfOpen(false)}
+            reviewId={review.id}
+          />
+        )
+      }
+      {chatOpen && review?.status === "COMPLETED" && (
+        <Modal
+          open
+          onClose={() => setChatOpen(false)}
+          title="Performance AI Assistant"
+          footer={
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setChatOpen(false)}
+              >
+                Close
+              </Button>
+
+              <Button
+                onClick={() => {
+                  if (!chatQuestion.trim()) return;
+                  chatMutation.mutate(chatQuestion.trim());
+                }}
+                isLoading={chatMutation.isPending}
+              >
+                Ask AI
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-brand-50 p-4">
+              <p className="flex items-center gap-2 text-[13px] font-medium text-brand-700">
+                <MessageSquare size={16} />
+                Ask about your performance
+              </p>
+
+              <p className="mt-1 text-[12px] text-ink-faint">
+                Ask questions about your ratings, goals, feedback,
+                strengths, development areas, or performance trend.
+              </p>
+            </div>
+
+            <TextareaField
+              label="Your question"
+              placeholder="Example: What are my main areas for improvement?"
+              value={chatQuestion}
+              onChange={(e) => setChatQuestion(e.target.value)}
+            />
+
+            {chatAnswer && (
+              <div className="rounded-2xl border border-line/60 bg-white p-4">
+                <p className="text-[12px] font-medium text-ink-faint">
+                  AI Assistant
+                </p>
+
+                <p className="mt-2 whitespace-pre-wrap text-[13px] leading-5 text-ink-soft">
+                  {chatAnswer}
+                </p>
+              </div>
+            )}
+          </div>
+        </Modal>
       )}
-    </div>
+      {goalCoachOpen && selectedGoal && (
+        <Modal
+          open
+          onClose={() => setGoalCoachOpen(false)}
+          title="AI Goal Coach"
+          footer={
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setGoalCoachOpen(false)}
+              >
+                Close
+              </Button>
+
+              <Button
+                onClick={() => {
+                  if (!selectedGoal?.id) return;
+
+                  goalCoachMutation.mutate({
+                    goalId: selectedGoal.id,
+                    question:
+                      goalCoachQuestion.trim() ||
+                      "How can I improve this goal and what should I focus on next?",
+                  });
+                }}
+                isLoading={goalCoachMutation.isPending}
+              >
+                Ask AI
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-brand-50 p-4">
+              <p className="flex items-center gap-2 text-[13px] font-medium text-brand-700">
+                <Sparkles size={16} />
+                Get coaching for this goal
+              </p>
+
+              <p className="mt-1 text-[12px] text-ink-faint">
+                Ask AI for practical suggestions based on your current goal,
+                progress, deadline, and goal health.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-line/60 bg-white p-4">
+              <p className="text-[13px] font-medium text-ink">
+                {selectedGoal.title}
+              </p>
+
+              <p className="mt-2 text-[12px] text-ink-faint">
+                Progress: {selectedGoal.progress ?? 0}%
+              </p>
+            </div>
+
+            <TextareaField
+              label="Your question"
+              placeholder="Example: How can I improve this goal?"
+              value={goalCoachQuestion}
+              onChange={(e) => setGoalCoachQuestion(e.target.value)}
+            />
+
+            {goalCoachAnswer && (
+              <div className="rounded-2xl border border-line/60 bg-white p-4">
+                <p className="flex items-center gap-2 text-[12px] font-medium text-ink-faint">
+                  <Sparkles size={14} />
+                  AI Goal Coach
+                </p>
+
+                <p className="mt-2 whitespace-pre-wrap text-[13px] leading-5 text-ink-soft">
+                  {goalCoachAnswer}
+                </p>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+    </div >
   );
 }
 
@@ -1776,5 +2693,92 @@ function ManagerReviewModal({
         />
       </div>
     </Modal>
+  );
+}
+function GoalHealthCard({ goal }: { goal: any }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["performance", "goal-health", goal.id],
+    queryFn: () => PerformanceApi.aiGoalHealth(goal.id),
+    enabled: !!goal.id,
+  });
+
+  const health = data?.health;
+
+  if (isLoading) {
+    return (
+      <div className="mt-3 rounded-xl bg-ink/[0.03] p-3">
+        <p className="text-[11.5px] text-ink-faint">
+          Checking goal health...
+        </p>
+      </div>
+    );
+  }
+
+  if (!health) {
+    return null;
+  }
+
+  const healthLabel =
+    health.health === "ON_TRACK"
+      ? "On track"
+      : health.health === "NEEDS_ATTENTION"
+        ? "Needs attention"
+        : "At risk";
+
+  const healthTone =
+    health.health === "ON_TRACK"
+      ? "success"
+      : health.health === "NEEDS_ATTENTION"
+        ? "warning"
+        : "danger";
+
+  return (
+    <div className="mt-3 rounded-xl border border-line/60 bg-ink/[0.02] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[11.5px] font-medium text-ink-faint">
+            Goal Health
+          </p>
+
+          <p className="mt-1 text-[13px] font-medium text-ink">
+            {healthLabel}
+          </p>
+        </div>
+
+        <Badge tone={healthTone}>
+          {health.health.replace("_", " ")}
+        </Badge>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[11.5px] text-ink-faint">
+        <span>
+          Expected:{" "}
+          {health.expectedProgress !== null
+            ? `${health.expectedProgress}%`
+            : "—"}
+        </span>
+
+        <span>
+          Gap:{" "}
+          {health.gap !== null
+            ? `${health.gap > 0 ? "+" : ""}${health.gap}%`
+            : "—"}
+        </span>
+
+        <span>
+          Days left:{" "}
+          {health.daysRemaining !== null
+            ? health.daysRemaining
+            : "—"}
+        </span>
+
+        <span>
+          Milestones:{" "}
+          {health.milestones.total > 0
+            ? `${health.milestones.completed}/${health.milestones.total}`
+            : "—"}
+        </span>
+      </div>
+    </div>
   );
 }
