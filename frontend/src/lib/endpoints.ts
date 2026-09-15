@@ -359,9 +359,9 @@ export interface AttendanceAiInsights {
 
   trend: {
     direction:
-      | "IMPROVING"
-      | "DECLINING"
-      | "STABLE";
+    | "IMPROVING"
+    | "DECLINING"
+    | "STABLE";
     change: number;
     recentRate: number;
     previousRate: number;
@@ -369,9 +369,9 @@ export interface AttendanceAiInsights {
 
   patterns: {
     type:
-      | "POSITIVE"
-      | "WARNING"
-      | "INFO";
+    | "POSITIVE"
+    | "WARNING"
+    | "INFO";
     title: string;
     description: string;
   }[];
@@ -417,35 +417,35 @@ export const AttendanceApi = {
       .then((r) => r.data.records),
 
 
-aiForecast: async (
-  months = 6,
-  employeeId?: string,
-) => {
-  const response = await api.get("/attendance/ai-forecast", {
-    params: {
-      months,
-      employeeId,
-    },
-  });
-
-  return response.data;
-},
-smartRegularization: async (
-  date: string,
-  employeeId?: string,
-) => {
-  const response = await api.get(
-    "/attendance/smart-regularization",
-    {
+  aiForecast: async (
+    months = 6,
+    employeeId?: string,
+  ) => {
+    const response = await api.get("/attendance/ai-forecast", {
       params: {
-        date,
+        months,
         employeeId,
       },
-    },
-  );
+    });
 
-  return response.data;
-},
+    return response.data;
+  },
+  smartRegularization: async (
+    date: string,
+    employeeId?: string,
+  ) => {
+    const response = await api.get(
+      "/attendance/smart-regularization",
+      {
+        params: {
+          date,
+          employeeId,
+        },
+      },
+    );
+
+    return response.data;
+  },
 
   forEmployee: (
     employeeId: string,
@@ -512,93 +512,93 @@ smartRegularization: async (
   // ========================================================================
 
   aiInsights: (
-  startDate: string,
-  endDate: string,
-  employeeId?: string,
-) =>
-  api
-    .get<{
-      insights: AttendanceAiInsights;
-    }>("/attendance/ai-insights", {
-      params: {
-        startDate,
-        endDate,
-        employeeId,
-      },
-    })
-    .then((r) => r.data.insights),
+    startDate: string,
+    endDate: string,
+    employeeId?: string,
+  ) =>
+    api
+      .get<{
+        insights: AttendanceAiInsights;
+      }>("/attendance/ai-insights", {
+        params: {
+          startDate,
+          endDate,
+          employeeId,
+        },
+      })
+      .then((r) => r.data.insights),
   askAI: async (
-  question: string,
-  employeeId?: string,
-) => {
-  const response = await api.post(
-    "/attendance/ask-ai",
-    {
-      question,
-      employeeId,
-    },
-  );
-
-  return response.data.answer;
-},
-  
-  aiAnomalies: async (
-  month?: number,
-  year?: number,
-  employeeId?: string,
-) => {
-  const params = new URLSearchParams();
-
-  if (month !== undefined) {
-    params.set("month", String(month));
-  }
-
-  if (year !== undefined) {
-    params.set("year", String(year));
-  }
-
-  if (employeeId) {
-    params.set("employeeId", employeeId);
-  }
-
-  const query = params.toString();
-
-  const response = await api.get(
-    `/attendance/ai-anomalies${query ? `?${query}` : ""}`,
-  );
-
-  return response.data;
-},
-aiPatterns: async (
-  months = 6,
-  employeeId?: string,
-) => {
-  const response = await api.get(
-    "/attendance/ai-patterns",
-    {
-      params: {
-        months,
+    question: string,
+    employeeId?: string,
+  ) => {
+    const response = await api.post(
+      "/attendance/ask-ai",
+      {
+        question,
         employeeId,
       },
-    },
-  );
+    );
 
-  return response.data;
-},
+    return response.data.answer;
+  },
+
+  aiAnomalies: async (
+    month?: number,
+    year?: number,
+    employeeId?: string,
+  ) => {
+    const params = new URLSearchParams();
+
+    if (month !== undefined) {
+      params.set("month", String(month));
+    }
+
+    if (year !== undefined) {
+      params.set("year", String(year));
+    }
+
+    if (employeeId) {
+      params.set("employeeId", employeeId);
+    }
+
+    const query = params.toString();
+
+    const response = await api.get(
+      `/attendance/ai-anomalies${query ? `?${query}` : ""}`,
+    );
+
+    return response.data;
+  },
+  aiPatterns: async (
+    months = 6,
+    employeeId?: string,
+  ) => {
+    const response = await api.get(
+      "/attendance/ai-patterns",
+      {
+        params: {
+          months,
+          employeeId,
+        },
+      },
+    );
+
+    return response.data;
+  },
   regularize: (
     date: string,
     note: string,
     employeeId?: string,
   ) =>
-  api
-    .post<{
-      record: AttendanceRecord;
-    }>("/attendance/regularize", {
-      date,
-      note,
-      employeeId,
-    })
-    .then((r) => r.data.record),
+    api
+      .post<{
+        record: AttendanceRecord;
+      }>("/attendance/regularize", {
+        date,
+        note,
+        employeeId,
+      })
+      .then((r) => r.data.record),
 
   teamRegularizationRequests: (
     status = "PENDING",
@@ -615,10 +615,10 @@ aiPatterns: async (
           requestedStatus: string;
           reason: string;
           status:
-            | "PENDING"
-            | "APPROVED"
-            | "REJECTED"
-            | "CANCELLED";
+          | "PENDING"
+          | "APPROVED"
+          | "REJECTED"
+          | "CANCELLED";
           approverId: string | null;
           decisionNote: string | null;
           requestedAt: string;
@@ -1045,10 +1045,10 @@ export const RecruitmentApi = {
     id: string,
     payload: {
       status:
-        | "NOT_STARTED"
-        | "IN_PROGRESS"
-        | "VERIFIED"
-        | "FAILED";
+      | "NOT_STARTED"
+      | "IN_PROGRESS"
+      | "VERIFIED"
+      | "FAILED";
       provider?: string;
       reference?: string;
       notes?: string;
@@ -1441,7 +1441,62 @@ export const PerformanceApi = {
         `/performance/reviews/${id}/feedback-summary`,
       )
       .then((r) => r.data.summary),
-
+  aiInsights: (id: string) =>
+    api
+      .get<{
+        insights: {
+          summary: string;
+          strengths: string[];
+          developmentAreas: string[];
+          goalInsight: string;
+          suggestedFocus: string;
+        };
+      }>(
+        `/performance/reviews/${id}/ai-insights`,
+      )
+      .then((r) => r.data.insights),
+  aiGoalHealth: (id: string) =>
+    api.get(`/performance/goals/${id}/health`).then((res) => res.data),
+  scorecard: (employeeId: string) =>
+    api
+      .get(`/performance/scorecard/${employeeId}`)
+      .then((res) => res.data.scorecard),
+  aiDevelopmentPlan: (id: string) =>
+    api
+      .get<{
+        plan: {
+          overallFocus: string;
+          days30: {
+            action: string;
+            successMeasure: string;
+          }[];
+          days60: {
+            action: string;
+            successMeasure: string;
+          }[];
+          days90: {
+            action: string;
+            successMeasure: string;
+          }[];
+        };
+      }>(`/performance/reviews/${id}/ai-development-plan`)
+      .then((r) => r.data.plan),
+  aiChat: (id: string, question: string) =>
+    api
+      .post<{
+        answer: string;
+      }>(
+        `/performance/reviews/${id}/ai-chat`,
+        { question },
+      )
+      .then((r) => r.data.answer),
+  aiGoalCoach: (id: string, question?: string) =>
+    api
+      .post<{ answer: string }>(
+        `/performance/goals/${id}/ai-coach`,
+        { question },
+      )
+      .then((r) => r.data.answer),
   outcome: (id: string) =>
     api
       .get<{
@@ -1979,6 +2034,7 @@ export interface ReportsOverview {
     totalLop: number;
     payslipCount: number;
     byRun: { label: string; gross: number; net: number; headcount: number }[];
+    byDepartment: ReportBucket[];
   };
 
   recruitment: {
@@ -2015,6 +2071,20 @@ export interface ReportsOverview {
     pending: number;
     requests: number;
     assignedAssets: number;
+  };
+  audit: {
+    total: number;
+    byAction: ReportBucket[];
+    byEntity: ReportBucket[];
+    recent: {
+      action: string;
+      entity: string;
+      entityId: string;
+      userId: string;
+      ipAddress?: string | null;
+      createdAt: string;
+      metadata?: unknown;
+    }[];
   };
 }
 
