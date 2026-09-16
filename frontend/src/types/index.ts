@@ -537,6 +537,12 @@ export interface PerformanceCycle {
     | "THREE_SIXTY"
     | "PIP";
   purpose: string | null;
+  ratingScale?: number[];
+  ratingWeights?: { self: number; manager: number };
+  competencies?: { name: string; weight: number }[];
+  selfReviewDueDate?: string | null;
+  managerReviewDueDate?: string | null;
+  finalReviewDueDate?: string | null;
 }
 
 export interface PerformanceReview {
@@ -553,6 +559,10 @@ export interface PerformanceReview {
   improvements: string | null;
   managerComments: string | null;
   submittedAt: string | null;
+  calibratedRating?: number | null;
+  calibrationComments?: string | null;
+  calibratedBy?: string | null;
+  calibratedAt?: string | null;
   revieweeFirstName: string;
   revieweeLastName: string;
   revieweeAvatar: string | null;
@@ -828,6 +838,9 @@ export interface Notification {
   isRead: boolean;
   link: string | null;
   createdAt: string;
+  status?: "ACTIVE" | "EXPIRED";
+  expiresAt?: string | null;
+  expiredAt?: string | null;
 }
 
 /* =========================================================
@@ -864,7 +877,7 @@ export type AnnouncementAudience =
 
 export type AnnouncementChannel = "IN_APP" | "EMAIL" | "BANNER" | "CALENDAR";
 
-export type AnnouncementStatus = "DRAFT" | "SCHEDULED" | "PUBLISHED";
+export type AnnouncementStatus = "DRAFT" | "SCHEDULED" | "PUBLISHED" | "EXPIRED";
 
 export interface Announcement {
   id: string;
@@ -892,6 +905,9 @@ export interface Announcement {
 
   scheduledAt?: string | null;
   publishedAt?: string | null;
+  expiryDays?: number;
+  expiresAt?: string | null;
+  expiredAt?: string | null;
 
   calendarEnabled?: boolean;
   eventStartAt?: string | null;

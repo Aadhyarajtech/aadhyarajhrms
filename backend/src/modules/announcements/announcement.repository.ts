@@ -529,7 +529,10 @@ export async function getAnnouncements(role?: string, userId?: string) {
 ========================================================= */
 
 export async function getAnnouncementWithReceipt(id: string, userId: string) {
-  const announcement = await Announcement.findById(id).lean();
+  const announcement = await Announcement.findOne({
+    _id: id,
+    status: "PUBLISHED",
+  }).lean();
 
   if (!announcement) {
     return undefined;
@@ -573,7 +576,10 @@ export async function markAnnouncementRead(
     throw new Error("Authenticated user ID is required.");
   }
 
-  const announcement = await Announcement.findById(announcementId)
+  const announcement = await Announcement.findOne({
+    _id: announcementId,
+    status: "PUBLISHED",
+  })
     .select("_id")
     .lean();
 
@@ -980,7 +986,10 @@ export async function listAnnouncementReadStatus(announcementId: string) {
 ========================================================= */
 
 export async function getAnnouncement(id: string) {
-  const announcement = await Announcement.findById(id).lean();
+  const announcement = await Announcement.findOne({
+    _id: id,
+    status: "PUBLISHED",
+  }).lean();
 
   return toApiDoc(announcement);
 }
@@ -1018,8 +1027,10 @@ export async function createAnnouncement(data: {
   eventEndAt?: string;
 
   eventLocation?: string;
+  expiryDays?: number;
 }) {
   const now = new Date().toISOString();
+  const expiryDays = Math.min(365, Math.max(1, Number(data.expiryDays ?? 7)));
 
   const scheduledDate = data.scheduledAt ? new Date(data.scheduledAt) : null;
 
@@ -1114,6 +1125,12 @@ export async function createAnnouncement(data: {
 
     publishedAt: publishNow ? now : "",
 
+    expiryDays,
+    expiresAt: publishNow
+      ? new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString()
+      : "",
+    expiredAt: "",
+
     createdAt: now,
 
     updatedAt: now,
@@ -1164,6 +1181,7 @@ export async function updateAnnouncement(
     eventEndAt?: string;
 
     eventLocation?: string;
+    expiryDays?: number;
   },
 ) {
   const update: Record<string, unknown> = {
@@ -1295,6 +1313,17 @@ export async function updateAnnouncement(
     update.eventLocation = data.eventLocation;
   }
 
+  if (data.expiryDays !== undefined) {
+    const expiryDays = Math.min(365, Math.max(1, Number(data.expiryDays)));
+    update.expiryDays = expiryDays;
+    const existing = await Announcement.findById(id).select("status publishedAt").lean();
+    if (existing?.status === "PUBLISHED" && existing.publishedAt) {
+      update.expiresAt = new Date(new Date(existing.publishedAt).getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
+      update.expiredAt = "";
+      update.status = "PUBLISHED";
+    }
+  }
+
   const updated = await Announcement.findByIdAndUpdate(id, update, {
     new: true,
   }).lean();
@@ -1343,6 +1372,12 @@ export async function publishDueAnnouncements() {
 
           publishedAt: now,
 
+          expiresAt: new Date(
+            Date.now() + Number(announcement.expiryDays ?? 7) * 24 * 60 * 60 * 1000,
+          ).toISOString(),
+
+          expiredAt: "",
+
           updatedAt: now,
         },
       },
@@ -1358,6 +1393,24 @@ export async function publishDueAnnouncements() {
   }
 
   return published;
+}
+
+/* =========================================================
+   EXPIRE PUBLISHED ANNOUNCEMENTS
+========================================================= */
+
+export async function expireDueAnnouncements() {
+  const now = new Date().toISOString();
+  const result = await Announcement.updateMany(
+    {
+      status: "PUBLISHED",
+      expiresAt: { $ne: "", $lte: now },
+    },
+    {
+      $set: { status: "EXPIRED", expiredAt: now, updatedAt: now },
+    },
+  );
+  return result.modifiedCount ?? 0;
 }
 
 /* =========================================================

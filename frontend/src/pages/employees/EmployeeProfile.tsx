@@ -81,7 +81,8 @@ type SalaryForm = z.infer<typeof salarySchema>;
 export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canViewEmployees = hasPermission("employees.view");
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [tab, setTab] = useState("overview");
@@ -105,8 +106,7 @@ export default function EmployeeProfile() {
     enabled:
       !!effectiveId &&
       employeeQuery.isError &&
-      !!user &&
-      ADMIN_ROLES.includes(user.role),
+      canViewEmployees,
   });
 
   const employee =
@@ -122,7 +122,6 @@ export default function EmployeeProfile() {
 
   const isSelf = user?.employee?.id === effectiveId;
   const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
-
   const completeOnboardingMutation = useMutation({
     mutationFn: async () => {
       if (!employee) throw new Error("Employee not found.");
@@ -291,11 +290,11 @@ export default function EmployeeProfile() {
   });
 
   useEffect(() => {
-    if (!effectiveId || !user || isAdmin || isSelf) return;
+    if (!effectiveId || !user || isAdmin || isSelf || canViewEmployees) return;
     navigate(`/app/employees/${user.employee?.id ?? "dashboard"}`, {
       replace: true,
     });
-  }, [effectiveId, isAdmin, isSelf, navigate, user]);
+  }, [effectiveId, isAdmin, isSelf, canViewEmployees, navigate, user]);
   const isFinance = user?.role === "FINANCE";
   const canViewPayroll = isSelf || isAdmin || isFinance;
   const canEdit = isSelf || isAdmin;

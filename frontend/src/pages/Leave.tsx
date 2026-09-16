@@ -31,6 +31,7 @@ import { TextField, SelectField, TextareaField } from "@/components/ui/Field";
 import { ProgressRing } from "@/components/ui/ProgressRing";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, monthName, cx } from "@/lib/format";
+import ExpiryBadge from "@/components/common/ExpiryBadge";
 
 const MANAGER_ROLES: string[] = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
 
@@ -111,6 +112,10 @@ function MyLeave() {
     enabled: !!employeeId,
   });
 
+  // Expired leave requests are retained in the database for history, but are
+  // intentionally excluded from the active employee list.
+  const activeRequests = requests?.filter((request) => request.status !== "EXPIRED");
+
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
@@ -161,7 +166,7 @@ function MyLeave() {
 
         {requestsLoading ? (
           <Skeleton className="h-40 rounded-2xl" />
-        ) : !requests?.length ? (
+        ) : !activeRequests?.length ? (
           <EmptyState
             icon={CalendarDays}
             title="No leave requests yet"
@@ -169,7 +174,7 @@ function MyLeave() {
           />
         ) : (
           <div className="space-y-2">
-            {requests.map((r) => (
+            {(activeRequests ?? []).map((r) => (
               <div
                 key={r.id}
                 className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
@@ -196,6 +201,7 @@ function MyLeave() {
 
                 <div className="flex flex-col items-end gap-2">
                   <StatusBadge status={r.status} />
+                  <ExpiryBadge expiresAt={r.expiresAt} expiredAt={r.expiredAt} />
 
                   {r.status === "PENDING" && (
                     <button
@@ -234,6 +240,10 @@ function TeamApprovals() {
         status: filter || undefined,
       }),
   });
+
+  // EXPIRED requests remain stored for audit/history but must not appear in
+  // the active team approval list.
+  const activeRequests = requests?.filter((request) => request.status !== "EXPIRED");
 
   const decideMutation = useMutation({
     mutationFn: ({
@@ -282,7 +292,7 @@ function TeamApprovals() {
           title="Unable to load team requests"
           description="We couldn't retrieve leave requests for your team."
         />
-      ) : !requests?.length ? (
+      ) : !activeRequests?.length ? (
         <EmptyState
           icon={Check}
           title="Nothing to review"
@@ -290,7 +300,7 @@ function TeamApprovals() {
         />
       ) : (
         <div className="space-y-2">
-          {requests.map((r) => (
+          {(activeRequests ?? []).map((r) => (
             <div
               key={r.id}
               className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
@@ -349,7 +359,10 @@ function TeamApprovals() {
                   </Button>
                 </div>
               ) : (
-                <StatusBadge status={r.status} />
+                <div className="flex flex-col items-end gap-2">
+                  <StatusBadge status={r.status} />
+                  <ExpiryBadge expiresAt={r.expiresAt} expiredAt={r.expiredAt} />
+                </div>
               )}
             </div>
           ))}

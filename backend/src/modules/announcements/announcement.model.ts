@@ -66,6 +66,7 @@ export const ANNOUNCEMENT_STATUSES = [
   "DRAFT",
   "SCHEDULED",
   "PUBLISHED",
+  "EXPIRED",
 ] as const;
 
 export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
@@ -118,6 +119,11 @@ export interface IAnnouncement extends Document {
   scheduledAt?: string;
 
   publishedAt?: string;
+
+  /** Number of days the announcement remains active after publication. */
+  expiryDays: number;
+  expiresAt?: string;
+  expiredAt?: string;
 
   /* Calendar / meeting */
   calendarEnabled: boolean;
@@ -290,6 +296,24 @@ const announcementSchema = new Schema<IAnnouncement>(
     },
 
     publishedAt: {
+      type: String,
+      default: "",
+    },
+
+    expiryDays: {
+      type: Number,
+      min: 1,
+      max: 365,
+      default: 7,
+    },
+
+    expiresAt: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+    expiredAt: {
       type: String,
       default: "",
     },

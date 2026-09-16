@@ -189,7 +189,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/org-chart",
     label: "Org Chart",
     icon: Network,
-    permission: "employees.view",
+    roles: ["SUPER_ADMIN","HR_ADMIN"],
   },
 
   /* -------------------------------------------------------

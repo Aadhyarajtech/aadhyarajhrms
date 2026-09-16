@@ -1112,6 +1112,8 @@ export async function requestRegularization(
     requestedStatus,
     reason,
     status: "PENDING",
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    expiredAt: null,
     approverId: null,
     decisionNote: null,
     requestedAt: now,
@@ -1149,7 +1151,7 @@ export async function listTeamRegularizationRequests(
   };
 
   if (status) {
-    const allowedStatuses = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"];
+    const allowedStatuses = ["PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXPIRED"];
 
     if (!allowedStatuses.includes(status)) {
       throw new Error("Invalid regularization request status.");

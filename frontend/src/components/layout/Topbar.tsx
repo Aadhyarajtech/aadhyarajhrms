@@ -637,6 +637,16 @@ export function Topbar({
                                   notification.createdAt,
                                 )}
                               </span>
+
+                              {notification.expiresAt && (
+                                <span className="mt-0.5 block text-[10px] text-amber-700">
+                                  Expires: {new Intl.DateTimeFormat("en-IN", {
+                                    dateStyle: "medium",
+                                    timeStyle: "short",
+                                    timeZone: "Asia/Kolkata",
+                                  }).format(new Date(notification.expiresAt))}
+                                </span>
+                              )}
                             </button>
 
                             <div className="shrink-0 pt-0.5">

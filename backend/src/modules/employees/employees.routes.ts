@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
 import { profileImageUpload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 import { isAdmin, isManagerOrAbove } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./employees.repository";
@@ -57,7 +58,7 @@ employeesRouter.post(
 employeesRouter.get(
   "/",
   validate(listQuerySchema, "query"),
-  isManagerOrAbove,
+  requirePermission("employees.view"),
   async (req, res, next) => {
     try {
       const requester = req.user!;
@@ -145,7 +146,10 @@ employeesRouter.get(
   },
 );
 
-employeesRouter.get("/:id", async (req, res, next) => {
+employeesRouter.get(
+  "/:id",
+  requirePermission("employees.view"),
+  async (req, res, next) => {
   try {
     const requester = req.user!;
 
@@ -178,6 +182,12 @@ employeesRouter.get("/:id", async (req, res, next) => {
         throw AppError.forbidden();
       }
 
+      return res.json({ employee });
+    }
+
+    // Other roles with employees.view (Recruiter, Finance, IT Support) can
+    // view employee profiles. Their write access remains restricted below.
+    if (["RECRUITER", "FINANCE", "IT_SUPPORT"].includes(requester.role)) {
       return res.json({ employee });
     }
 
