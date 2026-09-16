@@ -4367,3 +4367,198 @@ ticketSchema.index({
 });
 
 export const Ticket = model<TicketDoc>("Ticket", ticketSchema);
+
+// ===========================================================================
+// CALENDAR EVENTS
+// ===========================================================================
+
+export type CalendarEventType =
+  | "MEETING"
+  | "FOCUS_TIME"
+  | "BREAK"
+  | "TASK"
+  | "COMPANY_EVENT"
+  | "OTHER";
+
+export type CalendarEventStatus =
+  | "SCHEDULED"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type CalendarEventSource =
+  | "MANUAL"
+  | "ANNOUNCEMENT"
+  | "SYSTEM";
+
+export interface CalendarEventDoc {
+  _id: string;
+
+  title: string;
+  description: string;
+
+  type: CalendarEventType;
+  status: CalendarEventStatus;
+
+  employeeId: string;
+  participantIds: string[];
+
+  startAt: string;
+  endAt: string;
+
+  location: string;
+
+  isRecurring: boolean;
+  recurrenceRule: string | null;
+
+  isImportant: boolean;
+  isCritical: boolean;
+
+  source: CalendarEventSource;
+  sourceId: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+const calendarEventSchema = new Schema<CalendarEventDoc>(
+  {
+    _id: idField("cal"),
+
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 300,
+    },
+
+    description: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 5000,
+    },
+
+    type: {
+      type: String,
+      enum: [
+        "MEETING",
+        "FOCUS_TIME",
+        "BREAK",
+        "TASK",
+        "COMPANY_EVENT",
+        "OTHER",
+      ],
+      default: "MEETING",
+      required: true,
+    },
+
+    status: {
+      type: String,
+      enum: ["SCHEDULED", "COMPLETED", "CANCELLED"],
+      default: "SCHEDULED",
+      required: true,
+    },
+
+    employeeId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+
+    participantIds: {
+      type: [String],
+      default: [],
+      index: true,
+    },
+
+    startAt: {
+      type: String,
+      required: true,
+      index: true,
+    },
+
+    endAt: {
+      type: String,
+      required: true,
+      index: true,
+    },
+
+    location: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 500,
+    },
+
+    isRecurring: {
+      type: Boolean,
+      default: false,
+    },
+
+    recurrenceRule: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 1000,
+    },
+
+    isImportant: {
+      type: Boolean,
+      default: false,
+    },
+
+    isCritical: {
+      type: Boolean,
+      default: false,
+    },
+
+    source: {
+      type: String,
+      enum: ["MANUAL", "ANNOUNCEMENT", "SYSTEM"],
+      default: "MANUAL",
+      required: true,
+    },
+
+    sourceId: {
+      type: String,
+      default: null,
+    },
+
+    createdAt: {
+      type: String,
+      required: true,
+    },
+
+    updatedAt: {
+      type: String,
+      required: true,
+    },
+  },
+  baseOptions,
+);
+
+calendarEventSchema.index({
+  employeeId: 1,
+  startAt: 1,
+});
+
+calendarEventSchema.index({
+  participantIds: 1,
+  startAt: 1,
+});
+
+calendarEventSchema.index({
+  status: 1,
+  startAt: 1,
+  endAt: 1,
+});
+
+calendarEventSchema.index({
+  type: 1,
+  isRecurring: 1,
+});
+
+export const CalendarEvent = model<CalendarEventDoc>(
+  "CalendarEvent",
+  calendarEventSchema,
+);

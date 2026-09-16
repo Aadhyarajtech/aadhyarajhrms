@@ -297,6 +297,63 @@ export const EmployeesApi = {
   },
 };
 
+export interface OrganizationSearchEmployee {
+  id: string;
+  employeeCode: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  avatarUrl: string | null;
+  departmentId: string;
+  departmentName: string | null;
+  designationId: string;
+  designationTitle: string | null;
+  managerId: string | null;
+  managerName: string | null;
+  workLocation: string | null;
+  status: string;
+  directReportCount: number;
+}
+
+export interface OrganizationSearchResponse {
+  query: string;
+  filters: Record<string, unknown>;
+  total: number;
+  employees: OrganizationSearchEmployee[];
+}
+
+export interface SkillDependencyEmployee {
+  id: string;
+  name: string;
+  designationTitle: string | null;
+  competencyLevel:
+    | "BEGINNER"
+    | "INTERMEDIATE"
+    | "ADVANCED"
+    | "EXPERT";
+}
+
+export interface SkillDependencyGroup {
+  skill: string;
+  category: string | null;
+  employeeCount: number;
+  advancedOrExpertCount: number;
+  employees: SkillDependencyEmployee[];
+  dependencyRatio: number;
+  riskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+}
+
+export interface SkillDependencyResponse {
+  scope: {
+    departmentId: string | null;
+    managerId: string | null;
+  };
+  employeeCount: number;
+  skills: SkillDependencyGroup[];
+  summary: string;
+  recommendations: string[];
+}
+
 // --- Organization (departments, designations, holidays) ----------------------
 export const OrganizationApi = {
   departments: () =>
@@ -399,6 +456,24 @@ export const OrganizationApi = {
     api.delete(
       `/organization/holidays/${id}`,
     ),
+
+  aiSearch: (query: string) =>
+    api
+      .post<OrganizationSearchResponse>(
+        "/organization/ai/search",
+        { query },
+      )
+      .then((r) => r.data),
+
+  skillDependencies: (managerId?: string) =>
+    api
+      .get<SkillDependencyResponse>(
+        "/organization/ai/skill-dependencies",
+        {
+          params: { managerId },
+        },
+      )
+      .then((r) => r.data),
 };
 
 export interface AttendanceAiInsights {
@@ -1349,6 +1424,293 @@ export const LeaveApi = {
 };
 
 
+
+// --- Calendar ----------------------------------------------------------------------
+export type CalendarEventType =
+  | "MEETING"
+  | "FOCUS_TIME"
+  | "BREAK"
+  | "TASK"
+  | "COMPANY_EVENT"
+  | "OTHER";
+
+export type CalendarEventStatus =
+  | "SCHEDULED"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type CalendarEventSource =
+  | "MANUAL"
+  | "ANNOUNCEMENT"
+  | "SYSTEM";
+
+export interface CalendarEvent {
+  _id: string;
+  title: string;
+  description: string;
+  type: CalendarEventType;
+  status: CalendarEventStatus;
+  employeeId: string;
+  participantIds: string[];
+  startAt: string;
+  endAt: string;
+  location: string;
+  isRecurring: boolean;
+  recurrenceRule: string | null;
+  isImportant: boolean;
+  isCritical: boolean;
+  source: CalendarEventSource;
+  sourceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalendarEventPayload {
+  title: string;
+  description?: string;
+  type?: CalendarEventType;
+  employeeId?: string;
+  participantIds?: string[];
+  startAt: string;
+  endAt: string;
+  location?: string;
+  isRecurring?: boolean;
+  recurrenceRule?: string | null;
+  isImportant?: boolean;
+  isCritical?: boolean;
+}
+
+export interface CalendarEventUpdatePayload
+  extends Partial<CalendarEventPayload> {}
+
+export interface CalendarConflictAI {
+  summary: string;
+  recommendedAlternativeTime: string | null;
+  impact: string;
+  recommendation: string;
+}
+
+export interface CalendarConflictAnalysis {
+  hasConflict: boolean;
+  totalEvents: number;
+  conflictCount: number;
+
+  conflictingEvents: Array<{
+    id: string;
+    title: string;
+    startAt: string;
+    endAt: string;
+    employeeId: string;
+    participantIds: string[];
+    isImportant: boolean;
+    isCritical: boolean;
+  }>;
+
+  unavailableEmployees: number;
+  criticalEmployeesAffected: number;
+
+  alternativeSlots: Array<{
+    startAt: string;
+    endAt: string;
+  }>;
+
+  impactLevel: "LOW" | "MEDIUM" | "HIGH";
+
+  explanation: string;
+
+  ai?: CalendarConflictAI;
+}
+
+export interface CalendarHealthAI {
+  summary: string;
+  recommendation: string;
+  focusRecommendation: string;
+  meetingLoadAssessment: string;
+}
+
+export interface CalendarHealthAnalysis {
+  score: number;
+  meetingHours: number;
+  backToBackMeetings: number;
+  focusTimeHours: number;
+  breakHours: number;
+  totalScheduledHours: number;
+  meetingPercentage: number;
+  busiestDay: string | null;
+  explanation: string;
+  recommendations: string[];
+  ai?: CalendarHealthAI;
+}
+
+export type MeetingNecessityRecommendation =
+  | "KEEP"
+  | "SHORTEN"
+  | "MAKE_ASYNC"
+  | "CANCEL"
+  | "REVIEW";
+
+export interface MeetingNecessityAI {
+  explanation: string;
+  recommendation: MeetingNecessityRecommendation;
+  suggestedAction: string;
+}
+
+export interface MeetingNecessityAnalysis {
+  eventId: string;
+  title: string;
+  durationMinutes: number;
+  participantCount: number;
+  isRecurring: boolean;
+  isImportant: boolean;
+  isCritical: boolean;
+  historicalMeetings: number;
+  score: number;
+  recommendation: MeetingNecessityRecommendation;
+  reasons: string[];
+  ai?: MeetingNecessityAI;
+}
+
+export interface ScheduleOptimizerAI {
+  summary: string;
+  priorityActions: string[];
+  productivityRecommendation: string;
+}
+
+export interface ScheduleOptimization {
+  employeeId: string;
+  period: {
+    startAt: string;
+    endAt: string;
+  };
+  originalEvents: CalendarEvent[];
+  optimizedEvents: CalendarEvent[];
+  conflictsReduced: number;
+  focusBlocksAdded: number;
+  breaksAdded: number;
+  backToBackMeetingsReduced: number;
+  explanation: string;
+  recommendations: string[];
+  ai?: ScheduleOptimizerAI;
+}
+
+export const CalendarApi = {
+  list: (
+    employeeId?: string,
+    startAt?: string,
+    endAt?: string,
+  ) =>
+    api
+      .get<{ events: CalendarEvent[] }>(
+        "/calendar",
+        {
+          params: {
+            employeeId,
+            startAt,
+            endAt,
+          },
+        },
+      )
+      .then((r) => r.data.events),
+
+  get: (id: string) =>
+    api
+      .get<{ event: CalendarEvent }>(
+        `/calendar/${id}`,
+      )
+      .then((r) => r.data.event),
+
+  create: (payload: CalendarEventPayload) =>
+    api
+      .post<{ event: CalendarEvent }>(
+        "/calendar",
+        payload,
+      )
+      .then((r) => r.data.event),
+
+  update: (
+    id: string,
+    payload: CalendarEventUpdatePayload,
+  ) =>
+    api
+      .patch<{ event: CalendarEvent }>(
+        `/calendar/${id}`,
+        payload,
+      )
+      .then((r) => r.data.event),
+
+  cancel: (id: string) =>
+    api
+      .post<{ event: CalendarEvent }>(
+        `/calendar/${id}/cancel`,
+      )
+      .then((r) => r.data.event),
+
+  delete: (id: string) =>
+    api.delete(`/calendar/${id}`),
+
+  aiSchedule: (
+    employeeId: string,
+    startAt: string,
+    endAt: string,
+  ) =>
+    api
+      .get<{ events: CalendarEvent[] }>(
+        `/calendar/ai/schedule/${employeeId}`,
+        {
+          params: { startAt, endAt },
+        },
+      )
+      .then((r) => r.data.events),
+
+  aiConflict: (
+    employeeId: string,
+    startAt: string,
+    endAt: string,
+  ) =>
+    api
+      .get<CalendarConflictAnalysis>(
+        `/calendar/ai/conflict/${employeeId}`,
+        {
+          params: { startAt, endAt },
+        },
+      )
+      .then((r) => r.data),
+
+  aiHealth: (
+    employeeId: string,
+    startAt: string,
+    endAt: string,
+  ) =>
+    api
+      .get<CalendarHealthAnalysis>(
+        `/calendar/ai/health/${employeeId}`,
+        {
+          params: { startAt, endAt },
+        },
+      )
+      .then((r) => r.data),
+
+  aiMeetingNecessity: (eventId: string) =>
+    api
+      .get<MeetingNecessityAnalysis>(
+        `/calendar/ai/meeting-necessity/${eventId}`,
+      )
+      .then((r) => r.data),
+
+  aiOptimize: (
+    employeeId: string,
+    startAt: string,
+    endAt: string,
+  ) =>
+    api
+      .get<ScheduleOptimization>(
+        `/calendar/ai/optimize/${employeeId}`,
+        {
+          params: { startAt, endAt },
+        },
+      )
+      .then((r) => r.data),
+};
 
 // --- Recruitment ------------------------------------------------------------------
 export const RecruitmentApi = {

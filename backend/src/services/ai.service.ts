@@ -1095,3 +1095,259 @@ export async function generateSuggestedReply(
   }
 }
 
+// =========================================================
+// CALENDAR AI - GENERIC GROQ JSON GENERATOR
+// =========================================================
+
+export async function generateCalendarAI<T>(
+  systemPrompt: string,
+  userMessage: string,
+  schema: z.ZodType<T>,
+  fallback: T,
+  options?: {
+    temperature?: number;
+    maxTokens?: number;
+    timeoutMs?: number;
+  },
+): Promise<T> {
+  // -------------------------------------------------------
+  // GROQ NOT CONFIGURED
+  // -------------------------------------------------------
+
+  if (!env.groqApiKey) {
+    return fallback;
+  }
+
+  const timeoutMs =
+    options?.timeoutMs ?? 8000;
+
+  try {
+    const controller =
+      new AbortController();
+
+    const timeout = setTimeout(
+      () => controller.abort(),
+      timeoutMs,
+    );
+
+    const response = await fetch(
+      GROQ_API_URL,
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          Authorization:
+            `Bearer ${env.groqApiKey}`,
+        },
+
+        body: JSON.stringify({
+          model: env.groqModel,
+
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt,
+            },
+
+            {
+              role: "user",
+              content: userMessage,
+            },
+          ],
+
+          temperature:
+            options?.temperature ?? 0.2,
+
+          max_tokens:
+            options?.maxTokens ?? 800,
+
+          response_format: {
+            type: "json_object",
+          },
+        }),
+
+        signal: controller.signal,
+      },
+    );
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.warn(
+        `[AI] Groq API returned ${response.status} for Calendar AI. Using fallback.`,
+      );
+
+      return fallback;
+    }
+
+    const data: any =
+      await response.json();
+
+    const content =
+      data?.choices?.[0]?.message?.content;
+
+    if (!content) {
+      console.warn(
+        "[AI] Calendar AI returned empty response. Using fallback.",
+      );
+
+      return fallback;
+    }
+
+    const parsed =
+      JSON.parse(content);
+
+    const validated =
+      schema.safeParse(parsed);
+
+    if (!validated.success) {
+      console.warn(
+        "[AI] Calendar AI response failed validation. Using fallback.",
+        validated.error.flatten(),
+      );
+
+      return fallback;
+    }
+
+    return validated.data;
+  } catch (error) {
+    console.warn(
+      "[AI] Calendar AI request failed. Using fallback.",
+      error instanceof Error
+        ? error.message
+        : String(error),
+    );
+
+    return fallback;
+  }
+}
+
+// =========================================================
+// ORGANIZATION AI - GENERIC GROQ JSON GENERATOR
+// =========================================================
+
+export async function generateOrganizationAI<T>(
+  systemPrompt: string,
+  schema: z.ZodType<T>,
+  fallback: T,
+  options?: {
+    userMessage?: string;
+    temperature?: number;
+    maxTokens?: number;
+    timeoutMs?: number;
+  },
+): Promise<T> {
+  if (!env.groqApiKey) {
+    return fallback;
+  }
+
+  const timeoutMs =
+    options?.timeoutMs ?? 8000;
+
+  try {
+    const controller = new AbortController();
+
+    const timeout = setTimeout(
+      () => controller.abort(),
+      timeoutMs,
+    );
+
+    const response = await fetch(
+      GROQ_API_URL,
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:
+            `Bearer ${env.groqApiKey}`,
+        },
+
+        body: JSON.stringify({
+          model: env.groqModel,
+
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt,
+            },
+
+            ...(options?.userMessage
+              ? [
+                  {
+                    role: "user",
+                    content: options.userMessage,
+                  },
+                ]
+              : []),
+          ],
+
+          temperature:
+            options?.temperature ?? 0.2,
+
+          max_tokens:
+            options?.maxTokens ?? 800,
+
+          response_format: {
+            type: "json_object",
+          },
+        }),
+
+        signal: controller.signal,
+      },
+    );
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.warn(
+        `[AI] Groq API returned ${response.status} for Organization AI. Using fallback.`,
+      );
+
+      return fallback;
+    }
+
+    const data: any =
+      await response.json();
+
+    const content =
+      data?.choices?.[0]?.message?.content;
+
+    if (!content) {
+      console.warn(
+        "[AI] Organization AI returned empty response. Using fallback.",
+      );
+
+      return fallback;
+    }
+
+    const parsed =
+      JSON.parse(content);
+
+    const validated =
+      schema.safeParse(parsed);
+
+    if (!validated.success) {
+      console.warn(
+        "[AI] Organization AI response failed validation. Using fallback.",
+        validated.error.flatten(),
+      );
+
+      return fallback;
+    }
+
+    return validated.data;
+  } catch (error) {
+    console.warn(
+      "[AI] Organization AI request failed. Using fallback.",
+      error instanceof Error
+        ? error.message
+        : String(error),
+    );
+
+    return fallback;
+  }
+}
