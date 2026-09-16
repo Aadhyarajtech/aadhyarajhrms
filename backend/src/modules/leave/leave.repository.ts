@@ -11,6 +11,26 @@ import {
 import { nowIso } from "@/db/connection";
 import { AppError } from "@/utils/errors";
 
+
+function calculateLeaveRequestExpiry(startDate: string, appliedAt: string): string {
+  const requestAt = new Date(appliedAt);
+  const leave = new Date(`${startDate}T00:00:00.000Z`);
+  const today = new Date(requestAt);
+  const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(today);
+  const tomorrow = new Date(`${todayDate}T00:00:00.000Z`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const tomorrowDate = tomorrow.toISOString().slice(0, 10);
+
+  if (startDate <= todayDate) {
+    return `${todayDate}T18:29:59.999Z`;
+  }
+  if (startDate === tomorrowDate) {
+    return `${tomorrowDate}T18:29:59.999Z`;
+  }
+
+  return new Date(requestAt.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString();
+}
+
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
   const { _id, ...rest } = doc;
@@ -701,6 +721,8 @@ console.log("[Leave Balance Check]", {
     totalDays,
     status: "PENDING",
     appliedAt: nowIso(),
+    expiresAt: calculateLeaveRequestExpiry(input.startDate, nowIso()),
+    expiredAt: null,
   });
 
   return toApiDoc(

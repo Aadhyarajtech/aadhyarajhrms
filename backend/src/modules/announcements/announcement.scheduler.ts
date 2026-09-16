@@ -36,6 +36,17 @@ export async function processScheduledAnnouncements() {
   schedulerRunning = true;
 
   try {
+    await notificationRepo.backfillNotificationExpiry();
+    const deletedNotificationCount = await notificationRepo.deleteExpiredNotifications();
+    if (deletedNotificationCount) {
+      console.log(`[Announcement Scheduler] Deleted ${deletedNotificationCount} expired notification(s).`);
+    }
+
+    const expiredCount = await announcementRepo.expireDueAnnouncements();
+    if (expiredCount) {
+      console.log(`[Announcement Scheduler] Expired ${expiredCount} announcement(s).`);
+    }
+
     const published = await announcementRepo.publishDueAnnouncements();
 
     if (!published.length) {

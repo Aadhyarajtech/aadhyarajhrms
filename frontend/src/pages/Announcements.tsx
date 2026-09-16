@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { TextField, TextareaField } from "@/components/ui/Field";
 import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
+import ExpiryBadge from "@/components/common/ExpiryBadge";
 
 import type { Announcement as BaseAnnouncement } from "@/types";
 
@@ -46,6 +47,9 @@ type Announcement = BaseAnnouncement & {
   eventStartAt?: string | null;
   eventEndAt?: string | null;
   eventLocation?: string | null;
+  expiryDays?: number;
+  expiresAt?: string | null;
+  expiredAt?: string | null;
 };
 
 import { formatDate, timeAgo } from "@/lib/format";
@@ -166,6 +170,7 @@ interface AnnouncementForm {
   eventStartAt: string;
   eventEndAt: string;
   eventLocation: string;
+  expiryDays: number;
   attachment?: FileList;
 }
 
@@ -600,6 +605,7 @@ export default function Announcements() {
     queryKey: ["announcements"],
 
     queryFn: () => AnnouncementsApi.list(),
+    refetchInterval: 60_000,
   });
 
   /* =======================================================
@@ -711,6 +717,13 @@ export default function Announcements() {
                     <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-soft">
                       {announcement.body}
                     </p>
+
+                    {announcement.expiresAt && (
+                      <ExpiryBadge
+                        expiresAt={announcement.expiresAt}
+                        status={announcement.status}
+                      />
+                    )}
 
                     {announcement.eventStartAt && (
                       <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2.5">
@@ -1122,6 +1135,7 @@ function CreateModal({
       }
     }
 
+    formData.append("expiryDays", String(values.expiryDays || 7));
     formData.append("publishMode", values.publishMode);
 
     formData.append(
@@ -1511,6 +1525,16 @@ function CreateModal({
           </div>
         )}
 
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <TextField
+            label="Expiry (days)"
+            type="number"
+            min={1}
+            max={365}
+            {...register("expiryDays", { valueAsNumber: true })}
+          />
+        </div>
+
         <AttachmentField register={register} />
 
         <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-[13px] text-ink-soft">
@@ -1891,8 +1915,10 @@ function EditModal({
       }
 
       formData.append("scheduledAt", scheduledAt.toISOString());
+      formData.append("expiryDays", String(data.expiryDays || 7));
       formData.append("publishMode", "SCHEDULED");
     } else {
+      formData.append("expiryDays", String(data.expiryDays || 7));
       formData.append("publishMode", "NOW");
     }
 

@@ -451,11 +451,34 @@ function CyclesTab() {
       endDate: "",
       type: "ANNUAL",
       purpose: "",
+      selfWeight: 40,
+      managerWeight: 60,
+      competencies: "Technical Skills:30, Quality:20, Communication:20, Teamwork:15, Leadership:15",
+      selfReviewDueDate: "",
+      managerReviewDueDate: "",
+      finalReviewDueDate: "",
     },
   });
 
   const mutation = useMutation({
-    mutationFn: PerformanceApi.createCycle,
+    mutationFn: (value: any) => {
+      const competencies = String(value.competencies ?? "")
+        .split(",")
+        .map((item: string) => {
+          const [name, weight] = item.split(":");
+          return { name: String(name ?? "").trim(), weight: Number(weight ?? 0) };
+        })
+        .filter((item: any) => item.name && Number.isFinite(item.weight));
+      return PerformanceApi.createCycle({
+        name: value.name, startDate: value.startDate, endDate: value.endDate, type: value.type, purpose: value.purpose,
+        ratingScale: [1, 2, 3, 4, 5],
+        ratingWeights: { self: Number(value.selfWeight), manager: Number(value.managerWeight) },
+        competencies,
+        selfReviewDueDate: value.selfReviewDueDate || undefined,
+        managerReviewDueDate: value.managerReviewDueDate || undefined,
+        finalReviewDueDate: value.finalReviewDueDate || undefined,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["performance", "cycles"] });
       showToast("Review cycle created.");
@@ -540,6 +563,16 @@ function CyclesTab() {
               <option value="PIP">PIP review</option>
             </select>
           </label>
+          <div className="grid grid-cols-2 gap-4">
+            <TextField label="Self-review weight (%)" type="number" min={0} max={100} {...register("selfWeight", { valueAsNumber: true })} />
+            <TextField label="Manager-review weight (%)" type="number" min={0} max={100} {...register("managerWeight", { valueAsNumber: true })} />
+          </div>
+          <TextField label="Competencies (name:weight)" placeholder="Technical Skills:30, Communication:20, Teamwork:20" {...register("competencies")} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <TextField label="Self-review due" type="date" {...register("selfReviewDueDate")} />
+            <TextField label="Manager review due" type="date" {...register("managerReviewDueDate")} />
+            <TextField label="Final review due" type="date" {...register("finalReviewDueDate")} />
+          </div>
           <TextField
             label="Purpose (optional)"
             placeholder="e.g. Goal tracking and mid-course correction"

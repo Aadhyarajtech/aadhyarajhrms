@@ -1,3 +1,4 @@
+import ExpiryBadge from "@/components/common/ExpiryBadge";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -490,6 +491,7 @@ export default function Tickets() {
 
                   {/* Category */}
                   <td className="py-2.5 px-2 text-gray-700 whitespace-nowrap">
+                    <ExpiryBadge expiresAt={ticket.expiresAt} status={ticket.status} />
                     {ticket.category === "Complaint" ? (
                       <span className="font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 text-[11px]">
                         Grievance

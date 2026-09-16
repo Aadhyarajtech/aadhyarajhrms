@@ -68,6 +68,8 @@ export async function notify(input: {
     }
   }
 
+  const createdAt = nowIso();
+
   const notification = await Notification.create({
     userId: input.userId,
     type: input.type,
@@ -76,7 +78,9 @@ export async function notify(input: {
     isRead: false,
     link: input.link ?? null,
     dedupeKey: input.dedupeKey ?? null,
-    createdAt: nowIso(),
+    createdAt,
+    expiresAt: new Date(new Date(createdAt).getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    status: "ACTIVE",
   });
 
   return notification._id;
@@ -94,6 +98,8 @@ export async function listNotifications(
 ) {
   const filter: Record<string, unknown> = {
     userId,
+    status: "ACTIVE",
+    expiresAt: { $gt: new Date().toISOString() },
   };
 
   if (unreadOnly) {
@@ -126,6 +132,8 @@ export async function unreadCount(userId: string) {
   return Notification.countDocuments({
     userId,
     isRead: false,
+    status: "ACTIVE",
+    expiresAt: { $gt: new Date().toISOString() },
   });
 }
 
@@ -174,6 +182,53 @@ export async function markAllRead(userId: string) {
       },
     },
   );
+}
+
+/* =========================================================
+   BACKFILL NOTIFICATION EXPIRY
+========================================================= */
+
+export async function backfillNotificationExpiry() {
+  const notifications = await Notification.find({
+    $or: [
+      { expiresAt: { $exists: false } },
+      { expiresAt: null },
+      { expiresAt: "" },
+    ],
+  }).select("_id createdAt").lean();
+
+  if (!notifications.length) return 0;
+
+  const operations = notifications.map((notification: any) => ({
+    updateOne: {
+      filter: { _id: notification._id },
+      update: {
+        $set: {
+          expiresAt: new Date(new Date(notification.createdAt).getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+          status: "ACTIVE",
+        },
+      },
+    },
+  }));
+
+  const result = await Notification.collection.bulkWrite(operations);
+  return result.modifiedCount ?? 0;
+}
+
+/* =========================================================
+   DELETE EXPIRED NOTIFICATIONS
+========================================================= */
+
+export async function deleteExpiredNotifications() {
+  const now = new Date().toISOString();
+  const result = await Notification.deleteMany({
+    $or: [
+      { expiresAt: { $lte: now } },
+      { status: "EXPIRED" },
+    ],
+  });
+
+  return result.deletedCount ?? 0;
 }
 
 /* =========================================================

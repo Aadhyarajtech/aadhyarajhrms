@@ -45,6 +45,7 @@ type GoalForm = z.infer<typeof goalSchema>;
 export default function Performance() {
   const { hasPermission } = useAuth();
   const isManager = hasPermission("performance.manage");
+  const isHr = hasPermission("performance.manage");
   const [tab, setTab] = useState("mine");
   const { data: cycles } = useQuery({
     queryKey: ["performance", "cycles"],
@@ -61,6 +62,7 @@ export default function Performance() {
     { key: "feedback", label: "360 Feedback" },
     ...(isManager ? [{ key: "team", label: "Team Reviews" }] : []),
     ...(isManager ? [{ key: "pip", label: "PIP Management" }] : []),
+    ...(isHr ? [{ key: "calibration", label: "Calibration" }] : []),
   ];
 
   return (
@@ -204,6 +206,7 @@ export default function Performance() {
         <TeamReviews activeCycleId={activeCycle?.id} />
       )}
       {tab === "pip" && isManager && <PipManagement />}
+      {tab === "calibration" && isHr && <CalibrationPanel cycleId={activeCycle?.id} />}
     </div>
   );
 }
@@ -1345,6 +1348,49 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
         </Modal>
       )}
     </div >
+  );
+}
+
+function CalibrationPanel({ cycleId }: { cycleId?: string }) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: reviews, isLoading } = useQuery({
+    queryKey: ["performance", "calibration", cycleId],
+    queryFn: () => PerformanceApi.calibration(cycleId),
+    enabled: !!cycleId,
+  });
+  const mutation = useMutation({
+    mutationFn: ({ id, rating, comments }: { id: string; rating: number; comments?: string }) =>
+      PerformanceApi.calibrate(id, { calibratedRating: rating, comments }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["performance", "calibration", cycleId] });
+      showToast("Calibration saved.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  if (!cycleId) return <Card><EmptyState icon={ClipboardList} title="No active cycle" description="Activate a performance cycle before calibration." /></Card>;
+  if (isLoading) return <Card><Skeleton className="h-64 rounded-2xl" /></Card>;
+  return (
+    <Card>
+      <CardHeader title="Performance calibration" />
+      <div className="space-y-3">
+        {(reviews ?? []).map((review: any) => (
+          <div key={review.id} className="flex flex-col gap-3 rounded-2xl border border-line/60 p-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-ink">{review.revieweeFirstName} {review.revieweeLastName}</p>
+              <p className="text-xs text-ink-faint">Manager rating: {review.managerRating ?? "—"} · Final: {review.finalRating ?? "—"}</p>
+              {review.calibratedRating != null && <p className="text-xs font-medium text-brand-600">Calibrated: {review.calibratedRating}/5</p>}
+            </div>
+            <div className="flex items-center gap-2">
+              <input aria-label="Calibrated rating" type="number" min={1} max={5} step={0.1} defaultValue={review.calibratedRating ?? review.finalRating ?? 3} id={`cal-${review.id}`} className="w-20 rounded-xl border border-line px-3 py-2 text-sm" />
+              <Button size="sm" onClick={() => { const el = document.getElementById(`cal-${review.id}`) as HTMLInputElement | null; mutation.mutate({ id: review.id, rating: Number(el?.value ?? 3) }); }}>Save</Button>
+            </div>
+          </div>
+        ))}
+        {!reviews?.length && <EmptyState icon={CheckCircle2} title="No completed reviews" description="Completed reviews will appear here for calibration." />}
+      </div>
+    </Card>
   );
 }
 

@@ -17,6 +17,7 @@ const TICKET_STATUSES = [
   "OPEN",
   "IN_PROGRESS",
   "WAITING_FOR_EMPLOYEE",
+  "EXPIRED",
   "RESOLVED",
   "CLOSED",
 ] as const;
@@ -225,6 +226,9 @@ export async function createTicket(data: {
 
     createdAt: now,
 
+    expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    expiredAt: null,
+
     updatedAt: now,
   });
 
@@ -236,7 +240,7 @@ export async function createTicket(data: {
 // =========================================================
 
 export async function getTickets() {
-  return Ticket.find({})
+  return Ticket.find({ status: { $ne: "EXPIRED" } })
     .sort({
       createdAt: -1,
     })
@@ -287,6 +291,7 @@ export async function getMyTickets(employeeId: string) {
 
   const tickets = await Ticket.find({
     employeeId: employeeId,
+    status: { $ne: "EXPIRED" },
   })
     .sort({
       createdAt: -1,
@@ -306,6 +311,7 @@ export async function getMyTickets(employeeId: string) {
 
 export async function getTicketsByAssignees(assignees: string[]) {
   return Ticket.find({
+    status: { $ne: "EXPIRED" },
     assignedTo: {
       $in: assignees,
     },
@@ -408,12 +414,13 @@ export async function getTicketsForDepartment(
 ) {
   // Super Admin and HR Admin have enterprise-wide oversight over all tickets
   if (role === "SUPER_ADMIN" || role === "HR_ADMIN") {
-    return Ticket.find({}).sort({ createdAt: -1 }).lean();
+    return Ticket.find({ status: { $ne: "EXPIRED" } }).sort({ createdAt: -1 }).lean();
   }
 
   // IT Support sees only IT Support tickets
   if (role === "IT_SUPPORT") {
     return Ticket.find({
+      status: { $ne: "EXPIRED" },
       $or: [{ assignedTo: "IT_SUPPORT" }, { category: "IT Support" }],
     })
       .sort({ createdAt: -1 })
@@ -423,6 +430,7 @@ export async function getTicketsForDepartment(
   // Finance sees only Payroll / Finance tickets
   if (role === "FINANCE") {
     return Ticket.find({
+      status: { $ne: "EXPIRED" },
       $or: [{ assignedTo: "FINANCE" }, { category: "Payroll" }],
     })
       .sort({ createdAt: -1 })

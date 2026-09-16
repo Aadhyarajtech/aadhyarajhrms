@@ -219,6 +219,7 @@ const createAnnouncementSchema = z.object({
   eventEndAt: z.string().optional(),
 
   eventLocation: z.string().max(500).optional(),
+  expiryDays: z.coerce.number().int().min(1).max(365).optional(),
 });
 
 /* =========================================================
@@ -879,6 +880,7 @@ const updateAnnouncementSchema = z.object({
   eventEndAt: z.string().optional(),
 
   eventLocation: z.string().max(500).optional(),
+  expiryDays: z.coerce.number().int().min(1).max(365).optional(),
 });
 
 /* =========================================================
@@ -1060,6 +1062,7 @@ announcementRouter.patch(
         eventEndAt,
 
         eventLocation,
+        expiryDays: req.body.expiryDays ? Number(req.body.expiryDays) : undefined,
       });
 
       if (!parsed.success) {

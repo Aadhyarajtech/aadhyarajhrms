@@ -88,6 +88,12 @@ const cycleSchema = z.object({
     ])
     .optional(),
   purpose: z.string().max(1000).optional(),
+  ratingScale: z.array(z.number().int().min(1).max(5)).min(2).max(10).optional(),
+  ratingWeights: z.object({ self: z.number().min(0).max(100), manager: z.number().min(0).max(100) }).optional(),
+  competencies: z.array(z.object({ name: z.string().min(1).max(100), weight: z.number().min(0).max(100) })).optional(),
+  selfReviewDueDate: z.string().optional(),
+  managerReviewDueDate: z.string().optional(),
+  finalReviewDueDate: z.string().optional(),
 });
 performanceRouter.post(
   "/cycles",
@@ -325,6 +331,31 @@ performanceRouter.post(
     }
   },
 );
+
+performanceRouter.get("/calibration", requirePermission("performance.manage"), async (req, res, next) => {
+  try {
+    const reviews = await repo.listCalibrationReviews(req.query.cycleId as string | undefined);
+    res.json({ reviews });
+  } catch (err) { next(err); }
+});
+
+const calibrationSchema = z.object({
+  calibratedRating: z.number().min(1).max(5),
+  comments: z.string().max(2000).optional(),
+});
+
+performanceRouter.patch("/reviews/:id/calibration", requirePermission("performance.manage"), validate(calibrationSchema), async (req, res, next) => {
+  try {
+    const review = await repo.calibrateReview({
+      reviewId: req.params.id,
+      calibratedRating: req.body.calibratedRating,
+      comments: req.body.comments,
+      calibratedBy: req.user!.employeeId ?? req.user!.userId,
+    });
+    if (!review) throw AppError.notFound("Review not found.");
+    res.json({ review });
+  } catch (err) { next(err); }
+});
 
 performanceRouter.get("/goals", async (req, res, next) => {
   try {

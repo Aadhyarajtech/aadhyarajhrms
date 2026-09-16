@@ -3753,6 +3753,9 @@ export interface NotificationDoc {
   link: string | null;
 
   createdAt: string;
+  status: "ACTIVE" | "EXPIRED";
+  expiresAt?: string | null;
+  expiredAt?: string | null;
 }
 
 const notificationSchema = new Schema<NotificationDoc>(
@@ -3808,6 +3811,24 @@ const notificationSchema = new Schema<NotificationDoc>(
     createdAt: {
       type: String,
       required: true,
+    },
+
+    status: {
+      type: String,
+      enum: ["ACTIVE", "EXPIRED"],
+      default: "ACTIVE",
+      index: true,
+    },
+
+    expiresAt: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    expiredAt: {
+      type: String,
+      default: null,
     },
   },
   baseOptions,

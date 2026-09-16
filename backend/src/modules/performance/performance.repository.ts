@@ -36,6 +36,12 @@ export async function createCycle(input: {
   endDate: string;
   type?: string;
   purpose?: string;
+  ratingScale?: number[];
+  ratingWeights?: { self: number; manager: number };
+  competencies?: { name: string; weight: number }[];
+  selfReviewDueDate?: string;
+  managerReviewDueDate?: string;
+  finalReviewDueDate?: string;
 }) {
   const start = new Date(input.startDate);
   const end = new Date(input.endDate);
@@ -44,7 +50,16 @@ export async function createCycle(input: {
   }
 
   await PerformanceCycle.updateMany({ isActive: true }, { $set: { isActive: false } });
-  const doc = await PerformanceCycle.create({ ...input, isActive: true });
+  const doc = await PerformanceCycle.create({
+    ...input,
+    isActive: true,
+    ratingScale: input.ratingScale?.length ? input.ratingScale : [1, 2, 3, 4, 5],
+    ratingWeights: input.ratingWeights ?? { self: 40, manager: 60 },
+    competencies: input.competencies ?? [],
+    selfReviewDueDate: input.selfReviewDueDate ?? null,
+    managerReviewDueDate: input.managerReviewDueDate ?? null,
+    finalReviewDueDate: input.finalReviewDueDate ?? null,
+  });
   return toApiDoc((await PerformanceCycle.findById(doc._id).lean())!);
 }
 
@@ -403,8 +418,12 @@ export async function submitManagerReview(
     );
   }
 
+  const cycle = await PerformanceCycle.findById(review.cycleId).lean();
+  const selfWeight = Number(cycle?.ratingWeights?.self ?? 40);
+  const managerWeight = Number(cycle?.ratingWeights?.manager ?? 60);
+  const weightTotal = selfWeight + managerWeight || 100;
   const finalRating = review.selfRating
-    ? Math.round(((review.selfRating + managerRating) / 2) * 10) / 10
+    ? Math.round(((review.selfRating * selfWeight + managerRating * managerWeight) / weightTotal) * 10) / 10
     : managerRating;
 
   await PerformanceReview.updateOne(
@@ -1417,6 +1436,28 @@ export async function updatePipStatus(
   return getPip(id);
 }
 
+
+export async function calibrateReview(input: {
+  reviewId: string;
+  calibratedRating: number;
+  comments?: string;
+  calibratedBy: string;
+}) {
+  const review = await PerformanceReview.findById(input.reviewId).lean();
+  if (!review) return undefined;
+  if (review.status !== "COMPLETED") throw new Error("Only completed reviews can be calibrated.");
+  if (input.calibratedRating < 1 || input.calibratedRating > 5) throw new Error("Calibrated rating must be between 1 and 5.");
+  await PerformanceReview.updateOne(
+    { _id: input.reviewId },
+    { $set: { calibratedRating: input.calibratedRating, calibrationComments: input.comments?.trim() || null, calibratedBy: input.calibratedBy, calibratedAt: nowIso() } },
+  );
+  return getReview(input.reviewId);
+}
+
+export async function listCalibrationReviews(cycleId?: string) {
+  const rows = await PerformanceReview.find({ status: "COMPLETED", ...(cycleId ? { cycleId } : {}) }).sort({ submittedAt: -1 }).lean();
+  return enrichReviews(rows);
+}
 
 export async function getAverageRatingByDepartment() {
   const reviews = await PerformanceReview.find({

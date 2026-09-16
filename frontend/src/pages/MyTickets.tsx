@@ -1,3 +1,4 @@
+import ExpiryBadge from "@/components/common/ExpiryBadge";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -14,6 +15,8 @@ interface Ticket {
   subject: string;
   status: string;
   createdAt: string;
+  expiresAt?: string | null;
+  expiredAt?: string | null;
   attachment?: string;
 }
 
@@ -34,6 +37,9 @@ export default function MyTickets() {
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
+
+  // Expired tickets remain in the database for audit/history but are removed from the active My Tickets view.
+  const activeTickets = data?.filter((ticket) => ticket.status !== "EXPIRED") ?? [];
 
   if (isLoading) {
     return (
@@ -118,7 +124,7 @@ export default function MyTickets() {
           </thead>
 
           <tbody>
-            {data?.map((ticket) => (
+            {activeTickets.map((ticket) => (
               <tr
                 key={ticket._id}
                 className="border-b last:border-b-0 hover:bg-gray-50"
@@ -159,6 +165,7 @@ export default function MyTickets() {
                       " ",
                     )}
                   </span>
+                  <ExpiryBadge expiresAt={ticket.expiresAt} status={ticket.status} />
                 </td>
 
                 <td className="p-3">
@@ -196,7 +203,7 @@ export default function MyTickets() {
               </tr>
             ))}
 
-            {!data?.length && (
+            {!activeTickets.length && (
               <tr>
                 <td
                   colSpan={8}

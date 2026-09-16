@@ -234,8 +234,7 @@ export default function App() {
             path="org-chart"
             element={
               <ProtectedRoute
-                permissions={["organization.manage", "employees.view"]}
-              >
+                permissions={["organization.manage"]}>
                 <OrgChart />
               </ProtectedRoute>
             }

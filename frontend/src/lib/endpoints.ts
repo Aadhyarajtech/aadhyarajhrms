@@ -835,7 +835,8 @@ export const AttendanceApi = {
           | "PENDING"
           | "APPROVED"
           | "REJECTED"
-          | "CANCELLED";
+          | "CANCELLED"
+          | "EXPIRED";
           approverId: string | null;
           decisionNote: string | null;
           requestedAt: string;
@@ -843,6 +844,8 @@ export const AttendanceApi = {
           firstName: string | null;
           lastName: string | null;
           employeeCode: string | null;
+          expiresAt: string | null;
+          expiredAt: string | null;
         }>;
 
 
@@ -1839,6 +1842,12 @@ export const PerformanceApi = {
         }[];
       }>("/performance/analytics/rating-by-department")
       .then((r) => r.data.data),
+
+  calibration: (cycleId?: string) =>
+    api.get<{ reviews: PerformanceReview[] }>("/performance/calibration", { params: cycleId ? { cycleId } : undefined }).then((r) => r.data.reviews),
+
+  calibrate: (id: string, payload: { calibratedRating: number; comments?: string }) =>
+    api.patch<{ review: PerformanceReview }>(`/performance/reviews/${id}/calibration`, payload).then((r) => r.data.review),
 
   analyticsSummary: () =>
     api
