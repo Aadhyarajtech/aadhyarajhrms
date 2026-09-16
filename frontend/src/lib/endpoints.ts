@@ -226,61 +226,6 @@ export const EmployeesApi = {
   },
 };
 
-// --- Governance (roles, permissions, policies) --------------------------------
-export interface GovernancePermission {
-  key: string;
-  module: string;
-  action: string;
-}
-
-export interface GovernanceRole {
-  id: string;
-  role: string;
-  label: string;
-  description: string;
-  permissions: string[];
-  isSystem: boolean;
-}
-
-export interface GovernancePolicy {
-  id: string;
-  key: string;
-  label: string;
-  description: string;
-  type: "BOOLEAN" | "NUMBER" | "TEXT";
-  value: boolean | number | string;
-  category: "SECURITY" | "WORKFLOW" | "HR_POLICY" | "GOVERNANCE";
-}
-
-export const GovernanceApi = {
-  get: () =>
-    api
-      .get<{
-        roles: GovernanceRole[];
-        policies: GovernancePolicy[];
-        permissions: GovernancePermission[];
-      }>("/governance")
-      .then((r) => r.data),
-  updateRole: (role: string, permissions: string[]) =>
-    api
-      .patch<{
-        role: GovernanceRole;
-      }>(`/governance/roles/${role}`, { permissions })
-      .then((r) => r.data.role),
-  updatePolicies: (
-    updates: Array<{ key: string; value: boolean | number | string }>,
-  ) =>
-    api
-      .patch<{
-        policies: GovernancePolicy[];
-      }>("/governance/policies", { updates })
-      .then((r) => r.data.policies),
-  me: () =>
-    api
-      .get<{ role: string; permissions: string[] }>("/governance/me")
-      .then((r) => r.data),
-};
-
 // --- Organization (departments, designations, holidays) ----------------------
 export const OrganizationApi = {
   departments: () =>
@@ -334,7 +279,231 @@ export const OrganizationApi = {
       }>("/organization/holidays", payload)
       .then((r) => r.data.holiday),
 
-  deleteHoliday: (id: string) => api.delete(`/organization/holidays/${id}`),
+  deleteHoliday: (id: string) =>
+    api.delete(
+      `/organization/holidays/${id}`,
+    ),
+
+  aiSearch: (query: string) =>
+    api
+      .post<OrganizationSearchResponse>("/organization/ai/search", { query })
+      .then((r) => r.data),
+
+  skillDependencies: (managerId?: string) =>
+    api
+      .get<SkillDependencyResponse>("/organization/ai/skill-dependencies", {
+        params: { managerId },
+      })
+      .then((r) => r.data),
+};
+
+export interface OrganizationSearchEmployee {
+  id: string;
+  employeeCode: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  avatarUrl: string | null;
+  departmentId: string;
+  departmentName: string | null;
+  designationId: string;
+  designationTitle: string | null;
+  managerId: string | null;
+  managerName: string | null;
+  workLocation: string | null;
+  status: string;
+  directReportCount: number;
+}
+
+export interface OrganizationSearchResponse {
+  query: string;
+  filters: Record<string, unknown>;
+  total: number;
+  employees: OrganizationSearchEmployee[];
+}
+
+export interface SkillDependencyEmployee {
+  id: string;
+  name: string;
+  designationTitle: string | null;
+  competencyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "EXPERT";
+}
+
+export interface SkillDependencyGroup {
+  skill: string;
+  category: string | null;
+  employeeCount: number;
+  advancedOrExpertCount: number;
+  employees: SkillDependencyEmployee[];
+  dependencyRatio: number;
+  riskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+}
+
+export interface SkillDependencyResponse {
+  scope: {
+    departmentId: string | null;
+    managerId: string | null;
+  };
+  employeeCount: number;
+  skills: SkillDependencyGroup[];
+  summary: string;
+  recommendations: string[];
+}
+
+// --- Governance (roles, permissions, policies) -----------------------------
+export interface GovernancePermission {
+  key: string;
+  module: string;
+  action: string;
+}
+
+export interface GovernanceRole {
+  id: string;
+  role: string;
+  label: string;
+  description: string;
+  permissions: string[];
+  isSystem: boolean;
+}
+
+export interface GovernancePolicy {
+  id: string;
+  key: string;
+  label: string;
+  description: string;
+  type: "BOOLEAN" | "NUMBER" | "TEXT";
+  value: boolean | number | string;
+  category: "SECURITY" | "WORKFLOW" | "HR_POLICY" | "GOVERNANCE";
+}
+
+export const GovernanceApi = {
+  get: () =>
+    api
+      .get<{
+        roles: GovernanceRole[];
+        policies: GovernancePolicy[];
+        permissions: GovernancePermission[];
+      }>("/governance")
+      .then((r) => r.data),
+
+  updateRole: (role: string, permissions: string[]) =>
+    api
+      .patch<{ role: GovernanceRole }>(`/governance/roles/${role}`, {
+        permissions,
+      })
+      .then((r) => r.data.role),
+
+  updatePolicies: (
+    updates: Array<{ key: string; value: boolean | number | string }>,
+  ) =>
+    api
+      .patch<{ policies: GovernancePolicy[] }>("/governance/policies", {
+        updates,
+      })
+      .then((r) => r.data.policies),
+
+  me: () =>
+    api
+      .get<{ role: string; permissions: string[] }>("/governance/me")
+      .then((r) => r.data),
+};
+
+// --- Calendar ----------------------------------------------------------------
+export interface CalendarEvent {
+  _id: string;
+  title: string;
+  description: string;
+  type: string;
+  status: string;
+  employeeId: string;
+  participantIds: string[];
+  startAt: string;
+  endAt: string;
+  location: string;
+  isImportant: boolean;
+  isCritical: boolean;
+}
+
+export interface CalendarConflictAnalysis {
+  hasConflict: boolean;
+  conflictCount: number;
+  unavailableEmployees: number;
+  criticalEmployeesAffected: number;
+  alternativeSlots: { startAt: string; endAt: string }[];
+  explanation: string;
+  ai?: { summary?: string; recommendedAlternativeTime?: string | null };
+}
+
+export interface CalendarHealthAnalysis {
+  score: number;
+  meetingHours: number;
+  backToBackMeetings: number;
+  focusTimeHours: number;
+  breakHours: number;
+  explanation: string;
+  recommendations: string[];
+  ai?: { summary?: string; recommendation?: string };
+}
+
+export interface ScheduleOptimization {
+  conflictsReduced: number;
+  focusBlocksAdded: number;
+  breaksAdded: number;
+  backToBackMeetingsReduced: number;
+  explanation: string;
+  recommendations: string[];
+  ai?: { summary?: string; productivityRecommendation?: string };
+}
+
+export interface MeetingNecessityAnalysis {
+  durationMinutes: number;
+  participantCount: number;
+  score: number;
+  recommendation: string;
+  reasons: string[];
+  isRecurring: boolean;
+  ai?: {
+    explanation?: string;
+    recommendation?: string;
+    suggestedAction?: string;
+  };
+}
+
+export const CalendarApi = {
+  list: (employeeId?: string, startAt?: string, endAt?: string) =>
+    api
+      .get<{ events: CalendarEvent[] }>("/calendar", {
+        params: { employeeId, startAt, endAt },
+      })
+      .then((r) => r.data.events),
+
+  aiConflict: (employeeId: string, startAt: string, endAt: string) =>
+    api
+      .get<CalendarConflictAnalysis>(`/calendar/ai/conflict/${employeeId}`, {
+        params: { startAt, endAt },
+      })
+      .then((r) => r.data),
+
+  aiHealth: (employeeId: string, startAt: string, endAt: string) =>
+    api
+      .get<CalendarHealthAnalysis>(`/calendar/ai/health/${employeeId}`, {
+        params: { startAt, endAt },
+      })
+      .then((r) => r.data),
+
+  aiOptimize: (employeeId: string, startAt: string, endAt: string) =>
+    api
+      .get<ScheduleOptimization>(`/calendar/ai/optimize/${employeeId}`, {
+        params: { startAt, endAt },
+      })
+      .then((r) => r.data),
+
+  aiMeetingNecessity: (eventId: string) =>
+    api
+      .get<MeetingNecessityAnalysis>(
+        `/calendar/ai/meeting-necessity/${eventId}`,
+      )
+      .then((r) => r.data),
 };
 
 export interface AttendanceAiInsights {
@@ -1112,6 +1281,8 @@ export const LeaveApi = {
       })
       .then((r) => r.data),
 };
+
+
 
 // --- Recruitment ------------------------------------------------------------------
 export const RecruitmentApi = {

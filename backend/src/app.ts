@@ -22,13 +22,13 @@ import { organizationRouter } from "@/modules/organization/organization.routes";
 import { governanceRouter } from "./modules/governance/governance.routes";
 import { attendanceRouter } from "@/modules/attendance/attendance.routes";
 import { leaveRouter } from "@/modules/leave/leave.routes";
+import calendarRouter from "@/modules/calendar/calendar.routes";
 import { recruitmentRouter } from "@/modules/recruitment/recruitment.routes";
 import { candidatePortalRouter } from "@/modules/recruitment/candidatePortal.routes";
 import { publicRecruitmentRouter } from "@/modules/recruitment/publicRecruitment.routes";
 import { performanceRouter } from "@/modules/performance/performance.routes";
 import { payrollRouter } from "@/modules/payroll/payroll.routes";
 import { notificationsRouter } from "@/modules/notifications/notifications.routes";
-
 import { documentsRouter } from "@/modules/documents/documents.routes";
 import { dashboardRouter } from "@/modules/dashboard/dashboard.routes";
 import { reportsRouter } from "@/modules/reports/reports.routes";
@@ -172,6 +172,12 @@ export function createApp() {
   // =======================================================
 
   app.use("/api/leave", leaveRouter);
+
+    // =======================================================
+  // CALENDAR
+  // =======================================================
+
+  app.use("/api/calendar", calendarRouter);
 
   // =======================================================
   // RECRUITMENT

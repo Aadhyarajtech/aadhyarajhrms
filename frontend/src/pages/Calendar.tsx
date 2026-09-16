@@ -8,9 +8,19 @@ import {
   Clock3,
   Megaphone,
   RefreshCw,
+  Brain,
+  Sparkles,
+  AlertTriangle,
+  Activity,
+  WandSparkles,
+  CheckCircle2,
 } from "lucide-react";
 
-import { AnnouncementsApi } from "@/lib/endpoints";
+import {
+  AnnouncementsApi,
+  AuthApi,
+  CalendarApi,
+} from "@/lib/endpoints";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 
@@ -25,6 +35,12 @@ type CalendarEvent = {
   location?: string;
   type: string;
   pinned: boolean;
+  source: "ANNOUNCEMENT" | "CALENDAR";
+  calendarEventId?: string;
+  status?: string;
+  isImportant?: boolean;
+  isCritical?: boolean;
+  participantCount?: number;
 };
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -257,6 +273,49 @@ function announcementToCalendarEvent(
       announcement.eventLocation?.trim() || undefined,
     type: announcement.type,
     pinned: announcement.pinned === true,
+    source: "ANNOUNCEMENT",
+  };
+}
+
+function calendarApiEventToCalendarEvent(
+  event: {
+    _id: string;
+    title: string;
+    description: string;
+    type: string;
+    status: string;
+    startAt: string;
+    endAt: string;
+    location: string;
+    isImportant: boolean;
+    isCritical: boolean;
+    participantIds: string[];
+  },
+): CalendarEvent | null {
+  const start = parseDate(event.startAt);
+  const end = parseDate(event.endAt);
+
+  if (!start || !end) {
+    return null;
+  }
+
+  return {
+    id: `calendar-${event._id}`,
+    calendarEventId: event._id,
+    title: event.title,
+    body: event.description || "",
+    start,
+    end,
+    location: event.location?.trim() || undefined,
+    type: event.type,
+    pinned: event.isImportant === true,
+    source: "CALENDAR",
+    status: event.status,
+    isImportant: event.isImportant,
+    isCritical: event.isCritical,
+    participantCount: Array.isArray(event.participantIds)
+      ? event.participantIds.length
+      : 0,
   };
 }
 
@@ -280,50 +339,207 @@ export default function Calendar() {
   });
 
   /* =======================================================
+     CURRENT USER
+  ======================================================= */
+
+  const { data: currentUser } = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: AuthApi.me,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const employeeId = useMemo(() => {
+    const user = currentUser as
+      | {
+          employeeId?: string | null;
+          employee?: { id?: string | null } | null;
+        }
+      | null
+      | undefined;
+
+    return (
+      user?.employeeId ||
+      user?.employee?.id ||
+      null
+    );
+  }, [currentUser]);
+
+  /* =======================================================
+     CALENDAR RANGE
+  ======================================================= */
+
+  const calendarDays = useMemo(
+    () => buildCalendarDays(currentMonth),
+    [currentMonth],
+  );
+
+  const calendarRange = useMemo(() => {
+    const first = calendarDays[0] ?? startOfDay(currentMonth);
+    const last =
+      calendarDays[calendarDays.length - 1] ??
+      startOfDay(currentMonth);
+
+    const end = new Date(last);
+    end.setDate(end.getDate() + 1);
+
+    return {
+      startAt: first.toISOString(),
+      endAt: end.toISOString(),
+    };
+  }, [calendarDays, currentMonth]);
+
+  /* =======================================================
      ANNOUNCEMENTS API
   ======================================================= */
 
   const {
     data: announcements = [],
-    isLoading,
-    isFetching,
-    isError,
-    refetch,
+    isLoading: announcementsLoading,
+    isFetching: announcementsFetching,
+    isError: announcementsError,
+    refetch: refetchAnnouncements,
   } = useQuery<AppAnnouncement[], Error>({
     queryKey: ["announcements", "calendar"],
 
     queryFn: async (): Promise<AppAnnouncement[]> => {
       const result = await AnnouncementsApi.list();
 
-      /*
-       * Explicitly return the application's Announcement type.
-       *
-       * This fixes the previous React Query type conflict caused
-       * by Calendar.tsx using a different Announcement definition.
-       */
       return Array.isArray(result)
         ? (result as AppAnnouncement[])
         : [];
     },
 
-    /*
-     * Automatically check for newly-created
-     * announcements.
-     */
     refetchInterval: 15000,
-
     staleTime: 0,
   });
 
   /* =======================================================
-     CONVERT ANNOUNCEMENTS TO CALENDAR EVENTS
+     CALENDAR EVENTS API
   ======================================================= */
+
+  const {
+    data: apiCalendarEvents = [],
+    isLoading: calendarEventsLoading,
+    isFetching: calendarEventsFetching,
+    isError: calendarEventsError,
+    refetch: refetchCalendarEvents,
+  } = useQuery({
+    queryKey: [
+      "calendar",
+      employeeId,
+      calendarRange.startAt,
+      calendarRange.endAt,
+    ],
+    queryFn: () =>
+      CalendarApi.list(
+        employeeId!,
+        calendarRange.startAt,
+        calendarRange.endAt,
+      ),
+    enabled: Boolean(employeeId),
+    refetchInterval: 15000,
+    staleTime: 0,
+  });
+
+  /* =======================================================
+     AI ANALYSIS
+  ======================================================= */
+
+  const selectedDayRange = useMemo(() => {
+    const start = startOfDay(selectedDate);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    return {
+      startAt: start.toISOString(),
+      endAt: end.toISOString(),
+    };
+  }, [selectedDate]);
+
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const conflictQuery = useQuery({
+    queryKey: [
+      "calendar",
+      "ai-conflict",
+      employeeId,
+      selectedDayRange.startAt,
+      selectedDayRange.endAt,
+    ],
+    queryFn: () =>
+      CalendarApi.aiConflict(
+        employeeId!,
+        selectedDayRange.startAt,
+        selectedDayRange.endAt,
+      ),
+    enabled: false,
+  });
+
+  const healthQuery = useQuery({
+    queryKey: [
+      "calendar",
+      "ai-health",
+      employeeId,
+      selectedDayRange.startAt,
+      selectedDayRange.endAt,
+    ],
+    queryFn: () =>
+      CalendarApi.aiHealth(
+        employeeId!,
+        selectedDayRange.startAt,
+        selectedDayRange.endAt,
+      ),
+    enabled: false,
+  });
+
+  const optimizeQuery = useQuery({
+    queryKey: [
+      "calendar",
+      "ai-optimize",
+      employeeId,
+      selectedDayRange.startAt,
+      selectedDayRange.endAt,
+    ],
+    queryFn: () =>
+      CalendarApi.aiOptimize(
+        employeeId!,
+        selectedDayRange.startAt,
+        selectedDayRange.endAt,
+      ),
+    enabled: false,
+  });
+
+  const [selectedMeetingId, setSelectedMeetingId] =
+    useState<string | null>(null);
+
+  const meetingNecessityQuery = useQuery({
+    queryKey: [
+      "calendar",
+      "ai-meeting-necessity",
+      selectedMeetingId,
+    ],
+    queryFn: () =>
+      CalendarApi.aiMeetingNecessity(
+        selectedMeetingId!,
+      ),
+    enabled: Boolean(selectedMeetingId),
+  });
 
   const events = useMemo<CalendarEvent[]>(() => {
     const result: CalendarEvent[] = [];
 
     for (const announcement of announcements) {
-      const event = announcementToCalendarEvent(announcement);
+      const event =
+        announcementToCalendarEvent(announcement);
+
+      if (event) {
+        result.push(event);
+      }
+    }
+
+    for (const apiEvent of apiCalendarEvents) {
+      const event =
+        calendarApiEventToCalendarEvent(apiEvent);
 
       if (event) {
         result.push(event);
@@ -334,18 +550,30 @@ export default function Calendar() {
       (
         first: CalendarEvent,
         second: CalendarEvent,
-      ) => first.start.getTime() - second.start.getTime(),
+      ) =>
+        first.start.getTime() -
+        second.start.getTime(),
     );
-  }, [announcements]);
+  }, [announcements, apiCalendarEvents]);
 
-  /* =======================================================
-     CALENDAR DAYS
-  ======================================================= */
+  const isLoading =
+    announcementsLoading ||
+    calendarEventsLoading;
 
-  const calendarDays = useMemo(
-    () => buildCalendarDays(currentMonth),
-    [currentMonth],
-  );
+  const isFetching =
+    announcementsFetching ||
+    calendarEventsFetching;
+
+  const isError =
+    announcementsError ||
+    calendarEventsError;
+
+  const handleRefresh = async () => {
+    await Promise.all([
+      refetchAnnouncements(),
+      refetchCalendarEvents(),
+    ]);
+  };
 
   /* =======================================================
      SELECTED DAY EVENTS
@@ -433,10 +661,6 @@ export default function Calendar() {
     setSelectedDate(startOfDay(now));
   };
 
-  const handleRefresh = async () => {
-    await refetch();
-  };
-
   const handleDateSelect = (date: Date) => {
     /*
      * Past dates must not be selectable.
@@ -504,6 +728,344 @@ export default function Calendar() {
       </div>
 
       {/* ===================================================
+          AI CALENDAR ASSISTANT
+      =================================================== */}
+
+      <Card className="mb-6 overflow-hidden">
+        <div className="border-b border-line/60 bg-gradient-to-r from-brand-50/80 to-white px-5 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                <Brain size={19} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-ink">
+                    AI Calendar Assistant
+                  </h2>
+                  <Badge
+                    tone="brand"
+                    className="px-2 py-0.5 text-[10px]"
+                  >
+                    AI
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-ink-faint">
+                  Analyze conflicts, calendar health and optimize your day.
+                </p>
+              </div>
+            </div>
+
+            {!employeeId && (
+              <p className="text-xs text-amber-600">
+                Employee profile is not available yet.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="grid gap-3 p-5 md:grid-cols-3">
+          <button
+            type="button"
+            disabled={!employeeId || conflictQuery.isFetching}
+            onClick={() => {
+              setAiError(null);
+              void conflictQuery.refetch();
+            }}
+            className="rounded-2xl border border-line/70 bg-white p-4 text-left transition hover:border-brand-300 hover:bg-brand-50/30 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                <AlertTriangle size={17} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  Team Conflict
+                </p>
+                <p className="mt-0.5 text-[11px] text-ink-faint">
+                  Check unavailable and affected members
+                </p>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            disabled={!employeeId || healthQuery.isFetching}
+            onClick={() => {
+              setAiError(null);
+              void healthQuery.refetch();
+            }}
+            className="rounded-2xl border border-line/70 bg-white p-4 text-left transition hover:border-brand-300 hover:bg-brand-50/30 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                <Activity size={17} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  Calendar Health
+                </p>
+                <p className="mt-0.5 text-[11px] text-ink-faint">
+                  Score meetings, focus time and breaks
+                </p>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            disabled={!employeeId || optimizeQuery.isFetching}
+            onClick={() => {
+              setAiError(null);
+              void optimizeQuery.refetch();
+            }}
+            className="rounded-2xl border border-line/70 bg-white p-4 text-left transition hover:border-brand-300 hover:bg-brand-50/30 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                <WandSparkles size={17} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  Optimize My Day
+                </p>
+                <p className="mt-0.5 text-[11px] text-ink-faint">
+                  Reduce conflicts and improve focus time
+                </p>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        {(aiError ||
+          conflictQuery.isError ||
+          healthQuery.isError ||
+          optimizeQuery.isError ||
+          meetingNecessityQuery.isError) && (
+          <div className="mx-5 mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+            {aiError ||
+              (conflictQuery.isError
+                ? "Unable to analyze calendar conflicts."
+                : healthQuery.isError
+                  ? "Unable to analyze calendar health."
+                  : optimizeQuery.isError
+                    ? "Unable to optimize your schedule."
+                    : "Unable to analyze meeting necessity.")}
+          </div>
+        )}
+
+        {conflictQuery.data && (
+          <div className="mx-5 mb-5 rounded-2xl border border-amber-200 bg-amber-50/50 p-4">
+            <div className="flex items-start gap-3">
+              {conflictQuery.data.hasConflict ? (
+                <AlertTriangle
+                  size={18}
+                  className="mt-0.5 shrink-0 text-amber-600"
+                />
+              ) : (
+                <CheckCircle2
+                  size={18}
+                  className="mt-0.5 shrink-0 text-emerald-600"
+                />
+              )}
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-ink">
+                  {conflictQuery.data.hasConflict
+                    ? "Team Conflict Detected"
+                    : "No Team Conflict Detected"}
+                </p>
+
+                <p className="mt-1 text-xs leading-relaxed text-ink-faint">
+                  {conflictQuery.data.ai?.summary ||
+                    conflictQuery.data.explanation}
+                </p>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Conflicts
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {conflictQuery.data.conflictCount}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Unavailable
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {conflictQuery.data.unavailableEmployees}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Critical affected
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {conflictQuery.data.criticalEmployeesAffected}
+                    </p>
+                  </div>
+                </div>
+
+                {(conflictQuery.data.ai?.recommendedAlternativeTime ||
+                  conflictQuery.data.alternativeSlots.length > 0) && (
+                  <div className="mt-3 rounded-xl border border-brand-200 bg-white px-3 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-700">
+                      Recommended alternative
+                    </p>
+                    <p className="mt-1 text-xs text-ink">
+                      {conflictQuery.data.ai
+                        ?.recommendedAlternativeTime ||
+                        `${formatTime(
+                          new Date(
+                            conflictQuery.data.alternativeSlots[0].startAt,
+                          ),
+                        )} - ${formatTime(
+                          new Date(
+                            conflictQuery.data.alternativeSlots[0].endAt,
+                          ),
+                        )}`}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {healthQuery.data && (
+          <div className="mx-5 mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+            <div className="flex items-start gap-3">
+              <Activity
+                size={18}
+                className="mt-0.5 shrink-0 text-emerald-600"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">
+                      Calendar Health
+                    </p>
+                    <p className="mt-1 text-xs text-ink-faint">
+                      {healthQuery.data.ai?.summary ||
+                        healthQuery.data.explanation}
+                    </p>
+                  </div>
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-4 border-emerald-200 bg-white text-sm font-bold text-ink">
+                    {Math.round(healthQuery.data.score)}
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Meeting hours
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {healthQuery.data.meetingHours.toFixed(1)}h
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Back-to-back
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {healthQuery.data.backToBackMeetings}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Focus time
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {healthQuery.data.focusTimeHours.toFixed(1)}h
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Breaks
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {healthQuery.data.breakHours.toFixed(1)}h
+                    </p>
+                  </div>
+                </div>
+
+                <p className="mt-3 text-xs text-ink-faint">
+                  {healthQuery.data.ai?.recommendation ||
+                    healthQuery.data.recommendations[0] ||
+                    "No additional recommendation."}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {optimizeQuery.data && (
+          <div className="mx-5 mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-4">
+            <div className="flex items-start gap-3">
+              <WandSparkles
+                size={18}
+                className="mt-0.5 shrink-0 text-violet-600"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-ink">
+                  Schedule Optimization
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-ink-faint">
+                  {optimizeQuery.data.ai?.summary ||
+                    optimizeQuery.data.explanation}
+                </p>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Conflicts reduced
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {optimizeQuery.data.conflictsReduced}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Focus blocks
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {optimizeQuery.data.focusBlocksAdded}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Breaks added
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {optimizeQuery.data.breaksAdded}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[10px] text-ink-faint">
+                      Back-to-back reduced
+                    </p>
+                    <p className="text-sm font-semibold text-ink">
+                      {optimizeQuery.data.backToBackMeetingsReduced}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="mt-3 text-xs text-ink-faint">
+                  {optimizeQuery.data.ai?.productivityRecommendation ||
+                    optimizeQuery.data.recommendations[0] ||
+                    "Your schedule has been analyzed."}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* ===================================================
           ERROR
       =================================================== */}
 
@@ -511,7 +1073,7 @@ export default function Calendar() {
         <Card className="mb-6">
           <div className="p-5">
             <p className="text-sm font-medium text-red-600">
-              Failed to load calendar events.
+              Failed to load some calendar events.
             </p>
 
             <button
@@ -798,7 +1360,11 @@ export default function Calendar() {
                   >
                     <div className="flex items-start gap-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
-                        <Megaphone size={17} />
+                        {event.source === "CALENDAR" ? (
+                          <CalendarDays size={17} />
+                        ) : (
+                          <Megaphone size={17} />
+                        )}
                       </div>
 
                       <div className="min-w-0 flex-1">
@@ -817,15 +1383,40 @@ export default function Calendar() {
                               Pinned
                             </Badge>
                           )}
+
+                          {event.source === "CALENDAR" && (
+                            <Badge
+                              tone="brand"
+                              className="px-2 py-0.5 text-[10px]"
+                            >
+                              Calendar
+                            </Badge>
+                          )}
+
+                          {event.isCritical && (
+                            <Badge
+                              tone="brand"
+                              className="px-2 py-0.5 text-[10px]"
+                            >
+                              Critical
+                            </Badge>
+                          )}
                         </div>
 
                         {/* TYPE */}
 
                         <div className="mt-2">
                           <span className="inline-flex rounded-full bg-brand-50 px-2 py-1 text-[10px] font-medium text-brand-700">
-                            {getAnnouncementTypeLabel(
-                              event.type,
-                            )}
+                            {event.source === "CALENDAR"
+                              ? event.type
+                                  .replaceAll("_", " ")
+                                  .toLowerCase()
+                                  .replace(/\b\w/g, (char) =>
+                                    char.toUpperCase(),
+                                  )
+                              : getAnnouncementTypeLabel(
+                                  event.type,
+                                )}
                           </span>
                         </div>
 
@@ -864,6 +1455,86 @@ export default function Calendar() {
                             {event.body}
                           </p>
                         )}
+
+                        {event.source === "CALENDAR" &&
+                          event.calendarEventId &&
+                          event.type === "MEETING" && (
+                            <div className="mt-4 border-t border-line/60 pt-3">
+                              <button
+                                type="button"
+                                disabled={
+                                  meetingNecessityQuery.isFetching &&
+                                  selectedMeetingId ===
+                                    event.calendarEventId
+                                }
+                                onClick={() => {
+                                  setAiError(null);
+                                  setSelectedMeetingId(
+                                    event.calendarEventId!,
+                                  );
+                                }}
+                                className="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <Sparkles size={13} />
+                                Analyze Meeting Necessity
+                              </button>
+
+                              {selectedMeetingId ===
+                                event.calendarEventId &&
+                                meetingNecessityQuery.data && (
+                                  <div className="mt-3 rounded-xl border border-brand-200 bg-white p-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="text-xs font-semibold text-ink">
+                                          Necessity Score
+                                        </p>
+                                        <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">
+                                          {meetingNecessityQuery.data.ai
+                                            ?.explanation ||
+                                            meetingNecessityQuery.data.reasons.join(
+                                              " ",
+                                            )}
+                                        </p>
+                                      </div>
+
+                                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-sm font-bold text-brand-700">
+                                        {Math.round(
+                                          meetingNecessityQuery.data.score,
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                      <Badge
+                                        tone="brand"
+                                        className="px-2 py-1 text-[10px]"
+                                      >
+                                        {meetingNecessityQuery.data.ai
+                                          ?.recommendation ||
+                                          meetingNecessityQuery.data
+                                            .recommendation}
+                                      </Badge>
+
+                                      <span className="text-[10px] text-ink-faint">
+                                        {meetingNecessityQuery.data.durationMinutes} min
+                                        {" · "}
+                                        {meetingNecessityQuery.data.participantCount} participants
+                                      </span>
+                                    </div>
+
+                                    {meetingNecessityQuery.data.ai
+                                      ?.suggestedAction && (
+                                      <p className="mt-2 text-[11px] text-ink-faint">
+                                        {
+                                          meetingNecessityQuery.data.ai
+                                            .suggestedAction
+                                        }
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                            </div>
+                          )}
                       </div>
                     </div>
                   </div>
