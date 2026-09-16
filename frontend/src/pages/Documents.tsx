@@ -253,7 +253,7 @@ export default function Documents() {
           </Card>
 
           <Card>
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <CardHeader
                 title="Documents I requested"
                 subtitle="Company-issued documents you've requested from HR."
@@ -262,6 +262,7 @@ export default function Documents() {
                 size="sm"
                 variant="outline"
                 leftIcon={<Send size={14} />}
+                className="whitespace-nowrap px-4"
                 onClick={() => setIsRequestCompanyOpen(true)}
               >
                 New request
@@ -684,7 +685,9 @@ function UploadDocumentModal({
           </select>
         </div>
         <div>
-          <label className="text-[13px] font-medium text-ink-soft">File <span className="text-danger-500">*</span></label>
+          <label className="text-[13px] font-medium text-ink-soft">
+            File <span className="text-danger-500">*</span>
+          </label>
           <input
             type="file"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -768,7 +771,9 @@ function FulfillRequestModal({
           </div>
         )}
         <div>
-          <label className="text-[13px] font-medium text-ink-soft">File <span className="text-danger-500">*</span></label>
+          <label className="text-[13px] font-medium text-ink-soft">
+            File <span className="text-danger-500">*</span>
+          </label>
           <input
             type="file"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}

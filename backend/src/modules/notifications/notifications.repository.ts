@@ -55,7 +55,8 @@ export async function notify(input: {
   message: string;
   link?: string | null;
   dedupeKey?: string;
-}) {
+}) 
+{
   if (input.dedupeKey) {
     const existing = await Notification.findOne({
       userId: input.userId,
@@ -75,6 +76,7 @@ export async function notify(input: {
     isRead: false,
     link: input.link ?? null,
     dedupeKey: input.dedupeKey ?? null,
+    createdAt: nowIso(),
   });
 
   return notification._id;

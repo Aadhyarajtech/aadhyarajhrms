@@ -9,12 +9,17 @@ import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
 import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 import { validate } from "@/middleware/validate";
+import { requirePermission } from "@/middleware/permissions";
 
 import * as repo from "./ticket.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { User, AuditLog, Ticket } from "@/db/models";
 import { Employee } from "@/db/models";
-import { classifyTicket, summarizeTicketThread, generateSuggestedReply } from "@/services/ai.service";
+import {
+  classifyTicket,
+  summarizeTicketThread,
+  generateSuggestedReply,
+} from "@/services/ai.service";
 import * as messageRepo from "./ticketMessage.repository";
 import {
   calculatePredictiveSlaRisk,
@@ -36,6 +41,7 @@ interface AuthenticatedRequest extends Request {
 export const ticketRouter = Router();
 
 ticketRouter.use(authenticate);
+ticketRouter.use(requirePermission("tickets.view"));
 
 /* =========================================================
    CREATE TICKET
@@ -302,10 +308,19 @@ ticketRouter.get(
       }
 
       const role = String(req.user.role);
-      const allowedRoles = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE", "MANAGER", "IT_SUPPORT"];
+      const allowedRoles = [
+        "SUPER_ADMIN",
+        "HR_ADMIN",
+        "FINANCE",
+        "MANAGER",
+        "IT_SUPPORT",
+      ];
       if (!allowedRoles.includes(role)) {
         return res.status(403).json({
-          error: { message: "Executive analytics is restricted to support staff and administrators" },
+          error: {
+            message:
+              "Executive analytics is restricted to support staff and administrators",
+          },
         });
       }
 
@@ -344,7 +359,10 @@ ticketRouter.get(
         ];
       }
 
-      const rawTickets = await Ticket.find(query).sort({ createdAt: -1 }).limit(150).lean();
+      const rawTickets = await Ticket.find(query)
+        .sort({ createdAt: -1 })
+        .limit(150)
+        .lean();
       const anomalies = detectTicketAnomalies(rawTickets as any, 24);
 
       return res.json({
@@ -373,8 +391,14 @@ ticketRouter.get(
 
       const role = String(req.user.role);
       const departmentFilter = getDepartmentFilterForRole(role);
-      const windowHours = req.query.windowHours ? Number(req.query.windowHours) : 48;
-      const groups = await detectRecurringIssueGroups(2, windowHours, departmentFilter);
+      const windowHours = req.query.windowHours
+        ? Number(req.query.windowHours)
+        : 48;
+      const groups = await detectRecurringIssueGroups(
+        2,
+        windowHours,
+        departmentFilter,
+      );
 
       return res.json({
         success: true,
@@ -434,7 +458,11 @@ ticketRouter.post(
         });
       }
 
-      const { ticketIds, message: broadcastMessage, updateStatus } = parsed.data;
+      const {
+        ticketIds,
+        message: broadcastMessage,
+        updateStatus,
+      } = parsed.data;
 
       // Find tickets by _id or ticketId
       const tickets = await Ticket.find({
@@ -454,7 +482,8 @@ ticketRouter.post(
       if (unauthorized && role !== "SUPER_ADMIN" && role !== "HR_ADMIN") {
         return res.status(403).json({
           error: {
-            message: "You are not authorized to broadcast to tickets outside your department",
+            message:
+              "You are not authorized to broadcast to tickets outside your department",
           },
         });
       }
@@ -1185,7 +1214,13 @@ ticketRouter.post(
    of the ticket and its conversation history.
 ========================================================= */
 
-const STAFF_ROLES = ["HR_ADMIN", "FINANCE", "IT_SUPPORT", "SUPER_ADMIN", "MANAGER"];
+const STAFF_ROLES = [
+  "HR_ADMIN",
+  "FINANCE",
+  "IT_SUPPORT",
+  "SUPER_ADMIN",
+  "MANAGER",
+];
 
 ticketRouter.post(
   "/:id/summarize",
@@ -1226,7 +1261,8 @@ ticketRouter.post(
         : null;
 
       const employeeName = employee
-        ? `${employee.firstName || ""} ${employee.lastName || ""}`.trim() || undefined
+        ? `${employee.firstName || ""} ${employee.lastName || ""}`.trim() ||
+          undefined
         : undefined;
 
       const ticketContext = {
@@ -1248,7 +1284,10 @@ ticketRouter.post(
         createdAt: m.createdAt || new Date().toISOString(),
       }));
 
-      const summary = await summarizeTicketThread(ticketContext, messageContexts);
+      const summary = await summarizeTicketThread(
+        ticketContext,
+        messageContexts,
+      );
 
       return res.json({
         success: true,
@@ -1317,7 +1356,8 @@ ticketRouter.post(
         : null;
 
       const employeeName = employee
-        ? `${employee.firstName || ""} ${employee.lastName || ""}`.trim() || undefined
+        ? `${employee.firstName || ""} ${employee.lastName || ""}`.trim() ||
+          undefined
         : undefined;
 
       const ticketContext = {

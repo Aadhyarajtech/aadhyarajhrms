@@ -54,8 +54,6 @@ import { formatDate, timeAgo } from "@/lib/format";
    ADMIN ROLES
 ========================================================= */
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"] as const;
-
 /* =========================================================
    ANNOUNCEMENT TYPES
 ========================================================= */
@@ -479,10 +477,9 @@ function MultiSelectCategory({
 ========================================================= */
 
 export default function Announcements() {
-  const { user } = useAuth();
+  const { hasPermission } = useAuth();
 
-  const isAdmin =
-    !!user && ADMIN_ROLES.includes(user.role as (typeof ADMIN_ROLES)[number]);
+  const isAdmin = hasPermission("announcements.manage");
 
   const [createOpen, setCreateOpen] = useState(false);
 

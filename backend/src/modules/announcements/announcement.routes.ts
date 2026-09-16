@@ -119,7 +119,6 @@ function parseStringArray(value: unknown): string[] {
 
 function hasAdminAccess(user: AuthUser) {
   const role = String(user.role);
-
   return ADMIN_ROLES.includes(role as (typeof ADMIN_ROLES)[number]);
 }
 
@@ -248,7 +247,7 @@ announcementRouter.post(
          ADMIN CHECK
       --------------------------------------------------- */
 
-      if (!hasAdminAccess(req.user)) {
+      if (!(await hasAdminAccess(req.user))) {
         return res.status(403).json({
           error: {
             message: "You are not authorized to create announcements",
@@ -597,11 +596,7 @@ announcementRouter.post(
 
 announcementRouter.get(
   "/",
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -614,9 +609,7 @@ announcementRouter.get(
       // IMPORTANT:
       // AnnouncementReceipt.userId stores the authenticated USER ID,
       // not Employee._id.
-      const userId =
-        (req.user as any).id ??
-        (req.user as any).userId;
+      const userId = (req.user as any).id ?? (req.user as any).userId;
 
       if (!userId) {
         return res.status(401).json({
@@ -646,11 +639,7 @@ announcementRouter.get(
 announcementRouter.get(
   "/:id/status",
 
-  async (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
         return res.status(401).json({
@@ -660,7 +649,7 @@ announcementRouter.get(
         });
       }
 
-      if (!hasAdminAccess(req.user)) {
+      if (!(await hasAdminAccess(req.user))) {
         return res.status(403).json({
           error: {
             message: "You are not authorized to view read receipts",
@@ -678,9 +667,7 @@ announcementRouter.get(
         });
       }
 
-      const status = await repo.listAnnouncementReadStatus(
-        req.params.id,
-      );
+      const status = await repo.listAnnouncementReadStatus(req.params.id);
 
       return res.json({
         status,
@@ -708,15 +695,12 @@ announcementRouter.get(
         });
       }
 
-      const userId =
-  (req.user as any).id ??
-  (req.user as any).userId;
+      const userId = (req.user as any).id ?? (req.user as any).userId;
 
-const announcement =
-  await repo.getAnnouncementWithReceipt(
-    req.params.id,
-    String(userId ?? ""),
-  );
+      const announcement = await repo.getAnnouncementWithReceipt(
+        req.params.id,
+        String(userId ?? ""),
+      );
       if (!announcement) {
         return res.status(404).json({
           error: {
@@ -923,7 +907,7 @@ announcementRouter.patch(
          ADMIN CHECK
       --------------------------------------------------- */
 
-      if (!hasAdminAccess(req.user)) {
+      if (!(await hasAdminAccess(req.user))) {
         return res.status(403).json({
           error: {
             message: "You are not authorized to update announcements",
@@ -1160,7 +1144,7 @@ announcementRouter.delete(
         });
       }
 
-      if (!hasAdminAccess(req.user)) {
+      if (!(await hasAdminAccess(req.user))) {
         return res.status(403).json({
           error: {
             message: "You are not authorized to delete announcements",

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { isAdmin, isManagerOrAbove } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./performance.repository";
@@ -17,6 +17,61 @@ performanceRouter.get("/cycles", async (_req, res, next) => {
     next(err);
   }
 });
+performanceRouter.get(
+  "/goals/:id/health",
+  async (req, res, next) => {
+    try {
+      const goal = await repo.getGoal(req.params.id);
+
+      if (!goal) {
+        throw AppError.notFound("Goal not found.");
+      }
+
+      const health = await repo.getGoalHealth(req.params.id);
+
+      res.json({
+        health,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+performanceRouter.get(
+  "/scorecard/:employeeId",
+  async (req, res, next) => {
+    try {
+      const employee = await getEmployeeById(
+        req.params.employeeId,
+      );
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      const allowed =
+        req.user!.employeeId === req.params.employeeId ||
+        ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(
+          req.user!.role,
+        );
+
+      if (!allowed) {
+        throw AppError.forbidden();
+      }
+
+      const scorecard =
+        await repo.getPerformanceScorecard(
+          req.params.employeeId,
+        );
+
+      res.json({
+        scorecard,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 const cycleSchema = z.object({
   name: z.string().min(2),
@@ -36,7 +91,7 @@ const cycleSchema = z.object({
 });
 performanceRouter.post(
   "/cycles",
-  isAdmin,
+  requirePermission("performance.manage"),
   validate(cycleSchema),
   async (req, res, next) => {
     try {
@@ -44,6 +99,30 @@ performanceRouter.post(
     } catch (err) {
       next(err);
     }
+  },
+);
+
+performanceRouter.patch(
+  "/cycles/:id/activate",
+  requirePermission("performance.manage"),
+  async (req, res, next) => {
+    try {
+      const cycle = await repo.activateCycle(req.params.id);
+      if (!cycle) throw AppError.notFound("Performance cycle not found.");
+      res.json({ cycle });
+    } catch (err) { next(err); }
+  },
+);
+
+performanceRouter.patch(
+  "/cycles/:id/deactivate",
+  requirePermission("performance.manage"),
+  async (req, res, next) => {
+    try {
+      const cycle = await repo.deactivateCycle(req.params.id);
+      if (!cycle) throw AppError.notFound("Performance cycle not found.");
+      res.json({ cycle });
+    } catch (err) { next(err); }
   },
 );
 
@@ -114,7 +193,7 @@ const ensureSchema = z.object({
 });
 performanceRouter.post(
   "/reviews",
-  isManagerOrAbove,
+  requirePermission("performance.manage"),
   validate(ensureSchema),
   async (req, res, next) => {
     try {
@@ -195,7 +274,7 @@ const managerReviewSchema = z.object({
 });
 performanceRouter.post(
   "/reviews/:id/manager",
-  isManagerOrAbove,
+  requirePermission("performance.manage"),
   validate(managerReviewSchema),
   async (req, res, next) => {
     try {
@@ -264,7 +343,7 @@ performanceRouter.get("/goals", async (req, res, next) => {
       }
 
       if (role === "MANAGER") {
-        const employee = await getEmployeeById(requestedEmployeeId) as any;
+        const employee = (await getEmployeeById(requestedEmployeeId)) as any;
         if (!employee || employee.managerId !== employeeId) {
           throw AppError.forbidden(
             "You can only view goals for your direct reports.",
@@ -325,7 +404,7 @@ performanceRouter.post(
         }
 
         if (role === "MANAGER") {
-          const employee = await getEmployeeById(targetEmployeeId) as any;
+          const employee = (await getEmployeeById(targetEmployeeId)) as any;
           if (!employee) {
             throw AppError.notFound("Employee not found.");
           }
@@ -420,24 +499,19 @@ performanceRouter.patch(
         if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
         } else if (role === "MANAGER") {
-          const employee = await getEmployeeById(goal.employeeId) as any;
+          const employee = (await getEmployeeById(goal.employeeId)) as any;
           if (!employee || employee.managerId !== employeeId) {
             throw AppError.forbidden(
               "You can only update goals for your direct reports.",
             );
           }
         } else {
-          throw AppError.forbidden(
-            "You can only update your own goals.",
-          );
+          throw AppError.forbidden("You can only update your own goals.");
         }
       }
 
       res.json({
-        goal: await repo.updateGoalProgress(
-          req.params.id,
-          req.body.progress,
-        ),
+        goal: await repo.updateGoalProgress(req.params.id, req.body.progress),
       });
     } catch (err) {
       next(err);
@@ -466,16 +540,14 @@ performanceRouter.patch(
         if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
         } else if (role === "MANAGER") {
-          const employee = await getEmployeeById(goal.employeeId) as any;
+          const employee = (await getEmployeeById(goal.employeeId)) as any;
           if (!employee || employee.managerId !== employeeId) {
             throw AppError.forbidden(
               "You can only update goals for your direct reports.",
             );
           }
         } else {
-          throw AppError.forbidden(
-            "You can only update your own goals.",
-          );
+          throw AppError.forbidden("You can only update your own goals.");
         }
       }
 
@@ -523,7 +595,7 @@ performanceRouter.get("/goals/trend", async (req, res, next) => {
       }
 
       if (role === "MANAGER") {
-        const employee = await getEmployeeById(requestedEmployeeId) as any;
+        const employee = (await getEmployeeById(requestedEmployeeId)) as any;
         if (!employee || employee.managerId !== employeeId) {
           throw AppError.forbidden(
             "You can only view goal trends for your direct reports.",
@@ -552,44 +624,76 @@ const feedbackSchema = z.object({
   comments: z.string().max(2000).optional(),
 });
 
-performanceRouter.get("/feedback-requests", async (req, res, next) => {
-  try {
-    const cycle = await repo.getActiveCycle();
-    const employeeId = req.user!.employeeId;
-    if (!cycle || !employeeId) {
-      res.json({ reviews: [] });
-      return;
-    }
-    const reviews = await repo.listReviews({ cycleId: (cycle as any).id });
-    res.json({
-      reviews: reviews.filter((review: any) => review.revieweeId !== employeeId),
-    });
-  } catch (err) {
-    next(err);
-  }
+const feedbackRequestSchema = z.object({
+  cycleId: z.string(),
+  reviewId: z.string(),
+  reviewerEmployeeId: z.string(),
+  revieweeEmployeeId: z.string(),
+  type: z.enum(["PEER", "SUBORDINATE"]),
+  dueDate: z.string().optional(),
 });
 
+performanceRouter.get("/feedback-requests", async (req, res, next) => {
+  try {
+    const employeeId = req.user!.employeeId;
+    if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+    res.json({ requests: await repo.listFeedbackRequests(employeeId, req.query.cycleId as string | undefined) });
+  } catch (err) { next(err); }
+});
+
+performanceRouter.post(
+  "/feedback-requests",
+  requirePermission("performance.manage"),
+  validate(feedbackRequestSchema),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+      if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+      const reviewer = (await getEmployeeById(req.body.reviewerEmployeeId)) as any;
+      const reviewee = (await getEmployeeById(req.body.revieweeEmployeeId)) as any;
+      if (!reviewer || !reviewee) throw AppError.notFound("Reviewer or reviewee not found.");
+      if (reviewer.id === reviewee.id) throw AppError.badRequest("Reviewer and reviewee must be different employees.");
+      if (role === "MANAGER") {
+        if (reviewer.managerId !== employeeId || reviewee.managerId !== employeeId) {
+          throw AppError.forbidden("Managers can only assign 360 feedback within their direct-report team.");
+        }
+      }
+      const request = await repo.createFeedbackRequest({ ...req.body, createdBy: employeeId });
+      res.status(201).json({ request });
+    } catch (err) { next(err); }
+  },
+);
+
+performanceRouter.post(
+  "/feedback-requests/:id/submit",
+  validate(feedbackSchema),
+  async (req, res, next) => {
+    try {
+      const employeeId = req.user!.employeeId;
+      if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+      const request = await repo.getFeedbackRequest(req.params.id);
+      if (!request) throw AppError.notFound("Feedback request not found.");
+      if (request.reviewerEmployeeId !== employeeId) throw AppError.forbidden("You are not authorized to submit this feedback request.");
+      res.status(201).json({ feedback: await repo.submitFeedback({ requestId: req.params.id, reviewerEmployeeId: employeeId, ...req.body }) });
+    } catch (err) { next(err); }
+  },
+);
+
+// Legacy endpoint retained for compatibility, but now requires an explicit assigned request.
 performanceRouter.post(
   "/reviews/:id/feedback",
   validate(feedbackSchema),
   async (req, res, next) => {
     try {
-      const review = await repo.getReview(req.params.id);
-      if (!review) throw AppError.notFound("Review not found.");
-      if (!req.user!.employeeId || review.revieweeId === req.user!.employeeId)
-        throw AppError.forbidden("You cannot submit feedback for yourself.");
-      res.status(201).json({
-        feedback: await repo.submitFeedback({
-          reviewId: req.params.id,
-          reviewerEmployeeId: req.user!.employeeId,
-          ...req.body,
-        }),
-      });
-    } catch (err) {
-      next(err);
-    }
+      const employeeId = req.user!.employeeId;
+      if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+      const request = (await repo.listFeedbackRequests(employeeId)).find((item: any) => item.reviewId === req.params.id && item.status === "PENDING");
+      if (!request) throw AppError.forbidden("You do not have a pending feedback request for this review.");
+      res.status(201).json({ feedback: await repo.submitFeedback({ requestId: request.id, reviewerEmployeeId: employeeId, ...req.body }) });
+    } catch (err) { next(err); }
   },
 );
+
 performanceRouter.get(
   "/reviews/:id/feedback-summary",
   async (req, res, next) => {
@@ -621,7 +725,63 @@ performanceRouter.get("/reviews/:id/outcome", async (req, res, next) => {
     next(err);
   }
 });
+performanceRouter.get("/reviews/:id/ai-insights", async (req, res, next) => {
+  try {
+    const review = await repo.getReview(req.params.id);
 
+    if (!review) {
+      throw AppError.notFound("Review not found.");
+    }
+
+    const allowed =
+      review.revieweeId === req.user!.employeeId ||
+      review.reviewerId === req.user!.employeeId ||
+      ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+
+    if (!allowed) {
+      throw AppError.forbidden();
+    }
+
+    res.json({
+      insights: await repo.getAiPerformanceInsights(req.params.id),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+performanceRouter.get(
+  "/reviews/:id/ai-development-plan",
+  async (req, res, next) => {
+    try {
+      const review = await repo.getReview(req.params.id);
+
+      if (!review) {
+        throw AppError.notFound("Review not found.");
+      }
+
+      const allowed =
+        review.revieweeId === req.user!.employeeId ||
+        review.reviewerId === req.user!.employeeId ||
+        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+
+      if (!allowed) {
+        throw AppError.forbidden();
+      }
+
+      if (review.status !== "COMPLETED") {
+        throw AppError.badRequest(
+          "AI development plan is available only after the review is completed.",
+        );
+      }
+
+      res.json({
+        plan: await repo.getAiDevelopmentPlan(req.params.id),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 const performanceOutcomeSchema = z.object({
   incrementRecommendation: z.enum(["MAXIMUM", "STANDARD", "NONE", "PIP"]),
   promotionEligible: z.boolean().optional(),
@@ -632,7 +792,7 @@ const performanceOutcomeSchema = z.object({
 
 performanceRouter.patch(
   "/reviews/:id/outcome",
-  isManagerOrAbove,
+  requirePermission("performance.manage"),
   validate(performanceOutcomeSchema),
   async (req, res, next) => {
     try {
@@ -683,7 +843,107 @@ performanceRouter.patch(
     }
   },
 );
+performanceRouter.post(
+  "/reviews/:id/ai-chat",
+  async (req, res, next) => {
+    try {
+      const review = await repo.getReview(req.params.id);
 
+      if (!review) {
+        throw AppError.notFound("Review not found.");
+      }
+
+      const allowed =
+        review.revieweeId === req.user!.employeeId ||
+        review.reviewerId === req.user!.employeeId ||
+        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+
+      if (!allowed) {
+        throw AppError.forbidden();
+      }
+
+      if (review.status !== "COMPLETED") {
+        throw AppError.badRequest(
+          "Performance AI Assistant is available only after the review is completed.",
+        );
+      }
+
+      const question = req.body?.question;
+
+      if (
+        typeof question !== "string" ||
+        !question.trim()
+      ) {
+        throw AppError.badRequest(
+          "A question is required.",
+        );
+      }
+
+      if (question.trim().length > 500) {
+        throw AppError.badRequest(
+          "Question must be 500 characters or less.",
+        );
+      }
+
+
+
+
+      const answer =
+        await repo.getAiPerformanceChat(
+          req.params.id,
+          question.trim(),
+        );
+
+      res.json({ answer });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+performanceRouter.post(
+  "/goals/:id/ai-coach",
+  async (req, res, next) => {
+    try {
+      const goal = await repo.getGoal(req.params.id);
+
+      if (!goal) {
+        throw AppError.notFound("Goal not found.");
+      }
+
+      const allowed =
+        goal.employeeId === req.user!.employeeId ||
+        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+
+      if (!allowed) {
+        throw AppError.forbidden();
+      }
+
+      const question = req.body?.question;
+
+      if (
+        question !== undefined &&
+        (typeof question !== "string" ||
+          question.trim().length > 500)
+      ) {
+        throw AppError.badRequest(
+          "Question must be 500 characters or less.",
+        );
+      }
+
+      const answer =
+        await repo.getAiGoalCoach(
+          req.params.id,
+          typeof question === "string"
+            ? question.trim()
+            : undefined,
+        );
+
+      res.json({ answer });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 /* -------------------------------------------------------------------------- */
 /*                         PERFORMANCE IMPROVEMENT PLAN                        */
@@ -694,7 +954,9 @@ const pipObjectiveSchema = z.object({
   description: z.string().max(2000).optional(),
   target: z.string().max(1000).optional(),
   progress: z.number().int().min(0).max(100).optional(),
-  status: z.enum(["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "OVERDUE"]).optional(),
+  status: z
+    .enum(["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "OVERDUE"])
+    .optional(),
   dueDate: z.string(),
 });
 
@@ -736,7 +998,7 @@ performanceRouter.get("/pips", async (req, res, next) => {
       }
 
       if (requestedEmployeeId && requestedEmployeeId !== employeeId) {
-        const employee = await getEmployeeById(requestedEmployeeId) as any;
+        const employee = (await getEmployeeById(requestedEmployeeId)) as any;
         if (!employee || employee.managerId !== employeeId) {
           throw AppError.forbidden(
             "You can only view PIPs for your direct reports.",
@@ -797,12 +1059,12 @@ performanceRouter.get("/pips/:id", async (req, res, next) => {
 
 performanceRouter.post(
   "/pips",
-  isManagerOrAbove,
+  requirePermission("performance.manage"),
   validate(pipCreateSchema),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
-      const employee = await getEmployeeById(req.body.employeeId) as any;
+      const employee = (await getEmployeeById(req.body.employeeId)) as any;
 
       if (!employee) throw AppError.notFound("Employee not found.");
 
@@ -818,9 +1080,31 @@ performanceRouter.post(
         }
       }
 
+      const managerId = role === "MANAGER"
+        ? employeeId
+        : (req.body.managerId ?? employee.managerId ?? null);
+
+      if (!managerId) {
+        throw AppError.badRequest("A manager must be assigned before creating a PIP.");
+      }
+
+      if (role === "MANAGER" && managerId !== employeeId) {
+        throw AppError.forbidden("Managers can only create PIPs assigned to themselves.");
+      }
+
+      if (role !== "MANAGER") {
+        const assignedManager = (await getEmployeeById(managerId)) as any;
+        if (!assignedManager || assignedManager.status === "TERMINATED") {
+          throw AppError.badRequest("Assigned manager is not valid.");
+        }
+        if (employee.managerId && managerId !== employee.managerId) {
+          throw AppError.badRequest("The PIP manager must match the employee's reporting manager.");
+        }
+      }
+
       const pip = await repo.createPip({
         ...req.body,
-        managerId: req.body.managerId ?? employeeId,
+        managerId,
         createdBy: employeeId,
         status: "DRAFT",
       });
@@ -834,7 +1118,7 @@ performanceRouter.post(
 
 performanceRouter.patch(
   "/pips/:id/objectives",
-  isManagerOrAbove,
+  requirePermission("performance.manage"),
   validate(pipObjectiveUpdateSchema),
   async (req, res, next) => {
     try {
@@ -842,20 +1126,14 @@ performanceRouter.patch(
       if (!pip) throw AppError.notFound("PIP not found.");
 
       const { role, employeeId } = req.user!;
-      if (
-        role === "MANAGER" &&
-        pip.managerId !== employeeId
-      ) {
+      if (role === "MANAGER" && pip.managerId !== employeeId) {
         throw AppError.forbidden(
           "You can only update objectives for PIPs assigned to you.",
         );
       }
 
       res.json({
-        pip: await repo.updatePipObjectives(
-          req.params.id,
-          req.body.objectives,
-        ),
+        pip: await repo.updatePipObjectives(req.params.id, req.body.objectives),
       });
     } catch (err) {
       next(err);
@@ -865,7 +1143,7 @@ performanceRouter.patch(
 
 performanceRouter.post(
   "/pips/:id/check-ins",
-  isManagerOrAbove,
+  requirePermission("performance.manage"),
   validate(pipCheckInSchema),
   async (req, res, next) => {
     try {
@@ -873,10 +1151,7 @@ performanceRouter.post(
       if (!pip) throw AppError.notFound("PIP not found.");
 
       const { role, employeeId } = req.user!;
-      if (
-        role === "MANAGER" &&
-        pip.managerId !== employeeId
-      ) {
+      if (role === "MANAGER" && pip.managerId !== employeeId) {
         throw AppError.forbidden(
           "You can only add check-ins to PIPs assigned to you.",
         );
@@ -900,7 +1175,7 @@ performanceRouter.post(
 
 performanceRouter.patch(
   "/pips/:id/status",
-  isManagerOrAbove,
+  requirePermission("performance.manage"),
   validate(pipStatusSchema),
   async (req, res, next) => {
     try {
@@ -908,10 +1183,7 @@ performanceRouter.patch(
       if (!pip) throw AppError.notFound("PIP not found.");
 
       const { role, employeeId } = req.user!;
-      if (
-        role === "MANAGER" &&
-        pip.managerId !== employeeId
-      ) {
+      if (role === "MANAGER" && pip.managerId !== employeeId) {
         throw AppError.forbidden(
           "You can only change the status of PIPs assigned to you.",
         );
@@ -930,14 +1202,13 @@ performanceRouter.patch(
   },
 );
 
-
 /* -------------------------------------------------------------------------- */
 /*                         PERFORMANCE ANALYTICS                              */
 /* -------------------------------------------------------------------------- */
 
 performanceRouter.get(
   "/analytics/summary",
-  isManagerOrAbove,
+  requirePermission("performance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -968,27 +1239,30 @@ performanceRouter.get(
       );
 
       const ratings = completedReviews
-        .map((review: any) => Number(review.finalRating ?? review.managerRating ?? review.selfRating))
+        .map((review: any) =>
+          Number(
+            review.finalRating ?? review.managerRating ?? review.selfRating,
+          ),
+        )
         .filter((rating: number) => Number.isFinite(rating) && rating > 0);
 
       const averageRating =
         ratings.length > 0
           ? Number(
-              (ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(2),
-            )
+            (
+              ratings.reduce((sum, rating) => sum + rating, 0) /
+              ratings.length
+            ).toFixed(2),
+          )
           : 0;
 
       const goalEmployeeId =
-        (req.query.employeeId as string | undefined) ??
-        employeeId;
+        (req.query.employeeId as string | undefined) ?? employeeId;
 
       // Managers may only inspect their direct reports' goals through the
       // employeeId filter; non-privileged users remain restricted to themselves.
-      if (
-        role === "MANAGER" &&
-        goalEmployeeId !== employeeId
-      ) {
-        const employee = await getEmployeeById(goalEmployeeId) as any;
+      if (role === "MANAGER" && goalEmployeeId !== employeeId) {
+        const employee = (await getEmployeeById(goalEmployeeId)) as any;
         if (!employee || employee.managerId !== employeeId) {
           throw AppError.forbidden(
             "You can only view analytics for your direct reports.",
@@ -1008,28 +1282,31 @@ performanceRouter.get(
 
       const goals = await repo.listGoals(goalEmployeeId);
       const achievementValues = goals
-        .map((goal: any) => Number(goal.achievementPercentage ?? goal.progress ?? 0))
+        .map((goal: any) =>
+          Number(goal.achievementPercentage ?? goal.progress ?? 0),
+        )
         .filter((value: number) => Number.isFinite(value));
 
       const averageGoalAchievement =
         achievementValues.length > 0
           ? Number(
-              (
-                achievementValues.reduce((sum, value) => sum + value, 0) /
-                achievementValues.length
-              ).toFixed(2),
-            )
+            (
+              achievementValues.reduce((sum, value) => sum + value, 0) /
+              achievementValues.length
+            ).toFixed(2),
+          )
           : 0;
+
 
       const goalCompletionPercentage =
         goals.length > 0
           ? Number(
-              (
-                (goals.filter((goal: any) => goal.status === "COMPLETED").length /
-                  goals.length) *
-                100
-              ).toFixed(2),
-            )
+            (
+              (goals.filter((goal: any) => goal.status === "COMPLETED").length /
+                goals.length) *
+              100
+            ).toFixed(2),
+          )
           : 0;
 
       const pips = await repo.listPips(
@@ -1046,7 +1323,9 @@ performanceRouter.get(
           completedReviews: completedReviews.length,
           reviewCompletionPercentage:
             reviews.length > 0
-              ? Number(((completedReviews.length / reviews.length) * 100).toFixed(2))
+              ? Number(
+                ((completedReviews.length / reviews.length) * 100).toFixed(2),
+              )
               : 0,
           averageRating,
           totalGoals: goals.length,
@@ -1064,7 +1343,7 @@ performanceRouter.get(
 
 performanceRouter.get(
   "/analytics/rating-by-department",
-  isManagerOrAbove,
+  requirePermission("performance.manage"),
   async (_req, res, next) => {
     try {
       res.json({ data: await repo.getAverageRatingByDepartment() });

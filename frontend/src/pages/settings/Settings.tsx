@@ -32,18 +32,36 @@ import { Modal } from "@/components/ui/Modal";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
+import GovernanceSettings from "./GovernanceSettings";
 
 export default function Settings() {
-  const { user } = useAuth();
-  const canManageShifts =
-    user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
-  const [tab, setTab] = useState("departments");
+  const { hasPermission } = useAuth();
+  const canManageOrganization = hasPermission("organization.manage");
+  const canManageCycles = hasPermission("performance.manage");
+  const canManageShifts = hasPermission("attendance.manage");
+  const canManageGovernance = hasPermission("governance.manage");
+  const [tab, setTab] = useState(
+    canManageOrganization
+      ? "departments"
+      : canManageCycles
+        ? "cycles"
+        : canManageShifts
+          ? "shifts"
+          : "governance",
+  );
   const tabs = [
-    { key: "departments", label: "Departments" },
-    { key: "designations", label: "Designations" },
-    { key: "holidays", label: "Holidays" },
-    { key: "cycles", label: "Review Cycles" },
+    ...(canManageOrganization
+      ? [
+          { key: "departments", label: "Departments" },
+          { key: "designations", label: "Designations" },
+          { key: "holidays", label: "Holidays" },
+        ]
+      : []),
+    ...(canManageCycles ? [{ key: "cycles", label: "Review Cycles" }] : []),
     ...(canManageShifts ? [{ key: "shifts", label: "Shifts" }] : []),
+    ...(canManageGovernance
+      ? [{ key: "governance", label: "Governance" }]
+      : []),
   ];
 
   return (
@@ -53,11 +71,12 @@ export default function Settings() {
         subtitle="Configure the organization structure and HR calendar."
       />
       <Tabs tabs={tabs} active={tab} onChange={setTab} className="mb-6 w-fit" />
-      {tab === "departments" && <DepartmentsTab />}
-      {tab === "designations" && <DesignationsTab />}
-      {tab === "holidays" && <HolidaysTab />}
-      {tab === "cycles" && <CyclesTab />}
+      {tab === "departments" && canManageOrganization && <DepartmentsTab />}
+      {tab === "designations" && canManageOrganization && <DesignationsTab />}
+      {tab === "holidays" && canManageOrganization && <HolidaysTab />}
+      {tab === "cycles" && canManageCycles && <CyclesTab />}
       {tab === "shifts" && canManageShifts && <ShiftsTab />}
+      {tab === "governance" && canManageGovernance && <GovernanceSettings />}
     </div>
   );
 }
