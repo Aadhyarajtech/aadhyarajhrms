@@ -26,25 +26,6 @@ interface OrgNodeData {
   directReports: OrgNodeData[];
 }
 
-interface OrganizationSearchEmployee {
-  id: string;
-  employeeCode: string;
-  firstName: string;
-  lastName: string;
-  email: string | null;
-  avatarUrl: string | null;
-  departmentId: string;
-  departmentName: string | null;
-  designationId: string;
-  designationTitle: string | null;
-  managerId: string | null;
-  managerName: string | null;
-  workLocation: string | null;
-  status: string;
-  directReportCount: number;
-}
-
-
 interface SkillDependencyGroup {
   skill: string;
   category: string | null;

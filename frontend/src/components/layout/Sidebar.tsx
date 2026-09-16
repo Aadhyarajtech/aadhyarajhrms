@@ -27,6 +27,7 @@ interface NavItem {
   label: string;
   icon: typeof LayoutDashboard;
   roles?: Role[];
+  permission?: string;
 }
 
 /* =========================================================
@@ -69,6 +70,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/attendance",
     label: "Attendance",
     icon: Clock,
+    permission: "attendance.view",
   },
 
   /* -------------------------------------------------------
@@ -79,6 +81,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/leave",
     label: "Leave",
     icon: CalendarDays,
+    permission: "leave.view",
   },
 
   /* -------------------------------------------------------
@@ -99,6 +102,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/performance",
     label: "Performance",
     icon: Target,
+    permission: "performance.view",
   },
 
   /* -------------------------------------------------------
@@ -109,6 +113,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/payroll",
     label: "Payroll",
     icon: Wallet,
+    permission: "payroll.view",
   },
 
   /* -------------------------------------------------------
@@ -119,6 +124,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/documents",
     label: "Documents",
     icon: Briefcase,
+    permission: "documents.view",
   },
 
   /* -------------------------------------------------------
@@ -150,6 +156,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/reports",
     label: "Reports & Analytics",
     icon: BarChart3,
+    permission: "reports.view",
     roles: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"],
   },
 
@@ -171,7 +178,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/employees",
     label: "Employees",
     icon: Users,
-    roles: ["SUPER_ADMIN", "HR_ADMIN"],
+    permission: "employees.view",
   },
 
   /* -------------------------------------------------------
@@ -182,7 +189,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/org-chart",
     label: "Org Chart",
     icon: Network,
-    roles: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"],
+    permission: "employees.view",
   },
 
   /* -------------------------------------------------------
@@ -193,7 +200,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/recruitment",
     label: "Recruitment",
     icon: Briefcase,
-    roles: ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "MANAGER"],
+    permission: "recruitment.view",
   },
 
   /* -------------------------------------------------------
@@ -204,6 +211,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/announcements",
     label: "Announcements",
     icon: Megaphone,
+    permission: "announcements.view",
   },
 ];
 
@@ -218,7 +226,7 @@ export function Sidebar({
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }) {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
 
   const role = user?.role;
 
@@ -226,9 +234,12 @@ export function Sidebar({
      FILTER NAVIGATION BY ROLE
   ------------------------------------------------------- */
 
-  const items = NAV_ITEMS.filter(
-    (item) => !item.roles || (role && item.roles.includes(role)),
-  );
+  const items = NAV_ITEMS.filter((item) => {
+    const roleAllowed = !item.roles || (role && item.roles.includes(role));
+    const permissionAllowed =
+      !item.permission || hasPermission(item.permission);
+    return roleAllowed && permissionAllowed;
+  });
 
   /* -------------------------------------------------------
      PROFILE PATH

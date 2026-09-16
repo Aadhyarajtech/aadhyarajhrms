@@ -46,6 +46,40 @@ function toApiRecord(doc: any): AttendanceApiRecord | undefined {
   return { id: _id, ...rest };
 }
 
+async function assertAttendancePeriodUnlocked(date: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return;
+
+  // Payroll locking protects completed/historical attendance. The current
+  // business day must remain writable so employees can still check in, take
+  // breaks, check out, and complete other same-day attendance actions even
+  // when a PayrollRun for the current calendar month is already locked.
+  //
+  // This also makes a current-month lock behave as an implicit "lock through
+  // yesterday" cutoff: as the day changes, only the new current day remains
+  // writable. Future dates remain protected because they do not equal today.
+  const today = todayDateString();
+  if (date === today) return;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const run = await PayrollRun.findOne({
+    month,
+    year,
+    status: {
+      $in: ["ATTENDANCE_LOCKED", "PROCESSED", "HR_REVIEW", "APPROVED", "PAID"],
+    },
+  })
+    .select("_id status")
+    .lean();
+
+  if (run) {
+    throw AppError.badRequest(
+      "Attendance for this payroll period is locked. Only today's attendance can be changed.",
+    );
+  }
+}
+
 function getHoursBetween(start: string | null, end: string | null): number {
   if (!start || !end) return 0;
 
@@ -369,6 +403,7 @@ export async function checkIn(
   },
 ) {
   assertValidLocation(location);
+  await assertAttendancePeriodUnlocked(todayDateString());
 
   const employee = await Employee.findById(employeeId)
     .select("_id status")
@@ -466,6 +501,7 @@ export async function checkOut(
   },
 ) {
   assertValidLocation(options);
+  await assertAttendancePeriodUnlocked(todayDateString());
 
   const existing = await getTodayRecord(employeeId);
   if (!existing || !existing.checkIn) {
@@ -579,6 +615,7 @@ export async function checkOut(
 }
 
 export async function startBreak(employeeId: string) {
+  await assertAttendancePeriodUnlocked(todayDateString());
   const attendance = await Attendance.findOne({
     employeeId,
     date: todayDateString(),
@@ -627,6 +664,7 @@ export async function startBreak(employeeId: string) {
 }
 
 export async function endBreak(employeeId: string) {
+  await assertAttendancePeriodUnlocked(todayDateString());
   const attendance = await Attendance.findOne({
     employeeId,
     date: todayDateString(),
@@ -1027,6 +1065,8 @@ export async function requestRegularization(
     throw new Error("Invalid attendance date.");
   }
 
+  await assertAttendancePeriodUnlocked(date);
+
   const reason = note.trim();
 
   if (!reason) {
@@ -1152,6 +1192,8 @@ export async function approveRegularization(
   if (!request) {
     throw new Error("Pending regularization request not found.");
   }
+
+  await assertAttendancePeriodUnlocked(request.date);
 
   const employee = await Employee.findOne(
     includeAll

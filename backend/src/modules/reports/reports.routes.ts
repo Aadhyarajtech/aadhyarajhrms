@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { authenticate } from "@/middleware/auth";
-import { isManagerOrAbove } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import * as repo from "./reports.repository";
 import { buildExcelReport, buildPdfReport } from "./reportExport.service";
 
 export const reportsRouter = Router();
-reportsRouter.use(authenticate, isManagerOrAbove);
+reportsRouter.use(authenticate, requirePermission("reports.view"));
 
 type ReportExportSection =
   | "overview"

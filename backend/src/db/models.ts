@@ -2928,6 +2928,48 @@ export const PerformanceFeedback = model<PerformanceFeedbackDoc>(
   performanceFeedbackSchema,
 );
 
+export interface PerformanceFeedbackRequestDoc {
+  _id: string;
+  cycleId: string;
+  reviewId: string;
+  reviewerEmployeeId: string;
+  revieweeEmployeeId: string;
+  type: "PEER" | "SUBORDINATE";
+  status: "PENDING" | "COMPLETED" | "DECLINED";
+  dueDate: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+const performanceFeedbackRequestSchema = new Schema<PerformanceFeedbackRequestDoc>(
+  {
+    _id: idField("pfr"),
+    cycleId: { type: String, required: true },
+    reviewId: { type: String, required: true },
+    reviewerEmployeeId: { type: String, required: true },
+    revieweeEmployeeId: { type: String, required: true },
+    type: { type: String, enum: ["PEER", "SUBORDINATE"], required: true },
+    status: { type: String, enum: ["PENDING", "COMPLETED", "DECLINED"], default: "PENDING" },
+    dueDate: { type: String, default: null },
+    createdBy: { type: String, default: null },
+    createdAt: { type: String, required: true },
+    completedAt: { type: String, default: null },
+  },
+  baseOptions,
+);
+
+performanceFeedbackRequestSchema.index(
+  { reviewId: 1, reviewerEmployeeId: 1 },
+  { unique: true },
+);
+performanceFeedbackRequestSchema.index({ reviewerEmployeeId: 1, status: 1, cycleId: 1 });
+
+export const PerformanceFeedbackRequest = model<PerformanceFeedbackRequestDoc>(
+  "PerformanceFeedbackRequest",
+  performanceFeedbackRequestSchema,
+);
+
 export interface PerformanceOutcomeDoc {
   _id: string;
   reviewId: string;
