@@ -1,4 +1,5 @@
 import { env } from "@/config/env";
+import { getTicketExpiryDays } from "@/modules/governance/governance.repository";
 import {
   AttendanceRegularizationRequest,
   LeaveRequest,
@@ -30,6 +31,50 @@ async function updateExpiryDates(
               expiresAt,
               expiredAt: null,
               ...(extraFields ?? {}),
+            },
+          },
+        ),
+      ];
+    }),
+  );
+}
+
+async function updateTicketExpiryDates(rows: any[], defaultExpiryDays: number) {
+  if (rows.length === 0) return;
+
+  await Promise.all(
+    rows.flatMap((row) => {
+      const existingDays = Number(row.expiryDays);
+      const expiryDays =
+        Number.isInteger(existingDays) && existingDays >= 1 && existingDays <= 365
+          ? existingDays
+          : defaultExpiryDays;
+      const expiresAt = expiryFrom(row.createdAt, expiryDays);
+      if (!expiresAt) return [];
+
+      const currentExpiresAtMs = row.expiresAt
+        ? new Date(row.expiresAt).getTime()
+        : Number.NaN;
+      const expiresAtMs = new Date(expiresAt).getTime();
+      const hasUsableExpiry = Number.isFinite(currentExpiresAtMs) &&
+        currentExpiresAtMs > Date.now();
+      const wasPrematurelyExpired =
+        row.status === "EXPIRED" && expiresAtMs > Date.now();
+
+      // Preserve each ticket's stored timeout. Only repair tickets that have
+      // no usable expiry or were expired before their configured deadline.
+      if (hasUsableExpiry && !wasPrematurelyExpired) return [];
+
+      return [
+        Ticket.updateOne(
+          { _id: row._id },
+          {
+            $set: {
+              expiryDays,
+              expiresAt,
+              ...(wasPrematurelyExpired
+                ? { status: "OPEN", expiredAt: null, updatedAt: new Date().toISOString() }
+                : {}),
             },
           },
         ),
@@ -78,8 +123,10 @@ export async function backfillExpiryDates() {
       AttendanceRegularizationRequest.find({ expiresAt: { $exists: false } })
         .select("_id requestedAt")
         .lean(),
-      Ticket.find({ expiresAt: { $exists: false } })
-        .select("_id createdAt expiryDays")
+      Ticket.find({
+        status: { $in: ["OPEN", "IN_PROGRESS", "WAITING_FOR_EMPLOYEE", "EXPIRED"] },
+      })
+        .select("_id createdAt expiryDays expiresAt status")
         .lean(),
       Notification.find({ expiresAt: { $exists: false } })
         .select("_id createdAt")
@@ -88,6 +135,8 @@ export async function backfillExpiryDates() {
         .select("_id createdAt publishedAt status expiryDays")
         .lean(),
     ]);
+
+  const ticketExpiryDays = await getTicketExpiryDays();
 
   await Promise.all([
     updateExpiryDates(
@@ -100,11 +149,7 @@ export async function backfillExpiryDates() {
       regularizationRows,
       (row) => expiryFrom(row.requestedAt, env.regularizationExpiryDays),
     ),
-    updateExpiryDates(
-      Ticket,
-      ticketRows,
-      (row) => expiryFrom(row.createdAt, Number(row.expiryDays ?? env.ticketExpiryDays)),
-    ),
+    updateTicketExpiryDates(ticketRows, ticketExpiryDays),
     updateExpiryDates(
       Notification,
       notificationRows,

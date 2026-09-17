@@ -260,6 +260,10 @@ export default function GovernanceSettings() {
                 <input
                   type={policy.type === "NUMBER" ? "number" : "text"}
                   value={String(policy.value)}
+                  min={policy.key === "workflow.ticketExpiryDays" ? 1 : undefined}
+                  max={policy.key === "workflow.ticketExpiryDays" ? 365 : undefined}
+                  step={policy.key === "workflow.ticketExpiryDays" ? 1 : undefined}
+                  inputMode={policy.type === "NUMBER" ? "numeric" : undefined}
                   onChange={(event) =>
                     updatePolicy(
                       policy,
