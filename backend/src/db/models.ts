@@ -1298,19 +1298,12 @@ export interface LeaveRequestDoc {
   totalDays: number;
   reason: string;
 
-  status:
-    | "PENDING"
-    | "APPROVED"
-    | "REJECTED"
-    | "CANCELLED"
-    | "EXPIRED";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
   approverId: string | null;
   decisionNote: string | null;
   appliedAt: string;
   decidedAt: string | null;
-  expiresAt: string | null;
-  expiredAt: string | null;
 }
 
 const leaveRequestSchema = new Schema<LeaveRequestDoc>(
@@ -1349,13 +1342,7 @@ const leaveRequestSchema = new Schema<LeaveRequestDoc>(
 
     status: {
       type: String,
-      enum: [
-        "PENDING",
-        "APPROVED",
-        "REJECTED",
-        "CANCELLED",
-        "EXPIRED",
-      ],
+      enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
       default: "PENDING",
     },
 
@@ -1375,17 +1362,6 @@ const leaveRequestSchema = new Schema<LeaveRequestDoc>(
     },
 
     decidedAt: {
-      type: String,
-      default: null,
-    },
-
-    expiresAt: {
-      type: String,
-      default: null,
-      index: true,
-    },
-
-    expiredAt: {
       type: String,
       default: null,
     },
@@ -2513,6 +2489,7 @@ export interface InterviewDoc {
   mode: "VIDEO" | "IN_PERSON" | "PHONE";
 
   meetingLink: string | null;
+  googleCalendarEventId: string | null;
   recordingUrl: string | null;
   feedback: string | null;
   recommendation: string | null;
@@ -2579,6 +2556,11 @@ const interviewSchema = new Schema<InterviewDoc>(
       default: null,
     },
 
+    googleCalendarEventId: {
+      type: String,
+      default: null,
+    },
+
     recordingUrl: {
       type: String,
       default: null,
@@ -2627,18 +2609,6 @@ export interface PerformanceCycleDoc {
     | "THREE_SIXTY"
     | "PIP";
   purpose: string | null;
-  ratingScale?: number[];
-  ratingWeights?: {
-    self: number;
-    manager: number;
-  };
-  competencies?: {
-    name: string;
-    weight: number;
-  }[];
-  selfReviewDueDate?: string | null;
-  managerReviewDueDate?: string | null;
-  finalReviewDueDate?: string | null;
 }
 
 const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
@@ -2673,51 +2643,6 @@ const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
       default: "ANNUAL",
     },
     purpose: {
-      type: String,
-      default: null,
-    },
-
-    ratingScale: {
-      type: [Number],
-      default: [1, 2, 3, 4, 5],
-    },
-
-    ratingWeights: {
-      self: {
-        type: Number,
-        min: 0,
-        max: 100,
-        default: 40,
-      },
-      manager: {
-        type: Number,
-        min: 0,
-        max: 100,
-        default: 60,
-      },
-    },
-
-    competencies: {
-      type: [
-        {
-          name: { type: String, required: true },
-          weight: { type: Number, min: 0, max: 100, required: true },
-        },
-      ],
-      default: [],
-    },
-
-    selfReviewDueDate: {
-      type: String,
-      default: null,
-    },
-
-    managerReviewDueDate: {
-      type: String,
-      default: null,
-    },
-
-    finalReviewDueDate: {
       type: String,
       default: null,
     },
@@ -3834,9 +3759,6 @@ export interface NotificationDoc {
   link: string | null;
 
   createdAt: string;
-  status: "ACTIVE" | "EXPIRED";
-  expiresAt?: string | null;
-  expiredAt?: string | null;
 }
 
 const notificationSchema = new Schema<NotificationDoc>(
@@ -3892,24 +3814,6 @@ const notificationSchema = new Schema<NotificationDoc>(
     createdAt: {
       type: String,
       required: true,
-    },
-
-    status: {
-      type: String,
-      enum: ["ACTIVE", "EXPIRED"],
-      default: "ACTIVE",
-      index: true,
-    },
-
-    expiresAt: {
-      type: String,
-      default: null,
-      index: true,
-    },
-
-    expiredAt: {
-      type: String,
-      default: null,
     },
   },
   baseOptions,
@@ -4536,30 +4440,21 @@ export type CalendarEventSource =
 
 export interface CalendarEventDoc {
   _id: string;
-
   title: string;
   description: string;
-
   type: CalendarEventType;
   status: CalendarEventStatus;
-
   employeeId: string;
   participantIds: string[];
-
   startAt: string;
   endAt: string;
-
   location: string;
-
   isRecurring: boolean;
   recurrenceRule: string | null;
-
   isImportant: boolean;
   isCritical: boolean;
-
   source: CalendarEventSource;
   sourceId: string | null;
-
   createdAt: string;
   updatedAt: string;
 }

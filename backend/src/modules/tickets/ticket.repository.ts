@@ -1,4 +1,5 @@
 import * as Models from "@/db/models";
+import { env } from "@/config/env";
 
 // Support different export styles from the models module
 const Ticket: any =
@@ -17,9 +18,9 @@ const TICKET_STATUSES = [
   "OPEN",
   "IN_PROGRESS",
   "WAITING_FOR_EMPLOYEE",
-  "EXPIRED",
   "RESOLVED",
   "CLOSED",
+  "EXPIRED",
 ] as const;
 
 type TicketStatus = (typeof TICKET_STATUSES)[number];
@@ -181,8 +182,13 @@ export async function createTicket(data: {
   aiPriority?: string | null;
   aiPriorityReason?: string | null;
   aiSentiment?: string | null;
+  expiryDays?: number;
 }) {
   const now = new Date().toISOString();
+  const expiryDays = Number(data.expiryDays ?? env.ticketExpiryDays);
+  if (!Number.isFinite(expiryDays) || expiryDays <= 0 || expiryDays > 365) {
+    throw new Error("Ticket expiry must be between 1 and 365 days.");
+  }
 
   const ticket = await Ticket.create({
     ticketId: generateTicketId(data.category),
@@ -225,8 +231,7 @@ export async function createTicket(data: {
     aiSentiment: data.aiSentiment ?? null,
 
     createdAt: now,
-
-    expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(new Date(now).getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString(),
     expiredAt: null,
 
     updatedAt: now,
@@ -240,11 +245,11 @@ export async function createTicket(data: {
 // =========================================================
 
 export async function getTickets() {
-  return Ticket.find({ status: { $ne: "EXPIRED" } })
-    .sort({
-      createdAt: -1,
-    })
-    .lean();
+  const tickets = await Ticket.find({}).sort({ createdAt: -1 }).lean();
+  return tickets.map((ticket: any) => ({
+    ...ticket,
+    isExpired: ticket.status === "EXPIRED" || (ticket.expiresAt ? new Date(ticket.expiresAt).getTime() <= Date.now() : false),
+  }));
 }
 
 // =========================================================
@@ -256,6 +261,10 @@ export async function getTicket(id: string) {
 
   if (!ticket) return ticket;
 
+  if (ticket.status === "EXPIRED" || (ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())) {
+    throw new Error("This ticket has expired and can no longer be accessed.");
+  }
+
   return refreshTicketSla(ticket);
 }
 
@@ -264,12 +273,16 @@ export async function getTicket(id: string) {
 // =========================================================
 
 export async function updateTicketStatus(id: string, status: string) {
-  if (!isTicketStatus(status)) {
+  if (!isTicketStatus(status) || status === "EXPIRED") {
     throw new Error("Invalid ticket status.");
   }
 
   return Ticket.findByIdAndUpdate(
     id,
+    {
+      status: { $ne: "EXPIRED" },
+      expiresAt: { $gt: new Date().toISOString() },
+    },
     {
       $set: {
         status,
@@ -291,7 +304,6 @@ export async function getMyTickets(employeeId: string) {
 
   const tickets = await Ticket.find({
     employeeId: employeeId,
-    status: { $ne: "EXPIRED" },
   })
     .sort({
       createdAt: -1,
@@ -302,7 +314,10 @@ export async function getMyTickets(employeeId: string) {
     `[Tickets] Found ${tickets.length} ticket(s) for employee ${employeeId}`,
   );
 
-  return tickets;
+  return tickets.map((ticket: any) => ({
+    ...ticket,
+    isExpired: ticket.status === "EXPIRED" || (ticket.expiresAt ? new Date(ticket.expiresAt).getTime() <= Date.now() : false),
+  }));
 }
 
 // =========================================================
@@ -311,7 +326,6 @@ export async function getMyTickets(employeeId: string) {
 
 export async function getTicketsByAssignees(assignees: string[]) {
   return Ticket.find({
-    status: { $ne: "EXPIRED" },
     assignedTo: {
       $in: assignees,
     },
@@ -414,13 +428,12 @@ export async function getTicketsForDepartment(
 ) {
   // Super Admin and HR Admin have enterprise-wide oversight over all tickets
   if (role === "SUPER_ADMIN" || role === "HR_ADMIN") {
-    return Ticket.find({ status: { $ne: "EXPIRED" } }).sort({ createdAt: -1 }).lean();
+    return Ticket.find({}).sort({ createdAt: -1 }).lean();
   }
 
   // IT Support sees only IT Support tickets
   if (role === "IT_SUPPORT") {
     return Ticket.find({
-      status: { $ne: "EXPIRED" },
       $or: [{ assignedTo: "IT_SUPPORT" }, { category: "IT Support" }],
     })
       .sort({ createdAt: -1 })
@@ -430,7 +443,6 @@ export async function getTicketsForDepartment(
   // Finance sees only Payroll / Finance tickets
   if (role === "FINANCE") {
     return Ticket.find({
-      status: { $ne: "EXPIRED" },
       $or: [{ assignedTo: "FINANCE" }, { category: "Payroll" }],
     })
       .sort({ createdAt: -1 })
@@ -450,6 +462,7 @@ export function isUserAuthorizedForTicket(
   user: { role: string; employeeId?: string | null },
 ): boolean {
   if (!ticket || !user) return false;
+  if (ticket.status === "EXPIRED" || (ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())) return false;
   const role = String(user.role);
 
   // Super Admin and HR Admin have enterprise-wide access
@@ -649,6 +662,12 @@ export async function getTicketMessages(ticketId: string) {
     throw new Error("TicketMessage model is not available");
   }
 
+  const ticket = await Ticket.findById(ticketId).select("status expiresAt").lean();
+  if (!ticket) throw new Error("Ticket not found.");
+  if (ticket.status === "EXPIRED" || (ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())) {
+    throw new Error("This ticket has expired and can no longer be accessed.");
+  }
+
   return TicketMessage.find({
     ticketId,
   })
@@ -671,6 +690,12 @@ export async function createTicketMessage(data: {
 }) {
   if (!TicketMessage) {
     throw new Error("TicketMessage model is not available");
+  }
+
+  const ticket = await Ticket.findById(data.ticketId).select("status expiresAt").lean();
+  if (!ticket) throw new Error("Ticket not found.");
+  if (ticket.status === "EXPIRED" || (ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())) {
+    throw new Error("This ticket has expired and can no longer be updated.");
   }
 
   const message = await TicketMessage.create({

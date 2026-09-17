@@ -1,4 +1,5 @@
 import mongoose, { Schema, type Document, type Model } from "mongoose";
+import { genId } from "@/utils/id";
 
 /* =========================================================
    ANNOUNCEMENT TYPES
@@ -76,6 +77,8 @@ export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
 ========================================================= */
 
 export interface IAnnouncement extends Document {
+  _id: string;
+
   /* Basic information */
   title: string;
   body: string;
@@ -120,10 +123,7 @@ export interface IAnnouncement extends Document {
 
   publishedAt?: string;
 
-  /** Number of days the announcement remains active after publication. */
   expiryDays: number;
-  expiresAt?: string;
-  expiredAt?: string;
 
   /* Calendar / meeting */
   calendarEnabled: boolean;
@@ -138,6 +138,9 @@ export interface IAnnouncement extends Document {
   createdAt: string;
 
   updatedAt: string;
+
+  expiresAt: string | null;
+  expiredAt: string | null;
 }
 
 /* =========================================================
@@ -146,6 +149,8 @@ export interface IAnnouncement extends Document {
 
 const announcementSchema = new Schema<IAnnouncement>(
   {
+    _id: { type: String, default: () => genId("ann") },
+
     /* ---------------------------------------------------
          BASIC INFORMATION
       --------------------------------------------------- */
@@ -302,20 +307,9 @@ const announcementSchema = new Schema<IAnnouncement>(
 
     expiryDays: {
       type: Number,
+      default: 7,
       min: 1,
       max: 365,
-      default: 7,
-    },
-
-    expiresAt: {
-      type: String,
-      default: "",
-      index: true,
-    },
-
-    expiredAt: {
-      type: String,
-      default: "",
     },
 
     /* ---------------------------------------------------
@@ -357,6 +351,9 @@ const announcementSchema = new Schema<IAnnouncement>(
       type: String,
       required: true,
     },
+
+    expiresAt: { type: String, default: null, index: true },
+    expiredAt: { type: String, default: null },
   },
   {
     versionKey: false,
