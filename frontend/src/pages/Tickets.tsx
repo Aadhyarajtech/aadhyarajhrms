@@ -94,6 +94,13 @@ function formatDateTime(value?: string | null) {
   return date.toLocaleString();
 }
 
+function isTicketExpired(ticket: { status?: string; expiresAt?: string | null }) {
+  return (
+    ticket.status === "EXPIRED" ||
+    (!!ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())
+  );
+}
+
 export default function Tickets() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -174,6 +181,7 @@ export default function Tickets() {
   const openCount = departmentScopedTickets.filter((t: any) => t.status === "OPEN").length;
   const inProgressCount = departmentScopedTickets.filter((t: any) => t.status === "IN_PROGRESS").length;
   const resolvedCount = departmentScopedTickets.filter((t: any) => t.status === "RESOLVED").length;
+  const expiredCount = departmentScopedTickets.filter((t: any) => isTicketExpired(t)).length;
   const atRiskCount = departmentScopedTickets.filter(
     (t: any) =>
       t.status === "OPEN" &&
@@ -196,8 +204,12 @@ export default function Tickets() {
       if (!isNeedsAttention) {
         return false;
       }
-    } else if (statusFilter !== "ALL" && ticket.status !== statusFilter) {
-      return false;
+    } else if (statusFilter !== "ALL") {
+      if (statusFilter === "EXPIRED") {
+        if (!isTicketExpired(ticket)) return false;
+      } else if (ticket.status !== statusFilter || isTicketExpired(ticket)) {
+        return false;
+      }
     }
     if (categoryFilter !== "ALL" && ticket.category !== categoryFilter) {
       return false;
@@ -374,6 +386,7 @@ export default function Tickets() {
                 { id: "OPEN", label: `Open (${openCount})` },
                 { id: "IN_PROGRESS", label: `In Progress (${inProgressCount})` },
                 { id: "RESOLVED", label: `Resolved (${resolvedCount})` },
+                { id: "EXPIRED", label: `Expired (${expiredCount})` },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -482,7 +495,7 @@ export default function Tickets() {
                     <Link
                       to={`/app/tickets/${ticket._id}`}
                         onClick={(event) => {
-                          if (ticket.status === "EXPIRED") event.preventDefault();
+                          if (isTicketExpired(ticket)) event.preventDefault();
                         }}
                       className="inline-flex items-center gap-1.5 text-brand-600 hover:text-brand-800 hover:underline"
                       title="Click to open conversation"
@@ -577,7 +590,7 @@ export default function Tickets() {
                     <Link
                       to={`/app/tickets/${ticket._id}`}
                         onClick={(event) => {
-                          if (ticket.status === "EXPIRED") event.preventDefault();
+                          if (isTicketExpired(ticket)) event.preventDefault();
                         }}
                       className="block truncate font-medium text-gray-900 hover:text-brand-600 hover:underline"
                       title={ticket.subject}
@@ -638,7 +651,7 @@ export default function Tickets() {
                       ))}
                     </select>
                     )}
-                    {ticket.status !== "EXPIRED" && <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} className="mt-1" />}
+                    {!isTicketExpired(ticket) && <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} className="mt-1" />}
                   </td>
 
                   {/* SLA & Predictive Risk */}
@@ -690,17 +703,25 @@ export default function Tickets() {
                   {/* Actions */}
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
                     <div className="inline-flex items-center justify-end gap-1.5">
-                      <Link
-                        to={`/app/tickets/${ticket._id}`}
-                        onClick={(event) => {
-                          if (ticket.status === "EXPIRED") event.preventDefault();
-                        }}
-                        className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand-700 shadow-2xs transition"
-                        title="Open conversation"
-                      >
-                        <MessageCircle className="h-3 w-3" />
-                        <span>Chat</span>
-                      </Link>
+                      {isTicketExpired(ticket) ? (
+                        <span
+                          className="inline-flex cursor-not-allowed items-center gap-1 rounded-md bg-gray-100 px-2.5 py-1 text-[11px] font-medium text-gray-400"
+                          title="Expired ticket cannot be opened"
+                          aria-disabled="true"
+                        >
+                          <MessageCircle className="h-3 w-3" />
+                          <span>Expired</span>
+                        </span>
+                      ) : (
+                        <Link
+                          to={`/app/tickets/${ticket._id}`}
+                          className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand-700 shadow-2xs transition"
+                          title="Open conversation"
+                        >
+                          <MessageCircle className="h-3 w-3" />
+                          <span>Chat</span>
+                        </Link>
+                      )}
 
                       {ticket.category === "Complaint" && !ticket.isEscalated && (
                         <button
