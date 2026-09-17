@@ -37,6 +37,8 @@ import AiAttendanceForecast from "@/components/attendance/AiAttendanceForecast";
 import AttendancePatternAnalysis from "@/components/attendance/AttendancePatternAnalysis";
 import SmartRegularizationAssistant from "@/components/attendance/SmartRegularizationAssistant";
 
+const MANAGER_ROLES = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
+
 function localDateString(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(
     date,
@@ -65,8 +67,8 @@ function getDisplayAttendanceStatus(
 }
 
 export default function Attendance() {
-  const { hasPermission } = useAuth();
-  const isManager = hasPermission("attendance.manage");
+  const { user } = useAuth();
+  const isManager = !!user && MANAGER_ROLES.includes(user.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const [tab, setTab] = useState(
@@ -148,8 +150,8 @@ function MyAttendance({
   onEmployeeChange: (id?: string) => void;
 }) {
   const today = new Date();
-  const { user, hasPermission } = useAuth();
-  const canSelectEmployee = hasPermission("attendance.manage");
+  const { user } = useAuth();
+  const canSelectEmployee = !!user && MANAGER_ROLES.includes(user.role);
   const { data: employeeData, isLoading: employeesLoading } = useQuery({
     queryKey: ["attendance", "ai", "employees", user?.role, user?.employee?.id],
     queryFn: () => EmployeesApi.list({ page: 1, pageSize: 100 }),
@@ -329,10 +331,26 @@ function MyAttendance({
       : todayRecord?.status;
 
   return (
-    <div className="space-y-6">
-      <Card>
+    <div className="premium-page space-y-6">
+      <Card className="overflow-hidden border-brand-100/70 bg-gradient-to-br from-white via-[#FAF9FF] to-[#F3F0FF]">
+        <div className="-mx-5 -mt-5 mb-5 bg-gradient-to-r from-[#4338CA] via-[#5B4FE5] to-[#7C5CFF] px-5 py-5 text-white sm:-mx-6 sm:-mt-6 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="mb-1 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/70">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                Live attendance
+              </div>
+              <h2 className="font-display text-2xl font-semibold tracking-tight">Today</h2>
+              <p className="mt-1 text-xs text-white/70">{localDateString()} · Your attendance and workday controls</p>
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/60">Current status</p>
+              <div className="mt-1 text-sm font-semibold">{todayRecord ? (displayStatus ?? todayRecord.status).replaceAll("_", " ") : "Not checked in"}</div>
+            </div>
+          </div>
+        </div>
         <CardHeader
-          title="Today"
+          title="Workday overview"
           subtitle={localDateString()}
           action={
             <div className="flex gap-2">
@@ -358,27 +376,27 @@ function MyAttendance({
           }
         />
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-5">
-            <div>
-              <p className="text-[11px] text-ink-faint">Check-in</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-3.5 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Check-in</p>
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : "—"}
               </p>
             </div>
-            <div>
-              <p className="text-[11px] text-ink-faint">Check-out</p>
+            <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-3.5 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Check-out</p>
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.checkOut ? formatTime(todayRecord.checkOut) : "—"}
               </p>
             </div>
-            <div>
-              <p className="text-[11px] text-ink-faint">Hours</p>
+            <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-3.5 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Hours</p>
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.workHours ? `${todayRecord.workHours}h` : "—"}
               </p>
             </div>
-            <div>
-              <p className="text-[11px] text-ink-faint">Status</p>
+            <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-3.5 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Status</p>
               <div className="mt-1 min-h-8 flex items-center">
                 {todayRecord ? (
                   <StatusBadge status={displayStatus ?? todayRecord.status} />
@@ -387,8 +405,8 @@ function MyAttendance({
                 )}
               </div>
             </div>
-            <div>
-              <p className="text-[11px] text-ink-faint">Break</p>
+            <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-3.5 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Break</p>
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.breakMinutes ?? 0} min
                 {breakInProgress ? " · In progress" : ""}
@@ -396,10 +414,10 @@ function MyAttendance({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-line/60 pt-4">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-3">
             <Button
               size="sm"
-              className="w-[120px] shrink-0"
+              className="w-[132px] shrink-0"
               leftIcon={<LogIn size={14} />}
               onClick={() => checkInMutation.mutate()}
               disabled={!canCheckIn}
@@ -410,7 +428,7 @@ function MyAttendance({
             <Button
               size="sm"
               variant="outline"
-              className="w-[120px] shrink-0"
+              className="w-[132px] shrink-0"
               leftIcon={<Coffee size={14} />}
               onClick={() => breakMutation.mutate("start")}
               disabled={!canStartBreak}
@@ -421,7 +439,7 @@ function MyAttendance({
             <Button
               size="sm"
               variant="outline"
-              className="w-[120px] shrink-0"
+              className="w-[132px] shrink-0"
               leftIcon={<Coffee size={14} />}
               onClick={() => breakMutation.mutate("end")}
               disabled={!canEndBreak}
@@ -432,7 +450,7 @@ function MyAttendance({
             <Button
               size="sm"
               variant="outline"
-              className="w-[120px] shrink-0"
+              className="w-[132px] shrink-0"
               leftIcon={<LogOut size={14} />}
               onClick={() => checkOutMutation.mutate(undefined)}
               disabled={!canCheckOut}
@@ -510,7 +528,7 @@ function MyAttendance({
                 value={selectedEmployeeId ?? ""}
                 onChange={(e) => onEmployeeChange(e.target.value || undefined)}
                 disabled={employeesLoading}
-                className="h-10 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none focus:border-brand-400"
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-ink shadow-sm outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
               >
                 <option value="">All Employees</option>
                 {employees.map((employee) => (
@@ -602,31 +620,31 @@ function AttendanceTable({ records }: { records: AttendanceRecord[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-[13px]">
-        <thead>
-          <tr className="text-ink-faint">
-            <th className="pb-2 font-medium">Date</th>
-            <th className="pb-2 font-medium">Check-in</th>
-            <th className="pb-2 font-medium">Check-out</th>
-            <th className="pb-2 font-medium">Hours</th>
-            <th className="pb-2 font-medium">Status</th>
+        <thead className="bg-slate-50/80">
+          <tr className="text-[10px] uppercase tracking-[0.1em] text-slate-400">
+            <th className="px-3 py-3 font-bold">Date</th>
+            <th className="px-3 py-3 font-bold">Check-in</th>
+            <th className="px-3 py-3 font-bold">Check-out</th>
+            <th className="px-3 py-3 font-bold">Hours</th>
+            <th className="px-3 py-3 font-bold">Status</th>
           </tr>
         </thead>
         <tbody>
           {[...records]
             .sort((a, b) => b.date.localeCompare(a.date))
             .map((record) => (
-              <tr key={record.id} className="border-t border-line/60">
-                <td className="py-2.5">{formatDate(record.date)}</td>
-                <td className="py-2.5 text-ink-faint">
+              <tr key={record.id} className="border-t border-slate-100 transition-colors hover:bg-brand-50/30">
+                <td className="px-3 py-3">{formatDate(record.date)}</td>
+                <td className="px-3 py-3 text-slate-500">
                   {record.checkIn ? formatTime(record.checkIn) : "—"}
                 </td>
-                <td className="py-2.5 text-ink-faint">
+                <td className="px-3 py-3 text-slate-500">
                   {record.checkOut ? formatTime(record.checkOut) : "—"}
                 </td>
-                <td className="py-2.5 text-ink-faint">
+                <td className="px-3 py-3 text-slate-500">
                   {record.workHours ? `${record.workHours}h` : "—"}
                 </td>
-                <td className="py-2.5">
+                <td className="px-3 py-3">
                   <div className="flex items-center gap-1.5">
                     <StatusBadge status={getDisplayAttendanceStatus(record)} />
                     {record.isRegularized && (
@@ -670,8 +688,8 @@ function SummaryCard({
           <Icon size={18} />
         </div>
         <div>
-          <p className="font-display text-xl font-medium text-ink">{value}</p>
-          <p className="text-[12px] text-ink-faint">{label}</p>
+          <p className="font-display text-2xl font-semibold tracking-tight text-ink">{value}</p>
+          <p className="text-[11px] font-medium text-slate-500">{label}</p>
         </div>
       </div>
     </Card>
@@ -782,7 +800,7 @@ function TeamAttendance() {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+              className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
             />
             <Button
               size="sm"
@@ -814,7 +832,7 @@ function TeamAttendance() {
                   setMonth(nextMonth);
                 }
               }}
-              className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+              className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
             />
             <Button
               size="sm"
@@ -853,13 +871,13 @@ function TeamAttendance() {
         />
       ) : (
         <div className="space-y-2">
-          <p className="text-[12px] text-ink-faint">
+          <p className="text-[11px] font-medium text-slate-500">
             {data.length} direct report{data.length === 1 ? "" : "s"} shown
           </p>
           {(data as TeamAttendanceRecord[]).map((record) => (
             <div
               key={record.id}
-              className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-2.5"
+              className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
             >
               <div className="flex items-center gap-3">
                 <Avatar
@@ -871,13 +889,13 @@ function TeamAttendance() {
                   <p className="text-[13px] font-medium text-ink">
                     {record.firstName} {record.lastName}
                   </p>
-                  <p className="text-[12px] text-ink-faint">
+                  <p className="text-[11px] font-medium text-slate-500">
                     {record.departmentName} · {record.employeeCode}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-[12px] text-ink-faint">
+                <span className="text-[11px] font-medium text-slate-500">
                   {record.checkIn ? formatTime(record.checkIn) : "—"}
                   {record.checkOut ? ` – ${formatTime(record.checkOut)}` : ""}
                 </span>
@@ -947,7 +965,7 @@ function TeamAttendanceExceptions() {
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+            className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
           >
             <option value="PENDING">Pending</option>
             <option value="APPROVED">Approved</option>
@@ -978,7 +996,7 @@ function TeamAttendanceExceptions() {
           {requests.map((request) => (
             <div
               key={request.id}
-              className="rounded-2xl border border-line/60 p-4"
+              className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white to-slate-50/70 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
             >
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>

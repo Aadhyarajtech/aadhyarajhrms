@@ -38,16 +38,21 @@ function isTicketEscalationTarget(
 }
 
 function getSlaHours(priority: string) {
-  // These are the repository defaults. They can be replaced by a central
-  // configuration later without changing the ticket workflow.
+  // SmartHR Pro SLA Standards:
+  // CRITICAL: 1 Hour (Harassment, safety, legal, major business blocker)
+  // HIGH: 4 Hours (Payroll discrepancies, IT outage, urgent HR deadlines)
+  // MEDIUM: 24 Hours / 1 Business Day (Leave disputes, general policy queries)
+  // LOW: 72 Hours / 3 Business Days (Facilities, routine feedback)
   switch (priority) {
+    case "CRITICAL":
+      return 1;
     case "HIGH":
+      return 4;
+    case "MEDIUM":
       return 24;
     case "LOW":
-      return 72;
-    case "MEDIUM":
     default:
-      return 48;
+      return 72;
   }
 }
 
@@ -87,7 +92,8 @@ function calculateSlaStatus(
   const remainingMs = due.getTime() - now.getTime();
   const remainingHours = remainingMs / (60 * 60 * 1000);
 
-  return remainingHours <= 24 ? "DUE_SOON" : "ON_TRACK";
+  // Mark as DUE_SOON if less than 25% of SLA window or <= 2 hours remaining
+  return remainingHours <= 2 ? "DUE_SOON" : "ON_TRACK";
 }
 
 async function refreshTicketSla(ticket: any) {
@@ -133,28 +139,37 @@ function generateTicketId(category: string) {
 export function assignDepartment(category: string) {
   switch (category) {
     case "HR":
+    case "Policy Query":
+    case "Leave Issue":
+    case "Leave":
+    case "Attendance":
+    case "Employee Referral":
+    case "Other":
       return "HR_ADMIN";
 
+    case "Payroll Issue":
     case "Payroll":
       return "FINANCE";
 
-    case "Leave":
+    case "Manager Concern":
+      // Manager concerns route to Senior Leadership / Super Admin
+      return "SUPER_ADMIN";
+
+    case "Harassment Complaint":
+      // POSH & Workplace harassment complaints route to dedicated HR / Legal / Super Admin
       return "HR_ADMIN";
 
-    case "Attendance":
+    case "IT Support":
+      return "IT_SUPPORT";
+
+    case "Infrastructure":
       return "HR_ADMIN";
 
     case "Recruitment":
       return "MANAGER";
 
-    case "Employee Referral":
-      return "HR_ADMIN";
-
     case "Complaint":
       return "HR_ADMIN";
-
-    case "IT Support":
-      return "IT_SUPPORT";
 
     default:
       return "HR_ADMIN";
@@ -183,6 +198,18 @@ export async function createTicket(data: {
 }) {
   const now = new Date().toISOString();
 
+  // Enforce CRITICAL priority and POSH isolation for Harassment Complaints
+  let effectivePriority = data.priority;
+  if (data.category === "Harassment Complaint") {
+    effectivePriority = "CRITICAL";
+  }
+
+  // Manager isolation: Manager Concern and Harassment Complaint MUST NOT be assigned to direct manager
+  let assignedManagerId: string | null = null;
+  if (data.category === "Complaint") {
+    assignedManagerId = data.managerId || null;
+  }
+
   const ticket = await Ticket.create({
     ticketId: generateTicketId(data.category),
 
@@ -190,7 +217,7 @@ export async function createTicket(data: {
 
     category: data.category,
 
-    priority: data.priority,
+    priority: effectivePriority,
 
     subject: data.subject,
 
@@ -200,12 +227,11 @@ export async function createTicket(data: {
 
     assignedTo: assignDepartment(data.category),
 
-    assignedManagerId:
-      data.category === "Complaint" ? data.managerId || null : null,
+    assignedManagerId,
 
     status: "OPEN",
 
-    slaDueAt: calculateSlaDueAt(now, data.priority),
+    slaDueAt: calculateSlaDueAt(now, effectivePriority),
     slaStatus: "ON_TRACK",
 
     isEscalated: false,
@@ -389,11 +415,17 @@ export async function getTeamGrievanceTicket(
 
 export const HR_CATEGORIES = [
   "HR",
+  "Policy Query",
+  "Leave Issue",
   "Leave",
   "Attendance",
   "Recruitment",
   "Employee Referral",
   "Complaint",
+  "Manager Concern",
+  "Harassment Complaint",
+  "Infrastructure",
+  "Other",
 ];
 
 export async function getTicketsForDepartment(
@@ -405,19 +437,25 @@ export async function getTicketsForDepartment(
     return Ticket.find({}).sort({ createdAt: -1 }).lean();
   }
 
-  // IT Support sees only IT Support tickets
+  // IT Support sees IT Support and Infrastructure tickets
   if (role === "IT_SUPPORT") {
     return Ticket.find({
-      $or: [{ assignedTo: "IT_SUPPORT" }, { category: "IT Support" }],
+      $or: [
+        { assignedTo: "IT_SUPPORT" },
+        { category: { $in: ["IT Support", "Infrastructure"] } },
+      ],
     })
       .sort({ createdAt: -1 })
       .lean();
   }
 
-  // Finance sees only Payroll / Finance tickets
+  // Finance sees Payroll / Finance tickets
   if (role === "FINANCE") {
     return Ticket.find({
-      $or: [{ assignedTo: "FINANCE" }, { category: "Payroll" }],
+      $or: [
+        { assignedTo: "FINANCE" },
+        { category: { $in: ["Payroll", "Payroll Issue"] } },
+      ],
     })
       .sort({ createdAt: -1 })
       .lean();

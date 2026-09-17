@@ -336,6 +336,7 @@ function OrgTree({ roots }: { roots: OrgNodeData[] }) {
 function TreeNode({ node }: { node: OrgNodeData }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(true);
+
   const children = Array.isArray(node.directReports)
     ? node.directReports
     : [];
@@ -355,6 +356,7 @@ function TreeNode({ node }: { node: OrgNodeData }) {
         }`}
       >
         <span className="org-dot" aria-hidden="true" />
+
         <span className="org-name">
           {node.firstName}
           <br />
@@ -376,7 +378,11 @@ function TreeNode({ node }: { node: OrgNodeData }) {
             setOpen((value) => !value);
           }}
         >
-          {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          {open ? (
+            <ChevronDown size={11} />
+          ) : (
+            <ChevronRight size={11} />
+          )}
         </button>
       )}
 
@@ -492,7 +498,11 @@ function normalizeOrgData(data: unknown): OrgNodeData[] {
   const managerIds = new Map<string, string>();
 
   for (const node of byId.values()) {
-    if (node.managerId && node.managerId !== node.id && byId.has(node.managerId)) {
+    if (
+      node.managerId &&
+      node.managerId !== node.id &&
+      byId.has(node.managerId)
+    ) {
       managerIds.set(node.id, node.managerId);
     }
   }
@@ -526,7 +536,9 @@ function normalizeOrgData(data: unknown): OrgNodeData[] {
     }
   }
 
-  const roots = [...byId.values()].filter((node) => !assignedIds.has(node.id));
+  const roots = [...byId.values()].filter(
+    (node) => !assignedIds.has(node.id),
+  );
 
   const adithya = roots.find(
     (node) => fullName(node).toLowerCase() === "adithya nuthakki",
@@ -534,6 +546,7 @@ function normalizeOrgData(data: unknown): OrgNodeData[] {
 
   return adithya ? [adithya] : roots;
 }
+
 function isOrgNode(value: unknown): value is OrgNodeData {
   if (!value || typeof value !== "object") return false;
 

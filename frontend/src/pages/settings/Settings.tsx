@@ -11,6 +11,9 @@ import {
   Clock3,
   MapPin,
   Users,
+  Sparkles,
+  ShieldCheck,
+  Settings2,
 } from "lucide-react";
 import {
   EmployeesApi,
@@ -23,7 +26,6 @@ import {
 } from "@/lib/endpoints";
 import { api, getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge, StatusBadge } from "@/components/ui/Badge";
@@ -40,7 +42,8 @@ export default function Settings() {
   const canManageOrganization = hasPermission("organization.manage");
   const canManageCycles = hasPermission("performance.manage");
   const canManageShifts = hasPermission("attendance.manage");
-  const canManageGovernance = hasPermission("governance.manage");
+
+
   const [tab, setTab] = useState(
     canManageOrganization
       ? "departments"
@@ -50,34 +53,169 @@ export default function Settings() {
           ? "shifts"
           : "governance",
   );
+
   const tabs = [
-    ...(canManageOrganization
-      ? [
-          { key: "departments", label: "Departments" },
-          { key: "designations", label: "Designations" },
-          { key: "holidays", label: "Holidays" },
-        ]
-      : []),
-    ...(canManageCycles ? [{ key: "cycles", label: "Review Cycles" }] : []),
-    ...(canManageShifts ? [{ key: "shifts", label: "Shifts" }] : []),
-    ...(canManageGovernance
-      ? [{ key: "governance", label: "Governance" }]
-      : []),
-  ];
+  { key: "departments", label: "Departments" },
+  { key: "designations", label: "Designations" },
+  { key: "holidays", label: "Holidays" },
+  { key: "cycles", label: "Review Cycles" },
+  { key: "shifts", label: "Shifts" },
+  { key: "governance", label: "Governance" },
+];
+
+  const openTab = (nextTab: string, allowed: boolean) => {
+    if (allowed) setTab(nextTab);
+  };
 
   return (
-    <div>
-      <PageHeader
-        title="Settings"
-        subtitle="Configure the organization structure and HR calendar."
-      />
-      <Tabs tabs={tabs} active={tab} onChange={setTab} className="mb-6 w-fit" />
-      {tab === "departments" && canManageOrganization && <DepartmentsTab />}
-      {tab === "designations" && canManageOrganization && <DesignationsTab />}
-      {tab === "holidays" && canManageOrganization && <HolidaysTab />}
-      {tab === "cycles" && canManageCycles && <CyclesTab />}
-      {tab === "shifts" && canManageShifts && <ShiftsTab />}
-      {tab === "governance" && canManageGovernance && <GovernanceSettings />}
+    <div className="premium-page space-y-6">
+      <section className="relative overflow-hidden rounded-[28px] border border-violet-200/70 bg-gradient-to-br from-[#4f46e5] via-[#6366f1] to-[#2563eb] p-6 text-white shadow-[0_22px_60px_-28px_rgba(79,70,229,0.55)] sm:p-8">
+        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
+        <div className="absolute -bottom-28 left-1/3 h-56 w-56 rounded-full bg-cyan-300/10 blur-3xl" />
+        <div className="relative grid gap-6 lg:grid-cols-[1.4fr_1fr] lg:items-end">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/90">
+              <Sparkles size={13} /> Organization control center
+            </div>
+            <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+              Settings & configuration
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75">
+              Configure the organization structure, performance cycles, holiday
+              calendar, workforce shifts and governance from one administration
+              workspace.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={!canManageOrganization}
+              onClick={() => openTab("departments", canManageOrganization)}
+              className="rounded-2xl border border-white/15 bg-white/10 p-4 text-left backdrop-blur transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Building2 size={18} className="mb-3 text-white/80" />
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+                Structure
+              </p>
+              <p className="mt-1 text-sm font-semibold">
+                Departments & roles
+              </p>
+              <span className="mt-2 block text-[11px] text-white/60">
+                Open configuration →
+              </span>
+            </button>
+            <button
+              type="button"
+              disabled={!canManageShifts}
+              onClick={() => openTab("shifts", canManageShifts)}
+              className="rounded-2xl border border-white/15 bg-white/10 p-4 text-left backdrop-blur transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Clock3 size={18} className="mb-3 text-white/80" />
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+                Workforce
+              </p>
+              <p className="mt-1 text-sm font-semibold">Calendar & shifts</p>
+              <span className="mt-2 block text-[11px] text-white/60">
+                Open shifts →
+              </span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-3">
+        <button
+          type="button"
+          disabled={!canManageOrganization}
+          onClick={() => openTab("departments", canManageOrganization)}
+          className="group rounded-[22px] border border-violet-100 bg-white p-5 text-left shadow-[0_12px_35px_-24px_rgba(79,70,229,0.5)] transition-all hover:-translate-y-1 hover:border-violet-200 hover:shadow-[0_20px_45px_-24px_rgba(79,70,229,0.45)] focus:outline-none focus:ring-2 focus:ring-violet-300 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <div className="flex items-center justify-between">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-violet-50 text-violet-600">
+              <Settings2 size={19} />
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-violet-500">
+              Core setup
+            </span>
+          </div>
+          <p className="mt-4 text-sm font-semibold text-ink">
+            Organization structure
+          </p>
+          <p className="mt-1 text-xs leading-5 text-ink-faint">
+            Departments and designations keep employee records consistent.
+          </p>
+          <span className="mt-3 block text-xs font-semibold text-violet-500">
+            Open Departments →
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTab("governance")}
+          className="group rounded-[22px] border border-emerald-100 bg-white p-5 text-left shadow-[0_12px_35px_-24px_rgba(16,185,129,0.45)] transition-all hover:-translate-y-1 hover:border-emerald-200 hover:shadow-[0_20px_45px_-24px_rgba(16,185,129,0.4)] focus:outline-none focus:ring-2 focus:ring-emerald-300"
+        >
+          <div className="flex items-center justify-between">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
+              <ShieldCheck size={19} />
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">
+              Controlled
+            </span>
+          </div>
+          <p className="mt-4 text-sm font-semibold text-ink">HR governance</p>
+          <p className="mt-1 text-xs leading-5 text-ink-faint">
+            Role-aware controls keep sensitive workforce configuration
+            protected.
+          </p>
+          <span className="mt-3 block text-xs font-semibold text-emerald-500">
+            Open Governance →
+          </span>
+        </button>
+
+        <button
+          type="button"
+          disabled={!canManageCycles}
+          onClick={() => openTab("cycles", canManageCycles)}
+          className="group rounded-[22px] border border-amber-100 bg-white p-5 text-left shadow-[0_12px_35px_-24px_rgba(245,158,11,0.45)] transition-all hover:-translate-y-1 hover:border-amber-200 hover:shadow-[0_20px_45px_-24px_rgba(245,158,11,0.4)] focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <div className="flex items-center justify-between">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 text-amber-600">
+              <ClipboardList size={19} />
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500">
+              Reviews
+            </span>
+          </div>
+          <p className="mt-4 text-sm font-semibold text-ink">
+            HR calendar & reviews
+          </p>
+          <p className="mt-1 text-xs leading-5 text-ink-faint">
+            Manage performance review cycles and keep HR planning organized.
+          </p>
+          <span className="mt-3 block text-xs font-semibold text-amber-500">
+            Open Review Cycles →
+          </span>
+        </button>
+      </section>
+
+      <section className="rounded-[24px] border border-line/70 bg-white/80 p-2 shadow-[0_15px_40px_-30px_rgba(15,23,42,0.35)] backdrop-blur">
+        <Tabs
+          tabs={tabs}
+          active={tab}
+          onChange={setTab}
+          className="w-full overflow-x-auto"
+        />
+      </section>
+
+      <div className="min-w-0">
+        {tab === "departments" && canManageOrganization && <DepartmentsTab />}
+        {tab === "designations" && canManageOrganization && <DesignationsTab />}
+        {tab === "holidays" && canManageOrganization && <HolidaysTab />}
+        {tab === "cycles" && canManageCycles && <CyclesTab />}
+        {tab === "shifts" && canManageShifts && <ShiftsTab />}
+        {tab === "governance" && <GovernanceSettings />}
+
+      </div>
     </div>
   );
 }

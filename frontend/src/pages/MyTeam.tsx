@@ -64,21 +64,33 @@ export default function MyTeam() {
   ];
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="font-display text-xl font-medium text-ink">My Team</h1>
-
-        <p className="mt-1 text-[13px] text-ink-faint">
-          View and monitor your direct team members.
-        </p>
+    <div className="premium-page space-y-6">
+      <div className="relative overflow-hidden rounded-[26px] border border-violet-200/70 bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 p-6 text-white shadow-[0_22px_60px_-30px_rgba(79,70,229,0.65)] sm:p-7">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+        <div className="relative">
+          <div className="mb-2 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-white/85 backdrop-blur">
+            Manager Workspace
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h1 className="font-display text-3xl font-semibold tracking-tight">My Team</h1>
+              <p className="mt-1 text-sm text-white/75">View and monitor your direct team members.</p>
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-xs text-white/80 backdrop-blur">
+              Team management & approvals
+            </div>
+          </div>
+        </div>
       </div>
 
-      <Tabs
-        tabs={tabs}
-        active={tab}
-        onChange={(value) => setTab(value as TeamTab)}
-        className="mb-6 w-fit"
-      />
+      <div className="rounded-[20px] border border-line/70 bg-white/90 p-1.5 shadow-[0_12px_35px_-28px_rgba(15,23,42,0.5)] backdrop-blur">
+        <Tabs
+          tabs={tabs}
+          active={tab}
+          onChange={(value) => setTab(value as TeamTab)}
+          className="w-full overflow-x-auto"
+        />
+      </div>
 
       {tab === "team" && (
         <TeamMembers
@@ -142,7 +154,7 @@ function TeamMembers({
   }, [teamMembers, search]);
 
   return (
-    <Card>
+    <Card className="border-violet-100/80 shadow-[0_18px_45px_-32px_rgba(79,70,229,0.55)]">
       <CardHeader
         title="Direct team members"
         subtitle="Employees who report directly to you."
@@ -153,7 +165,7 @@ function TeamMembers({
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search team..."
             aria-label="Search direct team members"
-            className="h-9 w-48 rounded-xl border border-line bg-white px-3 text-sm outline-none focus:border-brand-500"
+            className="h-10 w-48 rounded-xl border border-violet-100 bg-slate-50/80 px-3 text-sm outline-none transition focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
           />
         }
       />
@@ -199,7 +211,7 @@ function TeamMembers({
           {filteredTeamMembers.map((employee) => (
             <div
               key={employee.id}
-              className="flex flex-col gap-4 rounded-2xl border border-line/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              className="group flex flex-col gap-4 rounded-2xl border border-line/60 bg-gradient-to-r from-white to-violet-50/30 px-4 py-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-[0_12px_30px_-22px_rgba(79,70,229,0.55)] sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex items-center gap-3">
                 <Avatar
@@ -343,7 +355,7 @@ function TeamLeaveRequests({ managerId }: { managerId: string }) {
   });
 
   return (
-    <Card>
+    <Card className="border-emerald-100/80 shadow-[0_18px_45px_-32px_rgba(16,185,129,0.45)]">
       <CardHeader
         title="Team leave requests"
         subtitle="Review leave requests submitted by your direct reports."
@@ -351,7 +363,7 @@ function TeamLeaveRequests({ managerId }: { managerId: string }) {
           <select
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
-            className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+            className="h-10 rounded-xl border border-emerald-100 bg-emerald-50/40 px-3 text-sm outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
           >
             <option value="PENDING">Pending</option>
 
@@ -402,7 +414,7 @@ function TeamLeaveRequests({ managerId }: { managerId: string }) {
               return (
                 <div
                   key={request.id}
-                  className="flex flex-col gap-4 rounded-2xl border border-line/60 px-4 py-3 lg:flex-row lg:items-center lg:justify-between"
+                  className="flex flex-col gap-4 rounded-2xl border border-line/60 bg-gradient-to-r from-white to-emerald-50/25 px-4 py-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-[0_12px_30px_-22px_rgba(16,185,129,0.5)] lg:flex-row lg:items-center lg:justify-between"
                 >
                   <div className="flex items-center gap-3">
                     <Avatar
@@ -596,7 +608,7 @@ function TeamAttendance({ managerId }: { managerId: string }) {
       {/* Summary */}
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
+        <Card className="border-violet-100/80 bg-gradient-to-br from-white to-violet-50/45 shadow-[0_14px_35px_-26px_rgba(79,70,229,0.5)]">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[12px] text-ink-faint">Team Members</p>
@@ -610,7 +622,7 @@ function TeamAttendance({ managerId }: { managerId: string }) {
           </div>
         </Card>
 
-        <Card>
+        <Card className="border-emerald-100/80 bg-gradient-to-br from-white to-emerald-50/45 shadow-[0_14px_35px_-26px_rgba(16,185,129,0.45)]">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[12px] text-ink-faint">Present</p>
@@ -624,7 +636,7 @@ function TeamAttendance({ managerId }: { managerId: string }) {
           </div>
         </Card>
 
-        <Card>
+        <Card className="border-amber-100/80 bg-gradient-to-br from-white to-amber-50/45 shadow-[0_14px_35px_-26px_rgba(245,158,11,0.45)]">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[12px] text-ink-faint">Exceptions</p>
@@ -641,7 +653,7 @@ function TeamAttendance({ managerId }: { managerId: string }) {
 
       {/* Attendance */}
 
-      <Card>
+      <Card className="border-blue-100/80 shadow-[0_18px_45px_-32px_rgba(59,130,246,0.45)]">
         <CardHeader
           title="Team attendance"
           subtitle="Monitor attendance records and exceptions for your direct reports."
@@ -650,7 +662,7 @@ function TeamAttendance({ managerId }: { managerId: string }) {
               type="date"
               value={selectedDate}
               onChange={(event) => setSelectedDate(event.target.value)}
-              className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+              className="h-10 rounded-xl border border-blue-100 bg-blue-50/40 px-3 text-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"
             />
           }
         />
@@ -719,7 +731,7 @@ function TeamAttendance({ managerId }: { managerId: string }) {
                           !record.checkOut));
 
                     return (
-                      <tr key={employee.id} className="border-t border-line/60">
+                      <tr key={employee.id} className="border-t border-line/60 transition-colors hover:bg-slate-50/70">
                         <td className="py-3">
                           <div className="flex items-center gap-2.5">
                             <Avatar

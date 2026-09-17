@@ -27,13 +27,21 @@ import { Tabs } from "@/components/ui/Tabs";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Modal } from "@/components/ui/Modal";
-import { TextField, SelectField, TextareaField } from "@/components/ui/Field";
+import {
+  TextField,
+  SelectField,
+  TextareaField,
+} from "@/components/ui/Field";
 import { ProgressRing } from "@/components/ui/ProgressRing";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, monthName, cx } from "@/lib/format";
 import ExpiryBadge from "@/components/common/ExpiryBadge";
 
-const MANAGER_ROLES: string[] = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
+const MANAGER_ROLES: string[] = [
+  "SUPER_ADMIN",
+  "HR_ADMIN",
+  "MANAGER",
+];
 
 const applySchema = z.object({
   leaveTypeId: z.string().min(1, "Select a leave type"),
@@ -45,13 +53,16 @@ const applySchema = z.object({
 type ApplyForm = z.infer<typeof applySchema>;
 
 export default function Leave() {
-  const { hasPermission } = useAuth();
+  const { user } = useAuth();
   const [params] = useSearchParams();
 
-  const isManager = hasPermission("leave.manage");
+  const isManager =
+    !!user && MANAGER_ROLES.includes(user.role);
 
   const [tab, setTab] = useState(
-    params.get("tab") === "team" && isManager ? "team" : "mine",
+    params.get("tab") === "team" && isManager
+      ? "team"
+      : "mine",
   );
 
   const [applyOpen, setApplyOpen] = useState(false);
@@ -69,7 +80,7 @@ export default function Leave() {
   ];
 
   return (
-    <div>
+    <div className="premium-page space-y-1">
       <PageHeader
         title="Leave"
         subtitle="Apply for leave, track balances, and manage approvals."
@@ -83,7 +94,12 @@ export default function Leave() {
         }
       />
 
-      <Tabs tabs={tabs} active={tab} onChange={setTab} className="mb-6 w-fit" />
+      <Tabs
+        tabs={tabs}
+        active={tab}
+        onChange={setTab}
+        className="mb-6 w-fit"
+      />
 
       {tab === "mine" && <MyLeave />}
       {tab === "team" && isManager && <TeamApprovals />}
@@ -91,7 +107,10 @@ export default function Leave() {
       {tab === "patterns" && isManager && <LeavePatternDetection />}
       {tab === "calendar" && <LeaveCalendar />}
 
-      <ApplyModal open={applyOpen} onClose={() => setApplyOpen(false)} />
+      <ApplyModal
+        open={applyOpen}
+        onClose={() => setApplyOpen(false)}
+      />
     </div>
   );
 }
@@ -100,13 +119,19 @@ function MyLeave() {
   const { user } = useAuth();
   const employeeId = user?.employee?.id;
 
-  const { data: balances, isLoading: balancesLoading } = useQuery({
+  const {
+    data: balances,
+    isLoading: balancesLoading,
+  } = useQuery({
     queryKey: ["leave", "balances", "mine"],
     queryFn: () => LeaveApi.balances(employeeId),
     enabled: !!employeeId,
   });
 
-  const { data: requests, isLoading: requestsLoading } = useQuery({
+  const {
+    data: requests,
+    isLoading: requestsLoading,
+  } = useQuery({
     queryKey: ["leave", "requests", "mine"],
     queryFn: () => LeaveApi.requests({ employeeId }),
     enabled: !!employeeId,
@@ -130,7 +155,8 @@ function MyLeave() {
       showToast("Leave request cancelled.");
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err) =>
+      showToast(getErrorMessage(err), "error"),
   });
 
   return (
@@ -138,20 +164,32 @@ function MyLeave() {
       <div className="grid gap-4 sm:grid-cols-3">
         {balancesLoading
           ? Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 rounded-3xl" />
+              <Skeleton
+                key={i}
+                className="h-28 rounded-3xl"
+              />
             ))
           : balances?.map((b) => (
-              <Card key={b.id} className="flex items-center justify-between">
+              <Card
+                key={b.id}
+                className="flex items-center justify-between bg-gradient-to-br from-white via-white to-[#F8F7FF]"
+              >
                 <div>
-                  <p className="text-[13px] font-medium text-ink">{b.name}</p>
+                  <p className="text-[13px] font-medium text-ink">
+                    {b.name}
+                  </p>
 
                   <p className="mt-1 text-[12px] text-ink-faint">
-                    {b.allotted - b.used} of {b.allotted} days left
+                    {b.allotted - b.used} of {b.allotted} days
+                    left
                   </p>
                 </div>
 
                 <ProgressRing
-                  value={((b.allotted - b.used) / b.allotted) * 100}
+                  value={
+                    ((b.allotted - b.used) / b.allotted) *
+                    100
+                  }
                   size={48}
                   strokeWidth={5}
                   color={b.colorHex}
@@ -177,7 +215,7 @@ function MyLeave() {
             {(activeRequests ?? []).map((r) => (
               <div
                 key={r.id}
-                className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
+                className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50/60 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200/70 hover:shadow-[0_10px_24px_rgba(91,79,229,0.08)]"
               >
                 <div>
                   <p className="text-[13px] font-medium text-ink">
@@ -185,7 +223,8 @@ function MyLeave() {
                   </p>
 
                   <p className="text-[12px] text-ink-faint">
-                    {formatDate(r.startDate)} – {formatDate(r.endDate)}
+                    {formatDate(r.startDate)} –{" "}
+                    {formatDate(r.endDate)}
                   </p>
 
                   <p className="mt-0.5 text-[12px] text-ink-faint">
@@ -205,7 +244,9 @@ function MyLeave() {
 
                   {r.status === "PENDING" && (
                     <button
-                      onClick={() => cancelMutation.mutate(r.id)}
+                      onClick={() =>
+                        cancelMutation.mutate(r.id)
+                      }
                       className="text-[11px] font-medium text-danger-500 hover:underline"
                     >
                       Cancel
@@ -262,7 +303,8 @@ function TeamApprovals() {
       showToast("Decision recorded.");
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err) =>
+      showToast(getErrorMessage(err), "error"),
   });
 
   return (
@@ -274,7 +316,7 @@ function TeamApprovals() {
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+            className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
           >
             <option value="PENDING">Pending</option>
             <option value="APPROVED">Approved</option>
@@ -303,7 +345,7 @@ function TeamApprovals() {
           {(activeRequests ?? []).map((r) => (
             <div
               key={r.id}
-              className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
+              className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50/60 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200/70 hover:shadow-[0_10px_24px_rgba(91,79,229,0.08)]"
             >
               <div className="flex items-center gap-3">
                 <Avatar
@@ -319,11 +361,14 @@ function TeamApprovals() {
                   </p>
 
                   <p className="text-[12px] text-ink-faint">
-                    {r.leaveTypeName} · {formatDate(r.startDate)} –{" "}
+                    {r.leaveTypeName} ·{" "}
+                    {formatDate(r.startDate)} –{" "}
                     {formatDate(r.endDate)} ({r.totalDays}d)
                   </p>
 
-                  <p className="text-[12px] text-ink-faint">"{r.reason}"</p>
+                  <p className="text-[12px] text-ink-faint">
+                    "{r.reason}"
+                  </p>
                 </div>
               </div>
 
@@ -393,10 +438,20 @@ function LeaveAnalytics() {
    * Employee selector follows the same pattern used by
    * Attendance AI.
    */
-  const canSelectEmployee = !!user && MANAGER_ROLES.includes(user.role);
+  const canSelectEmployee =
+    !!user && MANAGER_ROLES.includes(user.role);
 
-  const { data: employeeData, isLoading: employeesLoading } = useQuery({
-    queryKey: ["leave", "ai", "employees", user?.role, user?.employee?.id],
+  const {
+    data: employeeData,
+    isLoading: employeesLoading,
+  } = useQuery({
+    queryKey: [
+      "leave",
+      "ai",
+      "employees",
+      user?.role,
+      user?.employee?.id,
+    ],
     queryFn: async () => {
       const result = await EmployeesApi.list({
         page: 1,
@@ -406,21 +461,38 @@ function LeaveAnalytics() {
       return result;
     },
     enabled:
-      canSelectEmployee && (user?.role !== "MANAGER" || !!user?.employee?.id),
+      canSelectEmployee &&
+      (user?.role !== "MANAGER" || !!user?.employee?.id),
   });
 
   const employees = employeeData?.employees ?? [];
-  const validDateRange = !!startDate && !!endDate && startDate <= endDate;
+  const validDateRange =
+    !!startDate &&
+    !!endDate &&
+    startDate <= endDate;
 
   const {
     data: analytics,
     isFetching,
     isError,
   } = useQuery({
-    queryKey: ["leave", "ai-analytics", startDate, endDate, employeeId],
+    queryKey: [
+      "leave",
+      "ai-analytics",
+      startDate,
+      endDate,
+      employeeId,
+    ],
     queryFn: () =>
-      LeaveApi.aiAnalytics(startDate, endDate, employeeId || undefined),
-    enabled: !!user && MANAGER_ROLES.includes(user.role) && validDateRange,
+      LeaveApi.aiAnalytics(
+        startDate,
+        endDate,
+        employeeId || undefined,
+      ),
+    enabled:
+      !!user &&
+      MANAGER_ROLES.includes(user.role) &&
+      validDateRange,
     staleTime: 30_000,
   });
 
@@ -458,14 +530,20 @@ function LeaveAnalytics() {
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               disabled={employeesLoading}
-              className="h-10 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink"
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm focus:border-brand-300 focus:ring-2 focus:ring-brand-100 text-ink"
             >
               <option value="">Overall</option>
 
               {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.firstName} {employee.lastName}
-                  {employee.employeeCode ? ` · ${employee.employeeCode}` : ""}
+                <option
+                  key={employee.id}
+                  value={employee.id}
+                >
+                  {employee.firstName}{" "}
+                  {employee.lastName}
+                  {employee.employeeCode
+                    ? ` · ${employee.employeeCode}`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -484,7 +562,10 @@ function LeaveAnalytics() {
       ) : isFetching ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-28 rounded-3xl" />
+            <Skeleton
+              key={index}
+              className="h-28 rounded-3xl"
+            />
           ))}
         </div>
       ) : isError ? (
@@ -507,22 +588,28 @@ function LeaveAnalytics() {
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
-              <p className="text-[12px] text-ink-faint">Total requests</p>
-              <p className="mt-1 text-2xl font-semibold text-ink">
+              <p className="text-[12px] text-ink-faint">
+                Total requests
+              </p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
                 {analytics.overview.totalRequests}
               </p>
             </Card>
 
             <Card>
-              <p className="text-[12px] text-ink-faint">Approved leave days</p>
-              <p className="mt-1 text-2xl font-semibold text-ink">
+              <p className="text-[12px] text-ink-faint">
+                Approved leave days
+              </p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
                 {formatNumber(analytics.overview.approvedLeaveDays)}
               </p>
             </Card>
 
             <Card>
-              <p className="text-[12px] text-ink-faint">Approval rate</p>
-              <p className="mt-1 text-2xl font-semibold text-ink">
+              <p className="text-[12px] text-ink-faint">
+                Approval rate
+              </p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
                 {formatNumber(analytics.overview.approvalRate)}%
               </p>
             </Card>
@@ -531,9 +618,13 @@ function LeaveAnalytics() {
               <p className="text-[12px] text-ink-faint">
                 Avg. approved duration
               </p>
-              <p className="mt-1 text-2xl font-semibold text-ink">
-                {formatNumber(analytics.overview.averageApprovedLeaveDuration)}{" "}
-                <span className="text-sm font-normal text-ink-faint">days</span>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+                {formatNumber(
+                  analytics.overview.averageApprovedLeaveDuration,
+                )}{" "}
+                <span className="text-sm font-normal text-ink-faint">
+                  days
+                </span>
               </p>
             </Card>
           </div>
@@ -553,10 +644,14 @@ function LeaveAnalytics() {
               ].map(([label, value]) => (
                 <div
                   key={label}
-                  className="rounded-2xl border border-line/60 bg-surface px-4 py-3"
+                  className="rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50/70 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.035)]"
                 >
-                  <p className="text-[11px] text-ink-faint">{label}</p>
-                  <p className="mt-1 text-lg font-semibold text-ink">{value}</p>
+                  <p className="text-[11px] text-ink-faint">
+                    {label}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-ink">
+                    {value}
+                  </p>
                 </div>
               ))}
             </div>
@@ -576,7 +671,7 @@ function LeaveAnalytics() {
                   {analytics.leaveTypes.map((item) => (
                     <div
                       key={item.leaveTypeId}
-                      className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
+                      className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50/60 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200/70 hover:shadow-[0_10px_24px_rgba(91,79,229,0.08)]"
                     >
                       <div>
                         <p className="text-[13px] font-medium text-ink">
@@ -609,7 +704,7 @@ function LeaveAnalytics() {
                   {analytics.monthlyTrend.map((item) => (
                     <div
                       key={item.month}
-                      className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
+                      className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50/60 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200/70 hover:shadow-[0_10px_24px_rgba(91,79,229,0.08)]"
                     >
                       <p className="text-[13px] font-medium text-ink">
                         {item.month}
@@ -648,17 +743,20 @@ function LeaveAnalytics() {
                 {analytics.topEmployees.map((employee) => (
                   <div
                     key={employee.employeeId}
-                    className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
+                    className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50/60 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200/70 hover:shadow-[0_10px_24px_rgba(91,79,229,0.08)]"
                   >
                     <div className="flex items-center gap-3">
                       <Avatar
-                        firstName={employee.firstName ?? ""}
-                        lastName={employee.lastName ?? ""}
-                        size="sm"
-                      />
+  firstName={employee.firstName ?? ""}
+  lastName={employee.lastName ?? ""}
+  size="sm"
+/>
                       <div>
                         <p className="text-[13px] font-medium text-ink">
-                          {[employee.firstName, employee.lastName]
+                          {[
+                            employee.firstName,
+                            employee.lastName,
+                          ]
                             .filter(Boolean)
                             .join(" ") || "Employee"}
                         </p>
@@ -683,9 +781,12 @@ function LeaveAnalytics() {
               title="AI summary"
               subtitle="Generated from the calculated leave analytics."
             />
-            <div className="flex items-start gap-3 rounded-2xl border border-brand-100 bg-brand-50/40 p-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-100">
-                <Sparkles size={17} className="text-brand-600" />
+            <div className="flex items-start gap-3 rounded-2xl border border-brand-100/80 bg-gradient-to-br from-[#F5F2FF] via-white to-[#F8F7FF] p-4 shadow-[0_7px_20px_rgba(91,79,229,0.06)]">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-100 to-white text-brand-700 shadow-sm">
+                <Sparkles
+                  size={17}
+                  className="text-brand-600"
+                />
               </div>
               <p className="text-[13px] leading-6 text-ink">
                 {analytics.explanation}
@@ -714,10 +815,20 @@ function LeavePatternDetection() {
 
   const [employeeId, setEmployeeId] = useState("");
 
-  const canSelectEmployee = !!user && MANAGER_ROLES.includes(user.role);
+  const canSelectEmployee =
+    !!user && MANAGER_ROLES.includes(user.role);
 
-  const { data: employeeData, isLoading: employeesLoading } = useQuery({
-    queryKey: ["leave", "ai", "employees", user?.role, user?.employee?.id],
+  const {
+    data: employeeData,
+    isLoading: employeesLoading,
+  } = useQuery({
+    queryKey: [
+      "leave",
+      "ai",
+      "employees",
+      user?.role,
+      user?.employee?.id,
+    ],
     queryFn: async () => {
       const result = await EmployeesApi.list({
         page: 1,
@@ -727,22 +838,39 @@ function LeavePatternDetection() {
       return result;
     },
     enabled:
-      canSelectEmployee && (user?.role !== "MANAGER" || !!user?.employee?.id),
+      canSelectEmployee &&
+      (user?.role !== "MANAGER" || !!user?.employee?.id),
   });
 
   const employees = employeeData?.employees ?? [];
 
-  const validDateRange = !!startDate && !!endDate && startDate <= endDate;
+  const validDateRange =
+    !!startDate &&
+    !!endDate &&
+    startDate <= endDate;
 
   const {
     data: patterns,
     isFetching,
     isError,
   } = useQuery({
-    queryKey: ["leave", "ai-patterns", startDate, endDate, employeeId],
+    queryKey: [
+      "leave",
+      "ai-patterns",
+      startDate,
+      endDate,
+      employeeId,
+    ],
     queryFn: () =>
-      LeaveApi.aiPatterns(startDate, endDate, employeeId || undefined),
-    enabled: !!user && MANAGER_ROLES.includes(user.role) && validDateRange,
+      LeaveApi.aiPatterns(
+        startDate,
+        endDate,
+        employeeId || undefined,
+      ),
+    enabled:
+      !!user &&
+      MANAGER_ROLES.includes(user.role) &&
+      validDateRange,
     staleTime: 30_000,
   });
 
@@ -790,14 +918,20 @@ function LeavePatternDetection() {
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               disabled={employeesLoading}
-              className="h-10 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink"
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm focus:border-brand-300 focus:ring-2 focus:ring-brand-100 text-ink"
             >
               <option value="">Overall</option>
 
               {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.firstName} {employee.lastName}
-                  {employee.employeeCode ? ` · ${employee.employeeCode}` : ""}
+                <option
+                  key={employee.id}
+                  value={employee.id}
+                >
+                  {employee.firstName}{" "}
+                  {employee.lastName}
+                  {employee.employeeCode
+                    ? ` · ${employee.employeeCode}`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -816,7 +950,10 @@ function LeavePatternDetection() {
       ) : isFetching ? (
         <div className="grid gap-4 sm:grid-cols-2">
           {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-32 rounded-3xl" />
+            <Skeleton
+              key={index}
+              className="h-32 rounded-3xl"
+            />
           ))}
         </div>
       ) : isError ? (
@@ -839,22 +976,28 @@ function LeavePatternDetection() {
         <>
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>
-              <p className="text-[12px] text-ink-faint">Patterns detected</p>
-              <p className="mt-1 text-2xl font-semibold text-ink">
+              <p className="text-[12px] text-ink-faint">
+                Patterns detected
+              </p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
                 {patterns.patterns.length}
               </p>
             </Card>
 
             <Card>
-              <p className="text-[12px] text-ink-faint">Employees analyzed</p>
-              <p className="mt-1 text-2xl font-semibold text-ink">
+              <p className="text-[12px] text-ink-faint">
+                Employees analyzed
+              </p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
                 {patterns.employeesAnalyzed}
               </p>
             </Card>
 
             <Card>
-              <p className="text-[12px] text-ink-faint">Requests analyzed</p>
-              <p className="mt-1 text-2xl font-semibold text-ink">
+              <p className="text-[12px] text-ink-faint">
+                Requests analyzed
+              </p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
                 {patterns.requestsAnalyzed}
               </p>
             </Card>
@@ -877,7 +1020,7 @@ function LeavePatternDetection() {
                 {patterns.patterns.map((pattern, index) => (
                   <div
                     key={`${pattern.type}-${pattern.employeeId ?? "org"}-${index}`}
-                    className="rounded-2xl border border-line/60 p-4"
+                    className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-[0_5px_18px_rgba(15,23,42,0.04)]"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
@@ -937,9 +1080,12 @@ function LeavePatternDetection() {
               subtitle="The AI explains detected patterns without changing the underlying data."
             />
 
-            <div className="flex items-start gap-3 rounded-2xl border border-brand-100 bg-brand-50/40 p-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-100">
-                <Sparkles size={17} className="text-brand-600" />
+            <div className="flex items-start gap-3 rounded-2xl border border-brand-100/80 bg-gradient-to-br from-[#F5F2FF] via-white to-[#F8F7FF] p-4 shadow-[0_7px_20px_rgba(91,79,229,0.06)]">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-100 to-white text-brand-700 shadow-sm">
+                <Sparkles
+                  size={17}
+                  className="text-brand-600"
+                />
               </div>
 
               <p className="text-[13px] leading-6 text-ink">
@@ -959,15 +1105,26 @@ function LeaveCalendar() {
   const month = cursor.getMonth() + 1;
   const year = cursor.getFullYear();
 
-  const { data: entries, isLoading } = useQuery({
+  const {
+    data: entries,
+    isLoading,
+  } = useQuery({
     queryKey: ["leave", "calendar", month, year],
     queryFn: () => LeaveApi.calendar(month, year),
   });
 
   const days = useMemo(() => {
-    const firstDay = new Date(year, month - 1, 1);
+    const firstDay = new Date(
+      year,
+      month - 1,
+      1,
+    );
 
-    const daysInMonth = new Date(year, month, 0).getDate();
+    const daysInMonth = new Date(
+      year,
+      month,
+      0,
+    ).getDate();
 
     const startOffset = firstDay.getDay();
 
@@ -979,9 +1136,17 @@ function LeaveCalendar() {
       cells.push({ date: null });
     }
 
-    for (let d = 1; d <= daysInMonth; d++) {
+    for (
+      let d = 1;
+      d <= daysInMonth;
+      d++
+    ) {
       cells.push({
-        date: new Date(year, month - 1, d),
+        date: new Date(
+          year,
+          month - 1,
+          d,
+        ),
       });
     }
 
@@ -991,11 +1156,14 @@ function LeaveCalendar() {
   function entriesForDay(date: Date) {
     if (!entries) return [];
 
-    const iso = date.toISOString().slice(0, 10);
+    const iso = date
+      .toISOString()
+      .slice(0, 10);
 
     return entries.filter(
       (e: any) =>
-        e.startDate.slice(0, 10) <= iso && e.endDate.slice(0, 10) >= iso,
+        e.startDate.slice(0, 10) <= iso &&
+        e.endDate.slice(0, 10) >= iso,
     );
   }
 
@@ -1009,7 +1177,15 @@ function LeaveCalendar() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setCursor(new Date(year, month - 2, 1))}
+              onClick={() =>
+                setCursor(
+                  new Date(
+                    year,
+                    month - 2,
+                    1,
+                  ),
+                )
+              }
             >
               <ChevronLeft size={14} />
             </Button>
@@ -1017,7 +1193,15 @@ function LeaveCalendar() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setCursor(new Date(year, month, 1))}
+              onClick={() =>
+                setCursor(
+                  new Date(
+                    year,
+                    month,
+                    1,
+                  ),
+                )
+              }
             >
               <ChevronRight size={14} />
             </Button>
@@ -1028,8 +1212,16 @@ function LeaveCalendar() {
       {isLoading ? (
         <Skeleton className="h-80 rounded-2xl" />
       ) : (
-        <div className="grid grid-cols-7 gap-1.5 text-center">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+        <div className="grid grid-cols-7 gap-1.5 rounded-2xl bg-slate-50/80 p-2 text-center">
+          {[
+            "Sun",
+            "Mon",
+            "Tue",
+            "Wed",
+            "Thu",
+            "Fri",
+            "Sat",
+          ].map((d) => (
             <div
               key={d}
               className="pb-1 text-[11px] font-medium text-ink-faint"
@@ -1043,43 +1235,50 @@ function LeaveCalendar() {
               return <div key={i} />;
             }
 
-            const dayEntries = entriesForDay(cell.date);
+            const dayEntries =
+              entriesForDay(cell.date);
 
             const isToday =
-              cell.date.toDateString() === new Date().toDateString();
+              cell.date.toDateString() ===
+              new Date().toDateString();
 
             return (
               <div
                 key={i}
                 className={cx(
                   "min-h-[72px] rounded-xl border border-line/50 p-1.5 text-left",
-                  isToday && "border-brand-300 bg-brand-50/40",
+                  isToday &&
+                    "border-brand-300 bg-brand-50/40",
                 )}
               >
                 <p
                   className={cx(
                     "text-[11px]",
-                    isToday ? "font-semibold text-brand-600" : "text-ink-faint",
+                    isToday
+                      ? "font-semibold text-brand-600"
+                      : "text-ink-faint",
                   )}
                 >
                   {cell.date.getDate()}
                 </p>
 
                 <div className="mt-1 flex flex-wrap gap-0.5">
-                  {dayEntries.slice(0, 3).map((e: any) => (
-                    <span
-                      key={e.id}
-                      title={`${e.firstName} ${e.lastName} — ${e.leaveTypeName}`}
-                      className="h-4 w-4 overflow-hidden rounded-full"
-                    >
-                      <Avatar
-                        firstName={e.firstName}
-                        lastName={e.lastName}
-                        src={e.avatarUrl}
-                        size="xs"
-                      />
-                    </span>
-                  ))}
+                  {dayEntries
+                    .slice(0, 3)
+                    .map((e: any) => (
+                      <span
+                        key={e.id}
+                        title={`${e.firstName} ${e.lastName} — ${e.leaveTypeName}`}
+                        className="h-4 w-4 overflow-hidden rounded-full"
+                      >
+                        <Avatar
+                          firstName={e.firstName}
+                          lastName={e.lastName}
+                          src={e.avatarUrl}
+                          size="xs"
+                        />
+                      </span>
+                    ))}
 
                   {dayEntries.length > 3 && (
                     <span className="text-[9px] text-ink-faint">
@@ -1096,16 +1295,25 @@ function LeaveCalendar() {
   );
 }
 
-function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function ApplyModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   const { user } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
   const employeeId = user?.employee?.id;
 
-  const [generatingReason, setGeneratingReason] = useState(false);
+  const [generatingReason, setGeneratingReason] =
+    useState(false);
 
-  const { data: leaveTypes } = useQuery({
+  const {
+    data: leaveTypes,
+  } = useQuery({
     queryKey: ["leave-types"],
     queryFn: LeaveApi.types,
     enabled: open,
@@ -1133,24 +1341,42 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const startDate = watch("startDate");
   const endDate = watch("endDate");
 
-  const validDateRange = !!startDate && !!endDate && startDate <= endDate;
+  const validDateRange =
+    !!startDate &&
+    !!endDate &&
+    startDate <= endDate;
 
   const {
     data: conflictAnalysis,
     isFetching: conflictLoading,
     isError: conflictError,
   } = useQuery({
-    queryKey: ["leave", "ai-conflict", employeeId, startDate, endDate],
+    queryKey: [
+      "leave",
+      "ai-conflict",
+      employeeId,
+      startDate,
+      endDate,
+    ],
 
-    queryFn: () => LeaveApi.checkConflict(employeeId!, startDate, endDate),
+    queryFn: () =>
+      LeaveApi.checkConflict(
+        employeeId!,
+        startDate,
+        endDate,
+      ),
 
-    enabled: open && !!employeeId && validDateRange,
+    enabled:
+      open &&
+      !!employeeId &&
+      validDateRange,
 
     staleTime: 30_000,
   });
 
   const handleGenerateReason = async () => {
-    const reason = getValues("reason")?.trim();
+    const reason =
+      getValues("reason")?.trim();
 
     if (!reason || reason.length < 3) {
       setError("reason", {
@@ -1165,16 +1391,27 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
       setGeneratingReason(true);
       clearErrors("reason");
 
-      const generatedReason = await LeaveApi.generateReason(reason);
+      const generatedReason =
+        await LeaveApi.generateReason(reason);
 
-      setValue("reason", generatedReason, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
+      setValue(
+        "reason",
+        generatedReason,
+        {
+          shouldValidate: true,
+          shouldDirty: true,
+        },
+      );
     } catch (error) {
-      console.error("Failed to generate leave reason:", error);
+      console.error(
+        "Failed to generate leave reason:",
+        error,
+      );
 
-      showToast("Unable to generate a professional reason.", "error");
+      showToast(
+        "Unable to generate a professional reason.",
+        "error",
+      );
     } finally {
       setGeneratingReason(false);
     }
@@ -1185,16 +1422,22 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     unknown,
     ApplyForm
   >({
-    mutationFn: async (values: ApplyForm) => {
+    mutationFn: async (
+      values: ApplyForm,
+    ) => {
       /*
        * Existing leave submission logic remains
        * unchanged.
        */
       return LeaveApi.apply({
-        leaveTypeId: values.leaveTypeId,
-        startDate: values.startDate,
-        endDate: values.endDate,
-        reason: values.reason,
+        leaveTypeId:
+          values.leaveTypeId,
+        startDate:
+          values.startDate,
+        endDate:
+          values.endDate,
+        reason:
+          values.reason,
       });
     },
 
@@ -1203,13 +1446,19 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         queryKey: ["leave"],
       });
 
-      showToast("Leave request submitted for approval.");
+      showToast(
+        "Leave request submitted for approval.",
+      );
 
       reset();
       onClose();
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err) =>
+      showToast(
+        getErrorMessage(err),
+        "error",
+      ),
   });
 
   return (
@@ -1219,13 +1468,20 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
       title="Apply for leave"
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>
+          <Button
+            variant="outline"
+            onClick={onClose}
+          >
             Cancel
           </Button>
 
           <Button
-            onClick={handleSubmit((v) => mutation.mutate(v))}
-            isLoading={mutation.isPending}
+            onClick={handleSubmit((v) =>
+              mutation.mutate(v),
+            )}
+            isLoading={
+              mutation.isPending
+            }
           >
             Submit request
           </Button>
@@ -1236,13 +1492,20 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         <SelectField
           label="Leave type"
           required
-          error={errors.leaveTypeId?.message}
+          error={
+            errors.leaveTypeId?.message
+          }
           {...register("leaveTypeId")}
         >
-          <option value="">Select leave type</option>
+          <option value="">
+            Select leave type
+          </option>
 
           {leaveTypes?.map((t) => (
-            <option key={t.id} value={t.id}>
+            <option
+              key={t.id}
+              value={t.id}
+            >
               {t.name}
             </option>
           ))}
@@ -1252,20 +1515,20 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
           <TextField
             label="Start date"
             type="date"
-            min="1900-01-01"
-            max="9999-12-31"
             required
-            error={errors.startDate?.message}
+            error={
+              errors.startDate?.message
+            }
             {...register("startDate")}
           />
 
           <TextField
             label="End date"
             type="date"
-            min="1900-01-01"
-            max="9999-12-31"
             required
-            error={errors.endDate?.message}
+            error={
+              errors.endDate?.message
+            }
             {...register("endDate")}
           />
         </div>
@@ -1284,25 +1547,36 @@ function ApplyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         <div>
           <div className="mb-1 flex items-center justify-between">
             <label className="text-sm font-medium text-ink">
-              Reason <span className="text-danger-500">*</span>
+              Reason{" "}
+              <span className="text-danger-500">
+                *
+              </span>
             </label>
 
             <button
               type="button"
-              onClick={handleGenerateReason}
-              disabled={generatingReason}
+              onClick={
+                handleGenerateReason
+              }
+              disabled={
+                generatingReason
+              }
               className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Sparkles size={13} />
 
-              {generatingReason ? "Generating..." : "Generate with AI"}
+              {generatingReason
+                ? "Generating..."
+                : "Generate with AI"}
             </button>
           </div>
 
           <TextareaField
             label=""
             required
-            error={errors.reason?.message}
+            error={
+              errors.reason?.message
+            }
             {...register("reason")}
           />
         </div>
@@ -1317,23 +1591,28 @@ function LeaveConflictCard({
   error,
 }: {
   analysis:
-    | (Awaited<ReturnType<typeof LeaveApi.checkConflict>> & {
-        approvalRecommendation?: "APPROVE" | "REVIEW" | "DO_NOT_APPROVE";
+    | (Awaited<
+        ReturnType<typeof LeaveApi.checkConflict>
+      > & {
+        approvalRecommendation?:
+          | "APPROVE"
+          | "REVIEW"
+          | "DO_NOT_APPROVE";
         approvalReasons?: string[];
         teamAvailability?: {
           totalTeamMembers: number;
           availableTeamMembers: number;
           unavailableTeamMembers: number;
           unavailableEmployees: Array<{
-            employeeId: string;
-            firstName?: string | null;
-            lastName?: string | null;
-            leaveTypeName?: string | null;
-            status?: string;
-            overlapStartDate: string;
-            overlapEndDate: string;
-            overlappingDays: number;
-          }>;
+          employeeId: string;
+          firstName?: string | null;
+          lastName?: string | null;
+          leaveTypeName?: string | null;
+          status?: string;
+          overlapStartDate: string;
+          overlapEndDate: string;
+          overlappingDays: number;
+}>;
         };
       })
     | undefined;
@@ -1342,10 +1621,13 @@ function LeaveConflictCard({
 }) {
   if (loading) {
     return (
-      <div className="rounded-2xl border border-line/60 bg-surface p-4">
+      <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white to-slate-50/70 p-4 shadow-[0_5px_18px_rgba(15,23,42,0.04)]">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50">
-            <Sparkles size={17} className="text-brand-600" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-100 to-brand-50 text-brand-700 shadow-sm">
+            <Sparkles
+              size={17}
+              className="text-brand-600"
+            />
           </div>
 
           <div>
@@ -1354,8 +1636,8 @@ function LeaveConflictCard({
             </p>
 
             <p className="mt-0.5 text-[11px] text-ink-faint">
-              Checking overlapping team leave and generating an approval
-              recommendation.
+              Checking overlapping team leave and generating an
+              approval recommendation.
             </p>
           </div>
         </div>
@@ -1365,10 +1647,13 @@ function LeaveConflictCard({
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-line/60 bg-surface p-4">
+      <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white to-slate-50/70 p-4 shadow-[0_5px_18px_rgba(15,23,42,0.04)]">
         <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50">
-            <AlertTriangle size={17} className="text-amber-600" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-100 to-white text-amber-700 shadow-sm">
+            <AlertTriangle
+              size={17}
+              className="text-amber-600"
+            />
           </div>
 
           <div>
@@ -1377,8 +1662,8 @@ function LeaveConflictCard({
             </p>
 
             <p className="mt-0.5 text-[11px] leading-5 text-ink-faint">
-              The conflict analysis is temporarily unavailable. You can still
-              submit your leave request normally.
+              The conflict analysis is temporarily unavailable.
+              You can still submit your leave request normally.
             </p>
           </div>
         </div>
@@ -1390,40 +1675,55 @@ function LeaveConflictCard({
     return null;
   }
 
-  const recommendation = analysis.approvalRecommendation;
+  const recommendation =
+    analysis.approvalRecommendation;
 
   const recommendationStyles = {
     APPROVE: {
-      container: "border-emerald-200 bg-emerald-50/70",
-      icon: "bg-emerald-100 text-emerald-600",
-      title: "text-emerald-800",
-      text: "text-emerald-700",
+      container:
+        "border-emerald-200 bg-emerald-50/70",
+      icon:
+        "bg-emerald-100 text-emerald-600",
+      title:
+        "text-emerald-800",
+      text:
+        "text-emerald-700",
       label: "APPROVE",
     },
 
     REVIEW: {
-      container: "border-amber-200 bg-amber-50/70",
-      icon: "bg-amber-100 text-amber-600",
-      title: "text-amber-800",
-      text: "text-amber-700",
+      container:
+        "border-amber-200 bg-amber-50/70",
+      icon:
+        "bg-amber-100 text-amber-600",
+      title:
+        "text-amber-800",
+      text:
+        "text-amber-700",
       label: "REVIEW",
     },
 
     DO_NOT_APPROVE: {
-      container: "border-red-200 bg-red-50/70",
-      icon: "bg-red-100 text-red-600",
-      title: "text-red-800",
-      text: "text-red-700",
+      container:
+        "border-red-200 bg-red-50/70",
+      icon:
+        "bg-red-100 text-red-600",
+      title:
+        "text-red-800",
+      text:
+        "text-red-700",
       label: "DO NOT APPROVE",
     },
   };
 
-  const recommendationStyle = recommendation
-    ? recommendationStyles[recommendation]
-    : recommendationStyles.REVIEW;
+  const recommendationStyle =
+    recommendation
+      ? recommendationStyles[recommendation]
+      : recommendationStyles.REVIEW;
 
   const unavailableEmployees =
-    analysis.teamAvailability?.unavailableEmployees ?? [];
+    analysis.teamAvailability?.unavailableEmployees ??
+    [];
 
   /*
    * ---------------------------------------------------------
@@ -1433,10 +1733,13 @@ function LeaveConflictCard({
   if (!analysis.hasConflict) {
     return (
       <div className="space-y-3">
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+        <div className="rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/80 via-white to-white p-4 shadow-[0_7px_20px_rgba(16,185,129,0.06)]">
           <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
-              <CheckCircle2 size={17} className="text-emerald-600" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-100 to-white text-emerald-700 shadow-sm">
+              <CheckCircle2
+                size={17}
+                className="text-emerald-600"
+              />
             </div>
 
             <div className="min-w-0">
@@ -1495,24 +1798,26 @@ function LeaveConflictCard({
                     recommendationStyle.text,
                   )}
                 >
-                  No overlapping team leave was detected for the requested
-                  period.
+                  No overlapping team leave was detected for
+                  the requested period.
                 </p>
 
                 {analysis.approvalReasons &&
                   analysis.approvalReasons.length > 0 && (
                     <div className="mt-3 space-y-1.5">
-                      {analysis.approvalReasons.map((reason, index) => (
-                        <p
-                          key={index}
-                          className={cx(
-                            "text-[11px] leading-5",
-                            recommendationStyle.text,
-                          )}
-                        >
-                          • {reason}
-                        </p>
-                      ))}
+                      {analysis.approvalReasons.map(
+                        (reason, index) => (
+                          <p
+                            key={index}
+                            className={cx(
+                              "text-[11px] leading-5",
+                              recommendationStyle.text,
+                            )}
+                          >
+                            • {reason}
+                          </p>
+                        ),
+                      )}
                     </div>
                   )}
 
@@ -1522,7 +1827,8 @@ function LeaveConflictCard({
                     recommendationStyle.text,
                   )}
                 >
-                  Final approval remains with the authorized HR/manager.
+                  Final approval remains with the authorized
+                  HR/manager.
                 </p>
               </div>
             </div>
@@ -1540,36 +1846,57 @@ function LeaveConflictCard({
 
   const impactClasses = {
     LOW: {
-      container: "border-amber-200 bg-amber-50/60",
-      icon: "bg-amber-100 text-amber-600",
-      title: "text-amber-800",
-      text: "text-amber-700",
-      badge: "bg-amber-100 text-amber-700",
+      container:
+        "border-amber-200 bg-amber-50/60",
+      icon:
+        "bg-amber-100 text-amber-600",
+      title:
+        "text-amber-800",
+      text:
+        "text-amber-700",
+      badge:
+        "bg-amber-100 text-amber-700",
     },
 
     MEDIUM: {
-      container: "border-orange-200 bg-orange-50/60",
-      icon: "bg-orange-100 text-orange-600",
-      title: "text-orange-800",
-      text: "text-orange-700",
-      badge: "bg-orange-100 text-orange-700",
+      container:
+        "border-orange-200 bg-orange-50/60",
+      icon:
+        "bg-orange-100 text-orange-600",
+      title:
+        "text-orange-800",
+      text:
+        "text-orange-700",
+      badge:
+        "bg-orange-100 text-orange-700",
     },
 
     HIGH: {
-      container: "border-red-200 bg-red-50/60",
-      icon: "bg-red-100 text-red-600",
-      title: "text-red-800",
-      text: "text-red-700",
-      badge: "bg-red-100 text-red-700",
+      container:
+        "border-red-200 bg-red-50/60",
+      icon:
+        "bg-red-100 text-red-600",
+      title:
+        "text-red-800",
+      text:
+        "text-red-700",
+      badge:
+        "bg-red-100 text-red-700",
     },
   };
 
-  const styles = impactClasses[analysis.impactLevel];
+  const styles =
+    impactClasses[analysis.impactLevel];
 
   return (
     <div className="space-y-3">
       {/* Team conflict */}
-      <div className={cx("rounded-2xl border p-4", styles.container)}>
+      <div
+        className={cx(
+          "rounded-2xl border p-4",
+          styles.container,
+        )}
+      >
         <div className="flex items-start gap-3">
           <div
             className={cx(
@@ -1582,7 +1909,12 @@ function LeaveConflictCard({
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className={cx("text-[13px] font-semibold", styles.title)}>
+              <p
+                className={cx(
+                  "text-[13px] font-semibold",
+                  styles.title,
+                )}
+              >
                 Team leave conflict detected
               </p>
 
@@ -1605,7 +1937,10 @@ function LeaveConflictCard({
               >
                 <Users size={12} />
                 {analysis.affectedEmployees} employee
-                {analysis.affectedEmployees !== 1 ? "s" : ""} affected
+                {analysis.affectedEmployees !== 1
+                  ? "s"
+                  : ""}{" "}
+                affected
               </div>
 
               <div
@@ -1616,50 +1951,74 @@ function LeaveConflictCard({
               >
                 <CalendarDays size={12} />
                 {analysis.affectedDays} overlapping day
-                {analysis.affectedDays !== 1 ? "s" : ""}
+                {analysis.affectedDays !== 1
+                  ? "s"
+                  : ""}
               </div>
             </div>
 
-            <p className={cx("mt-2 text-[12px] leading-5", styles.text)}>
+            <p
+              className={cx(
+                "mt-2 text-[12px] leading-5",
+                styles.text,
+              )}
+            >
               {analysis.explanation}
             </p>
 
             {/* Existing conflicts */}
             {analysis.conflicts.length > 0 && (
               <div className="mt-3 space-y-2">
-                {analysis.conflicts.map((conflict) => (
-                  <div
-                    key={`${conflict.employeeId}-${conflict.startDate}-${conflict.endDate}`}
-                    className="rounded-xl border border-black/5 bg-white/70 px-3 py-2"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-[11px] font-medium text-ink">
-                          {[conflict.firstName, conflict.lastName]
-                            .filter(Boolean)
-                            .join(" ") || "Team member"}
-                        </p>
+                {analysis.conflicts.map(
+                  (conflict) => (
+                    <div
+                      key={`${conflict.employeeId}-${conflict.startDate}-${conflict.endDate}`}
+                      className="rounded-xl border border-black/5 bg-white/70 px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-[11px] font-medium text-ink">
+                            {[
+                              conflict.firstName,
+                              conflict.lastName,
+                            ]
+                              .filter(Boolean)
+                              .join(" ") ||
+                              "Team member"}
+                          </p>
 
-                        <p className="mt-0.5 text-[10px] text-ink-faint">
-                          {conflict.leaveTypeName || "Leave"} ·{" "}
-                          {formatDate(conflict.startDate)} –{" "}
-                          {formatDate(conflict.endDate)}
-                        </p>
-                      </div>
+                          <p className="mt-0.5 text-[10px] text-ink-faint">
+                            {conflict.leaveTypeName ||
+                              "Leave"}{" "}
+                            ·{" "}
+                            {formatDate(
+                              conflict.startDate,
+                            )}{" "}
+                            –{" "}
+                            {formatDate(
+                              conflict.endDate,
+                            )}
+                          </p>
+                        </div>
 
-                      <div className="shrink-0 text-right">
-                        <p className="text-[10px] font-medium text-ink">
-                          {conflict.overlappingDays} day
-                          {conflict.overlappingDays !== 1 ? "s" : ""} overlap
-                        </p>
+                        <div className="shrink-0 text-right">
+                          <p className="text-[10px] font-medium text-ink">
+                            {conflict.overlappingDays} day
+                            {conflict.overlappingDays !==
+                            1
+                              ? "s"
+                              : ""}{" "}
+                            overlap
+                          </p>
 
-                        <p className="mt-0.5 text-[9px] text-ink-faint">
-                          {conflict.status}
-                        </p>
+                          <p className="mt-0.5 text-[9px] text-ink-faint">
+                            {conflict.status}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ),
+                )}
               </div>
             )}
           </div>
@@ -1668,9 +2027,12 @@ function LeaveConflictCard({
 
       {/* Team availability */}
       {analysis.teamAvailability && (
-        <div className="rounded-2xl border border-line/60 bg-surface p-4">
+        <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white to-slate-50/70 p-4 shadow-[0_5px_18px_rgba(15,23,42,0.04)]">
           <div className="flex items-center gap-2">
-            <Users size={16} className="text-brand-600" />
+            <Users
+              size={16}
+              className="text-brand-600"
+            />
 
             <p className="text-[13px] font-semibold text-ink">
               Team availability
@@ -1678,25 +2040,40 @@ function LeaveConflictCard({
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-surface px-3 py-2 text-center">
+            <div className="rounded-xl border border-slate-200/60 bg-slate-50 px-3 py-2 text-center">
               <p className="text-lg font-semibold text-ink">
-                {analysis.teamAvailability.totalTeamMembers}
+                {
+                  analysis.teamAvailability
+                    .totalTeamMembers
+                }
               </p>
-              <p className="text-[9px] text-ink-faint">Total team</p>
+              <p className="text-[9px] text-ink-faint">
+                Total team
+              </p>
             </div>
 
-            <div className="rounded-xl bg-emerald-50 px-3 py-2 text-center">
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-center shadow-sm">
               <p className="text-lg font-semibold text-emerald-700">
-                {analysis.teamAvailability.availableTeamMembers}
+                {
+                  analysis.teamAvailability
+                    .availableTeamMembers
+                }
               </p>
-              <p className="text-[9px] text-emerald-600">Available</p>
+              <p className="text-[9px] text-emerald-600">
+                Available
+              </p>
             </div>
 
-            <div className="rounded-xl bg-red-50 px-3 py-2 text-center">
+            <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-center shadow-sm">
               <p className="text-lg font-semibold text-red-700">
-                {analysis.teamAvailability.unavailableTeamMembers}
+                {
+                  analysis.teamAvailability
+                    .unavailableTeamMembers
+                }
               </p>
-              <p className="text-[9px] text-red-600">Unavailable</p>
+              <p className="text-[9px] text-red-600">
+                Unavailable
+              </p>
             </div>
           </div>
 
@@ -1707,39 +2084,55 @@ function LeaveConflictCard({
               </p>
 
               <div className="space-y-2">
-                {unavailableEmployees.map((employee) => (
-                  <div
-                    key={`${employee.employeeId}-${employee.overlapStartDate}`}
-                    className="rounded-xl border border-line/60 bg-white px-3 py-2"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-medium text-ink">
-                          {[employee.firstName, employee.lastName]
-                            .filter(Boolean)
-                            .join(" ") || "Team member"}
-                        </p>
+                {unavailableEmployees.map(
+                  (employee) => (
+                    <div
+                      key={`${employee.employeeId}-${employee.overlapStartDate}`}
+                      className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 shadow-sm"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium text-ink">
+                            {[
+                              employee.firstName,
+                              employee.lastName,
+                            ]
+                              .filter(Boolean)
+                              .join(" ") ||
+                              "Team member"}
+                          </p>
 
-                        <p className="mt-0.5 text-[10px] text-ink-faint">
-                          {employee.leaveTypeName || "Leave"} ·{" "}
-                          {formatDate(employee.overlapStartDate)} -{" "}
-                          {formatDate(employee.overlapEndDate)}
-                        </p>
-                      </div>
+                          <p className="mt-0.5 text-[10px] text-ink-faint">
+                            {employee.leaveTypeName ||
+                              "Leave"}{" "}
+                            ·{" "}
+                            {formatDate(
+                              employee.overlapStartDate,
+                            )}{" "}
+                            -{" "}
+                            {formatDate(
+                              employee.overlapEndDate,
+                            )}
+                          </p>
+                        </div>
 
-                      <div className="shrink-0 text-right">
-                        <p className="text-[10px] font-medium text-ink">
-                          {employee.overlappingDays} day
-                          {employee.overlappingDays !== 1 ? "s" : ""}
-                        </p>
+                        <div className="shrink-0 text-right">
+                          <p className="text-[10px] font-medium text-ink">
+                            {employee.overlappingDays} day
+                            {employee.overlappingDays !==
+                            1
+                              ? "s"
+                              : ""}
+                          </p>
 
-                        <p className="text-[9px] text-ink-faint">
-                          {employee.status}
-                        </p>
+                          <p className="text-[9px] text-ink-faint">
+                            {employee.status}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ),
+                )}
               </div>
             </div>
           )}
@@ -1791,9 +2184,12 @@ function LeaveConflictCard({
                   recommendationStyle.text,
                 )}
               >
-                Based on the current team availability and overlapping leave,
-                the recommended action is{" "}
-                <strong>{recommendationStyle.label}</strong>.
+                Based on the current team availability and
+                overlapping leave, the recommended action is{" "}
+                <strong>
+                  {recommendationStyle.label}
+                </strong>
+                .
               </p>
 
               {analysis.approvalReasons &&
@@ -1808,17 +2204,19 @@ function LeaveConflictCard({
                       Why?
                     </p>
 
-                    {analysis.approvalReasons.map((reason, index) => (
-                      <p
-                        key={index}
-                        className={cx(
-                          "text-[11px] leading-5",
-                          recommendationStyle.text,
-                        )}
-                      >
-                        • {reason}
-                      </p>
-                    ))}
+                    {analysis.approvalReasons.map(
+                      (reason, index) => (
+                        <p
+                          key={index}
+                          className={cx(
+                            "text-[11px] leading-5",
+                            recommendationStyle.text,
+                          )}
+                        >
+                          • {reason}
+                        </p>
+                      ),
+                    )}
                   </div>
                 )}
 

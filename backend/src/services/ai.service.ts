@@ -14,19 +14,26 @@ import { env } from "@/config/env";
 // =========================================================
 
 const VALID_CATEGORIES = [
+  "Payroll Issue",
+  "Leave Issue",
+  "Manager Concern",
+  "Harassment Complaint",
+  "IT Support",
+  "Infrastructure",
+  "Policy Query",
+  "Other",
   "HR",
   "Payroll",
   "Leave",
   "Attendance",
   "Recruitment",
   "Employee Referral",
-  "IT Support",
   "Complaint",
 ] as const;
 
 type TicketCategory = (typeof VALID_CATEGORIES)[number];
 
-export const VALID_PRIORITIES = ["LOW", "MEDIUM", "HIGH"] as const;
+export const VALID_PRIORITIES = ["CRITICAL", "LOW", "MEDIUM", "HIGH"] as const;
 export type TicketPriority = (typeof VALID_PRIORITIES)[number];
 
 export const VALID_SENTIMENTS = [

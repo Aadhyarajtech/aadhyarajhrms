@@ -138,8 +138,21 @@ export default function MyTickets() {
                   {ticket.category}
                 </td>
 
-                <td className="p-3 text-sm text-gray-700">
-                  {ticket.priority}
+                <td className="p-3 text-sm whitespace-nowrap">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      ticket.priority === "CRITICAL"
+                        ? "bg-rose-100 text-rose-800 border border-rose-300 animate-pulse font-bold"
+                        : ticket.priority === "HIGH"
+                        ? "bg-red-50 text-red-700 border border-red-200"
+                        : ticket.priority === "MEDIUM"
+                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                        : "bg-slate-50 text-slate-700 border border-slate-200"
+                    }`}
+                  >
+                    {ticket.priority === "CRITICAL" && <span>🚨</span>}
+                    {ticket.priority}
+                  </span>
                 </td>
 
                 <td className="p-3 text-sm text-gray-700">
