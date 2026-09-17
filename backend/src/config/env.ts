@@ -103,13 +103,9 @@ export const env = {
   regularizationExpiryDays:
     positiveDays("REGULARIZATION_EXPIRY_DAYS", 1),
 
-  // Tickets expire after 3 days by default.
-  ticketExpiryDays:
-    positiveDays("TICKET_EXPIRY_DAYS", 3),
-
-  // Notifications are deleted after 2 days.
+  // Notifications are deleted after 1 day.
   notificationExpiryDays:
-    positiveDays("NOTIFICATION_EXPIRY_DAYS", 2),
+    positiveDays("NOTIFICATION_EXPIRY_DAYS", 1),
 
   // Announcements remain in history as EXPIRED after 7 days by default.
   announcementExpiryDays:

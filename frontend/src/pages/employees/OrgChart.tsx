@@ -369,6 +369,19 @@ export default function OrgChart() {
         </section>
       </div>
 
+      <style>{`
+        .org-chart-canvas {
+          align-items: flex-start;
+          min-height: 420px;
+        }
+        .org-chart-canvas button {
+          text-decoration: none;
+        }
+        .org-chart-connector {
+          background: #c7c7c7;
+        }
+      `}</style>
+
       <div className="rounded-3xl border border-line/70 bg-white p-4 sm:p-8">
         {isLoading ? (
           <div className="space-y-3">
@@ -381,8 +394,8 @@ export default function OrgChart() {
             No organization data yet.
           </p>
         ) : (
-          <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:-mx-8 sm:px-8">
-            <div className="flex min-w-max justify-center gap-16">
+          <div className="-mx-4 overflow-auto px-4 pb-8 sm:-mx-8 sm:px-8">
+            <div className="org-chart-canvas flex min-w-max items-start gap-[120px] py-12 pl-4">
               {(data as OrgNodeData[]).map((root) => (
                 <OrgNode
                   key={root.id}
@@ -534,10 +547,20 @@ function OrgNode({
 
   const shouldEmphasize = isHighlighted || hasHighlightedDescendant;
 
+  /*
+   * Reference layout:
+   *
+   *   Parent ●────────┬────● Child
+   *                   ├────● Child
+   *                   └────● Child
+   *
+   * Each hierarchy level is horizontal. Children are stacked vertically
+   * around their own centre, with one vertical spine connecting them.
+   */
   return (
     <div
       id={`org-node-${node.id}`}
-      className="flex flex-col items-center"
+      className="relative flex min-w-max items-center"
     >
       <OrgNodeCard
         node={node}
@@ -546,57 +569,59 @@ function OrgNode({
         emphasized={shouldEmphasize}
       />
 
-      {hasChildren && (
-        <>
-          <div className="relative flex h-8 w-px items-center justify-center">
-            <div className="absolute inset-y-0 w-px bg-line" />
+      {hasChildren && open && (
+        <div className="relative ml-[92px] flex min-w-max flex-col gap-0">
+          {/* Parent -> children spine connector */}
+          <div
+            aria-hidden="true"
+            className="org-chart-connector pointer-events-none absolute left-0 top-1/2 z-0 h-px w-[92px] -translate-x-[92px]"
+          />
 
-            <button
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              aria-label={open ? "Collapse team" : "Expand team"}
-              className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line bg-white text-ink-faint shadow-sm transition hover:border-brand-300 hover:text-brand-600"
+              {children.map((child, index) => (
+            <div
+              key={child.id}
+              className="relative flex min-w-max items-center"
             >
-              {open ? (
-                <ChevronDown size={12} />
-              ) : (
-                <ChevronRight size={12} />
+              {children.length > 1 && (
+                <div
+                  aria-hidden="true"
+                  className={`org-chart-connector pointer-events-none absolute left-0 z-0 w-px ${
+                    index === 0
+                      ? "top-1/2 bottom-0"
+                      : index === children.length - 1
+                        ? "top-0 bottom-1/2"
+                        : "inset-y-0"
+                  }`}
+                />
               )}
-            </button>
-          </div>
 
-          {open && (
-            <div className="relative mt-0 flex min-w-max flex-col items-center">
-              <div className="h-6 w-px bg-line" />
+              {/* Spine -> child connector */}
+              <div
+                aria-hidden="true"
+                className="org-chart-connector pointer-events-none absolute left-0 top-1/2 z-0 h-px w-12"
+              />
 
-              <div className="relative flex items-start justify-center gap-8">
-                {children.length > 1 && (
-                  <div
-                    className="absolute left-1/2 top-0 h-px -translate-y-0.5 bg-line"
-                    style={{
-                      left: "calc(50% - 1px)",
-                      width: `calc(100% - 140px)`,
-                    }}
-                  />
-                )}
-
-                {children.map((child) => (
-                  <div
-                    key={child.id}
-                    className="relative flex flex-col items-center"
-                  >
-                    <div className="h-6 w-px bg-line" />
-                    <OrgNode
-                      node={child}
-                      depth={depth + 1}
-                      highlightedIds={highlightedIds}
-                    />
-                  </div>
-                ))}
+              <div className="relative z-10 ml-12">
+                <OrgNode
+                  node={child}
+                  depth={depth + 1}
+                  highlightedIds={highlightedIds}
+                />
               </div>
             </div>
-          )}
-        </>
+          ))}
+        </div>
+      )}
+
+      {hasChildren && (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-label={open ? "Collapse team" : "Expand team"}
+          className="absolute -bottom-5 left-1/2 z-20 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full border border-line bg-white text-ink-faint shadow-sm transition hover:border-brand-300 hover:text-brand-600"
+        >
+          {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        </button>
       )}
     </div>
   );
@@ -633,49 +658,46 @@ function OrgNodeCard({
     <button
       type="button"
       onClick={() => navigate(`/app/employees/${node.id}`)}
-      className={`group flex items-center gap-3 whitespace-nowrap rounded-full border py-1.5 pl-1.5 pr-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+      aria-label={`Open ${node.firstName} ${node.lastName}'s employee profile`}
+      title={`${node.firstName} ${node.lastName}${node.designationTitle ? ` · ${node.designationTitle}` : ""}`}
+      className={`group relative z-10 flex w-[190px] shrink-0 items-center gap-4 border-0 bg-transparent py-1 text-left transition ${
         highlighted
-          ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200"
+          ? "rounded-xl bg-brand-50/70 px-2 ring-2 ring-brand-200"
           : emphasized
-            ? "border-brand-200 bg-brand-50/40"
-            : "border-line/70 bg-white hover:border-brand-200"
+            ? "rounded-xl bg-brand-50/30 px-2"
+            : "rounded-xl px-2 hover:bg-surface"
       }`}
     >
+      {/* Solid circular employee marker, matching the reference image. */}
       <span
-        className={`flex shrink-0 rounded-full p-0.5 ${
-          isRoot ? "scale-125" : ""
-        }`}
-        style={{
-          boxShadow: `0 0 0 2.5px ${node.departmentColor}`,
-        }}
-      >
-        <Avatar
-          firstName={node.firstName}
-          lastName={node.lastName}
-          src={node.avatarUrl}
-          size="sm"
-        />
-      </span>
+        className="relative z-10 block h-6 w-6 shrink-0 rounded-full bg-[#444444]"
+        aria-hidden="true"
+      />
 
-      <span className="min-w-0 text-left">
+      <span className="min-w-0">
         <p
-          className={`truncate font-semibold text-ink ${
-            isRoot ? "text-[15px]" : "text-[13.5px]"
+          className={`leading-[1.15] text-ink ${
+            isRoot
+              ? "text-[15px] font-medium"
+              : "text-[15px] font-medium"
           }`}
         >
-          {node.firstName} {node.lastName}
-        </p>
-
-        <p className="truncate text-[12px] text-ink-faint">
-          {node.designationTitle}
+          {node.firstName}
+          {node.lastName ? (
+            <>
+              <br />
+              {node.lastName}
+            </>
+          ) : null}
         </p>
       </span>
 
       {highlighted && (
-        <span className="ml-1 rounded-full bg-brand-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
+        <span className="ml-auto shrink-0 rounded-full bg-brand-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
           Match
         </span>
       )}
     </button>
   );
 }
+

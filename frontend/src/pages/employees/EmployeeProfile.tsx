@@ -2081,11 +2081,20 @@ function EditEmployeeModal({
     enabled: isAdmin && !!selectedDepartmentId,
   });
 
-  const { data: managers } = useQuery({
-    queryKey: ["employees", "managers"],
-    queryFn: EmployeesApi.managers,
+  // Reporting Manager must list all employees, not only employees returned
+  // by the manager-only endpoint. Keep this lookup local to the edit form so
+  // OrgChart and the rest of the employee module remain untouched.
+  const { data: employeeDirectory } = useQuery({
+    queryKey: ["employees", "reporting-manager-options"],
+    queryFn: () => EmployeesApi.list({ page: 1, pageSize: 100 }),
     enabled: isAdmin,
   });
+
+  const reportingManagerOptions = Array.isArray(employeeDirectory?.employees)
+    ? employeeDirectory.employees.filter(
+        (candidate: any) => candidate.id !== employee.id,
+      )
+    : [];
 
   const {
     fields: educationFields,
@@ -2258,13 +2267,11 @@ function EditEmployeeModal({
                 >
                   <option value="">Select reporting manager</option>
 
-                  {managers
-                    ?.filter((manager: any) => manager.id !== employee.id)
-                    .map((manager: any) => (
-                      <option key={manager.id} value={manager.id}>
-                        {manager.firstName} {manager.lastName}
-                      </option>
-                    ))}
+                  {reportingManagerOptions.map((candidate: any) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.firstName} {candidate.lastName}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

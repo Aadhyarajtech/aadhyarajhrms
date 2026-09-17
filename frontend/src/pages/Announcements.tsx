@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import {
@@ -51,14 +52,22 @@ type Announcement = BaseAnnouncement & {
 
 import { formatDate, timeAgo } from "@/lib/format";
 
-function isAnnouncementExpired(announcement: Announcement) {
-  return (
-    announcement.status === "EXPIRED" ||
-    Boolean(
-      announcement.expiresAt &&
-        new Date(announcement.expiresAt).getTime() <= Date.now(),
-    )
-  );
+/* =========================================================
+   EXPIRY HELPERS
+========================================================= */
+
+function isAnnouncementExpired(announcement: Announcement): boolean {
+  if (announcement.status === "EXPIRED") {
+    return true;
+  }
+
+  if (!announcement.expiresAt) {
+    return false;
+  }
+
+  const expiresAt = new Date(announcement.expiresAt).getTime();
+
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
 }
 
 /* =========================================================
@@ -490,10 +499,14 @@ function MultiSelectCategory({
 
 export default function Announcements() {
   const { hasPermission } = useAuth();
+  const [searchParams] = useSearchParams();
 
   const isAdmin = hasPermission("announcements.manage");
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [highlightedAnnouncementId, setHighlightedAnnouncementId] = useState<string | null>(
+    null,
+  );
 
   const [editOpen, setEditOpen] = useState(false);
 
@@ -614,6 +627,43 @@ export default function Announcements() {
     queryFn: () => AnnouncementsApi.list(),
   });
 
+  /*
+   * Notifications carry the immutable announcement ID. Never rely on the
+   * announcement's visual/list position because pinning changes that order.
+   */
+  useEffect(() => {
+    const announcementId = searchParams.get("announcementId");
+
+    if (!announcementId || !data?.length) {
+      return;
+    }
+
+    const target = data.find((announcement) => announcement.id === announcementId);
+
+    if (!target) {
+      return;
+    }
+
+    setHighlightedAnnouncementId(target.id);
+
+    const element = document.getElementById(`announcement-${target.id}`);
+
+    if (element) {
+      window.requestAnimationFrame(() => {
+        element.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+    }
+
+    const timeout = window.setTimeout(() => {
+      setHighlightedAnnouncementId(null);
+    }, 3500);
+
+    return () => window.clearTimeout(timeout);
+  }, [data, searchParams]);
+
   /* =======================================================
      ACTIONS
   ======================================================= */
@@ -632,13 +682,19 @@ export default function Announcements() {
   };
 
   const handleEdit = (announcement: Announcement) => {
-    if (isAnnouncementExpired(announcement)) return;
+    if (isAnnouncementExpired(announcement)) {
+      return;
+    }
+
     setSelectedAnnouncement(announcement);
     setEditOpen(true);
   };
 
   const handleDelete = (announcement: Announcement) => {
-    if (isAnnouncementExpired(announcement)) return;
+    if (isAnnouncementExpired(announcement)) {
+      return;
+    }
+
     const confirmed = window.confirm(
       `Are you sure you want to delete "${announcement.title}"?`,
     );
@@ -690,8 +746,13 @@ export default function Announcements() {
           {data.map((announcement) => (
             <Card
               key={announcement.id}
+              id={`announcement-${announcement.id}`}
               className={
-                announcement.pinned ? "border-gold-300 bg-gold-50/40" : ""
+                highlightedAnnouncementId === announcement.id
+                  ? "border-brand-400 bg-brand-50/80 ring-2 ring-brand-200 shadow-lifted"
+                  : announcement.pinned
+                    ? "border-gold-300 bg-gold-50/40"
+                    : ""
               }
             >
               <div className="flex items-start justify-between gap-4">
@@ -722,7 +783,7 @@ export default function Announcements() {
                       <Badge>{getAudienceLabel(announcement.audience)}</Badge>
                     </div>
 
-                    {announcement.status === "EXPIRED" ? (
+                    {isAnnouncementExpired(announcement) ? (
                       <p className="mt-1.5 text-[13px] text-ink-faint">
                         This announcement has expired and its content is no longer accessible.
                       </p>
@@ -822,7 +883,7 @@ export default function Announcements() {
                     {/* ACTIONS */}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {announcement.status !== "EXPIRED" && !announcement.receipt?.isRead && (
+                      {!isAnnouncementExpired(announcement) && !announcement.receipt?.isRead && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -833,7 +894,7 @@ export default function Announcements() {
                         </Button>
                       )}
 
-                      {announcement.status !== "EXPIRED" && announcement.type === "POLICY_UPDATE" &&
+                      {!isAnnouncementExpired(announcement) && announcement.type === "POLICY_UPDATE" &&
                         !announcement.receipt?.isAcknowledged && (
                           <Button
                             onClick={() => handleAcknowledge(announcement.id)}
@@ -879,7 +940,11 @@ export default function Announcements() {
                             leftIcon={<Pencil size={14} />}
                             onClick={() => handleEdit(announcement)}
                             disabled={isAnnouncementExpired(announcement)}
-                            title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be edited" : "Edit announcement"}
+                            title={
+                              isAnnouncementExpired(announcement)
+                                ? "Expired announcements cannot be edited"
+                                : "Edit announcement"
+                            }
                           >
                             Edit
                           </Button>
@@ -890,8 +955,15 @@ export default function Announcements() {
                             leftIcon={<Trash2 size={14} />}
                             onClick={() => handleDelete(announcement)}
                             isLoading={deleteMutation.isPending}
-                            disabled={deleteMutation.isPending || isAnnouncementExpired(announcement)}
-                            title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be deleted" : "Delete announcement"}
+                            disabled={
+                              deleteMutation.isPending ||
+                              isAnnouncementExpired(announcement)
+                            }
+                            title={
+                              isAnnouncementExpired(announcement)
+                                ? "Expired announcements cannot be deleted"
+                                : "Delete announcement"
+                            }
                           >
                             Delete
                           </Button>

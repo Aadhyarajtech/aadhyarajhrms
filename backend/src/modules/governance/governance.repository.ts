@@ -124,6 +124,8 @@ const DEFAULT_ROLE_META: Record<
   },
 };
 
+export const DEFAULT_TICKET_EXPIRY_DAYS = 3;
+
 export const DEFAULT_POLICIES = [
   {
     key: "security.enforceStrongPasswords",
@@ -149,6 +151,15 @@ export const DEFAULT_POLICIES = [
       "Attendance regularization changes require an approval workflow.",
     type: "BOOLEAN",
     value: true,
+    category: "WORKFLOW",
+  },
+  {
+    key: "workflow.ticketExpiryDays",
+    label: "Ticket expiry (days)",
+    description:
+      "Number of whole days a ticket remains active. Ticket creators cannot change this duration.",
+    type: "NUMBER",
+    value: DEFAULT_TICKET_EXPIRY_DAYS,
     category: "WORKFLOW",
   },
   {
@@ -298,7 +309,14 @@ export async function updatePolicies(
     if (!definition) continue;
     let value: boolean | number | string = update.value;
     if (definition.type === "BOOLEAN") value = Boolean(value);
-    if (definition.type === "NUMBER") value = Number(value);
+    if (definition.type === "NUMBER") {
+      value = Number(value);
+      if (update.key === "workflow.ticketExpiryDays") {
+        if (!Number.isInteger(value) || value < 1 || value > 365) {
+          throw new Error("Ticket expiry must be a whole number between 1 and 365 days.");
+        }
+      }
+    }
     await GovernancePolicy.updateOne(
       { key: update.key },
       { $set: { value, updatedBy: actorId, updatedAt: now } },
@@ -333,4 +351,15 @@ export async function hasPermission(role: string, permission: string) {
     return permissions.includes(managePermission);
   }
   return false;
+}
+
+
+export async function getTicketExpiryDays() {
+  await ensureDefaults();
+  const policy = await GovernancePolicy.findOne({ key: "workflow.ticketExpiryDays" })
+    .lean();
+  const value = Number(policy?.value);
+  return Number.isInteger(value) && value >= 1 && value <= 365
+    ? value
+    : DEFAULT_TICKET_EXPIRY_DAYS;
 }

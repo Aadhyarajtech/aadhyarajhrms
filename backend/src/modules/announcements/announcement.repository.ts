@@ -23,6 +23,24 @@ function toApiDoc(doc: any) {
    NORMALIZATION HELPERS
 ========================================================= */
 
+function isAnnouncementExpired(announcement: any): boolean {
+  if (!announcement) {
+    return false;
+  }
+
+  if (announcement.status === "EXPIRED") {
+    return true;
+  }
+
+  if (!announcement.expiresAt) {
+    return false;
+  }
+
+  const expiresAt = new Date(announcement.expiresAt).getTime();
+
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+}
+
 function normalize(value: unknown): string {
   return String(value ?? "")
     .trim()
@@ -1186,20 +1204,13 @@ export async function updateAnnouncement(
     expiryDays?: number;
   },
 ) {
-  const existingAnnouncement = (await Announcement.findById(id)
-    .select("status expiresAt")
-    .lean()) as any;
+  const existingAnnouncement = (await Announcement.findById(id).lean()) as any;
 
-  if (!existingAnnouncement) return undefined;
+  if (!existingAnnouncement) {
+    return undefined;
+  }
 
-  const isExpired =
-    existingAnnouncement.status === "EXPIRED" ||
-    Boolean(
-      existingAnnouncement.expiresAt &&
-        new Date(existingAnnouncement.expiresAt).getTime() <= Date.now(),
-    );
-
-  if (isExpired) {
+  if (isAnnouncementExpired(existingAnnouncement)) {
     throw new Error("Expired announcements cannot be edited.");
   }
 
@@ -1284,13 +1295,7 @@ export async function updateAnnouncement(
   }
 
   if (data.scheduledAt !== undefined) {
-    const existing = (await Announcement.findById(id)
-      .select("status scheduledAt publishedAt")
-      .lean()) as any;
-
-    if (!existing) {
-      return undefined;
-    }
+    const existing = existingAnnouncement;
 
     update.scheduledAt = data.scheduledAt;
 
@@ -1338,8 +1343,8 @@ export async function updateAnnouncement(
       throw new Error("Announcement expiry must be between 1 and 365 days.");
     }
 
-    const existing = await Announcement.findById(id).select("publishedAt createdAt status").lean();
-    if (existing?.status === "PUBLISHED") {
+    const existing = existingAnnouncement;
+    if (existing.status === "PUBLISHED") {
       const source = existing.publishedAt || existing.createdAt;
       update.expiresAt = new Date(new Date(source).getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
       update.expiredAt = null;
@@ -1424,14 +1429,7 @@ export async function deleteAnnouncement(id: string) {
     return null;
   }
 
-  const isExpired =
-    (announcement as any).status === "EXPIRED" ||
-    Boolean(
-      (announcement as any).expiresAt &&
-        new Date((announcement as any).expiresAt).getTime() <= Date.now(),
-    );
-
-  if (isExpired) {
+  if (isAnnouncementExpired(announcement)) {
     throw new Error("Expired announcements cannot be deleted.");
   }
 
