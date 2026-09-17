@@ -36,16 +36,9 @@ export async function processScheduledAnnouncements() {
   schedulerRunning = true;
 
   try {
-    await notificationRepo.backfillNotificationExpiry();
-    const deletedNotificationCount = await notificationRepo.deleteExpiredNotifications();
-    if (deletedNotificationCount) {
-      console.log(`[Announcement Scheduler] Deleted ${deletedNotificationCount} expired notification(s).`);
-    }
-
-    const expiredCount = await announcementRepo.expireDueAnnouncements();
-    if (expiredCount) {
-      console.log(`[Announcement Scheduler] Expired ${expiredCount} announcement(s).`);
-    }
+    // Expiry is handled centrally by requestExpiry.job.ts / expiry.service.ts.
+    // Keep this scheduler focused only on publishing scheduled announcements
+    // and delivering their notifications/emails.
 
     const published = await announcementRepo.publishDueAnnouncements();
 

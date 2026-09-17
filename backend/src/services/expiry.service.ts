@@ -9,6 +9,58 @@ import Announcement from "@/modules/announcements/announcement.model";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+async function updateExpiryDates(
+  model: { updateOne: (filter: any, update: any) => Promise<unknown> },
+  rows: any[],
+  getExpiry: (row: any) => string | null,
+  extraFields?: Record<string, unknown>,
+) {
+  if (rows.length === 0) return;
+
+  await Promise.all(
+    rows.flatMap((row) => {
+      const expiresAt = getExpiry(row);
+      if (!expiresAt) return [];
+
+      return [
+        model.updateOne(
+          { _id: row._id },
+          {
+            $set: {
+              expiresAt,
+              expiredAt: null,
+              ...(extraFields ?? {}),
+            },
+          },
+        ),
+      ];
+    }),
+  );
+}
+
+async function updateAnnouncementExpiryDates(rows: any[]) {
+  if (rows.length === 0) return;
+
+  await Promise.all(
+    rows.flatMap((row) => {
+      const source = row.publishedAt || row.createdAt;
+      const expiresAt = expiryFrom(
+        source,
+        Number(row.expiryDays ?? env.announcementExpiryDays),
+      );
+
+      if (!expiresAt) return [];
+
+      return [
+        Announcement.collection.updateOne(
+          { _id: row._id },
+          { $set: { expiresAt, expiredAt: null } },
+        ),
+      ];
+    }),
+  );
+}
+
 function expiryFrom(value: string, days: number) {
   const base = new Date(value);
   if (Number.isNaN(base.getTime())) return null;
@@ -38,49 +90,28 @@ export async function backfillExpiryDates() {
     ]);
 
   await Promise.all([
-    LeaveRequest.bulkWrite(
-      leaveRows.flatMap((row: any) => {
-        const expiresAt = expiryFrom(row.appliedAt, env.leaveRequestExpiryDays);
-        return expiresAt
-          ? [{ updateOne: { filter: { _id: row._id }, update: { $set: { expiresAt, expiredAt: null } } } }]
-          : [];
-      }),
+    updateExpiryDates(
+      LeaveRequest,
+      leaveRows,
+      (row) => expiryFrom(row.appliedAt, env.leaveRequestExpiryDays),
     ),
-    AttendanceRegularizationRequest.bulkWrite(
-      regularizationRows.flatMap((row: any) => {
-        const expiresAt = expiryFrom(row.requestedAt, env.regularizationExpiryDays);
-        return expiresAt
-          ? [{ updateOne: { filter: { _id: row._id }, update: { $set: { expiresAt, expiredAt: null } } } }]
-          : [];
-      }),
+    updateExpiryDates(
+      AttendanceRegularizationRequest,
+      regularizationRows,
+      (row) => expiryFrom(row.requestedAt, env.regularizationExpiryDays),
     ),
-    Ticket.bulkWrite(
-      ticketRows.flatMap((row: any) => {
-        const expiresAt = expiryFrom(row.createdAt, Number(row.expiryDays ?? env.ticketExpiryDays));
-        return expiresAt
-          ? [{ updateOne: { filter: { _id: row._id }, update: { $set: { expiresAt, expiredAt: null } } } }]
-          : [];
-      }),
+    updateExpiryDates(
+      Ticket,
+      ticketRows,
+      (row) => expiryFrom(row.createdAt, Number(row.expiryDays ?? env.ticketExpiryDays)),
     ),
-    Notification.bulkWrite(
-      notificationRows.flatMap((row: any) => {
-        const expiresAt = expiryFrom(row.createdAt, env.notificationExpiryDays);
-        return expiresAt
-          ? [{ updateOne: { filter: { _id: row._id }, update: { $set: { expiresAt, expiredAt: null, status: "ACTIVE" } } } }]
-          : [];
-      }),
+    updateExpiryDates(
+      Notification,
+      notificationRows,
+      (row) => expiryFrom(row.createdAt, env.notificationExpiryDays),
+      { status: "ACTIVE" },
     ),
-    // Announcement IDs are application-defined strings (ann_*). Use the
-    // native collection so old custom IDs are never cast to ObjectId.
-    Announcement.collection.bulkWrite(
-      announcementRows.flatMap((row: any) => {
-        const source = row.publishedAt || row.createdAt;
-        const expiresAt = expiryFrom(source, Number(row.expiryDays ?? env.announcementExpiryDays));
-        return expiresAt
-          ? [{ updateOne: { filter: { _id: row._id }, update: { $set: { expiresAt, expiredAt: null } } } }]
-          : [];
-      }),
-    ),
+    updateAnnouncementExpiryDates(announcementRows),
   ]);
 
   return now;
@@ -101,14 +132,14 @@ export async function expireTimedRecords() {
         { $set: { status: "EXPIRED", expiredAt: now, decidedAt: now } },
       ),
       Ticket.updateMany(
-        { status: { $in: ["OPEN", "IN_PROGRESS", "WAITING_FOR_EMPLOYEE"] }, expiresAt: { $lte: now } },
+        {
+          status: { $in: ["OPEN", "IN_PROGRESS", "WAITING_FOR_EMPLOYEE"] },
+          expiresAt: { $lte: now },
+        },
         { $set: { status: "EXPIRED", expiredAt: now, updatedAt: now } },
       ),
       Notification.deleteMany({
-        $or: [
-          { expiresAt: { $lte: now } },
-          { status: "EXPIRED" },
-        ],
+        $or: [{ expiresAt: { $lte: now } }, { status: "EXPIRED" }],
       }),
       Announcement.collection.updateMany(
         { status: "PUBLISHED", expiresAt: { $lte: now } },
