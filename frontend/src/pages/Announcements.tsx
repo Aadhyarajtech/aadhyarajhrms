@@ -26,15 +26,15 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { TextField, TextareaField } from "@/components/ui/Field";
 import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
-import ExpiryBadge from "@/components/common/ExpiryBadge";
 
 import type { Announcement as BaseAnnouncement } from "@/types";
+import { ExpiryBadge } from "@/components/common/ExpiryBadge";
 
 /* Backend announcement fields used by this page.
    Keep these optional so this page remains compatible with the existing
    shared frontend Announcement type while the backend exposes the newer fields. */
 type Announcement = BaseAnnouncement & {
-  status?: "DRAFT" | "SCHEDULED" | "PUBLISHED" | string;
+  status?: "DRAFT" | "SCHEDULED" | "PUBLISHED" | "EXPIRED" | string;
   channels?: string[];
   showBanner?: boolean;
   requiresAcknowledgement?: boolean;
@@ -47,9 +47,6 @@ type Announcement = BaseAnnouncement & {
   eventStartAt?: string | null;
   eventEndAt?: string | null;
   eventLocation?: string | null;
-  expiryDays?: number;
-  expiresAt?: string | null;
-  expiredAt?: string | null;
 };
 
 import { formatDate, timeAgo } from "@/lib/format";
@@ -170,7 +167,7 @@ interface AnnouncementForm {
   eventStartAt: string;
   eventEndAt: string;
   eventLocation: string;
-  expiryDays: number;
+  expiryDays: string;
   attachment?: FileList;
 }
 
@@ -605,7 +602,6 @@ export default function Announcements() {
     queryKey: ["announcements"],
 
     queryFn: () => AnnouncementsApi.list(),
-    refetchInterval: 60_000,
   });
 
   /* =======================================================
@@ -714,15 +710,14 @@ export default function Announcements() {
                       <Badge>{getAudienceLabel(announcement.audience)}</Badge>
                     </div>
 
-                    <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-soft">
-                      {announcement.body}
-                    </p>
-
-                    {announcement.expiresAt && (
-                      <ExpiryBadge
-                        expiresAt={announcement.expiresAt}
-                        status={announcement.status}
-                      />
+                    {announcement.status === "EXPIRED" ? (
+                      <p className="mt-1.5 text-[13px] text-ink-faint">
+                        This announcement has expired and its content is no longer accessible.
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-soft">
+                        {announcement.body}
+                      </p>
                     )}
 
                     {announcement.eventStartAt && (
@@ -779,6 +774,9 @@ export default function Announcements() {
                     {/* STATUS */}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {announcement.expiresAt && (
+                        <ExpiryBadge expiresAt={announcement.expiresAt} expiredAt={announcement.expiredAt} />
+                      )}
                       <Badge>
                         {announcement.receipt?.isRead ? "Read" : "Unread"}
                       </Badge>
@@ -812,7 +810,7 @@ export default function Announcements() {
                     {/* ACTIONS */}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {!announcement.receipt?.isRead && (
+                      {announcement.status !== "EXPIRED" && !announcement.receipt?.isRead && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -823,7 +821,7 @@ export default function Announcements() {
                         </Button>
                       )}
 
-                      {announcement.type === "POLICY_UPDATE" &&
+                      {announcement.status !== "EXPIRED" && announcement.type === "POLICY_UPDATE" &&
                         !announcement.receipt?.isAcknowledged && (
                           <Button
                             onClick={() => handleAcknowledge(announcement.id)}
@@ -992,6 +990,7 @@ function CreateModal({
       eventStartAt: "",
       eventEndAt: "",
       eventLocation: "",
+      expiryDays: "7",
     },
   });
 
@@ -1035,6 +1034,13 @@ function CreateModal({
     formData.append("body", body);
     formData.append("type", values.type);
     formData.append("audience", values.audience);
+
+    const expiryDays = Number(values.expiryDays);
+    if (!Number.isInteger(expiryDays) || expiryDays < 1 || expiryDays > 365) {
+      showToast("Expiry must be between 1 and 365 days.", "error");
+      return;
+    }
+    formData.append("expiryDays", String(expiryDays));
 
     const departments = values.departments
       .split(",")
@@ -1135,7 +1141,6 @@ function CreateModal({
       }
     }
 
-    formData.append("expiryDays", String(values.expiryDays || 7));
     formData.append("publishMode", values.publishMode);
 
     formData.append(
@@ -1502,6 +1507,27 @@ function CreateModal({
           </div>
         </div>
 
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-ink">
+            Expiry after publishing
+          </label>
+          <select
+            {...register("expiryDays")}
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          >
+            <option value="1">1 day</option>
+            <option value="2">2 days</option>
+            <option value="3">3 days</option>
+            <option value="7">7 days (default)</option>
+            <option value="14">14 days</option>
+            <option value="30">30 days</option>
+            <option value="60">60 days</option>
+            <option value="90">90 days</option>
+            <option value="365">365 days</option>
+          </select>
+          <p className="mt-1 text-[11px] text-ink-faint">The announcement stays in history after expiry, but users cannot open it.</p>
+        </div>
+
         {watch("publishMode") === "SCHEDULED" && (
           <div className="grid grid-cols-1 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 sm:grid-cols-2">
             <TextField
@@ -1524,16 +1550,6 @@ function CreateModal({
             </p>
           </div>
         )}
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <TextField
-            label="Expiry (days)"
-            type="number"
-            min={1}
-            max={365}
-            {...register("expiryDays", { valueAsNumber: true })}
-          />
-        </div>
 
         <AttachmentField register={register} />
 
@@ -1846,6 +1862,7 @@ function EditModal({
         ? new Date(announcement.eventEndAt).toISOString().slice(0, 16)
         : "",
       eventLocation: announcement.eventLocation ?? "",
+      expiryDays: String(announcement.expiryDays ?? 7),
       attachment: undefined,
     });
   }, [open, announcement, reset]);
@@ -1857,6 +1874,12 @@ function EditModal({
     formData.append("body", data.body.trim());
     formData.append("type", data.type);
     formData.append("audience", data.audience);
+
+    const expiryDays = Number(data.expiryDays);
+    if (!Number.isInteger(expiryDays) || expiryDays < 1 || expiryDays > 365) {
+      throw new Error("Expiry must be between 1 and 365 days.");
+    }
+    formData.append("expiryDays", String(expiryDays));
 
     const departments = data.departments
       .split(",")
@@ -1915,10 +1938,8 @@ function EditModal({
       }
 
       formData.append("scheduledAt", scheduledAt.toISOString());
-      formData.append("expiryDays", String(data.expiryDays || 7));
       formData.append("publishMode", "SCHEDULED");
     } else {
-      formData.append("expiryDays", String(data.expiryDays || 7));
       formData.append("publishMode", "NOW");
     }
 
@@ -2218,6 +2239,27 @@ function EditModal({
             />
           </div>
         )}
+
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-ink">
+            Expiry after publishing
+          </label>
+          <select
+            {...register("expiryDays")}
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          >
+            <option value="1">1 day</option>
+            <option value="2">2 days</option>
+            <option value="3">3 days</option>
+            <option value="7">7 days (default)</option>
+            <option value="14">14 days</option>
+            <option value="30">30 days</option>
+            <option value="60">60 days</option>
+            <option value="90">90 days</option>
+            <option value="365">365 days</option>
+          </select>
+          <p className="mt-1 text-[11px] text-ink-faint">After expiry, the announcement remains in history with an EXPIRED badge but cannot be opened.</p>
+        </div>
 
         {watch("publishMode") === "SCHEDULED" && (
           <div className="grid grid-cols-1 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 sm:grid-cols-2">

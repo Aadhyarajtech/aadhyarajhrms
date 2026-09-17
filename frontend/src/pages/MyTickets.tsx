@@ -1,4 +1,3 @@
-import ExpiryBadge from "@/components/common/ExpiryBadge";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -6,6 +5,7 @@ import { MessageCircle, Plus } from "lucide-react";
 
 import { api, resolveAssetUrl } from "@/lib/api";
 import RaiseTicketModal from "@/components/ui/RaiseTicketModal";
+import { ExpiryBadge } from "@/components/common/ExpiryBadge";
 
 interface Ticket {
   _id: string;
@@ -15,9 +15,9 @@ interface Ticket {
   subject: string;
   status: string;
   createdAt: string;
+  attachment?: string;
   expiresAt?: string | null;
   expiredAt?: string | null;
-  attachment?: string;
 }
 
 export default function MyTickets() {
@@ -37,9 +37,6 @@ export default function MyTickets() {
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
-
-  // Expired tickets remain in the database for audit/history but are removed from the active My Tickets view.
-  const activeTickets = data?.filter((ticket) => ticket.status !== "EXPIRED") ?? [];
 
   if (isLoading) {
     return (
@@ -124,12 +121,18 @@ export default function MyTickets() {
           </thead>
 
           <tbody>
-            {activeTickets.map((ticket) => (
+            {data?.map((ticket) => (
               <tr
                 key={ticket._id}
                 className="border-b last:border-b-0 hover:bg-gray-50"
               >
                 <td className="p-3 text-sm font-medium text-gray-900 whitespace-nowrap">
+                  {ticket.status === "EXPIRED" ? (
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-gray-400" title="Expired ticket cannot be opened">
+                      <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                      <span>{ticket.ticketId}</span>
+                    </span>
+                  ) : (
                   <Link
                     to={`/app/tickets/${ticket._id}`}
                     className="inline-flex items-center gap-1.5 font-semibold text-brand-600 hover:text-brand-800 hover:underline"
@@ -138,6 +141,7 @@ export default function MyTickets() {
                     <MessageCircle className="h-3.5 w-3.5 shrink-0 text-brand-500" />
                     <span>{ticket.ticketId}</span>
                   </Link>
+                  )}
                 </td>
 
                 <td className="p-3 text-sm text-gray-700">
@@ -149,6 +153,11 @@ export default function MyTickets() {
                 </td>
 
                 <td className="p-3 text-sm text-gray-700">
+                  {ticket.status === "EXPIRED" ? (
+                    <span className="font-medium text-gray-400" title="Expired ticket cannot be opened">
+                      {ticket.subject}
+                    </span>
+                  ) : (
                   <Link
                     to={`/app/tickets/${ticket._id}`}
                     className="font-medium text-gray-900 hover:text-brand-600 hover:underline"
@@ -156,16 +165,16 @@ export default function MyTickets() {
                   >
                     {ticket.subject}
                   </Link>
+                  )}
                 </td>
 
                 <td className="p-3">
-                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
-                    {ticket.status.replaceAll(
-                      "_",
-                      " ",
-                    )}
-                  </span>
-                  <ExpiryBadge expiresAt={ticket.expiresAt} status={ticket.status} />
+                  <div className="space-y-1">
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${ticket.status === "EXPIRED" ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-700"}`}>
+                      {ticket.status.replaceAll("_", " ")}
+                    </span>
+                    <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} />
+                  </div>
                 </td>
 
                 <td className="p-3">
@@ -203,7 +212,7 @@ export default function MyTickets() {
               </tr>
             ))}
 
-            {!activeTickets.length && (
+            {!data?.length && (
               <tr>
                 <td
                   colSpan={8}

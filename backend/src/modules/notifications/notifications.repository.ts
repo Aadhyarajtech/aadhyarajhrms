@@ -4,6 +4,7 @@ import { nowIso } from "@/db/connection";
 import * as announcementRepository from "@/modules/announcements/announcement.repository";
 
 import { sendAnnouncementEmail } from "@/services/email.service";
+import { env } from "@/config/env";
 
 /* =========================================================
    NOTIFICATION TYPES
@@ -68,8 +69,6 @@ export async function notify(input: {
     }
   }
 
-  const createdAt = nowIso();
-
   const notification = await Notification.create({
     userId: input.userId,
     type: input.type,
@@ -78,8 +77,9 @@ export async function notify(input: {
     isRead: false,
     link: input.link ?? null,
     dedupeKey: input.dedupeKey ?? null,
-    createdAt,
-    expiresAt: new Date(new Date(createdAt).getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    createdAt: nowIso(),
+    expiresAt: new Date(Date.now() + env.notificationExpiryDays * 24 * 60 * 60 * 1000).toISOString(),
+    expiredAt: null,
     status: "ACTIVE",
   });
 
@@ -96,10 +96,11 @@ export async function listNotifications(
   limit = 50,
   offset = 0,
 ) {
+  const now = new Date().toISOString();
   const filter: Record<string, unknown> = {
     userId,
     status: "ACTIVE",
-    expiresAt: { $gt: new Date().toISOString() },
+    expiresAt: { $gt: now },
   };
 
   if (unreadOnly) {
@@ -117,7 +118,10 @@ export async function listNotifications(
   ]);
 
   return {
-    notifications,
+    notifications: notifications.map((notification: any) => ({
+      ...notification,
+      isExpired: notification.status === "EXPIRED" || (notification.expiresAt ? new Date(notification.expiresAt).getTime() <= Date.now() : false),
+    })),
     total,
     limit,
     offset,
@@ -146,6 +150,8 @@ export async function markRead(id: string, userId: string) {
     {
       _id: id,
       userId,
+      status: "ACTIVE",
+      expiresAt: { $gt: new Date().toISOString() },
     },
     {
       $set: {
@@ -175,6 +181,8 @@ export async function markAllRead(userId: string) {
   await Notification.updateMany(
     {
       userId,
+      status: "ACTIVE",
+      expiresAt: { $gt: new Date().toISOString() },
     },
     {
       $set: {
@@ -182,53 +190,6 @@ export async function markAllRead(userId: string) {
       },
     },
   );
-}
-
-/* =========================================================
-   BACKFILL NOTIFICATION EXPIRY
-========================================================= */
-
-export async function backfillNotificationExpiry() {
-  const notifications = await Notification.find({
-    $or: [
-      { expiresAt: { $exists: false } },
-      { expiresAt: null },
-      { expiresAt: "" },
-    ],
-  }).select("_id createdAt").lean();
-
-  if (!notifications.length) return 0;
-
-  const operations = notifications.map((notification: any) => ({
-    updateOne: {
-      filter: { _id: notification._id },
-      update: {
-        $set: {
-          expiresAt: new Date(new Date(notification.createdAt).getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-          status: "ACTIVE",
-        },
-      },
-    },
-  }));
-
-  const result = await Notification.collection.bulkWrite(operations);
-  return result.modifiedCount ?? 0;
-}
-
-/* =========================================================
-   DELETE EXPIRED NOTIFICATIONS
-========================================================= */
-
-export async function deleteExpiredNotifications() {
-  const now = new Date().toISOString();
-  const result = await Notification.deleteMany({
-    $or: [
-      { expiresAt: { $lte: now } },
-      { status: "EXPIRED" },
-    ],
-  });
-
-  return result.deletedCount ?? 0;
 }
 
 /* =========================================================
@@ -817,6 +778,9 @@ export async function broadcastAnnouncementNotification(announcement: {
     isRead: false,
 
     createdAt,
+    expiresAt: new Date(new Date(createdAt).getTime() + env.notificationExpiryDays * 24 * 60 * 60 * 1000).toISOString(),
+    expiredAt: null,
+    status: "ACTIVE" as const,
   }));
 
   await Notification.insertMany(notifications);

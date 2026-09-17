@@ -1,5 +1,6 @@
 import { Announcement } from "./announcement.model";
 import { AnnouncementReceipt, Employee, Department } from "@/db/models";
+import { env } from "@/config/env";
 
 /* =========================================================
    API DOCUMENT
@@ -386,7 +387,7 @@ export async function getAnnouncements(role?: string, userId?: string) {
      * Scheduled announcements must NEVER be visible
      * before their scheduled publishing time.
      */
-    status: "PUBLISHED",
+    status: { $in: ["PUBLISHED", "EXPIRED"] },
   };
 
   /*
@@ -509,6 +510,7 @@ export async function getAnnouncements(role?: string, userId?: string) {
     return toApiDoc({
       ...announcement,
 
+      isExpired: announcement.status === "EXPIRED" || (announcement.expiresAt ? new Date(announcement.expiresAt).getTime() <= Date.now() : false),
       receipt: receipt
         ? {
             isRead: Boolean(receipt.isRead),
@@ -529,10 +531,7 @@ export async function getAnnouncements(role?: string, userId?: string) {
 ========================================================= */
 
 export async function getAnnouncementWithReceipt(id: string, userId: string) {
-  const announcement = await Announcement.findOne({
-    _id: id,
-    status: "PUBLISHED",
-  }).lean();
+  const announcement = await Announcement.findOne({ _id: id, status: "PUBLISHED" }).lean();
 
   if (!announcement) {
     return undefined;
@@ -576,15 +575,16 @@ export async function markAnnouncementRead(
     throw new Error("Authenticated user ID is required.");
   }
 
-  const announcement = await Announcement.findOne({
-    _id: announcementId,
-    status: "PUBLISHED",
-  })
+  const announcement = await Announcement.findOne({ _id: announcementId, status: "PUBLISHED" })
     .select("_id")
     .lean();
 
   if (!announcement) {
     throw new Error("Announcement not found.");
+  }
+
+  if ((announcement as any).status === "EXPIRED") {
+    throw new Error("This announcement has expired.");
   }
 
   const now = new Date().toISOString();
@@ -631,12 +631,16 @@ export async function acknowledgePolicyAnnouncement(
     throw new Error("Authenticated user ID is required.");
   }
 
-  const announcement = await Announcement.findById(announcementId)
+  const announcement = await Announcement.findOne({ _id: announcementId, status: "PUBLISHED" })
     .select("_id type")
     .lean();
 
   if (!announcement) {
     throw new Error("Announcement not found.");
+  }
+
+  if ((announcement as any).status === "EXPIRED") {
+    throw new Error("This announcement has expired.");
   }
 
   const now = new Date().toISOString();
@@ -986,10 +990,7 @@ export async function listAnnouncementReadStatus(announcementId: string) {
 ========================================================= */
 
 export async function getAnnouncement(id: string) {
-  const announcement = await Announcement.findOne({
-    _id: id,
-    status: "PUBLISHED",
-  }).lean();
+  const announcement = await Announcement.findOne({ _id: id, status: "PUBLISHED" }).lean();
 
   return toApiDoc(announcement);
 }
@@ -1030,7 +1031,6 @@ export async function createAnnouncement(data: {
   expiryDays?: number;
 }) {
   const now = new Date().toISOString();
-  const expiryDays = Math.min(365, Math.max(1, Number(data.expiryDays ?? 7)));
 
   const scheduledDate = data.scheduledAt ? new Date(data.scheduledAt) : null;
 
@@ -1084,6 +1084,11 @@ export async function createAnnouncement(data: {
   const requiresAcknowledgement =
     data.requiresAcknowledgement ?? data.type === "POLICY_UPDATE";
 
+  const expiryDays = Number(data.expiryDays ?? env.announcementExpiryDays);
+  if (!Number.isFinite(expiryDays) || expiryDays <= 0 || expiryDays > 365) {
+    throw new Error("Announcement expiry must be between 1 and 365 days.");
+  }
+
   const announcement = await Announcement.create({
     title: data.title.trim(),
 
@@ -1124,12 +1129,9 @@ export async function createAnnouncement(data: {
     scheduledAt: data.scheduledAt ?? "",
 
     publishedAt: publishNow ? now : "",
-
     expiryDays,
-    expiresAt: publishNow
-      ? new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString()
-      : "",
-    expiredAt: "",
+    expiresAt: publishNow ? new Date(new Date(now).getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString() : null,
+    expiredAt: null,
 
     createdAt: now,
 
@@ -1314,13 +1316,16 @@ export async function updateAnnouncement(
   }
 
   if (data.expiryDays !== undefined) {
-    const expiryDays = Math.min(365, Math.max(1, Number(data.expiryDays)));
-    update.expiryDays = expiryDays;
-    const existing = await Announcement.findById(id).select("status publishedAt").lean();
-    if (existing?.status === "PUBLISHED" && existing.publishedAt) {
-      update.expiresAt = new Date(new Date(existing.publishedAt).getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
-      update.expiredAt = "";
-      update.status = "PUBLISHED";
+    const expiryDays = Number(data.expiryDays);
+    if (!Number.isFinite(expiryDays) || expiryDays <= 0 || expiryDays > 365) {
+      throw new Error("Announcement expiry must be between 1 and 365 days.");
+    }
+
+    const existing = await Announcement.findById(id).select("publishedAt createdAt status").lean();
+    if (existing?.status === "PUBLISHED") {
+      const source = existing.publishedAt || existing.createdAt;
+      update.expiresAt = new Date(new Date(source).getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
+      update.expiredAt = null;
     }
   }
 
@@ -1371,12 +1376,8 @@ export async function publishDueAnnouncements() {
           status: "PUBLISHED",
 
           publishedAt: now,
-
-          expiresAt: new Date(
-            Date.now() + Number(announcement.expiryDays ?? 7) * 24 * 60 * 60 * 1000,
-          ).toISOString(),
-
-          expiredAt: "",
+          expiresAt: new Date(new Date(now).getTime() + Number(announcement.expiryDays ?? env.announcementExpiryDays) * 24 * 60 * 60 * 1000).toISOString(),
+          expiredAt: null,
 
           updatedAt: now,
         },
@@ -1393,24 +1394,6 @@ export async function publishDueAnnouncements() {
   }
 
   return published;
-}
-
-/* =========================================================
-   EXPIRE PUBLISHED ANNOUNCEMENTS
-========================================================= */
-
-export async function expireDueAnnouncements() {
-  const now = new Date().toISOString();
-  const result = await Announcement.updateMany(
-    {
-      status: "PUBLISHED",
-      expiresAt: { $ne: "", $lte: now },
-    },
-    {
-      $set: { status: "EXPIRED", expiredAt: now, updatedAt: now },
-    },
-  );
-  return result.modifiedCount ?? 0;
 }
 
 /* =========================================================

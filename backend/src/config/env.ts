@@ -24,6 +24,14 @@ function required(
   return value;
 }
 
+function positiveDays(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+
+  return Number.isFinite(value) && value > 0
+    ? value
+    : fallback;
+}
+
 /* =========================================================
    CLIENT ORIGINS
 ========================================================= */
@@ -78,6 +86,34 @@ export const env = {
   jwtExpiresIn:
     process.env.JWT_EXPIRES_IN ||
     "8h",
+
+  /* -------------------------------------------------------
+     EXPIRY CONFIGURATION
+
+     These values are the server-side defaults. Individual
+     announcements/tickets can override their expiry through
+     their stored expiryDays value where supported.
+  ------------------------------------------------------- */
+
+  // Leave requests expire after 2 days.
+  leaveRequestExpiryDays:
+    positiveDays("LEAVE_REQUEST_EXPIRY_DAYS", 2),
+
+  // Attendance regularization requests expire after 1 day.
+  regularizationExpiryDays:
+    positiveDays("REGULARIZATION_EXPIRY_DAYS", 1),
+
+  // Tickets expire after 3 days by default.
+  ticketExpiryDays:
+    positiveDays("TICKET_EXPIRY_DAYS", 3),
+
+  // Notifications are deleted after 2 days.
+  notificationExpiryDays:
+    positiveDays("NOTIFICATION_EXPIRY_DAYS", 2),
+
+  // Announcements remain in history as EXPIRED after 7 days by default.
+  announcementExpiryDays:
+    positiveDays("ANNOUNCEMENT_EXPIRY_DAYS", 7),
 
   /* -------------------------------------------------------
      FRONTEND
@@ -137,4 +173,40 @@ export const env = {
   groqModel:
     process.env.GROQ_MODEL ||
     "llama-3.3-70b-versatile",
-};
+
+  /* -------------------------------------------------------
+     GOOGLE CALENDAR / GOOGLE MEET
+  ------------------------------------------------------- */
+
+  googleCalendarId:
+    process.env.GOOGLE_CALENDAR_ID ||
+    "primary",
+
+  googleCalendarTimeZone:
+    process.env.GOOGLE_CALENDAR_TIME_ZONE ||
+    "Asia/Kolkata",
+
+  googleClientId:
+    process.env.GOOGLE_CLIENT_ID ||
+    "",
+
+  googleClientSecret:
+    process.env.GOOGLE_CLIENT_SECRET ||
+    "",
+
+  googleRefreshToken:
+    process.env.GOOGLE_REFRESH_TOKEN ||
+    "",
+
+  googleServiceAccountEmail:
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+    "",
+
+  googleServiceAccountPrivateKey:
+    process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY ||
+    "",
+
+  googleCalendarImpersonateEmail:
+    process.env.GOOGLE_CALENDAR_IMPERSONATE_EMAIL ||
+    "",
+};

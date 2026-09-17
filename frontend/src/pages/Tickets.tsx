@@ -1,4 +1,3 @@
-import ExpiryBadge from "@/components/common/ExpiryBadge";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -20,6 +19,7 @@ import { api, getErrorMessage, resolveAssetUrl } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useAuth } from "@/context/AuthContext";
 import ExecutiveHelpdeskAnalytics from "@/components/tickets/ExecutiveHelpdeskAnalytics";
+import { ExpiryBadge } from "@/components/common/ExpiryBadge";
 
 const ALL_CATEGORIES = [
   { value: "ALL", label: "All Categories" },
@@ -481,6 +481,9 @@ export default function Tickets() {
                   <td className="py-2.5 px-3 font-semibold whitespace-nowrap">
                     <Link
                       to={`/app/tickets/${ticket._id}`}
+                        onClick={(event) => {
+                          if (ticket.status === "EXPIRED") event.preventDefault();
+                        }}
                       className="inline-flex items-center gap-1.5 text-brand-600 hover:text-brand-800 hover:underline"
                       title="Click to open conversation"
                     >
@@ -491,7 +494,6 @@ export default function Tickets() {
 
                   {/* Category */}
                   <td className="py-2.5 px-2 text-gray-700 whitespace-nowrap">
-                    <ExpiryBadge expiresAt={ticket.expiresAt} status={ticket.status} />
                     {ticket.category === "Complaint" ? (
                       <span className="font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 text-[11px]">
                         Grievance
@@ -574,6 +576,9 @@ export default function Tickets() {
                   <td className="py-2.5 px-2 max-w-[170px]">
                     <Link
                       to={`/app/tickets/${ticket._id}`}
+                        onClick={(event) => {
+                          if (ticket.status === "EXPIRED") event.preventDefault();
+                        }}
                       className="block truncate font-medium text-gray-900 hover:text-brand-600 hover:underline"
                       title={ticket.subject}
                     >
@@ -607,6 +612,12 @@ export default function Tickets() {
 
                   {/* Status Dropdown */}
                   <td className="py-2.5 px-2 whitespace-nowrap">
+                    {ticket.status === "EXPIRED" ? (
+                      <div>
+                        <span className="inline-flex rounded-full bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">Expired</span>
+                        <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} className="mt-1" />
+                      </div>
+                    ) : (
                     <select
                       value={ticket.status}
                       disabled={updateStatus.isPending}
@@ -626,6 +637,8 @@ export default function Tickets() {
                         </option>
                       ))}
                     </select>
+                    )}
+                    {ticket.status !== "EXPIRED" && <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} className="mt-1" />}
                   </td>
 
                   {/* SLA & Predictive Risk */}
@@ -679,6 +692,9 @@ export default function Tickets() {
                     <div className="inline-flex items-center justify-end gap-1.5">
                       <Link
                         to={`/app/tickets/${ticket._id}`}
+                        onClick={(event) => {
+                          if (ticket.status === "EXPIRED") event.preventDefault();
+                        }}
                         className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand-700 shadow-2xs transition"
                         title="Open conversation"
                       >
