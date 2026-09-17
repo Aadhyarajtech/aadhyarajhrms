@@ -51,6 +51,16 @@ type Announcement = BaseAnnouncement & {
 
 import { formatDate, timeAgo } from "@/lib/format";
 
+function isAnnouncementExpired(announcement: Announcement) {
+  return (
+    announcement.status === "EXPIRED" ||
+    Boolean(
+      announcement.expiresAt &&
+        new Date(announcement.expiresAt).getTime() <= Date.now(),
+    )
+  );
+}
+
 /* =========================================================
    ADMIN ROLES
 ========================================================= */
@@ -622,11 +632,13 @@ export default function Announcements() {
   };
 
   const handleEdit = (announcement: Announcement) => {
+    if (isAnnouncementExpired(announcement)) return;
     setSelectedAnnouncement(announcement);
     setEditOpen(true);
   };
 
   const handleDelete = (announcement: Announcement) => {
+    if (isAnnouncementExpired(announcement)) return;
     const confirmed = window.confirm(
       `Are you sure you want to delete "${announcement.title}"?`,
     );
@@ -866,6 +878,8 @@ export default function Announcements() {
                             size="sm"
                             leftIcon={<Pencil size={14} />}
                             onClick={() => handleEdit(announcement)}
+                            disabled={isAnnouncementExpired(announcement)}
+                            title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be edited" : "Edit announcement"}
                           >
                             Edit
                           </Button>
@@ -876,6 +890,8 @@ export default function Announcements() {
                             leftIcon={<Trash2 size={14} />}
                             onClick={() => handleDelete(announcement)}
                             isLoading={deleteMutation.isPending}
+                            disabled={deleteMutation.isPending || isAnnouncementExpired(announcement)}
+                            title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be deleted" : "Delete announcement"}
                           >
                             Delete
                           </Button>

@@ -1186,6 +1186,23 @@ export async function updateAnnouncement(
     expiryDays?: number;
   },
 ) {
+  const existingAnnouncement = (await Announcement.findById(id)
+    .select("status expiresAt")
+    .lean()) as any;
+
+  if (!existingAnnouncement) return undefined;
+
+  const isExpired =
+    existingAnnouncement.status === "EXPIRED" ||
+    Boolean(
+      existingAnnouncement.expiresAt &&
+        new Date(existingAnnouncement.expiresAt).getTime() <= Date.now(),
+    );
+
+  if (isExpired) {
+    throw new Error("Expired announcements cannot be edited.");
+  }
+
   const update: Record<string, unknown> = {
     updatedAt: new Date().toISOString(),
   };
@@ -1405,6 +1422,17 @@ export async function deleteAnnouncement(id: string) {
 
   if (!announcement) {
     return null;
+  }
+
+  const isExpired =
+    (announcement as any).status === "EXPIRED" ||
+    Boolean(
+      (announcement as any).expiresAt &&
+        new Date((announcement as any).expiresAt).getTime() <= Date.now(),
+    );
+
+  if (isExpired) {
+    throw new Error("Expired announcements cannot be deleted.");
   }
 
   await Announcement.deleteOne({
