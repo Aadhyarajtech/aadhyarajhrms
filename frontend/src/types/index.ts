@@ -127,11 +127,18 @@ export interface LeaveRequest {
   endDate: string;
   totalDays: number;
   reason: string;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  status:
+    | "PENDING"
+    | "APPROVED"
+    | "REJECTED"
+    | "CANCELLED"
+    | "EXPIRED";
   approverId: string | null;
   decisionNote: string | null;
   appliedAt: string;
   decidedAt: string | null;
+  expiresAt?: string | null;
+  expiredAt?: string | null;
   firstName: string;
   lastName: string;
   employeeCode: string;

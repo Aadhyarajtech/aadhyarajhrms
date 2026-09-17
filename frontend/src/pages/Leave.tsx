@@ -201,7 +201,7 @@ function MyLeave() {
 
                 <div className="flex flex-col items-end gap-2">
                   <StatusBadge status={r.status} />
-                  <ExpiryBadge expiresAt={r.expiresAt} expiredAt={r.expiredAt} />
+                  <ExpiryBadge expiresAt={r.expiresAt} expiredAt={r.expiredAt} status={r.status} />
 
                   {r.status === "PENDING" && (
                     <button
@@ -361,7 +361,7 @@ function TeamApprovals() {
               ) : (
                 <div className="flex flex-col items-end gap-2">
                   <StatusBadge status={r.status} />
-                  <ExpiryBadge expiresAt={r.expiresAt} expiredAt={r.expiredAt} />
+                  <ExpiryBadge expiresAt={r.expiresAt} expiredAt={r.expiredAt} status={r.status} />
                 </div>
               )}
             </div>

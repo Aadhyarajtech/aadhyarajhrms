@@ -1298,12 +1298,19 @@ export interface LeaveRequestDoc {
   totalDays: number;
   reason: string;
 
-  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  status:
+    | "PENDING"
+    | "APPROVED"
+    | "REJECTED"
+    | "CANCELLED"
+    | "EXPIRED";
 
   approverId: string | null;
   decisionNote: string | null;
   appliedAt: string;
   decidedAt: string | null;
+  expiresAt: string | null;
+  expiredAt: string | null;
 }
 
 const leaveRequestSchema = new Schema<LeaveRequestDoc>(
@@ -1342,7 +1349,13 @@ const leaveRequestSchema = new Schema<LeaveRequestDoc>(
 
     status: {
       type: String,
-      enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
+      enum: [
+        "PENDING",
+        "APPROVED",
+        "REJECTED",
+        "CANCELLED",
+        "EXPIRED",
+      ],
       default: "PENDING",
     },
 
@@ -1362,6 +1375,17 @@ const leaveRequestSchema = new Schema<LeaveRequestDoc>(
     },
 
     decidedAt: {
+      type: String,
+      default: null,
+    },
+
+    expiresAt: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    expiredAt: {
       type: String,
       default: null,
     },
@@ -2603,6 +2627,18 @@ export interface PerformanceCycleDoc {
     | "THREE_SIXTY"
     | "PIP";
   purpose: string | null;
+  ratingScale?: number[];
+  ratingWeights?: {
+    self: number;
+    manager: number;
+  };
+  competencies?: {
+    name: string;
+    weight: number;
+  }[];
+  selfReviewDueDate?: string | null;
+  managerReviewDueDate?: string | null;
+  finalReviewDueDate?: string | null;
 }
 
 const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
@@ -2637,6 +2673,51 @@ const performanceCycleSchema = new Schema<PerformanceCycleDoc>(
       default: "ANNUAL",
     },
     purpose: {
+      type: String,
+      default: null,
+    },
+
+    ratingScale: {
+      type: [Number],
+      default: [1, 2, 3, 4, 5],
+    },
+
+    ratingWeights: {
+      self: {
+        type: Number,
+        min: 0,
+        max: 100,
+        default: 40,
+      },
+      manager: {
+        type: Number,
+        min: 0,
+        max: 100,
+        default: 60,
+      },
+    },
+
+    competencies: {
+      type: [
+        {
+          name: { type: String, required: true },
+          weight: { type: Number, min: 0, max: 100, required: true },
+        },
+      ],
+      default: [],
+    },
+
+    selfReviewDueDate: {
+      type: String,
+      default: null,
+    },
+
+    managerReviewDueDate: {
+      type: String,
+      default: null,
+    },
+
+    finalReviewDueDate: {
       type: String,
       default: null,
     },
