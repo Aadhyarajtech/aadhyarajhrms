@@ -770,21 +770,6 @@ const updateEmployeeSchema = z.object({
     .optional(),
   dateOfExit: z.string().nullable().optional(),
 });
-const onboardingStageSchema = z.object({
-  stage: z.enum([
-    "ACCOUNT_CREATION",
-    "PERSONAL_PROFESSIONAL_DETAILS",
-    "DOCUMENT_VERIFICATION",
-    "DEPARTMENT_ROLE_ASSIGNMENT",
-    "PAYROLL_STRUCTURE",
-    "CREDENTIALS",
-    "ORIENTATION_POLICY",
-    "PROFILE_ACTIVATION",
-  ]),
-  status: z.enum(["PENDING", "IN_PROGRESS", "COMPLETED"]),
-  remarks: z.string().max(1000).nullable().optional(),
-});
-
 const updateOffboardingChecklistSchema = z.object({
   assetReturn: z.boolean().optional(),
   accessRevoked: z.boolean().optional(),
@@ -937,8 +922,14 @@ employeesRouter.patch(
 employeesRouter.get("/:id/onboarding", isAdmin, async (req, res, next) => {
   try {
     const employee = await repo.getEmployeeById(req.params.id);
-    if (!employee) throw AppError.notFound("Employee not found.");
-    res.json({ onboarding: await repo.getOnboarding(req.params.id) });
+
+    if (!employee) {
+      throw AppError.notFound("Employee not found.");
+    }
+
+    res.json({
+      onboarding: employee.onboarding ?? null,
+    });
   } catch (err) {
     next(err);
   }
@@ -947,60 +938,29 @@ employeesRouter.get("/:id/onboarding", isAdmin, async (req, res, next) => {
 employeesRouter.post("/:id/onboarding/start", isAdmin, async (req, res, next) => {
   try {
     const employee = await repo.getEmployeeById(req.params.id);
-    if (!employee) throw AppError.notFound("Employee not found.");
+
+    if (!employee) {
+      throw AppError.notFound("Employee not found.");
+    }
+
     if (employee.status !== "ONBOARDING") {
       throw AppError.badRequest(
         "Onboarding can only be started for employees with ONBOARDING status.",
       );
     }
-    const updated = await repo.updateOnboardingStage(
-      req.params.id,
-      "ACCOUNT_CREATION",
-      "COMPLETED",
-      "Employee account created and onboarding started.",
-    );
+
+    const onboarding = employee.onboarding ?? null;
+
     res.json({
       success: true,
-      message: "Employee onboarding started successfully.",
-      employee: updated,
-      onboarding: await repo.getOnboarding(req.params.id),
+      message: "Employee onboarding is ready to continue.",
+      employee,
+      onboarding,
     });
   } catch (err) {
     next(err);
   }
 });
-
-employeesRouter.patch(
-  "/:id/onboarding/stage",
-  isAdmin,
-  validate(onboardingStageSchema),
-  async (req, res, next) => {
-    try {
-      const employee = await repo.getEmployeeById(req.params.id);
-      if (!employee) throw AppError.notFound("Employee not found.");
-      if (employee.status !== "ONBOARDING") {
-        throw AppError.badRequest(
-          "Onboarding stages can only be updated while the employee is in ONBOARDING status.",
-        );
-      }
-      const updated = await repo.updateOnboardingStage(
-        req.params.id,
-        req.body.stage,
-        req.body.status,
-        req.body.remarks,
-      );
-      if (!updated) throw AppError.badRequest("Unable to update onboarding stage.");
-      res.json({
-        success: true,
-        message: `Onboarding stage "${req.body.stage}" updated successfully.`,
-        employee: updated,
-        onboarding: await repo.getOnboarding(req.params.id),
-      });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
 
 employeesRouter.patch(
   "/:id/offboarding-checklist",
@@ -1057,32 +1017,69 @@ employeesRouter.patch(
   },
 );
 
+employeesRouter.patch(
+  "/:id/onboarding/stage",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+      const stage = Number(req.body.stage);
+      if (!Number.isInteger(stage) || stage < 2 || stage > 7) {
+        throw AppError.badRequest("Onboarding stage must be an integer from 2 to 7.");
+      }
+
+      const employee = await repo.updateOnboardingStage(
+        req.params.id,
+        stage,
+        req.user!.userId,
+        typeof req.body.remarks === "string" ? req.body.remarks : null,
+      );
+
+      if (!employee) throw AppError.notFound("Employee not found.");
+
+      res.json({
+        success: true,
+        message: `Onboarding stage ${stage} completed successfully.`,
+        employee,
+      });
+    } catch (err) {
+      if (err instanceof Error && !("statusCode" in err)) {
+        return next(AppError.badRequest(err.message));
+      }
+      next(err);
+    }
+  },
+);
+
 employeesRouter.post(
   "/:id/complete-onboarding",
   isAdmin,
   async (req, res, next) => {
     try {
-      const employee = await repo.getEmployeeById(req.params.id);
-      if (!employee) throw AppError.notFound("Employee not found.");
-      if (employee.status !== "ONBOARDING") {
+      const employeeBefore = await repo.getEmployeeById(req.params.id);
+
+      if (!employeeBefore) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      if (employeeBefore.status !== "ONBOARDING") {
         throw AppError.badRequest(
           "Only employees with ONBOARDING status can complete onboarding.",
         );
       }
 
-      const result = await repo.completeOnboarding(req.params.id);
-      if (!result?.success) {
-        throw AppError.badRequest(
-          `Onboarding cannot be completed. Complete all required stages first: ${(result?.incompleteStages ?? []).join(", ")}.`,
-        );
+      const updatedEmployee = await repo.completeOnboarding(
+        req.params.id,
+        req.user!.userId,
+      );
+
+      if (!updatedEmployee) {
+        throw AppError.notFound("Employee not found.");
       }
 
-      const updatedEmployee = result.employee;
-      if (!updatedEmployee) throw AppError.notFound("Employee not found.");
+      await repo.updateUserActiveStatus(employeeBefore.userId, true);
 
-      await repo.updateUserActiveStatus(updatedEmployee.userId, true);
       await notify({
-        userId: updatedEmployee.userId,
+        userId: employeeBefore.userId,
         type: "SYSTEM",
         title: "Onboarding completed",
         message:
@@ -1094,9 +1091,12 @@ employeesRouter.post(
         success: true,
         message: "Employee onboarding completed successfully.",
         employee: updatedEmployee,
-        onboarding: await repo.getOnboarding(req.params.id),
+        onboarding: updatedEmployee.onboarding ?? null,
       });
     } catch (err) {
+      if (err instanceof Error && !("statusCode" in err)) {
+        return next(AppError.badRequest(err.message));
+      }
       next(err);
     }
   },

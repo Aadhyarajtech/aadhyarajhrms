@@ -6,11 +6,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   Search,
-  Plus,
   ChevronLeft,
   ChevronRight,
   Mail,
   Phone,
+  UserPlus,
+  UsersRound,
+  UserCheck,
+  ShieldCheck,
+  Filter,
 } from "lucide-react";
 import { EmployeesApi, OrganizationApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
@@ -114,9 +118,9 @@ export default function EmployeeDirectory() {
   );
 
   return (
-    <div>
+    <div className="premium-page space-y-6">
       <PageHeader
-        title="Employees"
+        title="People Directory"
         subtitle={
           data
             ? `${data.total} people across the organization`
@@ -125,7 +129,7 @@ export default function EmployeeDirectory() {
         action={
           isAdmin && (
             <Button
-              leftIcon={<Plus size={16} />}
+              leftIcon={<UserPlus size={16} />}
               onClick={() => setAddOpen(true)}
             >
               Add employee
@@ -134,8 +138,77 @@ export default function EmployeeDirectory() {
         }
       />
 
-      <Card className="mb-5 !p-4">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="relative overflow-hidden rounded-[22px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(79,70,229,0.07)]">
+          <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-indigo-100/60 blur-2xl" />
+          <div className="relative flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Total people</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{data?.total ?? "—"}</p>
+              <p className="mt-1 text-[11px] text-slate-500">Organization directory</p>
+            </div>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
+              <UsersRound size={18} />
+            </span>
+          </div>
+        </div>
+
+        <div className="relative overflow-hidden rounded-[22px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(16,185,129,0.06)]">
+          <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-emerald-100/60 blur-2xl" />
+          <div className="relative flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Active view</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{status === "ACTIVE" ? "Active" : "All"}</p>
+              <p className="mt-1 text-[11px] text-slate-500">Current directory filter</p>
+            </div>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm ring-1 ring-emerald-100">
+              <UserCheck size={18} />
+            </span>
+          </div>
+        </div>
+
+        <div className="relative overflow-hidden rounded-[22px] border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(245,158,11,0.06)]">
+          <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-amber-100/60 blur-2xl" />
+          <div className="relative flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Department</p>
+              <p className="mt-1 max-w-[150px] truncate font-display text-lg font-semibold text-slate-900">{departmentId ? "Filtered" : "All departments"}</p>
+              <p className="mt-1 text-[11px] text-slate-500">Workforce segment</p>
+            </div>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm ring-1 ring-amber-100">
+              <Filter size={18} />
+            </span>
+          </div>
+        </div>
+
+        <div className="relative overflow-hidden rounded-[22px] border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(124,58,237,0.06)]">
+          <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-violet-100/60 blur-2xl" />
+          <div className="relative flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Directory access</p>
+              <p className="mt-1 font-display text-lg font-semibold text-slate-900">{isAdmin ? "Admin view" : "Employee view"}</p>
+              <p className="mt-1 text-[11px] text-slate-500">Role-based visibility</p>
+            </div>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm ring-1 ring-violet-100">
+              <ShieldCheck size={18} />
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <Card className="!p-0 overflow-hidden border-slate-200/70 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.045)]">
+        <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-[#FAF8FF] px-5 py-4">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+              <Filter size={15} />
+            </span>
+            <div>
+              <p className="text-[13px] font-semibold text-slate-800">Find people</p>
+              <p className="text-[11px] text-slate-500">Search and refine the organization directory.</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 p-4">
           <div className="relative min-w-[220px] flex-1">
             <Search
               size={16}
@@ -148,7 +221,7 @@ export default function EmployeeDirectory() {
                 setPage(1);
               }}
               placeholder="Search by name, code, or email..."
-              className="h-10 w-full rounded-xl border border-line bg-white pl-9 pr-3 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm shadow-sm transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100/70"
             />
           </div>
           <select
@@ -157,7 +230,7 @@ export default function EmployeeDirectory() {
               setDepartmentId(e.target.value);
               setPage(1);
             }}
-            className="h-10 rounded-xl border border-line bg-white px-3 text-sm text-ink-soft focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-600 shadow-sm transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100/70"
           >
             <option value="">All departments</option>
             {deptData?.map((d) => (
@@ -172,7 +245,7 @@ export default function EmployeeDirectory() {
               setStatus(e.target.value);
               setPage(1);
             }}
-            className="h-10 rounded-xl border border-line bg-white px-3 text-sm text-ink-soft focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-600 shadow-sm transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100/70"
           >
             <option value="">All statuses</option>
             <option value="ACTIVE">Active</option>
@@ -204,7 +277,7 @@ export default function EmployeeDirectory() {
               <Card
                 key={emp.id}
                 hoverable
-                className="cursor-pointer"
+                className="cursor-pointer border-slate-200/70 bg-gradient-to-br from-white via-white to-[#FBFAFF] shadow-[0_8px_24px_rgba(15,23,42,0.045)] hover:border-brand-200/80 hover:shadow-[0_16px_34px_rgba(91,79,229,0.10)]"
                 onClick={() => navigate(`/app/employees/${emp.id}`)}
               >
                 <div className="flex items-start justify-between">
@@ -216,13 +289,13 @@ export default function EmployeeDirectory() {
                   />
                   <StatusBadge status={emp.status} />
                 </div>
-                <p className="mt-3 font-display text-[15px] font-medium text-ink">
+                <p className="mt-4 font-display text-[16px] font-semibold tracking-[-0.01em] text-slate-900">
                   {emp.firstName} {emp.lastName}
                 </p>
                 <p className="text-[12.5px] text-ink-faint">
                   {emp.designationTitle}
                 </p>
-                <div className="mt-3 flex items-center gap-2">
+                <div className="mt-4 flex items-center gap-2">
                   <Badge tone="neutral" className="text-[11px]">
                     {emp.departmentName}
                   </Badge>
@@ -230,7 +303,7 @@ export default function EmployeeDirectory() {
                     {emp.employeeCode}
                   </span>
                 </div>
-                <div className="mt-3 space-y-1 border-t border-line/70 pt-3 text-[12px] text-ink-faint">
+                <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
                   <p className="flex items-center gap-1.5 truncate">
                     <Mail size={12} /> {emp.email}
                   </p>
@@ -244,8 +317,8 @@ export default function EmployeeDirectory() {
             ))}
           </div>
 
-          <div className="mt-6 flex items-center justify-between">
-            <p className="text-[13px] text-ink-faint">
+          <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[12px] font-medium text-slate-500">
               Page {page} of {totalPages}
             </p>
             <div className="flex gap-2">
@@ -292,6 +365,17 @@ export default function EmployeeDirectory() {
           </>
         }
       >
+        <div className="mb-5 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/80 via-white to-violet-50/50 p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
+              <UserPlus size={17} />
+            </div>
+            <div>
+              <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-indigo-600">Employee setup</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Create the account and assign the employee to the organization.</p>
+            </div>
+          </div>
+        </div>
         <form className="grid gap-4 sm:grid-cols-2">
           <TextField
             label="First name"

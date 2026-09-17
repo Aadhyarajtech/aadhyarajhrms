@@ -4044,6 +4044,7 @@ export interface DocumentRecordDoc {
 
   fileName: string;
   fileUrl: string;
+  storageKey: string | null;
 
   uploadedAt: string;
 
@@ -4094,6 +4095,11 @@ const documentSchema = new Schema<DocumentRecordDoc>(
     fileUrl: {
       type: String,
       required: true,
+    },
+
+    storageKey: {
+      type: String,
+      default: null,
     },
 
     uploadedAt: {
