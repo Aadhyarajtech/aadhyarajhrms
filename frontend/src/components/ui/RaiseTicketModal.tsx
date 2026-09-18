@@ -29,6 +29,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
   const [priority, setPriority] = useState("MEDIUM");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -143,6 +144,9 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       formData.append("priority", priority);
       formData.append("subject", subject.trim());
       formData.append("description", description.trim());
+      if (expiryDate) {
+        formData.append("expiryDate", expiryDate);
+      }
 
       if (attachment) {
         formData.append("attachment", attachment);
@@ -161,6 +165,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       userChangedPriorityRef.current = false;
       setSubject("");
       setDescription("");
+      setExpiryDate("");
       setAttachment(null);
       setAiResult(null);
 
@@ -448,6 +453,24 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
               placeholder="Describe your issue..."
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
             />
+          </div>
+
+          {/* Expiry date */}
+          <div>
+            <label className="mb-2 block text-sm font-medium">
+              Expiry Date <span className="font-normal text-gray-500">(Optional)</span>
+            </label>
+            <input
+              type="date"
+              value={expiryDate}
+              min={new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+              max={new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Leave blank to use the default 3-day ticket expiry.
+            </p>
           </div>
 
           {/* Attachment */}

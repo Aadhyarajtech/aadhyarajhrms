@@ -61,7 +61,8 @@ export interface Employee {
     | "NOTICE_PERIOD"
     | "TERMINATED"
     | "RESIGNED"
-    | "INACTIVE";
+    | "INACTIVE"
+    | "ON_HOLD";
   dateOfJoining: string;
   dateOfExit: string | null;
   email: string;
@@ -69,6 +70,52 @@ export interface Employee {
   isActive: number;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
+  emergencyContactRelationship?: string | null;
+  emergencyContactEmail?: string | null;
+  emergencyContacts?: {
+    name?: string | null;
+    phone?: string | null;
+    relationship?: string | null;
+    email?: string | null;
+  }[];
+  medicalConditions?: string | null;
+  bloodGroup?: string | null;
+  insurancePolicyNumber?: string | null;
+  employeeAadhaar?: string | null;
+  employeePan?: string | null;
+  employeeTan?: string | null;
+  bankAccountNumber?: string | null;
+  bankIfscCode?: string | null;
+  bankBranch?: string | null;
+  investmentDeclarations?: Record<string, unknown>;
+  signature?: string | null;
+  education?: {
+    qualification: string;
+    institution: string;
+    specialization?: string | null;
+    startYear?: number | null;
+    endYear?: number | null;
+    grade?: string | null;
+  }[];
+  certifications?: {
+    name: string;
+    issuingOrganization?: string | null;
+    issueDate?: string | null;
+    expiryDate?: string | null;
+    credentialId?: string | null;
+  }[];
+  workHistory?: {
+    companyName: string;
+    designation?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    responsibilities?: string | null;
+  }[];
+  skills?: {
+    name: string;
+    category?: string | null;
+    competencyLevel: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "EXPERT";
+  }[];
   shiftId?: string | null;
 }
 

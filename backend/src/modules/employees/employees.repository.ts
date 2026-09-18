@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { Employee, User, Department, Designation } from "@/db/models";
 import { nowIso } from "@/db/connection";
+import { AppError } from "@/utils/errors";
 
 export interface EmployeeFilters {
   search?: string;
@@ -118,8 +119,65 @@ export async function getEmployeeByUserId(userId: string) {
   return enrichEmployee(doc);
 }
 
+/**
+ * Validate a reporting-manager assignment without changing existing employee
+ * records. A manager cannot be the employee themself and a reporting chain
+ * cannot contain a cycle.
+ */
+async function validateManagerAssignment(
+  employeeId: string,
+  managerId?: string | null,
+) {
+  if (!managerId) return;
+
+  if (managerId === employeeId) {
+    throw AppError.badRequest("An employee cannot report to themself.");
+  }
+
+  const manager = await Employee.findById(managerId).select("_id managerId status").lean<any>();
+  if (!manager) {
+    throw AppError.notFound("Reporting manager not found.");
+  }
+
+  // Follow the proposed manager's chain. If it reaches the employee being
+  // edited, the new relationship would create a circular hierarchy.
+  const visited = new Set<string>();
+  let currentId: string | null = managerId;
+
+  while (currentId) {
+    if (currentId === employeeId) {
+      throw AppError.badRequest("Invalid reporting hierarchy: this assignment creates a manager cycle.");
+    }
+    if (visited.has(currentId)) {
+      throw AppError.badRequest("Invalid reporting hierarchy: an existing manager cycle was detected.");
+    }
+    visited.add(currentId);
+
+    const current:  { _id?: unknown; managerId?: unknown } | null =
+      currentId === managerId
+        ? manager
+        : await Employee.findById(currentId).select("_id managerId").lean<any>();
+
+    currentId = current?.managerId ? String(current.managerId) : null;
+  }
+}
+
 export async function listDirectReports(managerId: string) {
-  const rows = await Employee.find({ managerId }).sort({ firstName: 1 }).lean();
+  const rows = await Employee.find({
+    managerId,
+    status: {
+      $in: [
+        "ACTIVE",
+        "ON_PROBATION",
+        "ON_LEAVE",
+        "NOTICE_PERIOD",
+        "ON_HOLD",
+      ],
+    },
+  })
+    .sort({ firstName: 1, lastName: 1 })
+    .lean();
+
   return enrichEmployees(rows);
 }
 
@@ -183,8 +241,23 @@ export interface CreateEmployeeInput {
   emergencyContactPhone?: string | null;
   emergencyContactRelationship?: string | null;
   emergencyContactEmail?: string | null;
+  emergencyContacts?: {
+    name?: string | null;
+    phone?: string | null;
+    relationship?: string | null;
+    email?: string | null;
+  }[];
+
+  medicalConditions?: string | null;
+  bloodGroup?: string | null;
+  insurancePolicyNumber?: string | null;
 
   employeeAadhaar?: string | null;
+  employeeTan?: string | null;
+  bankAccountNumber?: string | null;
+  bankIfscCode?: string | null;
+  bankBranch?: string | null;
+  investmentDeclarations?: Record<string, unknown>;
   employeePan?: string | null;
   signature?: string | null;
   avatarUrl?: string;
@@ -226,6 +299,18 @@ export async function createEmployee(input: CreateEmployeeInput) {
   const passwordHash = bcrypt.hashSync(input.temporaryPassword, 10);
   const employeeCode = await nextEmployeeCode();
 
+  if (input.managerId) {
+    // New employee does not have an id yet, so only validate that the selected
+    // manager exists and is not part of a malformed existing chain.
+    const manager = await Employee.findById(input.managerId)
+      .select("_id managerId status")
+      .lean<any>();
+    if (!manager) throw AppError.notFound("Reporting manager not found.");
+    if (manager.status === "INACTIVE" || manager.status === "TERMINATED" || manager.status === "RESIGNED") {
+      throw AppError.badRequest("An inactive employee cannot be assigned as reporting manager.");
+    }
+  }
+
   const user = await User.create({
     email: input.email.toLowerCase().trim(),
     passwordHash,
@@ -255,8 +340,18 @@ export async function createEmployee(input: CreateEmployeeInput) {
     emergencyContactPhone: input.emergencyContactPhone ?? null,
     emergencyContactRelationship: input.emergencyContactRelationship ?? null,
     emergencyContactEmail: input.emergencyContactEmail ?? null,
+    emergencyContacts: input.emergencyContacts ?? [],
+
+    medicalConditions: input.medicalConditions ?? null,
+    bloodGroup: input.bloodGroup ?? null,
+    insurancePolicyNumber: input.insurancePolicyNumber ?? null,
 
     employeeAadhaar: input.employeeAadhaar ?? null,
+    employeeTan: input.employeeTan ?? null,
+    bankAccountNumber: input.bankAccountNumber ?? null,
+    bankIfscCode: input.bankIfscCode ?? null,
+    bankBranch: input.bankBranch ?? null,
+    investmentDeclarations: input.investmentDeclarations ?? {},
     employeePan: input.employeePan ?? null,
     signature: input.signature ?? null,
     avatarUrl: input.avatarUrl ?? null,
@@ -358,7 +453,21 @@ export interface UpdateEmployeeInput {
   emergencyContactPhone?: string;
   emergencyContactRelationship?: string | null;
   emergencyContactEmail?: string | null;
+  emergencyContacts?: {
+    name?: string | null;
+    phone?: string | null;
+    relationship?: string | null;
+    email?: string | null;
+  }[];
+  medicalConditions?: string | null;
+  bloodGroup?: string | null;
+  insurancePolicyNumber?: string | null;
   employeeAadhaar?: string | null;
+  employeeTan?: string | null;
+  bankAccountNumber?: string | null;
+  bankIfscCode?: string | null;
+  bankBranch?: string | null;
+  investmentDeclarations?: Record<string, unknown>;
   employeePan?: string | null;
   signature?: string | null;
 
@@ -412,6 +521,11 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
   if (!current) return undefined;
 
   const merged = { ...current, ...input };
+
+  if (Object.prototype.hasOwnProperty.call(input, "managerId")) {
+    await validateManagerAssignment(id, merged.managerId ?? null);
+  }
+
   await Employee.updateOne(
     { _id: id },
     {
@@ -452,8 +566,18 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         emergencyContactRelationship:
           merged.emergencyContactRelationship ?? null,
         emergencyContactEmail: merged.emergencyContactEmail ?? null,
+        emergencyContacts: merged.emergencyContacts ?? current.emergencyContacts ?? [],
+        medicalConditions: merged.medicalConditions ?? null,
+        bloodGroup: merged.bloodGroup ?? null,
+        insurancePolicyNumber: merged.insurancePolicyNumber ?? null,
 
         employeeAadhaar: merged.employeeAadhaar ?? null,
+        employeeTan: merged.employeeTan ?? null,
+        bankAccountNumber: merged.bankAccountNumber ?? null,
+        bankIfscCode: merged.bankIfscCode ?? null,
+        bankBranch: merged.bankBranch ?? null,
+        investmentDeclarations:
+          merged.investmentDeclarations ?? current.investmentDeclarations ?? {},
         employeePan: merged.employeePan ?? null,
         signature: merged.signature ?? null,
         avatarUrl: merged.avatarUrl ?? null,
@@ -549,15 +673,42 @@ export async function getOrgChart() {
   const byId = new Map(
     camel.map((e) => [e.id, { ...e, directReports: [] as any[] }]),
   );
-  const roots: any[] = [];
 
+  // Build a clean parent map from the real managerId values. If old/restored
+  // data contains a self-reference or circular chain, treat the affected
+  // employee as a root instead of losing the entire branch from the chart.
+  const parentMap = new Map<string, string>();
   for (const emp of byId.values()) {
-    if (emp.managerId && byId.has(emp.managerId)) {
-      byId.get(emp.managerId)!.directReports.push(emp);
+    const managerId = emp.managerId ? String(emp.managerId) : "";
+    if (!managerId || managerId === emp.id || !byId.has(managerId)) continue;
+
+    const visited = new Set<string>([emp.id]);
+    let cursor: string | undefined = managerId;
+    let valid = true;
+
+    while (cursor) {
+      if (visited.has(cursor)) {
+        valid = false;
+        break;
+      }
+      visited.add(cursor);
+      const parent = byId.get(cursor);
+      cursor = parent?.managerId ? String(parent.managerId) : undefined;
+    }
+
+    if (valid) parentMap.set(emp.id, managerId);
+  }
+
+  const roots: any[] = [];
+  for (const emp of byId.values()) {
+    const managerId = parentMap.get(emp.id);
+    if (managerId) {
+      byId.get(managerId)!.directReports.push(emp);
     } else {
       roots.push(emp);
     }
   }
+
   return roots;
 }
 
@@ -622,20 +773,53 @@ export async function getHeadcountTrend(months = 6) {
 }
 
 export async function getManagersList() {
-  const rows = await Employee.find({ status: "ACTIVE" })
+  const rows = await Employee.find({
+    status: {
+      $in: ["ACTIVE", "ON_PROBATION", "ON_LEAVE", "NOTICE_PERIOD", "ON_HOLD"],
+    },
+  })
     .sort({ firstName: 1, lastName: 1 })
     .lean();
 
-  const designationIds = [...new Set(rows.map((e) => e.designationId).filter(Boolean))];
-  const designations = await Designation.find({ _id: { $in: designationIds } }).lean();
-  const desMap = new Map(designations.map((d) => [d._id, d]));
+  const designationIds = [
+    ...new Set(rows.map((e) => e.designationId).filter(Boolean)),
+  ];
+  const userIds = [...new Set(rows.map((e) => e.userId).filter(Boolean))];
 
-  return rows.map((employee) => ({
-    id: employee._id,
-    firstName: employee.firstName ?? "",
-    lastName: employee.lastName ?? "",
-    designationTitle: desMap.get(employee.designationId)?.title ?? null,
-  }));
+  const [designations, users, reportCounts] = await Promise.all([
+    Designation.find({ _id: { $in: designationIds } }).lean(),
+    User.find({ _id: { $in: userIds } }).select("_id role").lean(),
+    Employee.aggregate([
+      { $match: { managerId: { $ne: null } } },
+      { $group: { _id: "$managerId", count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const desMap = new Map(designations.map((d) => [d._id, d]));
+  const userMap = new Map(users.map((u) => [u._id, u]));
+  const reportMap = new Map(reportCounts.map((r) => [r._id, r.count]));
+
+  return rows
+    .filter((employee) => {
+      const role = userMap.get(employee.userId)?.role;
+      // Include actual managers even before their first report is assigned.
+      // Also retain employees who already have reports, so restored data does
+      // not disappear from the manager selector.
+      return (
+        role === "MANAGER" ||
+        role === "HR_ADMIN" ||
+        role === "SUPER_ADMIN" ||
+        (reportMap.get(employee._id) ?? 0) > 0
+      );
+    })
+    .map((employee) => ({
+      id: employee._id,
+      firstName: employee.firstName ?? "",
+      lastName: employee.lastName ?? "",
+      designationTitle: desMap.get(employee.designationId)?.title ?? null,
+      role: userMap.get(employee.userId)?.role ?? null,
+      directReportCount: reportMap.get(employee._id) ?? 0,
+    }));
 }
 
 export async function updateUserActiveStatus(

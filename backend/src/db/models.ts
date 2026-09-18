@@ -32,6 +32,10 @@ export interface UserDoc {
   isActive: boolean;
   mustResetPwd: boolean;
   lastLoginAt: string | null;
+  passwordResetOtpHash: string | null;
+  passwordResetOtpExpiresAt: string | null;
+  passwordResetOtpRequestedAt: string | null;
+  passwordResetOtpAttempts: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -80,6 +84,27 @@ const userSchema = new Schema<UserDoc>(
     lastLoginAt: {
       type: String,
       default: null,
+    },
+
+    passwordResetOtpHash: {
+      type: String,
+      default: null,
+    },
+
+    passwordResetOtpExpiresAt: {
+      type: String,
+      default: null,
+    },
+
+    passwordResetOtpRequestedAt: {
+      type: String,
+      default: null,
+    },
+
+    passwordResetOtpAttempts: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     createdAt: {
@@ -4342,13 +4367,29 @@ export interface TicketDoc {
   attachment: string | null;
 
   assignedTo: string;
+  assignedManagerId: string | null;
 
   status:
     | "OPEN"
     | "IN_PROGRESS"
     | "WAITING_FOR_EMPLOYEE"
     | "RESOLVED"
-    | "CLOSED";
+    | "CLOSED"
+    | "EXPIRED";
+
+  // Ticket lifecycle / expiry
+  expiryDays: number;
+  expiresAt: string | null;
+  expiredAt: string | null;
+
+  // Ticket SLA / escalation state
+  slaDueAt: string | null;
+  slaStatus: "ON_TRACK" | "DUE_SOON" | "BREACHED" | "PAUSED";
+  isEscalated: boolean;
+  escalatedAt: string | null;
+  escalatedById: string | null;
+  escalatedTo: "HR_ADMIN" | "SUPER_ADMIN" | null;
+  escalationReason: string | null;
 
   // AI classification metadata
   aiCategory: string | null;
@@ -4423,6 +4464,11 @@ const ticketSchema = new Schema<TicketDoc>(
       required: true,
     },
 
+    assignedManagerId: {
+      type: String,
+      default: null,
+    },
+
     status: {
       type: String,
       enum: [
@@ -4431,8 +4477,64 @@ const ticketSchema = new Schema<TicketDoc>(
         "WAITING_FOR_EMPLOYEE",
         "RESOLVED",
         "CLOSED",
+        "EXPIRED",
       ],
       default: "OPEN",
+    },
+
+    expiryDays: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 365,
+      default: 3,
+    },
+
+    expiresAt: {
+      type: String,
+      default: null,
+    },
+
+    expiredAt: {
+      type: String,
+      default: null,
+    },
+
+    slaDueAt: {
+      type: String,
+      default: null,
+    },
+
+    slaStatus: {
+      type: String,
+      enum: ["ON_TRACK", "DUE_SOON", "BREACHED", "PAUSED"],
+      default: "ON_TRACK",
+    },
+
+    isEscalated: {
+      type: Boolean,
+      default: false,
+    },
+
+    escalatedAt: {
+      type: String,
+      default: null,
+    },
+
+    escalatedById: {
+      type: String,
+      default: null,
+    },
+
+    escalatedTo: {
+      type: String,
+      enum: ["HR_ADMIN", "SUPER_ADMIN", null],
+      default: null,
+    },
+
+    escalationReason: {
+      type: String,
+      default: null,
     },
 
     createdAt: {
@@ -4508,6 +4610,13 @@ ticketSchema.index({
 
 ticketSchema.index({
   status: 1,
+});
+ticketSchema.index({
+  status: 1,
+  expiresAt: 1,
+});
+ticketSchema.index({
+  expiresAt: 1,
 });
 
 export const Ticket = model<TicketDoc>("Ticket", ticketSchema);
