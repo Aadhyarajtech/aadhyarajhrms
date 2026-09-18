@@ -67,7 +67,6 @@ export async function processScheduledAnnouncements() {
         if (announcement.channels?.includes("IN_APP")) {
           const result =
             await notificationRepo.broadcastAnnouncementNotification({
-          id: announcement.id,
               title: announcement.title,
               body: announcement.body,
               audience: announcement.audience,

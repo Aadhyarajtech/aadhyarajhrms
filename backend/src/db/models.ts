@@ -4348,8 +4348,7 @@ export interface TicketDoc {
     | "IN_PROGRESS"
     | "WAITING_FOR_EMPLOYEE"
     | "RESOLVED"
-    | "CLOSED"
-    | "EXPIRED";
+    | "CLOSED";
 
   // AI classification metadata
   aiCategory: string | null;
@@ -4363,10 +4362,6 @@ export interface TicketDoc {
   // Phase 5: Predictive SLA Breach Warning
   slaRiskScore: number;
   slaRiskLevel: "NORMAL" | "ELEVATED" | "CRITICAL";
-
-  expiryDays: number;
-  expiresAt: string | null;
-  expiredAt: string | null;
 
   createdAt: string;
   updatedAt: string;
@@ -4436,7 +4431,6 @@ const ticketSchema = new Schema<TicketDoc>(
         "WAITING_FOR_EMPLOYEE",
         "RESOLVED",
         "CLOSED",
-        "EXPIRED",
       ],
       default: "OPEN",
     },
@@ -4449,25 +4443,6 @@ const ticketSchema = new Schema<TicketDoc>(
     updatedAt: {
       type: String,
       required: true,
-    },
-
-    expiryDays: {
-      type: Number,
-      required: true,
-      min: 1,
-      max: 365,
-      default: 3,
-    },
-
-    expiresAt: {
-      type: String,
-      default: null,
-      index: true,
-    },
-
-    expiredAt: {
-      type: String,
-      default: null,
     },
 
     // AI classification metadata

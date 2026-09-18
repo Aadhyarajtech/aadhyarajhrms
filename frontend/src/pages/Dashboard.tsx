@@ -25,7 +25,6 @@ import {
   ArrowRight,
   Megaphone,
   ExternalLink,
-  Ticket,
 } from "lucide-react";
 
 import { Link } from "react-router-dom";
@@ -141,22 +140,14 @@ export default function Dashboard() {
             : ` as of ${formatDate(kpis.attendanceDate)}`
         }.`}
         action={
-          <div className="flex items-center gap-2">
-            <Link
-              to="/app/attendance"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-brand-700"
-            >
-              <Clock size={15} />
-              Check In
-            </Link>
+          <div className="max-w-xs rounded-2xl border border-line/60 bg-gradient-to-br from-brand-50 to-gold-50 p-4 shadow-sm">
+            <p className="font-display text-[13px] font-medium text-ink">
+              Need help?
+            </p>
 
-            <Link
-              to="/app/tickets"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 text-[12px] font-semibold text-ink transition hover:border-brand-200 hover:bg-brand-50"
-            >
-              <Ticket size={15} />
-              Raise Ticket
-            </Link>
+            <p className="mt-1 text-[12px] text-ink-faint">
+              Reach IT & Security for access or technical issues.
+            </p>
           </div>
         }
       />

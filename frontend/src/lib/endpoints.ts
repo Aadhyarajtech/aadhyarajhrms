@@ -98,7 +98,7 @@ export const EmployeesApi = {
           id: string;
           firstName: string;
           lastName: string;
-          designationTitle: string;
+          designationTitle?: string | null;
         }[];
       }>("/employees/managers")
       .then((r) => r.data.managers),
