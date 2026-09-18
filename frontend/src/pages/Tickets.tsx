@@ -19,7 +19,6 @@ import { api, getErrorMessage, resolveAssetUrl } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useAuth } from "@/context/AuthContext";
 import ExecutiveHelpdeskAnalytics from "@/components/tickets/ExecutiveHelpdeskAnalytics";
-import { ExpiryBadge } from "@/components/common/ExpiryBadge";
 
 const ALL_CATEGORIES = [
   { value: "ALL", label: "All Categories" },
@@ -94,12 +93,6 @@ function formatDateTime(value?: string | null) {
   return date.toLocaleString();
 }
 
-function isTicketExpired(ticket: { status?: string; expiresAt?: string | null }) {
-  return (
-    ticket.status === "EXPIRED" ||
-    (!!ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())
-  );
-}
 
 export default function Tickets() {
   const queryClient = useQueryClient();
@@ -181,7 +174,6 @@ export default function Tickets() {
   const openCount = departmentScopedTickets.filter((t: any) => t.status === "OPEN").length;
   const inProgressCount = departmentScopedTickets.filter((t: any) => t.status === "IN_PROGRESS").length;
   const resolvedCount = departmentScopedTickets.filter((t: any) => t.status === "RESOLVED").length;
-  const expiredCount = departmentScopedTickets.filter((t: any) => isTicketExpired(t)).length;
   const atRiskCount = departmentScopedTickets.filter(
     (t: any) =>
       t.status === "OPEN" &&
@@ -203,13 +195,8 @@ export default function Tickets() {
           ticket.isBreached);
       if (!isNeedsAttention) {
         return false;
-      }
-    } else if (statusFilter !== "ALL") {
-      if (statusFilter === "EXPIRED") {
-        if (!isTicketExpired(ticket)) return false;
-      } else if (ticket.status !== statusFilter || isTicketExpired(ticket)) {
-        return false;
-      }
+      }    } else if (statusFilter !== "ALL" && ticket.status !== statusFilter) {
+      return false;
     }
     if (categoryFilter !== "ALL" && ticket.category !== categoryFilter) {
       return false;
@@ -386,7 +373,6 @@ export default function Tickets() {
                 { id: "OPEN", label: `Open (${openCount})` },
                 { id: "IN_PROGRESS", label: `In Progress (${inProgressCount})` },
                 { id: "RESOLVED", label: `Resolved (${resolvedCount})` },
-                { id: "EXPIRED", label: `Expired (${expiredCount})` },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -619,12 +605,6 @@ export default function Tickets() {
 
                   {/* Status Dropdown */}
                   <td className="py-2.5 px-2 whitespace-nowrap">
-                    {isTicketExpired(ticket) ? (
-                      <div>
-                        <span className="inline-flex rounded-full bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">Expired</span>
-                        <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} className="mt-1" />
-                      </div>
-                    ) : (
                     <select
                       value={ticket.status}
                       disabled={updateStatus.isPending}
@@ -644,8 +624,6 @@ export default function Tickets() {
                         </option>
                       ))}
                     </select>
-                    )}
-                    {!isTicketExpired(ticket) && <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} className="mt-1" />}
                   </td>
 
                   {/* SLA & Predictive Risk */}
@@ -698,19 +676,15 @@ export default function Tickets() {
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
                     <div className="inline-flex items-center justify-end gap-1.5">
                       <Link
-                        to={`/app/tickets/${ticket._id}`}
-                        className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium shadow-2xs transition ${
-                          isTicketExpired(ticket)
-                            ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                            : "bg-brand-600 text-white hover:bg-brand-700"
-                        }`}
-                        title={isTicketExpired(ticket) ? "View expired ticket history" : "Open conversation"}
-                      >
-                        <MessageCircle className="h-3 w-3" />
-                        <span>{isTicketExpired(ticket) ? "View" : "Chat"}</span>
-                      </Link>
+                          to={`/app/tickets/${ticket._id}`}
+                          className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand-700 shadow-2xs transition"
+                          title="Open conversation"
+                        >
+                          <MessageCircle className="h-3 w-3" />
+                          <span>Chat</span>
+                        </Link>
 
-                      {ticket.category === "Complaint" && !ticket.isEscalated && !isTicketExpired(ticket) && (
+                      {ticket.category === "Complaint" && !ticket.isEscalated && (
                         <button
                           type="button"
                           onClick={() => {
