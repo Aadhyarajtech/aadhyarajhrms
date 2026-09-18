@@ -32,6 +32,10 @@ export interface UserDoc {
   isActive: boolean;
   mustResetPwd: boolean;
   lastLoginAt: string | null;
+  passwordResetOtpHash: string | null;
+  passwordResetOtpExpiresAt: string | null;
+  passwordResetOtpRequestedAt: string | null;
+  passwordResetOtpAttempts: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -80,6 +84,27 @@ const userSchema = new Schema<UserDoc>(
     lastLoginAt: {
       type: String,
       default: null,
+    },
+
+    passwordResetOtpHash: {
+      type: String,
+      default: null,
+    },
+
+    passwordResetOtpExpiresAt: {
+      type: String,
+      default: null,
+    },
+
+    passwordResetOtpRequestedAt: {
+      type: String,
+      default: null,
+    },
+
+    passwordResetOtpAttempts: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     createdAt: {

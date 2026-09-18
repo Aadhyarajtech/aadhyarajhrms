@@ -78,7 +78,9 @@ export async function backfillExpiryDates() {
       AttendanceRegularizationRequest.find({ expiresAt: { $exists: false } })
         .select("_id requestedAt")
         .lean(),
-      Ticket.find({ expiresAt: { $exists: false } })
+      Ticket.find({
+        $or: [{ expiresAt: { $exists: false } }, { expiresAt: null }],
+      })
         .select("_id createdAt expiryDays")
         .lean(),
       Notification.find({ expiresAt: { $exists: false } })

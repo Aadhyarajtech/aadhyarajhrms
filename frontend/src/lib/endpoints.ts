@@ -58,6 +58,29 @@ export const AuthApi = {
         newPassword,
       })
       .then((r) => r.data),
+
+  requestPasswordResetOtp: (email: string) =>
+    api
+      .post<{ message: string; expiresInSeconds?: number }>(
+        "/auth/forgot-password/request-otp",
+        { email },
+      )
+      .then((r) => r.data),
+
+  resetPasswordWithOtp: (
+    email: string,
+    otp: string,
+    newPassword: string,
+    confirmPassword: string,
+  ) =>
+    api
+      .post<{ message: string }>("/auth/forgot-password/reset", {
+        email,
+        otp,
+        newPassword,
+        confirmPassword,
+      })
+      .then((r) => r.data),
 };
 
 // --- Employees ---------------------------------------------------------------

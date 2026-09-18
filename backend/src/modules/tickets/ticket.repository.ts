@@ -183,9 +183,34 @@ export async function createTicket(data: {
   aiPriorityReason?: string | null;
   aiSentiment?: string | null;
   expiryDays?: number;
+  expiryDate?: string;
 }) {
   const now = new Date().toISOString();
-  const expiryDays = Number(data.expiryDays ?? env.ticketExpiryDays);
+  let expiresAt: Date;
+
+  if (data.expiryDate) {
+    expiresAt = new Date(`${data.expiryDate}T23:59:59.999Z`);
+    const maximumExpiry = new Date(
+      new Date(now).getTime() + 365 * 24 * 60 * 60 * 1000,
+    );
+
+    if (
+      Number.isNaN(expiresAt.getTime()) ||
+      expiresAt.getTime() <= Date.now() ||
+      expiresAt.getTime() > maximumExpiry.getTime()
+    ) {
+      throw new Error("Ticket expiry date must be between tomorrow and 365 days from today.");
+    }
+  } else {
+    const configuredExpiryDays = Number(data.expiryDays ?? env.ticketExpiryDays);
+    expiresAt = new Date(
+      new Date(now).getTime() + configuredExpiryDays * 24 * 60 * 60 * 1000,
+    );
+  }
+
+  const expiryDays = Math.ceil(
+    (expiresAt.getTime() - new Date(now).getTime()) / (24 * 60 * 60 * 1000),
+  );
   if (!Number.isFinite(expiryDays) || expiryDays <= 0 || expiryDays > 365) {
     throw new Error("Ticket expiry must be between 1 and 365 days.");
   }
@@ -231,7 +256,8 @@ export async function createTicket(data: {
     aiSentiment: data.aiSentiment ?? null,
 
     createdAt: now,
-    expiresAt: new Date(new Date(now).getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString(),
+    expiryDays,
+    expiresAt: expiresAt.toISOString(),
     expiredAt: null,
 
     updatedAt: now,
