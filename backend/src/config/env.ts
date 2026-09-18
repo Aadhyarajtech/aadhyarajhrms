@@ -32,6 +32,14 @@ function positiveDays(name: string, fallback: number): number {
     : fallback;
 }
 
+function positiveWholeDays(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+
+  return Number.isInteger(value) && value > 0
+    ? value
+    : fallback;
+}
+
 /* =========================================================
    CLIENT ORIGINS
 ========================================================= */
@@ -105,7 +113,7 @@ export const env = {
 
   // Tickets expire after 3 days by default.
   ticketExpiryDays:
-    positiveDays("TICKET_EXPIRY_DAYS", 3),
+    positiveWholeDays("TICKET_EXPIRY_DAYS", 3),
 
   // Notifications are deleted after 2 days.
   notificationExpiryDays:

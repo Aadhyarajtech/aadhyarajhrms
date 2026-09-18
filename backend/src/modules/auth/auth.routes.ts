@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { createHmac, randomInt } from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
@@ -13,8 +14,12 @@ import {
   findAuthProfile,
   touchLastLogin,
   updatePassword,
+  savePasswordResetOtp,
+  incrementPasswordResetOtpAttempts,
+  clearPasswordResetOtp,
 } from "./auth.repository";
 import { notify } from "../notifications/notifications.repository";
+import { sendPasswordResetOtpEmail } from "@/services/email.service";
 import { employeesRouter } from "../employees/employees.routes";
 
 export const authRouter = Router();
@@ -23,6 +28,36 @@ const loginSchema = z.object({
   email: z.string().email("Enter a valid email address."),
   password: z.string().min(1, "Password is required."),
 });
+
+
+
+const forgotPasswordRequestSchema = z.object({
+  email: z.string().email("Enter a valid email address."),
+});
+
+const forgotPasswordResetSchema = z
+  .object({
+    email: z.string().email("Enter a valid email address."),
+    otp: z.string().regex(/^\d{6}$/, "Enter the 6-digit OTP."),
+    newPassword: z
+      .string()
+      .min(8, "Your new password must be at least 8 characters."),
+    confirmPassword: z.string().min(1, "Please confirm your new password."),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  });
+
+const PASSWORD_RESET_OTP_TTL_MS = 10 * 60 * 1000;
+const PASSWORD_RESET_OTP_COOLDOWN_MS = 60 * 1000;
+const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5;
+
+function hashPasswordResetOtp(email: string, otp: string) {
+  return createHmac("sha256", env.jwtSecret)
+    .update(`${email}:${otp}`)
+    .digest("hex");
+}
 
 const registerSchema = z
   .object({
@@ -214,6 +249,123 @@ authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
     next(err);
   }
 });
+
+
+
+authRouter.post(
+  "/forgot-password/request-otp",
+  validate(forgotPasswordRequestSchema),
+  async (req, res, next) => {
+    try {
+      const { email } = req.body as z.infer<typeof forgotPasswordRequestSchema>;
+      const normalizedEmail = email.toLowerCase().trim();
+      const user = await findUserByEmail(normalizedEmail);
+
+      // Always return the same response for unknown/inactive accounts so the
+      // endpoint does not disclose whether an email belongs to an account.
+      if (!user || !user.isActive) {
+        res.json({
+          message: "If an active account exists for this email, a password reset OTP has been sent.",
+        });
+        return;
+      }
+
+      const now = Date.now();
+      const lastRequestedAt = user.passwordResetOtpRequestedAt
+        ? new Date(user.passwordResetOtpRequestedAt).getTime()
+        : NaN;
+
+      if (Number.isFinite(lastRequestedAt) && now - lastRequestedAt < PASSWORD_RESET_OTP_COOLDOWN_MS) {
+        res.json({
+          message: "If an active account exists for this email, a password reset OTP has been sent.",
+        });
+        return;
+      }
+
+      const otp = String(randomInt(100000, 1000000));
+      const requestedAt = new Date(now).toISOString();
+      const expiresAt = new Date(now + PASSWORD_RESET_OTP_TTL_MS).toISOString();
+      const otpHash = hashPasswordResetOtp(normalizedEmail, otp);
+
+      await savePasswordResetOtp({
+        userId: user.id,
+        otpHash,
+        expiresAt,
+        requestedAt,
+      });
+
+      const emailResult = await sendPasswordResetOtpEmail({
+        to: normalizedEmail,
+        otp,
+        expiresInMinutes: 10,
+      });
+
+      if (!emailResult.sent) {
+        await clearPasswordResetOtp(user.id);
+        throw new AppError(
+          "We couldn't send the OTP email. Please check the HRMS SMTP configuration and try again.",
+          503,
+        );
+      }
+
+      res.json({
+        message: "If an active account exists for this email, a password reset OTP has been sent.",
+        expiresInSeconds: PASSWORD_RESET_OTP_TTL_MS / 1000,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+authRouter.post(
+  "/forgot-password/reset",
+  validate(forgotPasswordResetSchema),
+  async (req, res, next) => {
+    try {
+      const { email, otp, newPassword } = req.body as z.infer<
+        typeof forgotPasswordResetSchema
+      >;
+      const normalizedEmail = email.toLowerCase().trim();
+      const user = await findUserByEmail(normalizedEmail);
+
+      if (!user || !user.isActive) {
+        throw AppError.badRequest("The OTP is invalid or has expired. Please request a new OTP.");
+      }
+
+      if (user.passwordResetOtpAttempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS) {
+        throw AppError.badRequest("Too many incorrect OTP attempts. Please request a new OTP.");
+      }
+
+      const expiresAt = user.passwordResetOtpExpiresAt
+        ? new Date(user.passwordResetOtpExpiresAt).getTime()
+        : NaN;
+
+      if (
+        !user.passwordResetOtpHash ||
+        !Number.isFinite(expiresAt) ||
+        expiresAt <= Date.now()
+      ) {
+        throw AppError.badRequest("The OTP is invalid or has expired. Please request a new OTP.");
+      }
+
+      const submittedHash = hashPasswordResetOtp(normalizedEmail, otp);
+      if (submittedHash !== user.passwordResetOtpHash) {
+        await incrementPasswordResetOtpAttempts(user.id);
+        throw AppError.badRequest("The OTP is invalid or has expired. Please request a new OTP.");
+      }
+
+      const hash = bcrypt.hashSync(newPassword, 10);
+      await updatePassword(user.id, hash);
+
+      res.json({
+        message: "Password reset successfully. You can now sign in with your new password.",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 authRouter.get("/me", authenticate, async (req, res, next) => {
   try {

@@ -81,6 +81,11 @@ const createTicketSchema = z.object({
   description: z.string().min(5),
 
   attachment: z.string().optional(),
+
+  expiryDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Expiry date must be a calendar date.")
+    .optional(),
 });
 
 ticketRouter.post(
@@ -144,6 +149,7 @@ ticketRouter.post(
         aiPriority: aiResult?.priority ?? null,
         aiPriorityReason: aiResult?.priorityReason ?? null,
         aiSentiment: aiResult?.sentiment ?? null,
+        expiryDate: parsed.data.expiryDate,
       });
 
       // Notify role owners (e.g., HR_ADMIN, FINANCE, MANAGER, IT_SUPPORT)

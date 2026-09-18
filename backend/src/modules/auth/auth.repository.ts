@@ -9,6 +9,10 @@ export interface UserRow {
   isActive: boolean;
   mustResetPwd: boolean;
   lastLoginAt: string | null;
+  passwordResetOtpHash: string | null;
+  passwordResetOtpExpiresAt: string | null;
+  passwordResetOtpRequestedAt: string | null;
+  passwordResetOtpAttempts: number;
 }
 
 export interface AuthProfileRow extends UserRow {
@@ -33,6 +37,10 @@ export async function findUserByEmail(email: string): Promise<UserRow | undefine
     isActive: doc.isActive,
     mustResetPwd: doc.mustResetPwd,
     lastLoginAt: doc.lastLoginAt,
+    passwordResetOtpHash: doc.passwordResetOtpHash,
+    passwordResetOtpExpiresAt: doc.passwordResetOtpExpiresAt,
+    passwordResetOtpRequestedAt: doc.passwordResetOtpRequestedAt,
+    passwordResetOtpAttempts: doc.passwordResetOtpAttempts,
   };
 }
 
@@ -60,6 +68,10 @@ export async function findAuthProfile(userId: string): Promise<AuthProfileRow | 
     mustResetPwd: user.mustResetPwd,
     lastLoginAt: user.lastLoginAt,
     passwordHash: user.passwordHash,
+    passwordResetOtpHash: user.passwordResetOtpHash ?? null,
+    passwordResetOtpExpiresAt: user.passwordResetOtpExpiresAt ?? null,
+    passwordResetOtpRequestedAt: user.passwordResetOtpRequestedAt ?? null,
+    passwordResetOtpAttempts: user.passwordResetOtpAttempts ?? 0,
     employeeId: employee?._id ?? null,
     employeeCode: employee?.employeeCode ?? null,
     firstName: employee?.firstName ?? null,
@@ -76,5 +88,60 @@ export async function touchLastLogin(userId: string) {
 }
 
 export async function updatePassword(userId: string, passwordHash: string) {
-  await User.updateOne({ _id: userId }, { $set: { passwordHash, mustResetPwd: false, updatedAt: nowIso() } });
+  await User.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        passwordHash,
+        mustResetPwd: false,
+        passwordResetOtpHash: null,
+        passwordResetOtpExpiresAt: null,
+        passwordResetOtpRequestedAt: null,
+        passwordResetOtpAttempts: 0,
+        updatedAt: nowIso(),
+      },
+    },
+  );
+}
+
+
+export async function savePasswordResetOtp(input: {
+  userId: string;
+  otpHash: string;
+  expiresAt: string;
+  requestedAt: string;
+}) {
+  await User.updateOne(
+    { _id: input.userId },
+    {
+      $set: {
+        passwordResetOtpHash: input.otpHash,
+        passwordResetOtpExpiresAt: input.expiresAt,
+        passwordResetOtpRequestedAt: input.requestedAt,
+        passwordResetOtpAttempts: 0,
+      },
+    },
+  );
+}
+
+export async function incrementPasswordResetOtpAttempts(userId: string) {
+  await User.updateOne(
+    { _id: userId },
+    { $inc: { passwordResetOtpAttempts: 1 } },
+  );
+}
+
+export async function clearPasswordResetOtp(userId: string) {
+  await User.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        passwordResetOtpHash: null,
+        passwordResetOtpExpiresAt: null,
+        passwordResetOtpRequestedAt: null,
+        passwordResetOtpAttempts: 0,
+        updatedAt: nowIso(),
+      },
+    },
+  );
 }
