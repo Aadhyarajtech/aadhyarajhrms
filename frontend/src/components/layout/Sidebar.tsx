@@ -181,17 +181,16 @@ const NAV_ITEMS: NavItem[] = [
     permission: "employees.view",
   },
 
-  /* -------------------------------------------------------
+ /* -------------------------------------------------------
      ORG CHART
   ------------------------------------------------------- */
 
-  {
-    to: "/app/org-chart",
-    label: "Org Chart",
-    icon: Network,
-    permission: "employees.view",
-  },
-
+{
+  to: "/app/org-chart",
+  label: "Org Chart",
+  icon: Network,
+  permission: "employees.view",
+},
   /* -------------------------------------------------------
      RECRUITMENT
   ------------------------------------------------------- */
