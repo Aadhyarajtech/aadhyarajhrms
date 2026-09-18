@@ -1,3 +1,4 @@
+import ExpiryBadge from "@/components/common/ExpiryBadge";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -986,6 +987,7 @@ function TeamAttendanceExceptions() {
                       {request.firstName} {request.lastName}
                     </p>
                     <StatusBadge status={request.status} />
+                    <ExpiryBadge expiresAt={request.expiresAt} status={request.status} />
                   </div>
                   <p className="mt-1 text-[12px] text-ink-faint">
                     {request.employeeCode ?? "—"} · {formatDate(request.date)}

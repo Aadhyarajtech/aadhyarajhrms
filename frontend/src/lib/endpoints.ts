@@ -70,6 +70,54 @@ export interface EmployeeListParams {
   pageSize?: number;
 }
 
+export interface EmployeeCareerInsights {
+  summary: string;
+  strengths: { area: string; evidence: string }[];
+  developmentAreas: { area: string; reason: string }[];
+  recommendedSkills: {
+    skill: string;
+    reason: string;
+    priority: "HIGH" | "MEDIUM" | "LOW";
+  }[];
+  careerPaths: { role: string; rationale: string }[];
+  developmentActions: string[];
+  confidence: number;
+}
+
+export interface Employee360Summary {
+  executiveSummary: string;
+  profile: {
+    role: string;
+    department: string;
+    experienceSummary: string;
+  };
+  skills: {
+    overview: string;
+    strongestSkills: string[];
+    developmentSkills: string[];
+  };
+  performance: {
+    overview: string;
+    strengths: string[];
+    developmentAreas: string[];
+  };
+  attendance: {
+    overview: string;
+    observations: string[];
+  };
+  leave: {
+    overview: string;
+    observations: string[];
+  };
+  development: {
+    priorities: string[];
+    suggestedActions: string[];
+  };
+  managerView: {
+    discussionPoints: string[];
+  };
+}
+
 export const EmployeesApi = {
   list: (params: EmployeeListParams = {}) =>
     api
@@ -98,7 +146,7 @@ export const EmployeesApi = {
           id: string;
           firstName: string;
           lastName: string;
-          designationTitle: string;
+          designationTitle?: string | null;
         }[];
       }>("/employees/managers")
       .then((r) => r.data.managers),
@@ -224,6 +272,22 @@ export const EmployeesApi = {
       })
       .then((r) => r.data);
   },
+
+  aiCareer: (employeeId: string) =>
+    api
+      .get<{
+        employeeId: string;
+        ai: EmployeeCareerInsights;
+      }>(`/employees/ai/career/${employeeId}`)
+      .then((r) => r.data),
+
+  ai360: (employeeId: string) =>
+    api
+      .get<{
+        employeeId: string;
+        ai: Employee360Summary;
+      }>(`/employees/ai/360/${employeeId}`)
+      .then((r) => r.data),
 };
 
 // --- Organization (departments, designations, holidays) ----------------------
@@ -1004,7 +1068,8 @@ export const AttendanceApi = {
           | "PENDING"
           | "APPROVED"
           | "REJECTED"
-          | "CANCELLED";
+          | "CANCELLED"
+          | "EXPIRED";
           approverId: string | null;
           decisionNote: string | null;
           requestedAt: string;
@@ -1012,6 +1077,8 @@ export const AttendanceApi = {
           firstName: string | null;
           lastName: string | null;
           employeeCode: string | null;
+          expiresAt: string | null;
+          expiredAt: string | null;
         }>;
 
 
@@ -2010,6 +2077,12 @@ export const PerformanceApi = {
         }[];
       }>("/performance/analytics/rating-by-department")
       .then((r) => r.data.data),
+
+  calibration: (cycleId?: string) =>
+    api.get<{ reviews: PerformanceReview[] }>("/performance/calibration", { params: cycleId ? { cycleId } : undefined }).then((r) => r.data.reviews),
+
+  calibrate: (id: string, payload: { calibratedRating: number; comments?: string }) =>
+    api.patch<{ review: PerformanceReview }>(`/performance/reviews/${id}/calibration`, payload).then((r) => r.data.review),
 
   analyticsSummary: () =>
     api

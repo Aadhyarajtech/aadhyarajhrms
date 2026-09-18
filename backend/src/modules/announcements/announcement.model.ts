@@ -1,4 +1,5 @@
 import mongoose, { Schema, type Document, type Model } from "mongoose";
+import { genId } from "@/utils/id";
 
 /* =========================================================
    ANNOUNCEMENT TYPES
@@ -66,6 +67,7 @@ export const ANNOUNCEMENT_STATUSES = [
   "DRAFT",
   "SCHEDULED",
   "PUBLISHED",
+  "EXPIRED",
 ] as const;
 
 export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
@@ -75,6 +77,8 @@ export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
 ========================================================= */
 
 export interface IAnnouncement extends Document {
+  _id: string;
+
   /* Basic information */
   title: string;
   body: string;
@@ -119,6 +123,8 @@ export interface IAnnouncement extends Document {
 
   publishedAt?: string;
 
+  expiryDays: number;
+
   /* Calendar / meeting */
   calendarEnabled: boolean;
 
@@ -132,6 +138,9 @@ export interface IAnnouncement extends Document {
   createdAt: string;
 
   updatedAt: string;
+
+  expiresAt: string | null;
+  expiredAt: string | null;
 }
 
 /* =========================================================
@@ -140,6 +149,8 @@ export interface IAnnouncement extends Document {
 
 const announcementSchema = new Schema<IAnnouncement>(
   {
+    _id: { type: String, default: () => genId("ann") },
+
     /* ---------------------------------------------------
          BASIC INFORMATION
       --------------------------------------------------- */
@@ -294,6 +305,13 @@ const announcementSchema = new Schema<IAnnouncement>(
       default: "",
     },
 
+    expiryDays: {
+      type: Number,
+      default: 7,
+      min: 1,
+      max: 365,
+    },
+
     /* ---------------------------------------------------
          CALENDAR / MEETING SUPPORT
       --------------------------------------------------- */
@@ -333,6 +351,9 @@ const announcementSchema = new Schema<IAnnouncement>(
       type: String,
       required: true,
     },
+
+    expiresAt: { type: String, default: null, index: true },
+    expiredAt: { type: String, default: null },
   },
   {
     versionKey: false,

@@ -3,11 +3,18 @@ import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
 import { profileImageUpload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
 import { isAdmin, isManagerOrAbove } from "@/middleware/rbac";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./employees.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
-
+import {
+  generateCareerInsights,
+  generateEmployee360Summary,
+} from "./employee.ai";
+import * as attendanceRepo from "@/modules/attendance/attendance.repository";
+import * as leaveRepo from "@/modules/leave/leave.repository";
+import * as performanceRepo from "@/modules/performance/performance.repository";
 export const employeesRouter = Router();
 employeesRouter.use(authenticate);
 
@@ -57,21 +64,15 @@ employeesRouter.post(
 employeesRouter.get(
   "/",
   validate(listQuerySchema, "query"),
-  isManagerOrAbove,
+  requirePermission("employees.view"),
   async (req, res, next) => {
     try {
       const requester = req.user!;
       const filters = { ...(req.query as any) };
 
-      // Managers can only see their own direct reports.
-      // Never trust managerId supplied by the frontend.
-      if (requester.role === "MANAGER") {
-        if (!requester.employeeId) {
-          throw AppError.forbidden();
-        }
-
-        filters.managerId = requester.employeeId;
-      }
+      // Reporting managers can view the full employee directory.
+      // This only changes visibility; manager-specific write/approval
+      // permissions remain enforced by their respective endpoints.
 
       res.json(await repo.listEmployees(filters));
     } catch (err) {
@@ -145,7 +146,325 @@ employeesRouter.get(
   },
 );
 
-employeesRouter.get("/:id", async (req, res, next) => {
+/* =========================================================
+   AI CAREER & DEVELOPMENT INSIGHTS
+========================================================= */
+
+employeesRouter.get(
+  "/ai/career/:id",
+  requirePermission("employees.view"),
+  async (req, res, next) => {
+    try {
+      const employeeId = req.params.id;
+
+      const employee = await repo.getEmployeeAiContext(employeeId);
+
+      if (!employee) {
+        return res.status(404).json({
+          message: "Employee not found.",
+        });
+      }
+
+      const ai = await generateCareerInsights({
+        employee: employee.employee,
+        department: employee.department,
+        designation: employee.designation,
+        manager: employee.manager,
+      });
+
+      return res.json({
+        employeeId,
+        ai,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+/* =========================================================
+   AI EMPLOYEE 360° SUMMARY
+========================================================= */
+
+/**
+ * Returns the most recent completed months, including the current month.
+ *
+ * The month/year calculation is intentionally done in Asia/Kolkata so that
+ * the AI summary does not change month unexpectedly around UTC midnight.
+ */
+function getPreviousMonths(months: number) {
+  const now = new Date();
+
+  const currentYear = Number(
+    new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+    }).format(now),
+  );
+
+  const currentMonth = Number(
+    new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      month: "numeric",
+    }).format(now),
+  );
+
+  const result: Array<{ month: number; year: number }> = [];
+
+  for (let i = months - 1; i >= 0; i -= 1) {
+    const date = new Date(
+      Date.UTC(currentYear, currentMonth - 1 - i, 1),
+    );
+
+    result.push({
+      month: date.getUTCMonth() + 1,
+      year: date.getUTCFullYear(),
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Builds a compact attendance context for the AI model.
+ *
+ * We use six months of existing attendance summaries rather than sending
+ * individual attendance records to the LLM. This keeps the prompt small
+ * while still giving the model enough history to identify trends.
+ */
+async function getEmployee360Attendance(employeeId: string) {
+  const periods = getPreviousMonths(6);
+
+  const summaries = await Promise.all(
+    periods.map(({ month, year }) =>
+      attendanceRepo.getMonthlyEmployeeSummary(employeeId, month, year),
+    ),
+  );
+
+  const totals = summaries.reduce(
+    (acc, summary) => {
+      acc.totalDays += Number(summary.totalDays ?? 0);
+      acc.presentDays += Number(summary.presentDays ?? 0);
+      acc.absentDays += Number(summary.absentDays ?? 0);
+      acc.halfDays += Number(summary.halfDays ?? 0);
+      acc.lateDays += Number(summary.lateDays ?? 0);
+      acc.earlyDepartureDays += Number(summary.earlyDepartureDays ?? 0);
+      acc.totalWorkHours += Number(summary.totalWorkHours ?? 0);
+      acc.weekendDays += Number(summary.weekendDays ?? 0);
+      acc.holidayDays += Number(summary.holidayDays ?? 0);
+      return acc;
+    },
+    {
+      totalDays: 0,
+      presentDays: 0,
+      absentDays: 0,
+      halfDays: 0,
+      lateDays: 0,
+      earlyDepartureDays: 0,
+      totalWorkHours: 0,
+      weekendDays: 0,
+      holidayDays: 0,
+    },
+  );
+
+  const workingDays =
+    totals.totalDays - totals.weekendDays - totals.holidayDays;
+
+  const attendanceRate =
+    workingDays > 0
+      ? Math.round((totals.presentDays / workingDays) * 100)
+      : null;
+
+  const averageWorkHours =
+    totals.presentDays > 0
+      ? Math.round((totals.totalWorkHours / totals.presentDays) * 100) / 100
+      : null;
+
+  // Compare the first three months with the latest three months.
+  const firstHalf = summaries.slice(0, 3);
+  const secondHalf = summaries.slice(3);
+
+  const calculateRate = (items: typeof summaries) => {
+    const present = items.reduce(
+      (sum, item) => sum + Number(item.presentDays ?? 0),
+      0,
+    );
+
+    const working = items.reduce(
+      (sum, item) =>
+        sum +
+        Number(item.totalDays ?? 0) -
+        Number(item.weekendDays ?? 0) -
+        Number(item.holidayDays ?? 0),
+      0,
+    );
+
+    return working > 0 ? (present / working) * 100 : null;
+  };
+
+  const firstRate = calculateRate(firstHalf);
+  const secondRate = calculateRate(secondHalf);
+
+  let trend: string | null = null;
+
+  if (firstRate !== null && secondRate !== null) {
+    const difference = secondRate - firstRate;
+
+    if (difference >= 5) {
+      trend = "IMPROVING";
+    } else if (difference <= -5) {
+      trend = "DECLINING";
+    } else {
+      trend = "STABLE";
+    }
+  }
+
+  return {
+    attendanceRate,
+    presentDays: totals.presentDays,
+    absentDays: totals.absentDays,
+    halfDays: totals.halfDays,
+    lateDays: totals.lateDays,
+    averageWorkHours,
+    trend,
+  };
+}
+
+/**
+ * Builds the leave context used by the Employee 360° summary.
+ *
+ * This intentionally uses the existing leave repository APIs so that leave
+ * calculations remain consistent with the rest of the HRMS.
+ */
+async function getEmployee360Leave(employeeId: string) {
+  const currentYear = Number(
+    new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+    }).format(new Date()),
+  );
+
+  const [balances, requests] = await Promise.all([
+    leaveRepo.listBalancesForEmployee(employeeId, currentYear),
+    leaveRepo.listRequests({ employeeId }),
+  ]);
+
+  const totalAllocated = (balances as any[]).reduce(
+    (sum: number, balance: any) =>
+      sum + Number(balance.allotted ?? 0),
+    0,
+  );
+
+  const totalUsed = (balances as any[]).reduce(
+    (sum: number, balance: any) =>
+      sum + Number(balance.used ?? 0),
+    0,
+  );
+
+  const remaining = (balances as any[]).reduce(
+    (sum: number, balance: any) =>
+      sum +
+      Math.max(
+        0,
+        Number(balance.allotted ?? 0) - Number(balance.used ?? 0),
+      ),
+    0,
+  );
+
+  const recentRequests = (requests as any[]).slice(0, 20);
+
+  return {
+    totalAllocated,
+    totalUsed,
+    remaining,
+    requests: recentRequests.map((request: any) => ({
+      leaveType:
+        request.leaveTypeName ??
+        request.leaveType ??
+        "Leave",
+      totalDays: Number(request.totalDays ?? 0),
+      status: request.status ?? "UNKNOWN",
+    })),
+  };
+}
+
+/**
+ * Builds the performance context used by the Employee 360° summary.
+ *
+ * The existing scorecard API exposes strengths and development areas but
+ * does not expose individual goal records in its response, so goals are
+ * deliberately left empty instead of inventing goal data.
+ */
+async function getEmployee360Performance(employeeId: string) {
+  const scorecard = await performanceRepo.getPerformanceScorecard(employeeId);
+
+  if (!scorecard) {
+    return {
+      latestRating: null,
+      strengths: [],
+      developmentAreas: [],
+      goals: [],
+    };
+  }
+
+  return {
+    latestRating: scorecard.overallRating ?? null,
+    strengths: Array.isArray(scorecard.strengths)
+      ? scorecard.strengths
+      : [],
+    developmentAreas: Array.isArray(scorecard.developmentAreas)
+      ? scorecard.developmentAreas
+      : [],
+    goals: [],
+  };
+}
+
+employeesRouter.get(
+  "/ai/360/:id",
+  requirePermission("employees.view"),
+  async (req, res, next) => {
+    try {
+      const employeeId = req.params.id;
+
+      const employee = await repo.getEmployeeAiContext(employeeId);
+
+      if (!employee) {
+        return res.status(404).json({
+          message: "Employee not found.",
+        });
+      }
+
+      const [attendance, leave, performance] = await Promise.all([
+        getEmployee360Attendance(employeeId),
+        getEmployee360Leave(employeeId),
+        getEmployee360Performance(employeeId),
+      ]);
+
+      const ai = await generateEmployee360Summary({
+        profile: employee.employee,
+        department: employee.department?.name ?? null,
+        designation: employee.designation?.title ?? null,
+        manager: employee.manager?.name ?? null,
+        skills: employee.employee.skills,
+        performance,
+        attendance,
+        leave,
+      });
+
+      return res.json({
+        employeeId,
+        ai,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+employeesRouter.get(
+  "/:id",
+  requirePermission("employees.view"),
+  async (req, res, next) => {
   try {
     const requester = req.user!;
 
@@ -168,16 +487,15 @@ employeesRouter.get("/:id", async (req, res, next) => {
       return res.json({ employee });
     }
 
-    // Managers can only view their direct reports.
+    // Reporting managers can view any employee profile.
+    // This only changes visibility; edit permissions remain restricted below.
     if (requester.role === "MANAGER") {
-      if (!requester.employeeId) {
-        throw AppError.forbidden();
-      }
+      return res.json({ employee });
+    }
 
-      if (employee.managerId !== requester.employeeId) {
-        throw AppError.forbidden();
-      }
-
+    // Other roles with employees.view (Recruiter, Finance, IT Support) can
+    // view employee profiles. Their write access remains restricted below.
+    if (["RECRUITER", "FINANCE", "IT_SUPPORT"].includes(requester.role)) {
       return res.json({ employee });
     }
 

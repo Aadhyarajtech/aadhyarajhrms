@@ -213,6 +213,16 @@ export async function ensureDefaults() {
         },
         { upsert: true },
       );
+
+      // Employees directory access is required for these standard roles.
+      // Add only the missing view permission so existing custom permissions
+      // are preserved.
+      if (["MANAGER", "RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"].includes(role)) {
+        await GovernanceRole.updateOne(
+          { role },
+          { $addToSet: { permissions: "employees.view" }, $set: { updatedAt: now } },
+        );
+      }
     }),
   );
   await Promise.all(

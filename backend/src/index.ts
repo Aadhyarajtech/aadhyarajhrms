@@ -5,6 +5,7 @@ import { logger } from "@/utils/logger";
 import { startEmployeeLifecycleJobs } from "./jobs/employeeLifecycle.job";
 import { startDocumentExpiryJob } from "./jobs/documentExpiry.job";
 import { startAnnouncementScheduler } from "@/modules/announcements/announcement.scheduler";
+import { startRequestExpiryJob } from "./jobs/requestExpiry.job";
 
 async function start() {
   /* -------------------------------------------------------
@@ -20,6 +21,7 @@ async function start() {
   startEmployeeLifecycleJobs();
 startDocumentExpiryJob();
 startAnnouncementScheduler();
+startRequestExpiryJob();
 
   /* -------------------------------------------------------
      EXPRESS APP
