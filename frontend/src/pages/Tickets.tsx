@@ -494,9 +494,6 @@ export default function Tickets() {
                   <td className="py-2.5 px-3 font-semibold whitespace-nowrap">
                     <Link
                       to={`/app/tickets/${ticket._id}`}
-                        onClick={(event) => {
-                          if (isTicketExpired(ticket)) event.preventDefault();
-                        }}
                       className="inline-flex items-center gap-1.5 text-brand-600 hover:text-brand-800 hover:underline"
                       title="Click to open conversation"
                     >
@@ -589,9 +586,6 @@ export default function Tickets() {
                   <td className="py-2.5 px-2 max-w-[170px]">
                     <Link
                       to={`/app/tickets/${ticket._id}`}
-                        onClick={(event) => {
-                          if (isTicketExpired(ticket)) event.preventDefault();
-                        }}
                       className="block truncate font-medium text-gray-900 hover:text-brand-600 hover:underline"
                       title={ticket.subject}
                     >
@@ -625,7 +619,7 @@ export default function Tickets() {
 
                   {/* Status Dropdown */}
                   <td className="py-2.5 px-2 whitespace-nowrap">
-                    {ticket.status === "EXPIRED" ? (
+                    {isTicketExpired(ticket) ? (
                       <div>
                         <span className="inline-flex rounded-full bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">Expired</span>
                         <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} className="mt-1" />
@@ -703,27 +697,20 @@ export default function Tickets() {
                   {/* Actions */}
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
                     <div className="inline-flex items-center justify-end gap-1.5">
-                      {isTicketExpired(ticket) ? (
-                        <span
-                          className="inline-flex cursor-not-allowed items-center gap-1 rounded-md bg-gray-100 px-2.5 py-1 text-[11px] font-medium text-gray-400"
-                          title="Expired ticket cannot be opened"
-                          aria-disabled="true"
-                        >
-                          <MessageCircle className="h-3 w-3" />
-                          <span>Expired</span>
-                        </span>
-                      ) : (
-                        <Link
-                          to={`/app/tickets/${ticket._id}`}
-                          className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand-700 shadow-2xs transition"
-                          title="Open conversation"
-                        >
-                          <MessageCircle className="h-3 w-3" />
-                          <span>Chat</span>
-                        </Link>
-                      )}
+                      <Link
+                        to={`/app/tickets/${ticket._id}`}
+                        className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium shadow-2xs transition ${
+                          isTicketExpired(ticket)
+                            ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                            : "bg-brand-600 text-white hover:bg-brand-700"
+                        }`}
+                        title={isTicketExpired(ticket) ? "View expired ticket history" : "Open conversation"}
+                      >
+                        <MessageCircle className="h-3 w-3" />
+                        <span>{isTicketExpired(ticket) ? "View" : "Chat"}</span>
+                      </Link>
 
-                      {ticket.category === "Complaint" && !ticket.isEscalated && (
+                      {ticket.category === "Complaint" && !ticket.isEscalated && !isTicketExpired(ticket) && (
                         <button
                           type="button"
                           onClick={() => {

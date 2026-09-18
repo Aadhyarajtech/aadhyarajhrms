@@ -7,6 +7,13 @@ import { api, resolveAssetUrl } from "@/lib/api";
 import RaiseTicketModal from "@/components/ui/RaiseTicketModal";
 import { ExpiryBadge } from "@/components/common/ExpiryBadge";
 
+function isTicketExpired(ticket: { status?: string; expiresAt?: string | null }) {
+  return (
+    ticket.status === "EXPIRED" ||
+    (!!ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())
+  );
+}
+
 interface Ticket {
   _id: string;
   ticketId: string;
@@ -127,21 +134,18 @@ export default function MyTickets() {
                 className="border-b last:border-b-0 hover:bg-gray-50"
               >
                 <td className="p-3 text-sm font-medium text-gray-900 whitespace-nowrap">
-                  {ticket.status === "EXPIRED" ? (
-                    <span className="inline-flex items-center gap-1.5 font-semibold text-gray-400" title="Expired ticket cannot be opened">
-                      <MessageCircle className="h-3.5 w-3.5 shrink-0" />
-                      <span>{ticket.ticketId}</span>
-                    </span>
-                  ) : (
                   <Link
                     to={`/app/tickets/${ticket._id}`}
-                    className="inline-flex items-center gap-1.5 font-semibold text-brand-600 hover:text-brand-800 hover:underline"
-                    title="Click to open conversation"
+                    className={`inline-flex items-center gap-1.5 font-semibold hover:underline ${
+                      isTicketExpired(ticket)
+                        ? "text-gray-500 hover:text-gray-700"
+                        : "text-brand-600 hover:text-brand-800"
+                    }`}
+                    title={isTicketExpired(ticket) ? "View expired ticket history" : "Click to open conversation"}
                   >
-                    <MessageCircle className="h-3.5 w-3.5 shrink-0 text-brand-500" />
+                    <MessageCircle className="h-3.5 w-3.5 shrink-0" />
                     <span>{ticket.ticketId}</span>
                   </Link>
-                  )}
                 </td>
 
                 <td className="p-3 text-sm text-gray-700">
@@ -153,25 +157,23 @@ export default function MyTickets() {
                 </td>
 
                 <td className="p-3 text-sm text-gray-700">
-                  {ticket.status === "EXPIRED" ? (
-                    <span className="font-medium text-gray-400" title="Expired ticket cannot be opened">
-                      {ticket.subject}
-                    </span>
-                  ) : (
                   <Link
                     to={`/app/tickets/${ticket._id}`}
-                    className="font-medium text-gray-900 hover:text-brand-600 hover:underline"
-                    title="Click to open conversation"
+                    className={`font-medium hover:underline ${
+                      isTicketExpired(ticket)
+                        ? "text-gray-500 hover:text-gray-700"
+                        : "text-gray-900 hover:text-brand-600"
+                    }`}
+                    title={isTicketExpired(ticket) ? "View expired ticket history" : "Click to open conversation"}
                   >
                     {ticket.subject}
                   </Link>
-                  )}
                 </td>
 
                 <td className="p-3">
                   <div className="space-y-1">
-                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${ticket.status === "EXPIRED" ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-700"}`}>
-                      {ticket.status.replaceAll("_", " ")}
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${isTicketExpired(ticket) ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-700"}`}>
+                      {isTicketExpired(ticket) ? "EXPIRED" : ticket.status.replaceAll("_", " ")}
                     </span>
                     <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} />
                   </div>
