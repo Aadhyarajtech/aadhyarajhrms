@@ -622,29 +622,20 @@ export async function getHeadcountTrend(months = 6) {
 }
 
 export async function getManagersList() {
-  const designations = await Designation.find({ level: { $gte: 4 } }).lean();
-  const designationIds = designations.map((d) => d._id);
-  const desMap = new Map(designations.map((d) => [d._id, d]));
-  const rows = await Employee.find({
-    designationId: { $in: designationIds },
-    status: "ACTIVE",
-  })
-    .sort({ firstName: 1 })
+  const rows = await Employee.find({ status: "ACTIVE" })
+    .sort({ firstName: 1, lastName: 1 })
     .lean();
 
-  const seen = new Set<string>();
-  const result: any[] = [];
-  for (const e of rows) {
-    if (seen.has(e._id)) continue;
-    seen.add(e._id);
-    result.push({
-      id: e._id,
-      firstName: e.firstName,
-      lastName: e.lastName,
-      designationTitle: desMap.get(e.designationId)?.title ?? null,
-    });
-  }
-  return result;
+  const designationIds = [...new Set(rows.map((e) => e.designationId).filter(Boolean))];
+  const designations = await Designation.find({ _id: { $in: designationIds } }).lean();
+  const desMap = new Map(designations.map((d) => [d._id, d]));
+
+  return rows.map((employee) => ({
+    id: employee._id,
+    firstName: employee.firstName ?? "",
+    lastName: employee.lastName ?? "",
+    designationTitle: desMap.get(employee.designationId)?.title ?? null,
+  }));
 }
 
 export async function updateUserActiveStatus(
@@ -660,4 +651,81 @@ export async function updateUserActiveStatus(
       },
     },
   );
+}
+export async function getEmployeeAiContext(employeeId: string) {
+  const employee = await Employee.findById(employeeId).lean();
+
+  if (!employee) {
+    return null;
+  }
+
+  const [department, designation, manager] = await Promise.all([
+    employee.departmentId
+      ? Department.findById(employee.departmentId)
+          .select("name code")
+          .lean()
+      : null,
+
+    employee.designationId
+      ? Designation.findById(employee.designationId)
+          .select("title level")
+          .lean()
+      : null,
+
+    employee.managerId
+      ? Employee.findById(employee.managerId)
+          .select("employeeCode firstName lastName")
+          .lean()
+      : null,
+  ]);
+
+  return {
+    employee: {
+      id: String(employee._id),
+      employeeCode: employee.employeeCode,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+
+      workLocation: employee.workLocation ?? null,
+      grade: employee.grade ?? null,
+      employmentType: employee.employmentType ?? null,
+      status: employee.status,
+
+      dateOfJoining: employee.dateOfJoining ?? null,
+
+      skills: (employee.skills ?? []).map((skill: any) => ({
+        name: skill.name,
+        category: skill.category ?? null,
+        competencyLevel: skill.competencyLevel,
+      })),
+
+      education: employee.education ?? [],
+      certifications: employee.certifications ?? [],
+      workHistory: employee.workHistory ?? [],
+    },
+
+    department: department
+      ? {
+          id: String(department._id),
+          name: department.name,
+          code: department.code,
+        }
+      : null,
+
+    designation: designation
+      ? {
+          id: String(designation._id),
+          title: designation.title,
+          level: designation.level,
+        }
+      : null,
+
+    manager: manager
+      ? {
+          id: String(manager._id),
+          employeeCode: manager.employeeCode,
+          name: `${manager.firstName} ${manager.lastName}`.trim(),
+        }
+      : null,
+  };
 }

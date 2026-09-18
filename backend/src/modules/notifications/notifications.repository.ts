@@ -4,6 +4,7 @@ import { nowIso } from "@/db/connection";
 import * as announcementRepository from "@/modules/announcements/announcement.repository";
 
 import { sendAnnouncementEmail } from "@/services/email.service";
+import { env } from "@/config/env";
 
 /* =========================================================
    NOTIFICATION TYPES
@@ -77,6 +78,9 @@ export async function notify(input: {
     link: input.link ?? null,
     dedupeKey: input.dedupeKey ?? null,
     createdAt: nowIso(),
+    expiresAt: new Date(Date.now() + env.notificationExpiryDays * 24 * 60 * 60 * 1000).toISOString(),
+    expiredAt: null,
+    status: "ACTIVE",
   });
 
   return notification._id;
@@ -92,8 +96,11 @@ export async function listNotifications(
   limit = 50,
   offset = 0,
 ) {
+  const now = new Date().toISOString();
   const filter: Record<string, unknown> = {
     userId,
+    status: "ACTIVE",
+    expiresAt: { $gt: now },
   };
 
   if (unreadOnly) {
@@ -111,7 +118,10 @@ export async function listNotifications(
   ]);
 
   return {
-    notifications,
+    notifications: notifications.map((notification: any) => ({
+      ...notification,
+      isExpired: notification.status === "EXPIRED" || (notification.expiresAt ? new Date(notification.expiresAt).getTime() <= Date.now() : false),
+    })),
     total,
     limit,
     offset,
@@ -126,6 +136,8 @@ export async function unreadCount(userId: string) {
   return Notification.countDocuments({
     userId,
     isRead: false,
+    status: "ACTIVE",
+    expiresAt: { $gt: new Date().toISOString() },
   });
 }
 
@@ -138,6 +150,8 @@ export async function markRead(id: string, userId: string) {
     {
       _id: id,
       userId,
+      status: "ACTIVE",
+      expiresAt: { $gt: new Date().toISOString() },
     },
     {
       $set: {
@@ -167,6 +181,8 @@ export async function markAllRead(userId: string) {
   await Notification.updateMany(
     {
       userId,
+      status: "ACTIVE",
+      expiresAt: { $gt: new Date().toISOString() },
     },
     {
       $set: {
@@ -762,6 +778,9 @@ export async function broadcastAnnouncementNotification(announcement: {
     isRead: false,
 
     createdAt,
+    expiresAt: new Date(new Date(createdAt).getTime() + env.notificationExpiryDays * 24 * 60 * 60 * 1000).toISOString(),
+    expiredAt: null,
+    status: "ACTIVE" as const,
   }));
 
   await Notification.insertMany(notifications);

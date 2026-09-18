@@ -36,6 +36,10 @@ export async function processScheduledAnnouncements() {
   schedulerRunning = true;
 
   try {
+    // Expiry is handled centrally by requestExpiry.job.ts / expiry.service.ts.
+    // Keep this scheduler focused only on publishing scheduled announcements
+    // and delivering their notifications/emails.
+
     const published = await announcementRepo.publishDueAnnouncements();
 
     if (!published.length) {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -19,6 +19,14 @@ import {
   Clock,
   AlertCircle,
   RefreshCw,
+  Award,
+  Brain,
+  CheckCircle2,
+  ChevronRight,
+  Lightbulb,
+  Loader2,
+  Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import {
   EmployeesApi,
@@ -81,7 +89,8 @@ type SalaryForm = z.infer<typeof salarySchema>;
 export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canViewEmployees = hasPermission("employees.view");
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [tab, setTab] = useState("overview");
@@ -105,8 +114,7 @@ export default function EmployeeProfile() {
     enabled:
       !!effectiveId &&
       employeeQuery.isError &&
-      !!user &&
-      ADMIN_ROLES.includes(user.role),
+      canViewEmployees,
   });
 
   const employee =
@@ -122,7 +130,6 @@ export default function EmployeeProfile() {
 
   const isSelf = user?.employee?.id === effectiveId;
   const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
-
   const completeOnboardingMutation = useMutation({
     mutationFn: async () => {
       if (!employee) throw new Error("Employee not found.");
@@ -291,11 +298,11 @@ export default function EmployeeProfile() {
   });
 
   useEffect(() => {
-    if (!effectiveId || !user || isAdmin || isSelf) return;
+    if (!effectiveId || !user || isAdmin || isSelf || canViewEmployees) return;
     navigate(`/app/employees/${user.employee?.id ?? "dashboard"}`, {
       replace: true,
     });
-  }, [effectiveId, isAdmin, isSelf, navigate, user]);
+  }, [effectiveId, isAdmin, isSelf, canViewEmployees, navigate, user]);
   const isFinance = user?.role === "FINANCE";
   const canViewPayroll = isSelf || isAdmin || isFinance;
   const canEdit = isSelf || isAdmin;
@@ -312,7 +319,7 @@ export default function EmployeeProfile() {
             leftIcon={<RefreshCw size={14} />}
             onClick={() => {
               void employeeQuery.refetch();
-              if (isAdmin) void employeeListFallbackQuery.refetch();
+              if (canViewEmployees) void employeeListFallbackQuery.refetch();
             }}
           >
             Try again
@@ -331,14 +338,15 @@ export default function EmployeeProfile() {
     );
   }
 
-  const tabs = [
-    { key: "overview", label: "Overview" },
-    { key: "attendance", label: "Attendance" },
-    { key: "leave", label: "Leave" },
-    { key: "performance", label: "Performance" },
-    ...(canViewPayroll ? [{ key: "payroll", label: "Payroll" }] : []),
-    { key: "documents", label: "Documents & Assets" },
-  ];
+ const tabs = [
+  { key: "overview", label: "Overview" },
+  { key: "attendance", label: "Attendance" },
+  { key: "leave", label: "Leave" },
+  { key: "performance", label: "Performance" },
+  { key: "ai-insights", label: "AI Insights" },
+  ...(canViewPayroll ? [{ key: "payroll", label: "Payroll" }] : []),
+  { key: "documents", label: "Documents & Assets" },
+];
 
   return (
     <div>
@@ -646,6 +654,9 @@ export default function EmployeeProfile() {
         <LeaveTab employeeId={employee.id} canManage={isAdmin} />
       )}
       {tab === "performance" && <PerformanceTab employeeId={employee.id} />}
+      {tab === "ai-insights" && (
+  <EmployeeAIInsightsSection employeeId={employee.id} />
+)}
       {tab === "payroll" && canViewPayroll && (
         <PayrollTab
           employeeId={employee.id}
@@ -3232,5 +3243,613 @@ function UploadDocModal({
         </div>
       </div>
     </Modal>
+  );
+}
+// ----------------------------------------------------------------------------
+// AI Employee Insights
+// ----------------------------------------------------------------------------
+
+function AIInfoCard({
+  icon,
+  title,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card>
+      <div className="flex items-center gap-2.5 border-b border-line/60 px-5 py-4 sm:px-6">
+        <span className="text-brand-600">{icon}</span>
+        <h3 className="text-[14px] font-semibold text-ink">{title}</h3>
+      </div>
+      <div className="space-y-4 px-5 py-5 sm:px-6">{children}</div>
+    </Card>
+  );
+}
+
+function AISectionHeading({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 text-brand-600">
+        {icon}
+        <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+      </div>
+      <p className="mt-1 text-[12px] text-ink-faint">{description}</p>
+    </div>
+  );
+}
+
+function AIEmptyState() {
+  return <p className="text-[13px] text-ink-faint">No insights available.</p>;
+}
+
+function AIBulletList({
+  title,
+  items,
+  icon = <ChevronRight size={14} />,
+}: {
+  title?: string;
+  items?: string[];
+  icon?: ReactNode;
+}) {
+  return (
+    <div>
+      {title && (
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+          {title}
+        </p>
+      )}
+      <ul className="space-y-2">
+        {(items ?? []).map((item, index) => (
+          <li
+            key={`${item}-${index}`}
+            className="flex gap-2 text-[13px] leading-5 text-ink"
+          >
+            <span className="mt-0.5 shrink-0 text-brand-600">{icon}</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AIInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+        {label}
+      </p>
+      <p className="mt-1 text-[13px] text-ink">{value}</p>
+    </div>
+  );
+}
+
+function AIChipList({ title, items }: { title: string; items?: string[] }) {
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+        {title}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {(items ?? []).map((item, index) => (
+          <span
+            key={`${item}-${index}`}
+            className="rounded-full bg-brand-50 px-2.5 py-1 text-[12px] text-brand-700"
+          >
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AIPriorityBadge({ priority }: { priority: string }) {
+  return (
+    <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700">
+      {priority}
+    </span>
+  );
+}
+
+function AIInsightSkeleton() {
+  return (
+    <Card>
+      <Skeleton className="h-36 rounded-2xl" />
+    </Card>
+  );
+}
+
+function EmployeeAIInsightsSection({
+  employeeId,
+}: {
+  employeeId: string;
+}) {
+  const {
+    data: careerData,
+    isLoading: careerLoading,
+    isError: careerError,
+    refetch: refetchCareer,
+  } = useQuery({
+    queryKey: ["employee-ai-career", employeeId],
+    queryFn: () => EmployeesApi.aiCareer(employeeId),
+    enabled: !!employeeId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const {
+    data: summaryData,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useQuery({
+    queryKey: ["employee-ai-360", employeeId],
+    queryFn: () => EmployeesApi.ai360(employeeId),
+    enabled: !!employeeId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const career = careerData?.ai;
+  const summary = summaryData?.ai;
+
+  const isLoading = careerLoading || summaryLoading;
+  const hasError = careerError || summaryError;
+
+  const refreshInsights = () => {
+    void refetchCareer();
+    void refetchSummary();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-5">
+        <Card>
+          <div className="flex items-center gap-3 px-5 py-5 sm:px-6">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+              <Loader2 size={19} className="animate-spin" />
+            </div>
+
+            <div>
+              <p className="text-[14px] font-semibold text-ink">
+                Generating AI employee insights...
+              </p>
+
+              <p className="mt-0.5 text-[12px] text-ink-faint">
+                Analyzing the available employee information.
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <AIInsightSkeleton />
+          <AIInsightSkeleton />
+        </div>
+
+        <AIInsightSkeleton />
+      </div>
+    );
+  }
+
+  if (hasError && !career && !summary) {
+    return (
+      <Card>
+        <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+            <Sparkles size={22} />
+          </div>
+
+          <h3 className="mt-4 text-[15px] font-semibold text-ink">
+            Unable to generate AI insights
+          </h3>
+
+          <p className="mt-1 max-w-md text-[13px] text-ink-faint">
+            The AI employee insights could not be loaded. Existing employee
+            information and functionality are not affected.
+          </p>
+
+          <Button
+            className="mt-5"
+            size="sm"
+            variant="outline"
+            leftIcon={<RefreshCw size={14} />}
+            onClick={refreshInsights}
+          >
+            Try again
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* ============================================================
+          AI HEADER
+         ============================================================ */}
+
+      <Card className="overflow-hidden">
+        <div className="bg-gradient-to-br from-brand-50 via-white to-canvas px-5 py-5 sm:px-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-sm">
+                <Sparkles size={20} />
+              </div>
+
+              <div>
+                <h2 className="font-display text-lg font-medium text-ink">
+                  AI Employee Insights
+                </h2>
+
+                <p className="mt-0.5 text-[13px] text-ink-faint">
+                  AI-powered employee 360° analysis and career development
+                  insights.
+                </p>
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<RefreshCw size={14} />}
+              onClick={refreshInsights}
+            >
+              Refresh
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* ============================================================
+          EMPLOYEE 360°
+         ============================================================ */}
+
+      {summary && (
+        <>
+          <AISectionHeading
+            icon={<Brain size={17} />}
+            title="Employee 360° Summary"
+            description="A consolidated view of the employee based on available HR data."
+          />
+
+          <Card>
+            <CardHeader
+              title="Executive Summary"
+              subtitle="AI-generated employee overview"
+            />
+
+            <div className="px-5 pb-5 sm:px-6">
+              <p className="text-[14px] leading-6 text-ink">
+                {summary.executiveSummary}
+              </p>
+            </div>
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+
+            <AIInfoCard
+              icon={<Briefcase size={17} />}
+              title="Employee Profile"
+            >
+              <AIInfoRow
+                label="Role"
+                value={summary.profile.role}
+              />
+
+              <AIInfoRow
+                label="Department"
+                value={summary.profile.department}
+              />
+
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                  Experience
+                </p>
+
+                <p className="mt-1 text-[13px] leading-5 text-ink">
+                  {summary.profile.experienceSummary}
+                </p>
+              </div>
+            </AIInfoCard>
+
+            <AIInfoCard
+              icon={<Award size={17} />}
+              title="Skills"
+            >
+              <p className="text-[13px] leading-5 text-ink">
+                {summary.skills.overview}
+              </p>
+
+              <AIChipList
+                title="Strongest Skills"
+                items={summary.skills.strongestSkills}
+              />
+
+              <AIChipList
+                title="Development Skills"
+                items={summary.skills.developmentSkills}
+              />
+            </AIInfoCard>
+
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+
+            <AIInfoCard
+              icon={<TrendingUp size={17} />}
+              title="Performance"
+            >
+              <p className="text-[13px] leading-5 text-ink">
+                {summary.performance.overview}
+              </p>
+
+              <AIBulletList
+                title="Strengths"
+                items={summary.performance.strengths}
+                icon={<CheckCircle2 size={14} />}
+              />
+
+              <AIBulletList
+                title="Development Areas"
+                items={summary.performance.developmentAreas}
+                icon={<Target size={14} />}
+              />
+            </AIInfoCard>
+
+            <AIInfoCard
+              icon={<CheckCircle2 size={17} />}
+              title="Attendance"
+            >
+              <p className="text-[13px] leading-5 text-ink">
+                {summary.attendance.overview}
+              </p>
+
+              <AIBulletList
+                title="Observations"
+                items={summary.attendance.observations}
+              />
+            </AIInfoCard>
+
+          </div>
+
+          <AIInfoCard
+            icon={<Briefcase size={17} />}
+            title="Leave"
+          >
+            <p className="text-[13px] leading-5 text-ink">
+              {summary.leave.overview}
+            </p>
+
+            <AIBulletList
+              title="Observations"
+              items={summary.leave.observations}
+            />
+          </AIInfoCard>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+
+            <AIInfoCard
+              icon={<Target size={17} />}
+              title="Development Priorities"
+            >
+              <AIBulletList
+                items={summary.development.priorities}
+                icon={<Target size={14} />}
+              />
+            </AIInfoCard>
+
+            <AIInfoCard
+              icon={<Lightbulb size={17} />}
+              title="Suggested Actions"
+            >
+              <AIBulletList
+                items={summary.development.suggestedActions}
+                icon={<ChevronRight size={14} />}
+              />
+            </AIInfoCard>
+
+          </div>
+
+          <AIInfoCard
+            icon={<Briefcase size={17} />}
+            title="Manager Discussion Points"
+          >
+            <AIBulletList
+              items={summary.managerView.discussionPoints}
+            />
+          </AIInfoCard>
+        </>
+      )}
+
+      {/* ============================================================
+          CAREER DEVELOPMENT
+         ============================================================ */}
+
+      {career && (
+        <>
+          <AISectionHeading
+            icon={<TrendingUp size={17} />}
+            title="AI Career & Development Insights"
+            description="AI-generated suggestions based on the employee's available profile information."
+          />
+
+          <Card>
+            <CardHeader
+              title="Career Development Summary"
+              subtitle="AI-generated career analysis"
+            />
+
+            <div className="px-5 pb-5 sm:px-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+
+                <p className="max-w-3xl text-[14px] leading-6 text-ink">
+                  {career.summary}
+                </p>
+
+                <div className="shrink-0 rounded-2xl border border-line/60 bg-black/[0.015] px-4 py-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                    AI Confidence
+                  </p>
+
+                  <p className="mt-1 text-lg font-semibold text-ink">
+                    {Math.round(career.confidence * 100)}%
+                  </p>
+                </div>
+
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+
+            <AIInfoCard
+              icon={<Award size={17} />}
+              title="Strengths"
+            >
+              {career.strengths.length === 0 ? (
+                <AIEmptyState />
+              ) : (
+                <div className="space-y-3">
+                  {career.strengths.map((item, index) => (
+                    <div
+                      key={`${item.area}-${index}`}
+                      className="rounded-2xl border border-line/60 bg-black/[0.015] p-4"
+                    >
+                      <p className="text-[13px] font-semibold text-ink">
+                        {item.area}
+                      </p>
+
+                      <p className="mt-1.5 text-[12.5px] leading-5 text-ink-faint">
+                        {item.evidence}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </AIInfoCard>
+
+            <AIInfoCard
+              icon={<Target size={17} />}
+              title="Development Areas"
+            >
+              {career.developmentAreas.length === 0 ? (
+                <AIEmptyState />
+              ) : (
+                <div className="space-y-3">
+                  {career.developmentAreas.map((item, index) => (
+                    <div
+                      key={`${item.area}-${index}`}
+                      className="rounded-2xl border border-line/60 bg-black/[0.015] p-4"
+                    >
+                      <p className="text-[13px] font-semibold text-ink">
+                        {item.area}
+                      </p>
+
+                      <p className="mt-1.5 text-[12.5px] leading-5 text-ink-faint">
+                        {item.reason}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </AIInfoCard>
+
+          </div>
+
+          <AIInfoCard
+            icon={<Lightbulb size={17} />}
+            title="Recommended Skills"
+          >
+            {career.recommendedSkills.length === 0 ? (
+              <AIEmptyState />
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {career.recommendedSkills.map((item, index) => (
+                  <div
+                    key={`${item.skill}-${index}`}
+                    className="rounded-2xl border border-line/60 bg-white p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-[13px] font-semibold text-ink">
+                        {item.skill}
+                      </p>
+
+                      <AIPriorityBadge priority={item.priority} />
+                    </div>
+
+                    <p className="mt-2 text-[12.5px] leading-5 text-ink-faint">
+                      {item.reason}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </AIInfoCard>
+
+          <AIInfoCard
+            icon={<Briefcase size={17} />}
+            title="Potential Career Paths"
+          >
+            {career.careerPaths.length === 0 ? (
+              <AIEmptyState />
+            ) : (
+              <div className="space-y-3">
+                {career.careerPaths.map((item, index) => (
+                  <div
+                    key={`${item.role}-${index}`}
+                    className="flex gap-3 rounded-2xl border border-line/60 bg-black/[0.015] p-4"
+                  >
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                      <ChevronRight size={15} />
+                    </div>
+
+                    <div>
+                      <p className="text-[13px] font-semibold text-ink">
+                        {item.role}
+                      </p>
+
+                      <p className="mt-1 text-[12.5px] leading-5 text-ink-faint">
+                        {item.rationale}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </AIInfoCard>
+
+          <AIInfoCard
+            icon={<Target size={17} />}
+            title="Development Actions"
+          >
+            <AIBulletList
+              items={career.developmentActions}
+              icon={<ChevronRight size={14} />}
+            />
+          </AIInfoCard>
+        </>
+      )}
+
+      <div className="rounded-2xl border border-line/60 bg-black/[0.015] px-4 py-3">
+        <p className="text-[11px] leading-5 text-ink-faint">
+          AI insights are generated from available employee information and
+          should be reviewed by HR or the appropriate manager before being used
+          for development planning.
+        </p>
+      </div>
+    </div>
   );
 }
