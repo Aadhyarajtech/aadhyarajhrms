@@ -64,15 +64,9 @@ employeesRouter.get(
       const requester = req.user!;
       const filters = { ...(req.query as any) };
 
-      // Managers can only see their own direct reports.
-      // Never trust managerId supplied by the frontend.
-      if (requester.role === "MANAGER") {
-        if (!requester.employeeId) {
-          throw AppError.forbidden();
-        }
-
-        filters.managerId = requester.employeeId;
-      }
+      // Reporting managers can view the full employee directory.
+      // This only changes visibility; manager-specific write/approval
+      // permissions remain enforced by their respective endpoints.
 
       res.json(await repo.listEmployees(filters));
     } catch (err) {
@@ -172,16 +166,9 @@ employeesRouter.get(
       return res.json({ employee });
     }
 
-    // Managers can only view their direct reports.
+    // Reporting managers can view any employee profile.
+    // This only changes visibility; edit permissions remain restricted below.
     if (requester.role === "MANAGER") {
-      if (!requester.employeeId) {
-        throw AppError.forbidden();
-      }
-
-      if (employee.managerId !== requester.employeeId) {
-        throw AppError.forbidden();
-      }
-
       return res.json({ employee });
     }
 

@@ -529,7 +529,6 @@ announcementRouter.post(
 
         if (effectiveChannels.includes("IN_APP")) {
           await notificationRepo.broadcastAnnouncementNotification({
-          id: announcement.id,
             title: announcement.title,
 
             body: announcement.body,

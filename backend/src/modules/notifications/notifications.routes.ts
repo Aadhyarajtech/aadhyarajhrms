@@ -133,7 +133,6 @@ notificationsRouter.post(
 
       if (announcement) {
         await repo.broadcastAnnouncementNotification({
-          id: announcement.id,
           title: announcement.title,
           body: announcement.body,
           audience: announcement.audience,

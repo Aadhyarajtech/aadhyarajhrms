@@ -87,61 +87,6 @@ export async function notify(input: {
 }
 
 /* =========================================================
-   BACKFILL NOTIFICATION EXPIRY
-========================================================= */
-
-/**
- * Backfills expiry timestamps for legacy notifications created before
- * notification expiry was introduced. This function intentionally does not
- * delete records; deletion is handled centrally by expireTimedRecords().
- */
-export async function backfillNotificationExpiry() {
-  const rows = await Notification.find({
-    expiresAt: { $exists: false },
-  })
-    .select("_id createdAt")
-    .lean();
-
-  if (!rows.length) {
-    return 0;
-  }
-
-  const operations = rows.flatMap((row: any) => {
-    const createdAt = new Date(row.createdAt);
-
-    if (Number.isNaN(createdAt.getTime())) {
-      return [];
-    }
-
-    const expiresAt = new Date(
-      createdAt.getTime() + env.notificationExpiryDays * 24 * 60 * 60 * 1000,
-    ).toISOString();
-
-    return [
-      {
-        updateOne: {
-          filter: { _id: row._id },
-          update: {
-            $set: {
-              expiresAt,
-              expiredAt: null,
-              status: "ACTIVE",
-            },
-          },
-        },
-      },
-    ];
-  });
-
-  if (!operations.length) {
-    return 0;
-  }
-
-  const result = await Notification.bulkWrite(operations);
-  return result.modifiedCount;
-}
-
-/* =========================================================
    LIST NOTIFICATIONS
 ========================================================= */
 
@@ -174,7 +119,7 @@ export async function listNotifications(
 
   return {
     notifications: notifications.map((notification: any) => ({
-      ...toApiDoc(notification),
+      ...notification,
       isExpired: notification.status === "EXPIRED" || (notification.expiresAt ? new Date(notification.expiresAt).getTime() <= Date.now() : false),
     })),
     total,
@@ -790,7 +735,6 @@ export async function deleteAnnouncement(id: string) {
 ========================================================= */
 
 export async function broadcastAnnouncementNotification(announcement: {
-  id: string;
   title: string;
   body: string;
   audience: string;
@@ -829,12 +773,7 @@ export async function broadcastAnnouncementNotification(announcement: {
 
     message: announcement.body.slice(0, 250),
 
-    // Always point to the exact announcement. The announcement list can be
-    // reordered when an item is pinned/unpinned, so a page-only link is not
-    // sufficient to identify which announcement the user clicked.
-    link: `/app/announcements?announcementId=${encodeURIComponent(
-      announcement.id,
-    )}`,
+    link: "/app/announcements",
 
     isRead: false,
 

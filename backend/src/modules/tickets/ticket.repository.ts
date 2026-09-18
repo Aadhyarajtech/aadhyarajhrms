@@ -1,6 +1,5 @@
 import * as Models from "@/db/models";
 import { env } from "@/config/env";
-import { getTicketExpiryDays } from "@/modules/governance/governance.repository";
 
 // Support different export styles from the models module
 const Ticket: any =
@@ -183,9 +182,13 @@ export async function createTicket(data: {
   aiPriority?: string | null;
   aiPriorityReason?: string | null;
   aiSentiment?: string | null;
+  expiryDays?: number;
 }) {
   const now = new Date().toISOString();
-  const expiryDays = await getTicketExpiryDays();
+  const expiryDays = Number(data.expiryDays ?? env.ticketExpiryDays);
+  if (!Number.isFinite(expiryDays) || expiryDays <= 0 || expiryDays > 365) {
+    throw new Error("Ticket expiry must be between 1 and 365 days.");
+  }
 
   const ticket = await Ticket.create({
     ticketId: generateTicketId(data.category),
@@ -228,10 +231,7 @@ export async function createTicket(data: {
     aiSentiment: data.aiSentiment ?? null,
 
     createdAt: now,
-    expiryDays,
-    expiresAt: new Date(
-      new Date(now).getTime() + expiryDays * 24 * 60 * 60 * 1000,
-    ).toISOString(),
+    expiresAt: new Date(new Date(now).getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString(),
     expiredAt: null,
 
     updatedAt: now,
