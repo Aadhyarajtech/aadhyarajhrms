@@ -91,8 +91,7 @@ export const env = {
      EXPIRY CONFIGURATION
 
      These values are the server-side defaults. Individual
-     announcements/tickets can override their expiry through
-     their stored expiryDays value where supported.
+     announcements use the configured default expiry period.
   ------------------------------------------------------- */
 
   // Leave requests expire after 2 days.
@@ -102,10 +101,6 @@ export const env = {
   // Attendance regularization requests expire after 1 day.
   regularizationExpiryDays:
     positiveDays("REGULARIZATION_EXPIRY_DAYS", 1),
-
-  // Tickets expire after 3 days by default.
-  ticketExpiryDays:
-    positiveDays("TICKET_EXPIRY_DAYS", 3),
 
   // Notifications are deleted after 2 days.
   notificationExpiryDays:

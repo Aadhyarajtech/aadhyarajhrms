@@ -1,5 +1,5 @@
 import TicketMessage from "@/db/TicketMessage";
-import { Employee } from "@/db/models";
+import { Employee, Ticket } from "@/db/models";
 
 function toApiDoc(doc: any) {
   if (!doc) {
@@ -70,6 +70,25 @@ export async function createTicketMessage(data: {
   message?: string;
   attachment?: string;
 }) {
+  const ticket = await Ticket.findById(data.ticketId)
+    .select("status expiresAt")
+    .lean();
+
+  if (!ticket) {
+    throw new Error("Ticket not found.");
+  }
+
+  const expiresAt = ticket.expiresAt
+    ? new Date(ticket.expiresAt).getTime()
+    : NaN;
+
+  if (
+    ticket.status === "EXPIRED" ||
+    (Number.isFinite(expiresAt) && expiresAt <= Date.now())
+  ) {
+    throw new Error("This ticket has expired and can no longer be updated.");
+  }
+
   const message = await TicketMessage.create({
     ticketId: data.ticketId,
     employeeId: data.employeeId,

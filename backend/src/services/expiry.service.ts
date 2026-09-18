@@ -3,7 +3,6 @@ import {
   AttendanceRegularizationRequest,
   LeaveRequest,
   Notification,
-  Ticket,
 } from "@/db/models";
 import Announcement from "@/modules/announcements/announcement.model";
 
@@ -70,16 +69,13 @@ function expiryFrom(value: string, days: number) {
 export async function backfillExpiryDates() {
   const now = new Date().toISOString();
 
-  const [leaveRows, regularizationRows, ticketRows, notificationRows, announcementRows] =
+  const [leaveRows, regularizationRows, notificationRows, announcementRows] =
     await Promise.all([
       LeaveRequest.find({ expiresAt: { $exists: false } })
         .select("_id appliedAt")
         .lean(),
       AttendanceRegularizationRequest.find({ expiresAt: { $exists: false } })
         .select("_id requestedAt")
-        .lean(),
-      Ticket.find({ expiresAt: { $exists: false } })
-        .select("_id createdAt expiryDays")
         .lean(),
       Notification.find({ expiresAt: { $exists: false } })
         .select("_id createdAt")
@@ -101,11 +97,6 @@ export async function backfillExpiryDates() {
       (row) => expiryFrom(row.requestedAt, env.regularizationExpiryDays),
     ),
     updateExpiryDates(
-      Ticket,
-      ticketRows,
-      (row) => expiryFrom(row.createdAt, Number(row.expiryDays ?? env.ticketExpiryDays)),
-    ),
-    updateExpiryDates(
       Notification,
       notificationRows,
       (row) => expiryFrom(row.createdAt, env.notificationExpiryDays),
@@ -121,7 +112,7 @@ export async function expireTimedRecords() {
   const now = new Date().toISOString();
   await backfillExpiryDates();
 
-  const [leave, regularization, tickets, notifications, announcements] =
+  const [leave, regularization, notifications, announcements] =
     await Promise.all([
       LeaveRequest.updateMany(
         { status: "PENDING", expiresAt: { $lte: now } },
@@ -130,13 +121,6 @@ export async function expireTimedRecords() {
       AttendanceRegularizationRequest.updateMany(
         { status: "PENDING", expiresAt: { $lte: now } },
         { $set: { status: "EXPIRED", expiredAt: now, decidedAt: now } },
-      ),
-      Ticket.updateMany(
-        {
-          status: { $in: ["OPEN", "IN_PROGRESS", "WAITING_FOR_EMPLOYEE"] },
-          expiresAt: { $lte: now },
-        },
-        { $set: { status: "EXPIRED", expiredAt: now, updatedAt: now } },
       ),
       Notification.deleteMany({
         $or: [{ expiresAt: { $lte: now } }, { status: "EXPIRED" }],
@@ -150,7 +134,6 @@ export async function expireTimedRecords() {
   return {
     leave: leave.modifiedCount,
     regularization: regularization.modifiedCount,
-    tickets: tickets.modifiedCount,
     notifications: notifications.deletedCount,
     announcements: announcements.modifiedCount,
   };
