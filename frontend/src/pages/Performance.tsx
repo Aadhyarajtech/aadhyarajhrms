@@ -203,7 +203,7 @@ export default function Performance() {
       {tab === "mine" && <MyPerformance activeCycleId={activeCycle?.id} />}
       {tab === "feedback" && <FeedbackRequests />}
       {tab === "team" && isManager && (
-        <TeamReviews activeCycleId={activeCycle?.id} />
+        <TeamReviews activeCycleId={activeCycle?.id} isHr={isHr} />
       )}
       {tab === "pip" && isManager && <PipManagement />}
       {tab === "calibration" && isHr && <CalibrationPanel cycleId={activeCycle?.id} />}
@@ -1727,7 +1727,13 @@ function PipCheckInModal({ pipId, onClose }: { pipId: string; onClose: () => voi
   );
 }
 
-function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
+function TeamReviews({
+  activeCycleId,
+  isHr,
+}: {
+  activeCycleId?: string;
+  isHr: boolean;
+}) {
   const { user } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -1744,14 +1750,31 @@ function TeamReviews({ activeCycleId }: { activeCycleId?: string }) {
   const employeeId = user?.employee?.id;
 
   const { data: reports, isLoading: reportsLoading } = useQuery({
-    queryKey: ["direct-reports", employeeId],
-    queryFn: () => EmployeesApi.directReports(employeeId!),
-    enabled: !!employeeId,
+    queryKey: [isHr ? "performance-employees" : "direct-reports", employeeId],
+    queryFn: async () => {
+      if (isHr) {
+        const result = await EmployeesApi.list({
+          status: "ACTIVE",
+          page: 1,
+          pageSize: 100,
+        });
+        return result.employees;
+      }
+
+      return await EmployeesApi.directReports(employeeId!);
+    },
+    enabled: isHr || !!employeeId,
   });
+
+
+
   const { data: reviews } = useQuery({
     queryKey: ["performance", "reviews", "team", activeCycleId],
     queryFn: () =>
-      PerformanceApi.reviews({ scope: "team", cycleId: activeCycleId }),
+      PerformanceApi.reviews({
+        scope: "team",
+        cycleId: activeCycleId,
+      }),
     enabled: !!activeCycleId,
   });
 
