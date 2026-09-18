@@ -34,19 +34,6 @@ import {
 
 import type { AuthUser } from "@/types/express";
 
-// Keep expiry detection local to this router so the route layer does not
-// depend on a namespace export being present in ticket.repository.ts.
-function isTicketExpired(ticket: {
-  status?: string | null;
-  expiresAt?: string | null;
-}): boolean {
-  if (ticket.status === "EXPIRED") return true;
-  if (!ticket.expiresAt) return false;
-
-  const expiresAt = new Date(ticket.expiresAt).getTime();
-  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
-}
-
 interface AuthenticatedRequest extends Request {
   user?: AuthUser;
 }
@@ -81,11 +68,6 @@ const createTicketSchema = z.object({
   description: z.string().min(5),
 
   attachment: z.string().optional(),
-
-  expiryDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Expiry date must be a calendar date.")
-    .optional(),
 });
 
 ticketRouter.post(
@@ -149,7 +131,6 @@ ticketRouter.post(
         aiPriority: aiResult?.priority ?? null,
         aiPriorityReason: aiResult?.priorityReason ?? null,
         aiSentiment: aiResult?.sentiment ?? null,
-        expiryDate: parsed.data.expiryDate,
       });
 
       // Notify role owners (e.g., HR_ADMIN, FINANCE, MANAGER, IT_SUPPORT)
@@ -636,14 +617,6 @@ ticketRouter.patch(
         return res.status(404).json({
           error: {
             message: "Ticket not found",
-          },
-        });
-      }
-
-      if (isTicketExpired(existingTicket)) {
-        return res.status(409).json({
-          error: {
-            message: "This ticket has expired and cannot be updated.",
           },
         });
       }
@@ -1183,12 +1156,6 @@ ticketRouter.post(
         });
       }
 
-      if (isTicketExpired(ticket)) {
-        return res.status(409).json({
-          error: { message: "Expired tickets cannot be analyzed or modified." },
-        });
-      }
-
       const result = await classifyTicket(
         ticket.subject,
         ticket.description,
@@ -1279,12 +1246,6 @@ ticketRouter.post(
         });
       }
 
-      if (isTicketExpired(ticket)) {
-        return res.status(409).json({
-          error: { message: "Expired tickets cannot be modified." },
-        });
-      }
-
       if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
         return res.status(403).json({
           error: { message: "You are not authorized to access this ticket" },
@@ -1371,12 +1332,6 @@ ticketRouter.post(
       if (!ticket) {
         return res.status(404).json({
           error: { message: "Ticket not found" },
-        });
-      }
-
-      if (isTicketExpired(ticket)) {
-        return res.status(409).json({
-          error: { message: "Expired tickets cannot be modified." },
         });
       }
 

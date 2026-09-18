@@ -2247,25 +2247,27 @@ function EditEmployeeModal({
               {/* Reporting Manager */}
               <div className="sm:col-span-2">
                 <label className="text-[13px] font-medium text-ink-soft">
-                  Reporting Manager <span className="text-danger-500">*</span>
+                  Reporting Manager
                 </label>
 
                 <select
-                  {...register("managerId", {
-                    required: "Reporting Manager is required",
-                  })}
+                  {...register("managerId")}
                   className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
                 >
-                  <option value="">Select reporting manager</option>
+                  <option value="">No reporting manager (top of hierarchy)</option>
 
                   {managers
                     ?.filter((manager: any) => manager.id !== employee.id)
                     .map((manager: any) => (
                       <option key={manager.id} value={manager.id}>
                         {manager.firstName} {manager.lastName}
+                        {manager.designationTitle ? ` — ${manager.designationTitle}` : ""}
                       </option>
                     ))}
                 </select>
+                <p className="mt-1 text-[11px] text-ink-faint">
+                  Leave this empty for a top-level employee. The org chart is built from these manager assignments.
+                </p>
               </div>
             </div>
           </div>

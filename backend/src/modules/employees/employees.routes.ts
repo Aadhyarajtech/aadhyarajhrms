@@ -39,7 +39,7 @@ employeesRouter.post(
 
       if (!req.file) throw AppError.badRequest("Profile image is required.");
 
-      const avatarUrl = `${UPLOADS_PUBLIC_PATH} / ${req.file.filename}`;
+      const avatarUrl = `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`;
 
       const updated = await repo.updateEmployee(req.params.id, {
         avatarUrl,
@@ -244,6 +244,21 @@ const createEmployeeSchema = z.object({
   grade: z.string().optional(),
   workLocation: z.string().optional(),
   probationPeriodMonths: z.coerce.number().int().min(0).optional(),
+
+  emergencyContactName: z.string().nullable().optional(),
+  emergencyContactPhone: z.string().nullable().optional(),
+  emergencyContactRelationship: z.string().nullable().optional(),
+  emergencyContactEmail: z.string().email().or(z.literal("")).nullable().optional(),
+  employeeAadhaar: z.string().nullable().optional(),
+  employeePan: z.string().nullable().optional(),
+  employeeTan: z.string().nullable().optional(),
+  bankAccountNumber: z.string().nullable().optional(),
+  bankIfscCode: z.string().nullable().optional(),
+  bankBranch: z.string().nullable().optional(),
+  investmentDeclarations: z.record(z.string(), z.unknown()).optional(),
+  medicalConditions: z.string().nullable().optional(),
+  bloodGroup: z.string().nullable().optional(),
+  insurancePolicyNumber: z.string().nullable().optional(),
   temporaryPassword: z
     .string()
     .min(8, "Temporary password must be at least 8 characters."),
@@ -318,6 +333,24 @@ const updateEmployeeSchema = z.object({
   employeePan: z.string().nullable().optional(),
   avatarUrl: z.string().optional(),
   signature: z.string().nullable().optional(),
+  employeeTan: z.string().nullable().optional(),
+  bankAccountNumber: z.string().nullable().optional(),
+  bankIfscCode: z.string().nullable().optional(),
+  bankBranch: z.string().nullable().optional(),
+  investmentDeclarations: z.record(z.string(), z.unknown()).optional(),
+  medicalConditions: z.string().nullable().optional(),
+  bloodGroup: z.string().nullable().optional(),
+  insurancePolicyNumber: z.string().nullable().optional(),
+  emergencyContacts: z
+    .array(
+      z.object({
+        name: z.string().nullable().optional(),
+        phone: z.string().nullable().optional(),
+        relationship: z.string().nullable().optional(),
+        email: z.string().email().or(z.literal("")).nullable().optional(),
+      }),
+    )
+    .optional(),
 
   education: z
     .array(
@@ -404,6 +437,10 @@ employeesRouter.patch(
         emergencyContactPhone: req.body.emergencyContactPhone,
         emergencyContactRelationship: req.body.emergencyContactRelationship,
         emergencyContactEmail: req.body.emergencyContactEmail,
+        emergencyContacts: req.body.emergencyContacts,
+        medicalConditions: req.body.medicalConditions,
+        bloodGroup: req.body.bloodGroup,
+        insurancePolicyNumber: req.body.insurancePolicyNumber,
 
         employeeAadhaar: req.body.employeeAadhaar,
         employeePan: req.body.employeePan,
