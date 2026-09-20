@@ -1342,8 +1342,38 @@ export async function createCandidate(input: CreateCandidateInput) {
   const job = await JobPosting.findById(input.jobPostingId).lean();
   if (!job) throw new Error("Job posting not found.");
 
-  if (job.requisitionStatus !== "APPROVED" || job.status !== "OPEN") {
-    throw new Error("Applications are only accepted for open, approved jobs.");
+  /*
+   * A candidate may only be created against a job that is actually open and
+   * approved.  Some older records can have an OPEN status while the
+   * requisitionStatus was not persisted correctly, even though the approval
+   * workflow is already fully approved.  Treat that legacy/inconsistent state
+   * as approved only when there is concrete approval evidence.
+   *
+   * We deliberately do NOT bypass PENDING_APPROVAL or REJECTED requisitions.
+   */
+  if (job.status !== "OPEN") {
+    throw new Error(
+      `Applications are only accepted for open jobs. Current job status: ${job.status}.`,
+    );
+  }
+
+  const approvalSteps = Array.isArray((job as AnyDoc).approvalSteps)
+    ? ((job as AnyDoc).approvalSteps as AnyDoc[])
+    : [];
+
+  const allApprovalStepsApproved =
+    approvalSteps.length > 0 &&
+    approvalSteps.every((step) => step.status === "APPROVED");
+
+  const hasApprovalEvidence =
+    job.requisitionStatus === "APPROVED" ||
+    allApprovalStepsApproved ||
+    Boolean((job as AnyDoc).approvedAt);
+
+  if (!hasApprovalEvidence) {
+    throw new Error(
+      "Applications are only accepted for open, approved jobs. Approve the job requisition before adding candidates.",
+    );
   }
 
   const duplicate = await Candidate.findOne({

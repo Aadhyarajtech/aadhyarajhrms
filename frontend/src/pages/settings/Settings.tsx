@@ -17,10 +17,11 @@ import {
   OrganizationApi,
   PerformanceApi,
   AttendanceShiftApi,
+  type PerformanceCycle,
   type AttendanceShift,
   type AttendanceShiftPayload,
 } from "@/lib/endpoints";
-import { getErrorMessage } from "@/lib/api";
+import { api, getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -488,6 +489,29 @@ function CyclesTab() {
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
+  const mutationCycleStatus = useMutation<
+    PerformanceCycle,
+    unknown,
+    { id: string; isActive: boolean }
+  >({
+    mutationFn: ({ id, isActive }) =>
+      api
+        .patch<{ cycle: PerformanceCycle }>(
+          `/performance/cycles/${id}/status`,
+          { isActive },
+        )
+        .then((response) => response.data.cycle),
+    onSuccess: (cycle) => {
+      queryClient.invalidateQueries({ queryKey: ["performance", "cycles"] });
+      showToast(
+        cycle.isActive
+          ? "Review cycle activated."
+          : "Review cycle deactivated.",
+      );
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
   return (
     <Card>
       <CardHeader
@@ -519,7 +543,40 @@ function CyclesTab() {
                   {formatDate(c.startDate)} – {formatDate(c.endDate)}
                 </p>
               </div>
-              {c.isActive && <StatusBadge status="ACTIVE" />}
+              <div className="flex items-center gap-2">
+                {c.isActive ? (
+                  <>
+                    <StatusBadge status="ACTIVE" />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        mutationCycleStatus.mutate({ id: c.id, isActive: false })
+                      }
+                      isLoading={
+                        mutationCycleStatus.isPending &&
+                        mutationCycleStatus.variables?.id === c.id
+                      }
+                    >
+                      Deactivate
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      mutationCycleStatus.mutate({ id: c.id, isActive: true })
+                    }
+                    isLoading={
+                      mutationCycleStatus.isPending &&
+                      mutationCycleStatus.variables?.id === c.id
+                    }
+                  >
+                    Activate
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
         </div>

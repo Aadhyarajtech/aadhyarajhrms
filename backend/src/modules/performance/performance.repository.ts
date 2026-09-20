@@ -45,13 +45,30 @@ export async function createCycle(input: {
 }) {
   const start = new Date(input.startDate);
   const end = new Date(input.endDate);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
-    throw new Error("Performance cycle start date must be before end date.");
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    throw new Error("Review cycle dates must be valid dates.");
+  }
+  if (start >= end) {
+    throw new Error("Review cycle end date must be after the start date.");
   }
 
-  await PerformanceCycle.updateMany({ isActive: true }, { $set: { isActive: false } });
+  const existing = await PerformanceCycle.findOne({ name: input.name.trim() }).lean();
+  if (existing) {
+    throw new Error("A review cycle with this name already exists.");
+  }
+
+  // Only one performance cycle may be active at a time.
+  await PerformanceCycle.updateMany(
+    { isActive: true },
+    { $set: { isActive: false } },
+  );
+
   const doc = await PerformanceCycle.create({
     ...input,
+    name: input.name.trim(),
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
     isActive: true,
     ratingScale: input.ratingScale?.length ? input.ratingScale : [1, 2, 3, 4, 5],
     ratingWeights: input.ratingWeights ?? { self: 40, manager: 60 },
@@ -60,32 +77,146 @@ export async function createCycle(input: {
     managerReviewDueDate: input.managerReviewDueDate ?? null,
     finalReviewDueDate: input.finalReviewDueDate ?? null,
   });
+
   return toApiDoc((await PerformanceCycle.findById(doc._id).lean())!);
 }
 
 export async function activateCycle(id: string) {
   const cycle = await PerformanceCycle.findById(id).lean();
   if (!cycle) return undefined;
+
   const start = new Date(cycle.startDate);
   const end = new Date(cycle.endDate);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
     throw new Error("Performance cycle has invalid dates.");
   }
-  await PerformanceCycle.updateMany({ _id: { $ne: id }, isActive: true }, { $set: { isActive: false } });
+
+  await PerformanceCycle.updateMany(
+    { _id: { $ne: id }, isActive: true },
+    { $set: { isActive: false } },
+  );
   await PerformanceCycle.updateOne({ _id: id }, { $set: { isActive: true } });
+
   return toApiDoc(await PerformanceCycle.findById(id).lean());
 }
 
 export async function deactivateCycle(id: string) {
-  const updated = await PerformanceCycle.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true }).lean();
+  const updated = await PerformanceCycle.findByIdAndUpdate(
+    id,
+    { $set: { isActive: false } },
+    { new: true },
+  ).lean();
+
   return toApiDoc(updated);
 }
 
+export async function updateCycle(
+  id: string,
+  input: {
+    name?: string;
+    startDate?: string;
+    endDate?: string;
+    type?: string;
+    purpose?: string | null;
+  },
+) {
+  const current = await PerformanceCycle.findById(id).lean();
+  if (!current) return undefined;
+
+  const nextStart = input.startDate ?? current.startDate;
+  const nextEnd = input.endDate ?? current.endDate;
+  const start = new Date(nextStart);
+  const end = new Date(nextEnd);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    throw new Error("Review cycle dates must be valid dates.");
+  }
+  if (start >= end) {
+    throw new Error("Review cycle end date must be after the start date.");
+  }
+
+  const nextName = input.name?.trim() || current.name;
+  const duplicate = await PerformanceCycle.findOne({
+    name: nextName,
+    _id: { $ne: id },
+  }).lean();
+
+  if (duplicate) {
+    throw new Error("A review cycle with this name already exists.");
+  }
+
+  await PerformanceCycle.updateOne(
+    { _id: id },
+    {
+      $set: {
+        name: nextName,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        ...(input.type !== undefined ? { type: input.type } : {}),
+        ...(input.purpose !== undefined ? { purpose: input.purpose } : {}),
+      },
+    },
+  );
+
+  return toApiDoc((await PerformanceCycle.findById(id).lean())!);
+}
+
+export async function setCycleActive(id: string, isActive: boolean) {
+  const current = await PerformanceCycle.findById(id).lean();
+  if (!current) return undefined;
+
+  if (isActive) {
+    await PerformanceCycle.updateMany(
+      { _id: { $ne: id }, isActive: true },
+      { $set: { isActive: false } },
+    );
+  }
+
+  await PerformanceCycle.updateOne(
+    { _id: id },
+    { $set: { isActive } },
+  );
+
+  return toApiDoc((await PerformanceCycle.findById(id).lean())!);
+}
+
+function isValidCycleRange(cycle: any) {
+  if (!cycle) return false;
+
+  const start = new Date(cycle.startDate);
+  const end = new Date(cycle.endDate);
+
+  return (
+    !Number.isNaN(start.getTime()) &&
+    !Number.isNaN(end.getTime()) &&
+    start < end
+  );
+}
+
 export async function getActiveCycle() {
-  const row = await PerformanceCycle.findOne({ isActive: true })
+  // Only return a usable active cycle. Older/seeded data may contain an
+  // invalid range (endDate before startDate), which otherwise makes every
+  // Performance screen appear empty or inconsistent.
+  const rows = await PerformanceCycle.find({ isActive: true })
     .sort({ startDate: -1 })
     .lean();
-  return toApiDoc(row);
+
+  const valid = rows.find(isValidCycleRange);
+
+  // Keep the database state clean as well as the API response. Invalid active
+  // cycles should never remain active and accidentally be selected later.
+  const invalidIds = rows
+    .filter((cycle: any) => !isValidCycleRange(cycle))
+    .map((cycle: any) => cycle._id);
+
+  if (invalidIds.length) {
+    await PerformanceCycle.updateMany(
+      { _id: { $in: invalidIds } },
+      { $set: { isActive: false } },
+    );
+  }
+
+  return toApiDoc(valid);
 }
 
 async function enrichReviews(rows: any[]) {
@@ -297,6 +428,32 @@ export async function ensureReview(
   revieweeId: string,
   reviewerId: string,
 ) {
+  if (revieweeId === reviewerId) {
+    throw new Error("An employee cannot be their own reviewer.");
+  }
+
+  const [cycle, reviewee, reviewer] = await Promise.all([
+    PerformanceCycle.findById(cycleId).lean(),
+    Employee.findById(revieweeId).lean(),
+    Employee.findById(reviewerId).lean(),
+  ]);
+
+  if (!cycle) {
+    throw new Error("The selected performance cycle does not exist.");
+  }
+
+  if (!isValidCycleRange(cycle)) {
+    throw new Error("The selected performance cycle has an invalid date range.");
+  }
+
+  if (!reviewee) {
+    throw new Error("The employee being reviewed does not exist.");
+  }
+
+  if (!reviewer) {
+    throw new Error("The selected reviewer does not exist.");
+  }
+
   let row = await PerformanceReview.findOne({
     cycleId,
     revieweeId,
@@ -569,6 +726,26 @@ export async function submitManagerReview(
   return getReview(id);
 }
 
+function calculateMilestoneProgress(milestones?: any[] | null) {
+  if (!Array.isArray(milestones) || milestones.length === 0) return null;
+
+  const completed = milestones.filter((milestone) => milestone?.completed === true).length;
+  return Math.round((completed / milestones.length) * 100);
+}
+
+function calculateCombinedGoalProgress(
+  targetValue?: number | null,
+  currentValue?: number | null,
+  milestones?: any[] | null,
+) {
+  const kpiProgress = calculateGoalProgress(targetValue, currentValue);
+  const milestoneProgress = calculateMilestoneProgress(milestones);
+
+  // KPI target/current-value is the primary achievement signal when present.
+  // Milestones become the automatic achievement source for goals without KPI values.
+  return kpiProgress ?? milestoneProgress;
+}
+
 function calculateGoalProgress(
   targetValue?: number | null,
   currentValue?: number | null,
@@ -599,13 +776,15 @@ function normalizeGoal(row: any) {
   const goal = toApiDoc(row) as any;
   if (!goal) return goal;
 
-  const calculatedProgress = calculateGoalProgress(
+  const calculatedProgress = calculateCombinedGoalProgress(
     goal.targetValue,
     goal.currentValue,
+    goal.milestones,
   );
 
-  // KPI goals use Current Value as the source of truth. For legacy goals
-  // without a target/current pair, preserve their existing manual progress.
+  // KPI goals use Current Value as the source of truth. Goals without KPI
+  // values use milestone completion as their automatic achievement source.
+  // Legacy goals without either structure retain their stored progress.
   const progress =
     calculatedProgress === null
       ? Math.min(100, Math.max(0, Number(goal.progress ?? 0)))
@@ -618,8 +797,16 @@ function normalizeGoal(row: any) {
   };
 }
 
-export async function listGoals(employeeId: string) {
-  const rows = await Goal.find({ employeeId }).sort({ dueDate: 1 }).lean();
+export async function listGoals(employeeId: string, cycleId?: string | null) {
+  const query: Record<string, any> = { employeeId };
+
+  // When a cycle is supplied, return only goals assigned to that cycle.
+  // Without a cycle, preserve the existing behaviour and return all goals.
+  if (cycleId) {
+    query.cycleId = cycleId;
+  }
+
+  const rows = await Goal.find(query).sort({ dueDate: 1, createdAt: 1 }).lean();
   return rows.map(normalizeGoal);
 }
 
@@ -640,18 +827,39 @@ export async function createGoal(input: {
   }[];
   assignedBy?: string | null;
 }) {
+  if (!input.title.trim()) {
+    throw new Error("Goal title is required.");
+  }
+
+  if (input.parentGoalId) {
+    const parent = await Goal.findById(input.parentGoalId).lean();
+    if (!parent) {
+      throw new Error("The selected parent goal does not exist.");
+    }
+
+    if (input.cycleId && parent.cycleId && parent.cycleId !== input.cycleId) {
+      throw new Error("Parent and child goals must belong to the same review cycle.");
+    }
+  }
 
   const targetValue = input.targetValue ?? null;
   const currentValue = input.currentValue ?? null;
 
-  // When a KPI target and current value are supplied, start the goal at the
-  // corresponding achievement percentage instead of resetting it to zero.
+  // Normalize milestones while preserving KPI-based progress.
+  const milestones = (input.milestones ?? []).map((milestone) => ({
+    title: milestone.title.trim(),
+    targetDate: milestone.targetDate ?? null,
+    completed: milestone.completed ?? false,
+  }));
+
+  // KPI achievement takes priority when target/current values exist. Otherwise
+  // milestone completion automatically determines the goal achievement.
   const progress =
-    typeof targetValue === "number" &&
-      targetValue > 0 &&
-      typeof currentValue === "number"
-      ? Math.min(100, Math.max(0, Math.round((currentValue / targetValue) * 100)))
-      : 0;
+    calculateCombinedGoalProgress(
+      targetValue,
+      currentValue,
+      milestones,
+    ) ?? 0;
 
 
   const status =
@@ -674,17 +882,80 @@ export async function createGoal(input: {
     category: input.category ?? null,
     targetValue,
     currentValue,
-    milestones: (input.milestones ?? []).map((milestone) => ({
-      title: milestone.title,
-      targetDate: milestone.targetDate ?? null,
-      completed: milestone.completed ?? false,
-    })),
+    milestones,
     assignedBy: input.assignedBy ?? null,
   });
 
   return normalizeGoal(await Goal.findById(doc._id).lean());
 }
 
+
+export async function updateGoalMilestone(
+  id: string,
+  milestoneIndex: number,
+  completed: boolean,
+) {
+  const goal = await Goal.findById(id).lean();
+  if (!goal) return undefined;
+
+  const milestones = Array.isArray((goal as any).milestones)
+    ? [...(goal as any).milestones]
+    : [];
+
+  if (!Number.isInteger(milestoneIndex) || milestoneIndex < 0 || milestoneIndex >= milestones.length) {
+    throw new Error("Invalid milestone selected.");
+  }
+
+  milestones[milestoneIndex] = {
+    ...milestones[milestoneIndex],
+    completed: Boolean(completed),
+  };
+
+  // KPI progress remains authoritative when a KPI target/current pair exists.
+  // Otherwise milestone completion automatically updates goal progress/status.
+  const progress = calculateCombinedGoalProgress(
+    (goal as any).targetValue,
+    (goal as any).currentValue,
+    milestones,
+  ) ?? 0;
+
+  await Goal.updateOne(
+    { _id: id },
+    {
+      $set: {
+        milestones,
+        progress,
+        status: calculateGoalStatus(progress),
+      },
+    },
+  );
+
+  return normalizeGoal(await Goal.findById(id).lean());
+}
+
+export async function listGoalCascade(employeeId: string, cycleId?: string) {
+  const query: Record<string, any> = { employeeId };
+  if (cycleId) query.cycleId = cycleId;
+
+  const rows = await Goal.find(query).sort({ dueDate: 1, createdAt: 1 }).lean();
+  const goals = rows.map(normalizeGoal) as any[];
+  const byParent = new Map<string | null, any[]>();
+
+  for (const goal of goals) {
+    const parentId = goal.parentGoalId ?? null;
+    const list = byParent.get(parentId) ?? [];
+    list.push(goal);
+    byParent.set(parentId, list);
+  }
+
+  const build = (parentId: string | null): any[] =>
+    (byParent.get(parentId) ?? []).map((goal) => ({
+      ...goal,
+      children: build(goal.id),
+    }));
+
+  return build(null);
+}
 
 export async function updateGoalProgress(id: string, progress: number) {
   const goal = await Goal.findById(id).lean();
@@ -806,14 +1077,12 @@ export async function getGoalHealth(id: string) {
   ) {
     const now = new Date();
 
-    const totalDuration =
-      dueDate.getTime() - createdAt.getTime();
+    const totalDuration = dueDate.getTime() - createdAt.getTime();
 
-    const elapsedDuration =
-      Math.min(
-        totalDuration,
-        Math.max(0, now.getTime() - createdAt.getTime()),
-      );
+    const elapsedDuration = Math.min(
+      totalDuration,
+      Math.max(0, now.getTime() - createdAt.getTime()),
+    );
 
     expectedProgress = Math.round(
       (elapsedDuration / totalDuration) * 100,
@@ -823,7 +1092,7 @@ export async function getGoalHealth(id: string) {
       0,
       Math.ceil(
         (dueDate.getTime() - now.getTime()) /
-        (1000 * 60 * 60 * 24),
+          (1000 * 60 * 60 * 24),
       ),
     );
   }
@@ -858,39 +1127,42 @@ export async function getGoalHealth(id: string) {
     goalId: goal._id,
     title: goal.title,
     category: goal.category ?? null,
-
     progress,
-
     targetValue:
       typeof goal.targetValue === "number"
         ? goal.targetValue
         : null,
-
     currentValue:
       typeof goal.currentValue === "number"
         ? goal.currentValue
         : null,
-
     expectedProgress,
     gap,
     daysRemaining,
-
     health,
-
     milestones: {
       total: milestones.length,
       completed: completedMilestones,
       completionPercentage:
         milestones.length > 0
           ? Math.round(
-            (completedMilestones / milestones.length) * 100,
-          )
+              (completedMilestones / milestones.length) * 100,
+            )
           : null,
     },
   };
 }
-export async function getGoalTrend(employeeId: string) {
-  const goals = await Goal.find({ employeeId }).lean();
+
+export async function getGoalTrend(
+  employeeId: string,
+  cycleId?: string | null,
+) {
+  const query: Record<string, any> = { employeeId };
+  if (cycleId) {
+    query.cycleId = cycleId;
+  }
+
+  const goals = await Goal.find(query).lean();
   const values = new Map<string, { total: number; count: number }>();
 
   for (const goal of goals) {
@@ -902,13 +1174,10 @@ export async function getGoalTrend(employeeId: string) {
     values.set(key, entry);
   }
 
-
   const cycles = await PerformanceCycle.find({
     _id: { $in: [...values.keys()].filter((key) => key !== "unassigned") },
   }).lean();
   const names = new Map(cycles.map((cycle) => [cycle._id, cycle.name]));
-
-
 
   return [...values].map(([cycleId, value]) => ({
     cycleId: cycleId === "unassigned" ? null : cycleId,
@@ -917,18 +1186,46 @@ export async function getGoalTrend(employeeId: string) {
   }));
 }
 
-export async function listFeedbackRequests(reviewerEmployeeId: string, cycleId?: string) {
+export async function listFeedbackRequests(
+  reviewerEmployeeId: string,
+  cycleId?: string,
+) {
   const query: Record<string, any> = { reviewerEmployeeId };
   if (cycleId) query.cycleId = cycleId;
-  const rows = await PerformanceFeedbackRequest.find(query).sort({ createdAt: -1 }).lean();
-  const employeeIds = [...new Set(rows.flatMap((r) => [r.revieweeEmployeeId, r.reviewerEmployeeId]))];
-  const employees = await Employee.find({ _id: { $in: employeeIds } }).select("firstName lastName avatarUrl designationId").lean();
-  const map = new Map(employees.map((e) => [e._id, e]));
-  return rows.map((r) => ({
-    ...toApiDoc(r),
-    revieweeFirstName: map.get(r.revieweeEmployeeId)?.firstName ?? null,
-    revieweeLastName: map.get(r.revieweeEmployeeId)?.lastName ?? null,
-    revieweeAvatar: map.get(r.revieweeEmployeeId)?.avatarUrl ?? null,
+
+  const rows = await PerformanceFeedbackRequest.find(query)
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const employeeIds = [
+    ...new Set(
+      rows.flatMap((row) => [
+        row.revieweeEmployeeId,
+        row.reviewerEmployeeId,
+      ]),
+    ),
+  ];
+
+  const employees = await Employee.find({
+    _id: { $in: employeeIds },
+  })
+    .select("firstName lastName avatarUrl designationId departmentId")
+    .lean();
+
+  const map = new Map(employees.map((employee) => [employee._id, employee]));
+
+  return rows.map((row) => ({
+    ...toApiDoc(row),
+    revieweeFirstName:
+      map.get(row.revieweeEmployeeId)?.firstName ?? null,
+    revieweeLastName:
+      map.get(row.revieweeEmployeeId)?.lastName ?? null,
+    revieweeAvatar:
+      map.get(row.revieweeEmployeeId)?.avatarUrl ?? null,
+    revieweeDesignation:
+      map.get(row.revieweeEmployeeId)?.designationId ?? null,
+    revieweeDepartment:
+      map.get(row.revieweeEmployeeId)?.departmentId ?? null,
   }));
 }
 
@@ -937,28 +1234,60 @@ export async function createFeedbackRequest(input: {
   reviewId: string;
   reviewerEmployeeId: string;
   revieweeEmployeeId: string;
-  type: "PEER" | "SUBORDINATE";
+  type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
   dueDate?: string;
   createdBy?: string | null;
 }) {
   if (input.reviewerEmployeeId === input.revieweeEmployeeId) {
     throw new Error("A feedback reviewer must be different from the reviewee.");
   }
+
   const [cycle, review, reviewer, reviewee] = await Promise.all([
     PerformanceCycle.findById(input.cycleId).lean(),
     PerformanceReview.findById(input.reviewId).lean(),
     Employee.findById(input.reviewerEmployeeId).lean(),
     Employee.findById(input.revieweeEmployeeId).lean(),
   ]);
-  if (!cycle) throw new Error("Performance cycle not found.");
-  if (!cycle.isActive) throw new Error("360 feedback can only be assigned in an active performance cycle.");
-  if (!review) throw new Error("Performance review not found.");
-  if (review.cycleId !== input.cycleId || review.revieweeId !== input.revieweeEmployeeId) {
-    throw new Error("The selected review does not belong to the selected cycle and reviewee.");
+
+  if (!cycle) {
+    throw new Error("Performance cycle not found.");
   }
-  if (!reviewer || !reviewee) throw new Error("Reviewer or reviewee not found.");
+  if (!cycle.isActive) {
+    throw new Error(
+      "360 feedback can only be assigned in an active performance cycle.",
+    );
+  }
+  if (!review) {
+    throw new Error("Performance review not found.");
+  }
+  if (
+    review.cycleId !== input.cycleId ||
+    review.revieweeId !== input.revieweeEmployeeId
+  ) {
+    throw new Error(
+      "The selected review does not belong to the selected cycle and reviewee.",
+    );
+  }
+  if (!reviewer || !reviewee) {
+    throw new Error("Reviewer or reviewee not found.");
+  }
+
+  if (
+    input.type === "CROSS_FUNCTIONAL" &&
+    reviewee.departmentId &&
+    reviewer.departmentId &&
+    String(reviewee.departmentId) === String(reviewer.departmentId)
+  ) {
+    throw new Error(
+      "Cross-functional feedback must be assigned to an employee from a different department.",
+    );
+  }
+
   const doc = await PerformanceFeedbackRequest.findOneAndUpdate(
-    { reviewId: input.reviewId, reviewerEmployeeId: input.reviewerEmployeeId },
+    {
+      reviewId: input.reviewId,
+      reviewerEmployeeId: input.reviewerEmployeeId,
+    },
     {
       $setOnInsert: {
         cycleId: input.cycleId,
@@ -975,9 +1304,18 @@ export async function createFeedbackRequest(input: {
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   ).lean();
+
   if (reviewer.userId) {
-    await notify({ userId: reviewer.userId, type: "PERFORMANCE", title: "360 feedback assigned", message: `You have been asked to provide ${input.type.toLowerCase()} feedback for ${reviewee.firstName ?? "an employee"} ${reviewee.lastName ?? ""}.`, link: "/app/performance", dedupeKey: `performance-feedback-request:${doc!._id}:${reviewer.userId}` });
+    await notify({
+      userId: reviewer.userId,
+      type: "PERFORMANCE",
+      title: "360 feedback assigned",
+      message: `You have been asked to provide ${input.type.toLowerCase()} feedback for ${reviewee.firstName ?? "an employee"} ${reviewee.lastName ?? ""}.`,
+      link: "/app/performance",
+      dedupeKey: `performance-feedback-request:${doc!._id}:${reviewer.userId}`,
+    });
   }
+
   return toApiDoc(doc);
 }
 
@@ -985,21 +1323,219 @@ export async function getFeedbackRequest(id: string) {
   return toApiDoc(await PerformanceFeedbackRequest.findById(id).lean());
 }
 
-export async function submitFeedback(input: { requestId: string; reviewerEmployeeId: string; type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) {
-  const request = await PerformanceFeedbackRequest.findById(input.requestId).lean();
-  if (!request) throw new Error("Feedback request not found.");
-  if (request.reviewerEmployeeId !== input.reviewerEmployeeId) throw new Error("You are not authorized to submit this feedback request.");
-  if (request.status !== "PENDING") throw new Error("This feedback request is no longer pending.");
-  if (request.type !== input.type) throw new Error("Feedback relationship does not match the assigned request.");
-  const feedback = await PerformanceFeedback.findOneAndUpdate(
-    { reviewId: request.reviewId, reviewerEmployeeId: input.reviewerEmployeeId },
-    { $set: { reviewId: request.reviewId, reviewerEmployeeId: input.reviewerEmployeeId, type: input.type, competencyRatings: input.competencyRatings, comments: input.comments ?? null, submittedAt: nowIso() } },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
-  ).lean();
-  await PerformanceFeedbackRequest.updateOne({ _id: request._id }, { $set: { status: "COMPLETED", completedAt: nowIso() } });
-  return toApiDoc(feedback);
+type PerformanceFeedbackInput = {
+  requestId?: string;
+  reviewId?: string;
+  reviewerEmployeeId: string;
+  type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
+  competencyRatings: { competency: string; rating: number }[];
+  comments?: string;
+};
+
+function normalizeFeedbackRatings(
+  competencyRatings: { competency: string; rating: number }[],
+) {
+  if (!Array.isArray(competencyRatings) || competencyRatings.length === 0) {
+    throw new Error("At least one competency rating is required.");
+  }
+
+  const seen = new Set<string>();
+
+  return competencyRatings.map((item) => {
+    const competency = String(item.competency ?? "").trim();
+
+    if (!competency) {
+      throw new Error("Competency name is required.");
+    }
+
+    const key = competency.toLowerCase();
+    if (seen.has(key)) {
+      throw new Error(`Duplicate competency: ${competency}.`);
+    }
+    seen.add(key);
+
+    if (
+      typeof item.rating !== "number" ||
+      !Number.isFinite(item.rating) ||
+      item.rating < 1 ||
+      item.rating > 5
+    ) {
+      throw new Error("Competency ratings must be between 1 and 5.");
+    }
+
+    return {
+      competency,
+      rating: Math.round(item.rating * 10) / 10,
+    };
+  });
 }
-export async function getFeedbackSummary(reviewId: string) { const feedback = await PerformanceFeedback.find({ reviewId }).lean(); const ratings = new Map<string, number[]>(); for (const entry of feedback) for (const item of entry.competencyRatings) { const values = ratings.get(item.competency) ?? []; values.push(item.rating); ratings.set(item.competency, values); } return { responseCount: feedback.length, competencies: [...ratings].map(([competency, values]) => ({ competency, averageRating: Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100 })), comments: feedback.map((entry) => entry.comments).filter(Boolean) }; }
+
+export async function submitFeedback(input: PerformanceFeedbackInput) {
+  let request: any = null;
+  let reviewId = input.reviewId;
+
+  if (input.requestId) {
+    request = await PerformanceFeedbackRequest.findById(input.requestId).lean();
+
+    if (!request) {
+      throw new Error("Feedback request not found.");
+    }
+    if (request.reviewerEmployeeId !== input.reviewerEmployeeId) {
+      throw new Error(
+        "You are not authorized to submit this feedback request.",
+      );
+    }
+    if (request.status !== "PENDING") {
+      throw new Error("This feedback request is no longer pending.");
+    }
+    if (request.type !== input.type) {
+      throw new Error(
+        "Feedback relationship does not match the assigned request.",
+      );
+    }
+
+    reviewId = request.reviewId;
+  }
+
+  if (!reviewId) {
+    throw new Error("A feedback request or review ID is required.");
+  }
+
+  const review = await PerformanceReview.findById(reviewId).lean();
+  if (!review) {
+    throw new Error("The selected performance review does not exist.");
+  }
+
+  const reviewer = await Employee.findById(input.reviewerEmployeeId).lean();
+  if (!reviewer) {
+    throw new Error("The selected feedback reviewer does not exist.");
+  }
+
+  if (
+    review.reviewerId === input.reviewerEmployeeId ||
+    review.revieweeId === input.reviewerEmployeeId
+  ) {
+    throw new Error(
+      "An employee cannot submit 360° feedback for their own review.",
+    );
+  }
+
+  if (!["PEER", "SUBORDINATE", "CROSS_FUNCTIONAL"].includes(input.type)) {
+    throw new Error("Invalid 360° feedback relationship type.");
+  }
+
+  if (input.type === "CROSS_FUNCTIONAL") {
+    const reviewee = await Employee.findById(review.revieweeId)
+      .select({ departmentId: 1 })
+      .lean();
+
+    if (!reviewee) {
+      throw new Error("The employee being reviewed does not exist.");
+    }
+
+    if (
+      reviewee.departmentId &&
+      reviewer.departmentId &&
+      String(reviewee.departmentId) === String(reviewer.departmentId)
+    ) {
+      throw new Error(
+        "Cross-functional feedback must be submitted by an employee from a different department.",
+      );
+    }
+  }
+
+  const competencyRatings = normalizeFeedbackRatings(
+    input.competencyRatings,
+  );
+  const comments = input.comments?.trim() || null;
+
+  const doc = await PerformanceFeedback.findOneAndUpdate(
+    {
+      reviewId,
+      reviewerEmployeeId: input.reviewerEmployeeId,
+    },
+    {
+      $set: {
+        reviewId,
+        reviewerEmployeeId: input.reviewerEmployeeId,
+        type: input.type,
+        competencyRatings,
+        comments,
+        submittedAt: nowIso(),
+      },
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    },
+  ).lean();
+
+  if (request) {
+    await PerformanceFeedbackRequest.updateOne(
+      { _id: request._id },
+      {
+        $set: {
+          status: "COMPLETED",
+          completedAt: nowIso(),
+        },
+      },
+    );
+  }
+
+  return toApiDoc(doc);
+}
+
+export async function getFeedbackSummary(reviewId: string) {
+  const review = await PerformanceReview.findById(reviewId).lean();
+  if (!review) {
+    throw new Error("The selected performance review does not exist.");
+  }
+
+  const feedback = await PerformanceFeedback.find({ reviewId }).lean();
+  const ratings = new Map<string, number[]>();
+
+  for (const entry of feedback) {
+    for (const item of entry.competencyRatings ?? []) {
+      const competency = String(item.competency ?? "").trim();
+      if (!competency) continue;
+
+      const values = ratings.get(competency) ?? [];
+      values.push(item.rating);
+      ratings.set(competency, values);
+    }
+  }
+
+  return {
+    responseCount: feedback.length,
+    competencies: [...ratings].map(([competency, values]) => ({
+      competency,
+      averageRating:
+        Math.round(
+          (values.reduce((sum, value) => sum + value, 0) / values.length) *
+            100,
+        ) / 100,
+    })),
+    // Deliberately omit reviewer identity so the aggregate remains anonymous.
+    comments: feedback
+      .map((entry) => entry.comments)
+      .filter((comment): comment is string => Boolean(comment?.trim())),
+  };
+}
+
+export async function listFeedbackForReviewer(
+  reviewerEmployeeId: string,
+  reviewId?: string,
+) {
+  const query: Record<string, any> = { reviewerEmployeeId };
+  if (reviewId) query.reviewId = reviewId;
+
+  const rows = await PerformanceFeedback.find(query)
+    .sort({ submittedAt: -1 })
+    .lean();
+
+  return rows.map(toApiDoc);
+}
 export async function getOutcome(reviewId: string) { return toApiDoc(await PerformanceOutcome.findOne({ reviewId }).lean()); }
 
 
@@ -1044,6 +1580,49 @@ export async function upsertOutcome(
   return toApiDoc(outcome);
 }
 
+
+/**
+ * Return employees who directly report to the supplied manager.
+ *
+ * The Employee model stores the reporting relationship on managerId, so
+ * Performance should use that same source of truth rather than deriving
+ * direct reports from performance-review records.
+ */
+export async function listDirectReports(managerId: string) {
+  const rows = await Employee.find({ managerId })
+    .sort({ firstName: 1, lastName: 1 })
+    .lean();
+
+  return rows.map((employee: any) => ({
+    id: employee._id,
+    firstName: employee.firstName ?? null,
+    lastName: employee.lastName ?? null,
+    email: employee.email ?? null,
+    avatarUrl: employee.avatarUrl ?? null,
+    managerId: employee.managerId ?? null,
+    designationId: employee.designationId ?? null,
+    departmentId: employee.departmentId ?? null,
+  }));
+}
+
+/**
+ * Ensure that an employee has a review for the currently active cycle.
+ *
+ * This is intentionally explicit: creating a PerformanceCycle does not by
+ * itself create employee review assignments.
+ */
+export async function ensureActiveCycleReview(
+  revieweeId: string,
+  reviewerId: string,
+) {
+  const cycle = await getActiveCycle();
+
+  if (!cycle) {
+    return undefined;
+  }
+
+  return ensureReview(String(cycle.id), revieweeId, reviewerId);
+}
 
 /* -------------------------------------------------------------------------- */
 /*                         PERFORMANCE IMPROVEMENT PLAN                        */

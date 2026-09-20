@@ -41,7 +41,25 @@ export function getErrorMessage(
       return "Couldn't reach the server. Check your connection and try again.";
     }
     const data = err.response.data as ApiErrorShape | undefined;
-    return data?.error?.message || fallback;
+    const message = data?.error?.message;
+    const details = data?.error?.details;
+
+    // Surface field-level validation messages instead of only the generic
+    // validation error returned by the backend. This makes form errors
+    // actionable (for example, an invalid IFSC or TAN is shown directly).
+    if (details && typeof details === "object") {
+      const fieldMessages = Object.entries(details)
+        .flatMap(([field, messages]) =>
+          Array.isArray(messages)
+            ? messages.map((item) => `${field}: ${item}`)
+            : [],
+        )
+        .filter(Boolean);
+
+      if (fieldMessages.length) return fieldMessages.join(" ");
+    }
+
+    return message || fallback;
   }
   return fallback;
 }

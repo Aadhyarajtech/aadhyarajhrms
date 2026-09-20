@@ -2900,6 +2900,8 @@ const goalMilestoneSchema = new Schema(
     title: {
       type: String,
       required: true,
+      trim: true,
+      maxlength: 250,
     },
     targetDate: {
       type: String,
@@ -2927,11 +2929,14 @@ const goalSchema = new Schema<GoalDoc>(
     title: {
       type: String,
       required: true,
+      trim: true,
+      maxlength: 250,
     },
 
     description: {
       type: String,
       default: null,
+      maxlength: 2000,
     },
 
     progress: {
@@ -2993,13 +2998,45 @@ const goalSchema = new Schema<GoalDoc>(
   baseOptions,
 );
 
+// Goal cascade and cycle-based reporting queries rely heavily on these fields.
+goalSchema.index({ employeeId: 1, cycleId: 1 });
+goalSchema.index({ parentGoalId: 1 });
+goalSchema.index({ cycleId: 1, parentGoalId: 1 });
+
 export const Goal = model<GoalDoc>("Goal", goalSchema);
+export interface PerformanceFeedbackRating {
+  competency: string;
+  rating: number;
+}
+
+const performanceFeedbackRatingSchema = new Schema<PerformanceFeedbackRating>(
+  {
+    competency: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 200,
+    },
+    rating: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 5,
+      validate: {
+        validator: (value: number) => Number.isInteger(value),
+        message: "Rating must be a whole number between 1 and 5.",
+      },
+    },
+  },
+  { _id: false },
+);
+
 export interface PerformanceFeedbackDoc {
   _id: string;
   reviewId: string;
   reviewerEmployeeId: string;
-  type: "PEER" | "SUBORDINATE";
-  competencyRatings: { competency: string; rating: number }[];
+  type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
+  competencyRatings: PerformanceFeedbackRating[];
   comments: string | null;
   submittedAt: string;
 }
@@ -3007,27 +3044,54 @@ export interface PerformanceFeedbackDoc {
 const performanceFeedbackSchema = new Schema<PerformanceFeedbackDoc>(
   {
     _id: idField("pfb"),
-    reviewId: { type: String, required: true },
-    reviewerEmployeeId: { type: String, required: true },
+    reviewId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    reviewerEmployeeId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     type: {
       type: String,
-      enum: ["PEER", "SUBORDINATE"],
+      enum: ["PEER", "SUBORDINATE", "CROSS_FUNCTIONAL"],
       required: true,
     },
     competencyRatings: {
-      type: [{ competency: String, rating: Number }],
+      type: [performanceFeedbackRatingSchema],
+      required: true,
+      validate: {
+        validator: (ratings: PerformanceFeedbackRating[]) =>
+          ratings.length >= 1 && ratings.length <= 20,
+        message: "Provide between 1 and 20 competency ratings.",
+      },
       default: [],
     },
-    comments: { type: String, default: null },
-    submittedAt: { type: String, required: true },
+    comments: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+    submittedAt: {
+      type: String,
+      required: true,
+    },
   },
   baseOptions,
 );
 
+// One feedback submission per reviewer for each performance review.
 performanceFeedbackSchema.index(
   { reviewId: 1, reviewerEmployeeId: 1 },
   { unique: true },
 );
+
+// Supports review-level aggregation and reviewer history lookups.
+performanceFeedbackSchema.index({ reviewId: 1, submittedAt: -1 });
+performanceFeedbackSchema.index({ reviewerEmployeeId: 1, submittedAt: -1 });
 
 export const PerformanceFeedback = model<PerformanceFeedbackDoc>(
   "PerformanceFeedback",
