@@ -314,7 +314,6 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
       }),
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
-<<<<<<< HEAD
   const performanceStatus =
     scorecard?.overallRating === null ||
       scorecard?.overallRating === undefined
@@ -326,7 +325,6 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
           : scorecard.overallRating >= 3
             ? "Developing"
             : "Needs Improvement";
-=======
 
   const milestoneMutation = useMutation({
     mutationFn: ({
@@ -352,8 +350,6 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
-
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
   return (
     <div className="space-y-6">
       <Card>
@@ -571,44 +567,6 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
                   </div>
                 </div>
               )}
-            </div>
-<<<<<<< HEAD
-          ) : (
-            <p className="text-[13px] text-ink-faint">
-              Goal trends appear after goals are added to a cycle.
-            </p>
-          )}
-
-          {feedback?.responseCount ? (
-            <div className="rounded-2xl bg-ink/[0.03] p-4">
-              <p className="text-[12px] font-medium text-ink-faint">
-                360-degree feedback
-              </p>
-              <p className="mt-1 text-[13px] text-ink">
-                {feedback.responseCount} anonymous response
-                {feedback.responseCount === 1 ? "" : "s"}
-              </p>
-            </div>
-          ) : null}
-
-          {outcome ? (
-            <div className="rounded-2xl bg-brand-50 p-4">
-              <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
-                <Award size={14} /> Review outcome
-              </p>
-              <p className="mt-1 text-[13px] text-ink-soft">
-                {outcome.incrementRecommendation} increment
-                {outcome.promotionEligible ? " · Promotion eligible" : ""}
-                {outcome.fastTrackEligible ? " · Fast-track nominee" : ""}
-                {outcome.pipRecommended ? " · PIP created" : ""}
-              </p>
-              {outcome.trainingNeeds.length ? (
-                <p className="mt-1 text-[12px] text-ink-faint">
-                  Development focus: {outcome.trainingNeeds.join(", ")}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
 
           {review?.status === "COMPLETED" ? (
             <div className="rounded-2xl bg-brand-50 p-4">
@@ -771,7 +729,6 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
             </div>
           ) : null}
         </div>
-=======
           );
         })()}
       </Card>
@@ -799,7 +756,6 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
             ))}
           </div>
         )}
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
       </Card>
       <Card>
         <CardHeader
@@ -1411,8 +1367,12 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
         )}
       </Card>
 
-<<<<<<< HEAD
-      <AddGoalModal open={goalOpen} onClose={() => setGoalOpen(false)} cycleId={activeCycleId} />
+      <AddGoalModal
+        open={goalOpen}
+        onClose={() => setGoalOpen(false)}
+        cycleId={activeCycleId}
+        parentGoals={goals ?? []}
+      />
       {
         review && (
           <SelfReviewModal
@@ -1481,20 +1441,6 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
             )}
           </div>
         </Modal>
-=======
-      <AddGoalModal
-        open={goalOpen}
-        onClose={() => setGoalOpen(false)}
-        cycleId={activeCycleId}
-        parentGoals={goals ?? []}
-      />
-      {review && (
-        <SelfReviewModal
-          open={selfOpen}
-          onClose={() => setSelfOpen(false)}
-          reviewId={review.id}
-        />
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
       )}
       {goalCoachOpen && selectedGoal && (
         <Modal
@@ -2415,31 +2361,14 @@ function PerformanceOutcomeModal({
 }
 
 function FeedbackRequests() {
-<<<<<<< HEAD
-  const [selected, setSelected] = useState<{ id: string; name: string } | null>(
-    null,
-  );
-  const { data: requests, isLoading } = useQuery({
-=======
   const { data: cycles, isLoading: cyclesLoading } = useQuery({
     queryKey: ["performance", "cycles"],
     queryFn: () => PerformanceApi.cycles(),
   });
   const { data: reviews, isLoading: reviewsLoading } = useQuery({
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
     queryKey: ["performance", "feedback-requests"],
     queryFn: () => PerformanceApi.feedbackRequests(),
   });
-<<<<<<< HEAD
-  if (isLoading) return <Skeleton className="h-64 rounded-3xl" />;
-  if (!requests?.length)
-    return (
-      <EmptyState
-        icon={MessageSquare}
-        title="No 360 feedback requests"
-        description="Feedback requests will appear when reviews are initiated in the active cycle."
-      />
-=======
   const [selected, setSelected] = useState<{
     id: string;
     name: string;
@@ -2451,13 +2380,13 @@ function FeedbackRequests() {
   const pendingReviews = (reviews ?? []).filter(
     (review) =>
       (!activeCycle || review.cycleId === activeCycle.id) &&
-      !submittedIds.includes(review.id),
+      !submittedIds.includes(review.id) &&
+      review.status === "PENDING",
   );
 
   const handleSubmitted = (reviewId: string) => {
     setSubmittedIds((current) =>
       current.includes(reviewId) ? current : [...current, reviewId],
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
     );
     setSelected(null);
   };
@@ -2467,47 +2396,6 @@ function FeedbackRequests() {
   }
 
   return (
-<<<<<<< HEAD
-    <Card>
-      <CardHeader
-        title="360-degree feedback"
-        subtitle="Your responses are aggregated and never show your name to the reviewee."
-      />
-      <div className="space-y-2">
-        {requests.map((request) => (
-          <div
-            key={request.id}
-            className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
-          >
-            <div className="flex items-center gap-3">
-              <Avatar
-                firstName={request.revieweeFirstName ?? ""}
-                lastName={request.revieweeLastName ?? ""}
-                src={request.revieweeAvatar ?? undefined}
-                size="sm"
-              />
-              <div>
-                <p className="text-[13px] font-medium text-ink">
-                  {request.revieweeFirstName} {request.revieweeLastName}
-                </p>
-                <p className="text-[12px] text-ink-faint">
-                  {request.type} feedback
-                </p>
-              </div>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                setSelected({
-                  id: request.id,
-                  name: `${request.revieweeFirstName ?? ""} ${request.revieweeLastName ?? ""}`,
-                })
-              }
-            >
-              Give feedback
-            </Button>
-=======
     <div className="space-y-6">
       <Card>
         <CardHeader
@@ -2531,7 +2419,6 @@ function FeedbackRequests() {
                 aggregated results.
               </p>
             </div>
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
           </div>
         </div>
 
@@ -2554,9 +2441,9 @@ function FeedbackRequests() {
               >
                 <div className="flex items-center gap-3">
                   <Avatar
-                    firstName={review.revieweeFirstName}
-                    lastName={review.revieweeLastName}
-                    src={review.revieweeAvatar}
+                    firstName={review.revieweeFirstName ?? ""}
+                    lastName={review.revieweeLastName ?? ""}
+                    src={review.revieweeAvatar ?? undefined}
                     size="sm"
                   />
                   <div className="min-w-0">
@@ -2564,7 +2451,7 @@ function FeedbackRequests() {
                       {review.revieweeFirstName} {review.revieweeLastName}
                     </p>
                     <p className="text-[12px] text-ink-faint">
-                      {review.revieweeDesignation}
+                      {review.revieweeDesignation ?? "Employee"}
                       {review.revieweeDepartment
                         ? ` · ${review.revieweeDepartment}`
                         : ""}
@@ -2577,8 +2464,8 @@ function FeedbackRequests() {
                   onClick={() =>
                     setSelected({
                       id: review.id,
-                      name: `${review.revieweeFirstName} ${review.revieweeLastName}`,
-                      designation: review.revieweeDesignation,
+                      name: `${review.revieweeFirstName ?? ""} ${review.revieweeLastName ?? ""}`.trim(),
+                      designation: review.revieweeDesignation ?? "Employee",
                     })
                   }
                 >

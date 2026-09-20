@@ -332,21 +332,12 @@ export interface CreateEmployeeInput {
   insurancePolicyNumber?: string | null;
 
   employeeAadhaar?: string | null;
-  employeeTan?: string | null;
-  bankAccountNumber?: string | null;
-  bankIfscCode?: string | null;
-  bankBranch?: string | null;
-  investmentDeclarations?: Record<string, unknown>;
   employeePan?: string | null;
   employeeTan?: string | null;
   bankAccountNumber?: string | null;
   bankIfscCode?: string | null;
   bankBranch?: string | null;
-  investmentDeclarations?: {
-    hra?: number;
-    deduction80C?: number;
-    other?: number;
-  };
+  investmentDeclarations?: Record<string, unknown>;
   signature?: string | null;
   avatarUrl?: string;
 
@@ -435,11 +426,6 @@ export async function createEmployee(input: CreateEmployeeInput) {
     insurancePolicyNumber: input.insurancePolicyNumber ?? null,
 
     employeeAadhaar: input.employeeAadhaar ?? null,
-    employeeTan: input.employeeTan ?? null,
-    bankAccountNumber: input.bankAccountNumber ?? null,
-    bankIfscCode: input.bankIfscCode ?? null,
-    bankBranch: input.bankBranch ?? null,
-    investmentDeclarations: input.investmentDeclarations ?? {},
     employeePan: input.employeePan ?? null,
     employeeTan: input.employeeTan ?? null,
     bankAccountNumber: input.bankAccountNumber ?? null,
@@ -549,16 +535,6 @@ export interface UpdateEmployeeInput {
   bankIfscCode?: string | null;
   bankBranch?: string | null;
   investmentDeclarations?: Record<string, unknown>;
-  employeePan?: string | null;
-  employeeTan?: string | null;
-  bankAccountNumber?: string | null;
-  bankIfscCode?: string | null;
-  bankBranch?: string | null;
-  investmentDeclarations?: {
-    hra?: number;
-    deduction80C?: number;
-    other?: number;
-  };
   signature?: string | null;
 
   education?: {
@@ -663,12 +639,6 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         insurancePolicyNumber: merged.insurancePolicyNumber ?? null,
 
         employeeAadhaar: merged.employeeAadhaar ?? null,
-        employeeTan: merged.employeeTan ?? null,
-        bankAccountNumber: merged.bankAccountNumber ?? null,
-        bankIfscCode: merged.bankIfscCode ?? null,
-        bankBranch: merged.bankBranch ?? null,
-        investmentDeclarations:
-          merged.investmentDeclarations ?? current.investmentDeclarations ?? {},
         employeePan: merged.employeePan ?? null,
         employeeTan: merged.employeeTan ?? null,
         bankAccountNumber: merged.bankAccountNumber ?? null,
@@ -935,7 +905,6 @@ export async function updateUserActiveStatus(
     },
   );
 }
-<<<<<<< HEAD
 export async function getEmployeeAiContext(employeeId: string) {
   const employee = await Employee.findById(employeeId).lean();
 
@@ -1011,9 +980,8 @@ export async function getEmployeeAiContext(employeeId: string) {
           name: `${manager.firstName} ${manager.lastName}`.trim(),
         }
       : null,
-=======
-
-
+  };
+}
 
 export async function getOnboarding(id: string): Promise<EmployeeOnboarding | null> {
   const employee = await Employee.findById(id).select("onboarding status").lean<any>();
@@ -1309,6 +1277,5 @@ export async function completeOnboarding(id: string) {
   return {
     success: true,
     employee: updated ? await getEmployeeById(id) : undefined,
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
   };
 }

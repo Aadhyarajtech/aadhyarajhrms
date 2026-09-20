@@ -2360,15 +2360,12 @@ function EditEmployeeModal({
                 </label>
 
                 <select
-<<<<<<< HEAD
-                  {...register("managerId")}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
-=======
-                  {...register("managerId", {
+{...register("managerId", {
                     required: "Reporting Manager is required",
                   })}
-                  className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${errors.gender ? "border-danger-500" : "border-line"}`}
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
+                  className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${
+                    errors.managerId ? "border-danger-500" : "border-line"
+                  }`}
                 >
                   <option value="">No reporting manager (top of hierarchy)</option>
 
@@ -2381,13 +2378,14 @@ function EditEmployeeModal({
                       </option>
                     ))}
                 </select>
-<<<<<<< HEAD
-                <p className="mt-1 text-[11px] text-ink-faint">
+<p className="mt-1 text-[11px] text-ink-faint">
                   Leave this empty for a top-level employee. The org chart is built from these manager assignments.
                 </p>
-=======
-                {errors.managerId && <p className="mt-1 text-xs text-danger-500">{errors.managerId.message}</p>}
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
+                {errors.managerId && (
+                  <p className="mt-1 text-xs text-danger-500">
+                    {errors.managerId.message}
+                  </p>
+                )}
               </div>
             </div>
           </div>
