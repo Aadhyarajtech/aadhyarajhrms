@@ -703,11 +703,6 @@ const updateEmployeeSchema = z.object({
 
   avatarUrl: z.string().optional(),
   signature: z.string().nullable().optional(),
-  employeeTan: z.string().nullable().optional(),
-  bankAccountNumber: z.string().nullable().optional(),
-  bankIfscCode: z.string().nullable().optional(),
-  bankBranch: z.string().nullable().optional(),
-  investmentDeclarations: z.record(z.string(), z.unknown()).optional(),
   medicalConditions: z.string().nullable().optional(),
   bloodGroup: z.string().nullable().optional(),
   insurancePolicyNumber: z.string().nullable().optional(),

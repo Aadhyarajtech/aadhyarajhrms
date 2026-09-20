@@ -1739,7 +1739,7 @@ export interface PerformanceFeedbackRequest {
   reviewId: string;
   reviewerEmployeeId: string;
   revieweeEmployeeId: string;
-  type: "PEER" | "SUBORDINATE";
+  type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
   status: "PENDING" | "COMPLETED" | "DECLINED";
   dueDate?: string | null;
   createdAt: string;
@@ -1747,6 +1747,8 @@ export interface PerformanceFeedbackRequest {
   revieweeFirstName?: string | null;
   revieweeLastName?: string | null;
   revieweeAvatar?: string | null;
+  revieweeDesignation?: string | null;
+  revieweeDepartment?: string | null;
 }
 
 export interface PerformancePip {
@@ -1844,18 +1846,15 @@ export const PerformanceApi = {
         cycle: PerformanceCycle;
       }>("/performance/cycles", payload)
       .then((r) => r.data.cycle),
-<<<<<<< HEAD
-
-=======
   updateCycle: (id: string, payload: Record<string, unknown>) =>
     api
       .patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}`, payload)
       .then((r) => r.data.cycle),
+
   setCycleActive: (id: string, isActive: boolean) =>
     api
       .patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/status`, { isActive })
       .then((r) => r.data.cycle),
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
   reviews: (
     params: {
       cycleId?: string;
@@ -1982,25 +1981,17 @@ export const PerformanceApi = {
       .get<{ requests: PerformanceFeedbackRequest[] }>("/performance/feedback-requests", { params: { cycleId } })
       .then((r) => r.data.requests),
 
-  createFeedbackRequest: (payload: { cycleId: string; reviewId: string; reviewerEmployeeId: string; revieweeEmployeeId: string; type: "PEER" | "SUBORDINATE"; dueDate?: string }) =>
+  createFeedbackRequest: (payload: { cycleId: string; reviewId: string; reviewerEmployeeId: string; revieweeEmployeeId: string; type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL"; dueDate?: string }) =>
     api.post<{ request: PerformanceFeedbackRequest }>("/performance/feedback-requests", payload).then((r) => r.data.request),
 
-  submitFeedbackRequest: (id: string, payload: { type: "PEER" | "SUBORDINATE"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) =>
+  submitFeedbackRequest: (id: string, payload: { type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) =>
     api.post(`/performance/feedback-requests/${id}/submit`, payload).then((r) => r.data.feedback),
 
   submitFeedback: (
     id: string,
     payload: {
-<<<<<<< HEAD
-      type: "PEER" | "SUBORDINATE";
-      competencyRatings: {
-        competency: string;
-        rating: number;
-      }[];
-=======
       type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
       competencyRatings: { competency: string; rating: number }[];
->>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
       comments?: string;
     },
   ) =>
