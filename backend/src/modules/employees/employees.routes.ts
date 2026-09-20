@@ -650,8 +650,57 @@ const updateEmployeeSchema = z.object({
     .or(z.literal(""))
     .nullable()
     .optional(),
-  employeeAadhaar: z.string().nullable().optional(),
-  employeePan: z.string().nullable().optional(),
+  employeeAadhaar: z
+    .string()
+    .trim()
+    .regex(/^\d{12}$/, "Aadhaar must contain exactly 12 digits.")
+    .nullable()
+    .optional(),
+  employeePan: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{5}\d{4}[A-Z]$/, "PAN must be a valid 10-character PAN.")
+    .nullable()
+    .optional(),
+
+  // Sensitive financial information. These fields are accepted by the
+  // privileged employee update endpoint (/:id), while the /me endpoint
+  // intentionally does not copy them from employee self-service requests.
+  employeeTan: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{4}\d{5}[A-Z]$/, "TAN must be a valid 10-character TAN.")
+    .nullable()
+    .optional(),
+  bankAccountNumber: z
+    .string()
+    .trim()
+    .regex(/^\d{6,18}$/, "Bank account number must contain 6 to 18 digits.")
+    .nullable()
+    .optional(),
+  bankIfscCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, "IFSC code must be a valid 11-character IFSC.")
+    .nullable()
+    .optional(),
+  bankBranch: z
+    .string()
+    .trim()
+    .max(150, "Bank branch cannot exceed 150 characters.")
+    .nullable()
+    .optional(),
+  investmentDeclarations: z
+    .object({
+      hra: z.coerce.number().min(0).optional(),
+      deduction80C: z.coerce.number().min(0).optional(),
+      other: z.coerce.number().min(0).optional(),
+    })
+    .optional(),
+
   avatarUrl: z.string().optional(),
   signature: z.string().nullable().optional(),
   employeeTan: z.string().nullable().optional(),
@@ -726,6 +775,21 @@ const updateEmployeeSchema = z.object({
     .optional(),
   dateOfExit: z.string().nullable().optional(),
 });
+const onboardingStageSchema = z.object({
+  stage: z.enum([
+    "ACCOUNT_CREATION",
+    "PERSONAL_PROFESSIONAL_DETAILS",
+    "DOCUMENT_VERIFICATION",
+    "DEPARTMENT_ROLE_ASSIGNMENT",
+    "PAYROLL_STRUCTURE",
+    "CREDENTIALS",
+    "ORIENTATION_POLICY",
+    "PROFILE_ACTIVATION",
+  ]),
+  status: z.enum(["PENDING", "IN_PROGRESS", "COMPLETED"]),
+  remarks: z.string().max(1000).nullable().optional(),
+});
+
 const updateOffboardingChecklistSchema = z.object({
   assetReturn: z.boolean().optional(),
   accessRevoked: z.boolean().optional(),
@@ -875,6 +939,74 @@ employeesRouter.patch(
   },
 );
 
+employeesRouter.get("/:id/onboarding", isAdmin, async (req, res, next) => {
+  try {
+    const employee = await repo.getEmployeeById(req.params.id);
+    if (!employee) throw AppError.notFound("Employee not found.");
+    res.json({ onboarding: await repo.getOnboarding(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+employeesRouter.post("/:id/onboarding/start", isAdmin, async (req, res, next) => {
+  try {
+    const employee = await repo.getEmployeeById(req.params.id);
+    if (!employee) throw AppError.notFound("Employee not found.");
+    if (employee.status !== "ONBOARDING") {
+      throw AppError.badRequest(
+        "Onboarding can only be started for employees with ONBOARDING status.",
+      );
+    }
+    const updated = await repo.updateOnboardingStage(
+      req.params.id,
+      "ACCOUNT_CREATION",
+      "COMPLETED",
+      "Employee account created and onboarding started.",
+    );
+    res.json({
+      success: true,
+      message: "Employee onboarding started successfully.",
+      employee: updated,
+      onboarding: await repo.getOnboarding(req.params.id),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+employeesRouter.patch(
+  "/:id/onboarding/stage",
+  isAdmin,
+  validate(onboardingStageSchema),
+  async (req, res, next) => {
+    try {
+      const employee = await repo.getEmployeeById(req.params.id);
+      if (!employee) throw AppError.notFound("Employee not found.");
+      if (employee.status !== "ONBOARDING") {
+        throw AppError.badRequest(
+          "Onboarding stages can only be updated while the employee is in ONBOARDING status.",
+        );
+      }
+      const updated = await repo.updateOnboardingStage(
+        req.params.id,
+        req.body.stage,
+        req.body.status,
+        req.body.remarks,
+      );
+      if (!updated) throw AppError.badRequest("Unable to update onboarding stage.");
+      res.json({
+        success: true,
+        message: `Onboarding stage "${req.body.stage}" updated successfully.`,
+        employee: updated,
+        onboarding: await repo.getOnboarding(req.params.id),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 employeesRouter.patch(
   "/:id/offboarding-checklist",
   isAdmin,
@@ -936,35 +1068,26 @@ employeesRouter.post(
   async (req, res, next) => {
     try {
       const employee = await repo.getEmployeeById(req.params.id);
-
-      if (!employee) {
-        throw AppError.notFound("Employee not found.");
-      }
-
+      if (!employee) throw AppError.notFound("Employee not found.");
       if (employee.status !== "ONBOARDING") {
         throw AppError.badRequest(
           "Only employees with ONBOARDING status can complete onboarding.",
         );
       }
 
-      // Change employee lifecycle status
-      const probationStartDate = new Date().toISOString();
+      const result = await repo.completeOnboarding(req.params.id);
+      if (!result?.success) {
+        throw AppError.badRequest(
+          `Onboarding cannot be completed. Complete all required stages first: ${(result?.incompleteStages ?? []).join(", ")}.`,
+        );
+      }
 
-const probationEndDate = new Date(probationStartDate);
-probationEndDate.setMonth(probationEndDate.getMonth() + 3);
+      const updatedEmployee = result.employee;
+      if (!updatedEmployee) throw AppError.notFound("Employee not found.");
 
-const updatedEmployee = await repo.updateEmployee(req.params.id, {
-  status: "ON_PROBATION",
-  probationStartDate,
-  probationEndDate: probationEndDate.toISOString(),
-});
-
-      // Activate employee user account
-      await repo.updateUserActiveStatus(employee.userId, true);
-
-      // Notify employee
+      await repo.updateUserActiveStatus(updatedEmployee.userId, true);
       await notify({
-        userId: employee.userId,
+        userId: updatedEmployee.userId,
         type: "SYSTEM",
         title: "Onboarding completed",
         message:
@@ -976,13 +1099,13 @@ const updatedEmployee = await repo.updateEmployee(req.params.id, {
         success: true,
         message: "Employee onboarding completed successfully.",
         employee: updatedEmployee,
+        onboarding: await repo.getOnboarding(req.params.id),
       });
     } catch (err) {
       next(err);
     }
   },
 );
-
 
 employeesRouter.post(
   "/:id/confirm-probation",

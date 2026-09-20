@@ -828,6 +828,59 @@ function OverviewTab({
           </dl>
         </Card>
 
+        {isAdmin && (
+          <Card className="h-fit self-start">
+            <CardHeader
+              title="Bank & Financial Details"
+              subtitle="Restricted to HR administrators"
+            />
+            <dl className="grid grid-cols-1 gap-y-5 text-[13.5px] sm:grid-cols-2">
+              <Info
+                label="Bank account number"
+                value={employee.bankAccountNumber ?? "—"}
+              />
+              <Info
+                label="IFSC code"
+                value={employee.bankIfscCode ?? "—"}
+              />
+              <Info
+                label="Bank branch"
+                value={employee.bankBranch ?? "—"}
+              />
+              <Info
+                label="TAN"
+                value={employee.employeeTan ?? "—"}
+              />
+              <Info
+                label="HRA declaration"
+                value={
+                  employee.investmentDeclarations?.hra != null
+                    ? formatCurrencyINR(Number(employee.investmentDeclarations.hra))
+                    : "—"
+                }
+              />
+              <Info
+                label="80C declaration"
+                value={
+                  employee.investmentDeclarations?.deduction80C != null
+                    ? formatCurrencyINR(
+                        Number(employee.investmentDeclarations.deduction80C),
+                      )
+                    : "—"
+                }
+              />
+              <Info
+                label="Other declaration"
+                value={
+                  employee.investmentDeclarations?.other != null
+                    ? formatCurrencyINR(Number(employee.investmentDeclarations.other))
+                    : "—"
+                }
+              />
+            </dl>
+          </Card>
+        )}
+
         <Card className="h-fit self-start bg-gradient-to-br from-brand-600 to-brand-800 p-5 text-white">
           <div className="space-y-4">
             <div>
@@ -1946,6 +1999,15 @@ type EmployeeForm = {
   emergencyContactEmail: string;
   employeeAadhaar: string;
   employeePan: string;
+  employeeTan: string;
+  bankAccountNumber: string;
+  bankIfscCode: string;
+  bankBranch: string;
+  investmentDeclarations: {
+    hra: number;
+    deduction80C: number;
+    other: number;
+  };
   signature: string;
   avatarUrl: string;
   education: {
@@ -2019,6 +2081,15 @@ function EditEmployeeModal({
 
         employeeAadhaar: employee.employeeAadhaar ?? "",
         employeePan: employee.employeePan ?? "",
+        employeeTan: employee.employeeTan ?? "",
+        bankAccountNumber: employee.bankAccountNumber ?? "",
+        bankIfscCode: employee.bankIfscCode ?? "",
+        bankBranch: employee.bankBranch ?? "",
+        investmentDeclarations: {
+          hra: Number(employee.investmentDeclarations?.hra ?? 0),
+          deduction80C: Number(employee.investmentDeclarations?.deduction80C ?? 0),
+          other: Number(employee.investmentDeclarations?.other ?? 0),
+        },
         signature: employee.signature ?? "",
         avatarUrl: employee.avatarUrl ?? "",
 
@@ -2061,6 +2132,15 @@ function EditEmployeeModal({
 
       employeeAadhaar: employee.employeeAadhaar ?? "",
       employeePan: employee.employeePan ?? "",
+      employeeTan: employee.employeeTan ?? "",
+      bankAccountNumber: employee.bankAccountNumber ?? "",
+      bankIfscCode: employee.bankIfscCode ?? "",
+      bankBranch: employee.bankBranch ?? "",
+      investmentDeclarations: {
+        hra: Number(employee.investmentDeclarations?.hra ?? 0),
+        deduction80C: Number(employee.investmentDeclarations?.deduction80C ?? 0),
+        other: Number(employee.investmentDeclarations?.other ?? 0),
+      },
       signature: employee.signature ?? "",
       avatarUrl: employee.avatarUrl ?? "",
 
@@ -2155,6 +2235,15 @@ function EditEmployeeModal({
         emergencyContactEmail: payload.emergencyContactEmail || null,
         employeeAadhaar: payload.employeeAadhaar || null,
         employeePan: payload.employeePan || null,
+        employeeTan: payload.employeeTan || null,
+        bankAccountNumber: payload.bankAccountNumber || null,
+        bankIfscCode: payload.bankIfscCode || null,
+        bankBranch: payload.bankBranch || null,
+        investmentDeclarations: {
+          hra: Number(payload.investmentDeclarations?.hra ?? 0),
+          deduction80C: Number(payload.investmentDeclarations?.deduction80C ?? 0),
+          other: Number(payload.investmentDeclarations?.other ?? 0),
+        },
         signature: payload.signature || null,
       };
 
@@ -2182,6 +2271,7 @@ function EditEmployeeModal({
             Cancel
           </Button>
           <Button
+            type="button"
             onClick={handleSubmit((v) => mutation.mutate(v))}
             isLoading={mutation.isPending}
           >
@@ -2190,7 +2280,12 @@ function EditEmployeeModal({
         </>
       }
     >
-      <form className="grid gap-4 sm:grid-cols-2">
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit((v) => mutation.mutate(v))}>
+        {Object.keys(errors).length > 0 && (
+          <div className="sm:col-span-2 rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+            Please correct the highlighted fields before saving your changes.
+          </div>
+        )}
         {isAdmin && (
           <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
             <div className="border-b border-line pb-2">
@@ -2217,7 +2312,7 @@ function EditEmployeeModal({
                       setValue("designationId", "");
                     },
                   })}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                  className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${errors.departmentId ? "border-danger-500" : "border-line"}`}
                 >
                   <option value="">Select department</option>
 
@@ -2227,6 +2322,7 @@ function EditEmployeeModal({
                     </option>
                   ))}
                 </select>
+                {errors.departmentId && <p className="mt-1 text-xs text-danger-500">{errors.departmentId.message}</p>}
               </div>
 
               {/* Designation */}
@@ -2254,6 +2350,7 @@ function EditEmployeeModal({
                     </option>
                   ))}
                 </select>
+                {errors.designationId && <p className="mt-1 text-xs text-danger-500">{errors.designationId.message}</p>}
               </div>
 
               {/* Reporting Manager */}
@@ -2263,8 +2360,15 @@ function EditEmployeeModal({
                 </label>
 
                 <select
+<<<<<<< HEAD
                   {...register("managerId")}
                   className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+=======
+                  {...register("managerId", {
+                    required: "Reporting Manager is required",
+                  })}
+                  className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${errors.gender ? "border-danger-500" : "border-line"}`}
+>>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
                 >
                   <option value="">No reporting manager (top of hierarchy)</option>
 
@@ -2277,15 +2381,19 @@ function EditEmployeeModal({
                       </option>
                     ))}
                 </select>
+<<<<<<< HEAD
                 <p className="mt-1 text-[11px] text-ink-faint">
                   Leave this empty for a top-level employee. The org chart is built from these manager assignments.
                 </p>
+=======
+                {errors.managerId && <p className="mt-1 text-xs text-danger-500">{errors.managerId.message}</p>}
+>>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
               </div>
             </div>
           </div>
         )}
-        <TextField label="First name" required {...register("firstName", { required: "First name is required" })} />
-        <TextField label="Last name" required {...register("lastName", { required: "Last name is required" })} />
+        <TextField label="First name" required error={errors.firstName?.message} {...register("firstName", { required: "First name is required." })} />
+        <TextField label="Last name" required error={errors.lastName?.message} {...register("lastName", { required: "Last name is required." })} />
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
             Gender <span className="text-danger-500">*</span>
@@ -2293,7 +2401,7 @@ function EditEmployeeModal({
 
           <select
             {...register("gender", { required: "Gender is required" })}
-            className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+            className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${errors.managerId ? "border-danger-500" : "border-line"}`}
           >
             <option value="">Select gender</option>
             <option value="MALE">MALE</option>
@@ -2309,7 +2417,7 @@ function EditEmployeeModal({
 
           <select
             {...register("maritalStatus", { required: "Marital Status is required" })}
-            className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+            className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${errors.maritalStatus ? "border-danger-500" : "border-line"}`}
           >
             <option value="">Select marital status</option>
             <option value="SINGLE">SINGLE</option>
@@ -2358,6 +2466,110 @@ function EditEmployeeModal({
 
         <TextField label="Aadhaar" {...register("employeeAadhaar")} />
         <TextField label="PAN" {...register("employeePan")} />
+
+        {isAdmin && (
+          <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
+            <div className="border-b border-line pb-2">
+              <h3 className="text-sm font-medium text-ink">
+                Bank & Financial Details
+              </h3>
+              <p className="text-xs text-ink-faint">
+                Sensitive financial and statutory information. Visible to HR administrators.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <TextField
+                label="Bank Account Number"
+                required
+                error={errors.bankAccountNumber?.message}
+                inputMode="numeric"
+                autoComplete="off"
+                {...register("bankAccountNumber", {
+                  required: "Bank account number is required.",
+                  pattern: { value: /^\d{6,18}$/, message: "Enter a valid bank account number (6–18 digits)." },
+                })}
+              />
+              <TextField
+                label="IFSC Code"
+                required
+                error={errors.bankIfscCode?.message}
+                autoComplete="off"
+                {...register("bankIfscCode", {
+                  required: "IFSC code is required.",
+                  setValueAs: (value) => String(value ?? "").toUpperCase().trim(),
+                  pattern: { value: /^[A-Z]{4}0[A-Z0-9]{6}$/, message: "Enter a valid 11-character IFSC code (e.g. SBIN0001234)." },
+                })}
+              />
+              <TextField
+                label="Bank Branch"
+                required
+                error={errors.bankBranch?.message}
+                {...register("bankBranch", {
+                  required: "Bank branch is required.",
+                  validate: (value) => value.trim().length >= 2 || "Enter a valid bank branch name.",
+                })}
+              />
+              <TextField
+                label="TAN"
+                required
+                error={errors.employeeTan?.message}
+                autoComplete="off"
+                {...register("employeeTan", {
+                  required: "TAN is required.",
+                  setValueAs: (value) => String(value ?? "").toUpperCase().trim(),
+                  pattern: { value: /^[A-Z]{4}\d{5}[A-Z]$/, message: "Enter a valid 10-character TAN (e.g. ABCD12345E)." },
+                })}
+              />
+            </div>
+
+            <div className="mt-5 border-t border-line/60 pt-4">
+              <p className="text-[13px] font-medium text-ink">
+                Investment Declarations
+              </p>
+              <p className="mt-0.5 text-xs text-ink-faint">
+                Enter declared annual amounts in INR.
+              </p>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <TextField
+                  label="HRA Declaration"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  error={errors.investmentDeclarations?.hra?.message}
+                  {...register("investmentDeclarations.hra", {
+                    valueAsNumber: true,
+                    min: { value: 0, message: "HRA declaration cannot be negative." },
+                  })}
+                />
+                <TextField
+                  label="80C Declaration"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  error={errors.investmentDeclarations?.deduction80C?.message}
+                  {...register("investmentDeclarations.deduction80C", {
+                    valueAsNumber: true,
+                    min: { value: 0, message: "80C declaration cannot be negative." },
+                  })}
+                />
+                <TextField
+                  label="Other Declaration"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  error={errors.investmentDeclarations?.other?.message}
+                  {...register("investmentDeclarations.other", {
+                    valueAsNumber: true,
+                    min: { value: 0, message: "Other declaration cannot be negative." },
+                  })}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         <TextField
           label="Signature URL"
           className="sm:col-span-2"

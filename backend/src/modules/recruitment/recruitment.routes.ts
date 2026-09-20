@@ -490,6 +490,23 @@ recruitmentRouter.post(
         candidate,
       });
     } catch (err) {
+      // Candidate creation business-rule failures are client errors, not
+      // server failures. Keep the repository validation intact while
+      // returning a useful 400 response to Postman/frontend clients.
+      if (
+        err instanceof Error &&
+        (
+          err.message.startsWith("Applications are only accepted for open jobs.") ||
+          err.message.startsWith("Applications are only accepted for open, approved jobs.") ||
+          err.message === "Job posting not found." ||
+          err.message ===
+            "A candidate with this email already applied for this job."
+        )
+      ) {
+        next(AppError.badRequest(err.message));
+        return;
+      }
+
       next(err);
     }
   },

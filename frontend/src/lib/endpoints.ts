@@ -1844,7 +1844,18 @@ export const PerformanceApi = {
         cycle: PerformanceCycle;
       }>("/performance/cycles", payload)
       .then((r) => r.data.cycle),
+<<<<<<< HEAD
 
+=======
+  updateCycle: (id: string, payload: Record<string, unknown>) =>
+    api
+      .patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}`, payload)
+      .then((r) => r.data.cycle),
+  setCycleActive: (id: string, isActive: boolean) =>
+    api
+      .patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/status`, { isActive })
+      .then((r) => r.data.cycle),
+>>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
   reviews: (
     params: {
       cycleId?: string;
@@ -1980,11 +1991,16 @@ export const PerformanceApi = {
   submitFeedback: (
     id: string,
     payload: {
+<<<<<<< HEAD
       type: "PEER" | "SUBORDINATE";
       competencyRatings: {
         competency: string;
         rating: number;
       }[];
+=======
+      type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
+      competencyRatings: { competency: string; rating: number }[];
+>>>>>>> 6ea2184 (WIP: save HRMS changes before syncing main)
       comments?: string;
     },
   ) =>
@@ -2089,6 +2105,27 @@ export const PerformanceApi = {
       .patch<{
         goal: Goal;
       }>(`/performance/goals/${id}/current-value`, { currentValue })
+      .then((r) => r.data.goal),
+
+  // Goal cascade: retrieve parent/child goal hierarchy.
+  goalCascade: (employeeId?: string, cycleId?: string) =>
+    api
+      .get<{ goals: Goal[] }>("/performance/goals/cascade", {
+        params: { employeeId, cycleId },
+      })
+      .then((r) => r.data.goals),
+
+  // Milestone completion drives milestone-based goal achievement on the backend.
+  updateGoalMilestone: (
+    id: string,
+    milestoneIndex: number,
+    completed: boolean,
+  ) =>
+    api
+      .patch<{ goal: Goal }>(`/performance/goals/${id}/milestones`, {
+        milestoneIndex,
+        completed,
+      })
       .then((r) => r.data.goal),
 
   ratingByDepartment: () =>

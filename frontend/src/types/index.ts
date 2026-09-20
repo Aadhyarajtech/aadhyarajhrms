@@ -626,6 +626,12 @@ export interface PerformanceReview {
   reviewerLastName: string;
 }
 
+export interface PerformanceMilestone {
+  title: string;
+  targetDate: string | null;
+  completed: boolean;
+}
+
 export interface Goal {
   id: string;
   employeeId: string;
@@ -640,12 +646,30 @@ export interface Goal {
   category: string | null;
   targetValue: number | null;
   currentValue: number | null;
-  milestones: {
-    title: string;
-    targetDate: string | null;
-    completed: boolean;
-  }[];
+  milestones: PerformanceMilestone[];
   assignedBy: string | null;
+
+  /**
+   * Populated by the goal-cascade endpoint.
+   * Normal goal-list responses may omit this field.
+   */
+  children?: Goal[];
+}
+
+/**
+ * Recursive goal hierarchy returned by the goal-cascade API.
+ * A company/department goal can contain child goals through `children`.
+ */
+export interface GoalCascadeNode extends Goal {
+  children: GoalCascadeNode[];
+}
+
+/**
+ * Payload used when changing the completion state of a milestone.
+ */
+export interface UpdateGoalMilestonePayload {
+  milestoneIndex: number;
+  completed: boolean;
 }
 export interface PerformanceOutcome {
   id: string;
