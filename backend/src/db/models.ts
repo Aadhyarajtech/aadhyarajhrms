@@ -2654,8 +2654,8 @@ export interface PerformanceCycleDoc {
   purpose: string | null;
   ratingScale?: number[];
   ratingWeights?: {
-    self: number;
-    manager: number;
+    self?: number;
+    manager?: number;
   };
   competencies?: {
     name: string;
