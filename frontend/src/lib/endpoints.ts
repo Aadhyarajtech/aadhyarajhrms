@@ -535,9 +535,9 @@ export interface AttendanceAiInsights {
 
   trend: {
     direction:
-      | "IMPROVING"
-      | "DECLINING"
-      | "STABLE";
+    | "IMPROVING"
+    | "DECLINING"
+    | "STABLE";
     change: number;
     recentRate: number;
     previousRate: number;
@@ -545,9 +545,9 @@ export interface AttendanceAiInsights {
 
   patterns: {
     type:
-      | "POSITIVE"
-      | "WARNING"
-      | "INFO";
+    | "POSITIVE"
+    | "WARNING"
+    | "INFO";
     title: string;
     description: string;
   }[];
@@ -880,28 +880,28 @@ export interface AttendanceApiRecord
   status: AttendanceStatus;
 
   checkInLatitude?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkInLongitude?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkInAccuracy?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkOutLatitude?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkOutLongitude?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkOutAccuracy?:
-    | number
-    | null;
+  | number
+  | null;
 
   effectiveWorkHours?: number;
   breakMinutes?: number;
@@ -909,8 +909,8 @@ export interface AttendanceApiRecord
   earlyDepartureMinutes?: number;
   overtimeHours?: number;
   earlyDepartureReason?:
-    | string
-    | null;
+  | string
+  | null;
   compOffCredited?: boolean;
 
   auditTrail?: Array<{
@@ -939,8 +939,8 @@ export interface AttendanceRegularizationRequest {
   requestedCheckIn: string | null;
   requestedCheckOut: string | null;
   requestedStatus:
-    | AttendanceStatus
-    | string;
+  | AttendanceStatus
+  | string;
   reason: string;
   status: AttendanceRegularizationStatus;
   expiresAt?: string | null;
@@ -958,8 +958,8 @@ export const AttendanceApi = {
     api
       .get<{
         record:
-          | AttendanceRecord
-          | null;
+        | AttendanceRecord
+        | null;
       }>("/attendance/today")
       .then(
         (r) => r.data.record,
@@ -1280,7 +1280,7 @@ export const AttendanceApi = {
           employeeId,
         },
       )
-            .then(
+      .then(
         (r) => r.data.record,
       ),
 
@@ -1309,8 +1309,8 @@ export const AttendanceApi = {
         result: {
           request: AttendanceRegularizationRequest;
           attendance:
-            | AttendanceRecord
-            | null;
+          | AttendanceRecord
+          | null;
         };
         message: string;
       }>(
@@ -1364,9 +1364,9 @@ export interface LeaveConflictAnalysis {
   hasConflict: boolean;
 
   impactLevel:
-    | "LOW"
-    | "MEDIUM"
-    | "HIGH";
+  | "LOW"
+  | "MEDIUM"
+  | "HIGH";
 
   affectedEmployees: number;
 
@@ -1493,13 +1493,13 @@ export const LeaveApi = {
       ),
 
   apply: (payload: {
-  leaveTypeId: string;
-  startDate: string;
-  endDate: string;
-  halfDay?: boolean;
-  halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
-  reason: string;
-}) =>
+    leaveTypeId: string;
+    startDate: string;
+    endDate: string;
+    halfDay?: boolean;
+    halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
+    reason: string;
+  }) =>
     api
       .post<{
         request: LeaveRequest;
@@ -1878,6 +1878,62 @@ export const RecruitmentApi = {
       }>("/recruitment/jobs/ai-generate", data)
       .then((r) => r.data.draft),
 
+  interviewCopilot: (id: string) =>
+    api
+      .post<{
+        message: string;
+        copilot: {
+          focusAreas: string[];
+          technicalQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+          resumeQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+          skillGapQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+          behavioralQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+        };
+      }>(`/recruitment/candidates/${id}/interview-copilot`)
+      .then((r) => r.data.copilot),
+  generateJobDescription: (data: {
+    jobTitle: string;
+    departmentId?: string;
+    designationId?: string;
+    roleCategory?: string;
+    employmentType?: string;
+    location?: string;
+    experienceMin?: number;
+    experienceMax?: number;
+    skills?: string;
+  }) =>
+    api
+      .post<{
+        message: string;
+        draft: {
+          departmentId: string;
+          designationId: string;
+          departmentName: string;
+          designationTitle: string;
+          roleCategory: string;
+          employmentType: string;
+          location: string;
+          experienceMin: number;
+          experienceMax: number;
+          skills: string[];
+          screeningQuestions: string[];
+          description: string;
+        };
+      }>("/recruitment/jobs/ai-generate", data)
+      .then((r) => r.data.draft),
+
   rate: (id: string, rating: number) =>
     api
       .patch<{
@@ -1912,6 +1968,7 @@ export const RecruitmentApi = {
       }>(`/recruitment/candidates/${id}/resume/parse`)
       .then((r) => r.data.candidate),
 
+
   autofillResume: (id: string) =>
     api
       .post<{
@@ -1924,6 +1981,7 @@ export const RecruitmentApi = {
         };
       }>(`/recruitment/candidates/${id}/resume/autofill`)
       .then((r) => r.data.autofill),
+
 
   interviews: (candidateId?: string) =>
     api
@@ -2005,10 +2063,10 @@ export const RecruitmentApi = {
     id: string,
     payload: {
       status:
-        | "NOT_STARTED"
-        | "IN_PROGRESS"
-        | "VERIFIED"
-        | "FAILED";
+      | "NOT_STARTED"
+      | "IN_PROGRESS"
+      | "VERIFIED"
+      | "FAILED";
       provider?: string;
       reference?: string;
       notes?: string;
@@ -2399,8 +2457,8 @@ export const PerformanceApi = {
     api
       .get<{
         review:
-          | PerformanceReview
-          | null;
+        | PerformanceReview
+        | null;
       }>(
         "/performance/reviews/mine",
       )
@@ -2541,7 +2599,7 @@ export const PerformanceApi = {
   deactivateCycle: (id: string) =>
     api.patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/deactivate`).then((r) => r.data.cycle),
 
-   feedbackRequests: (cycleId?: string) =>
+  feedbackRequests: (cycleId?: string) =>
     api
       .get<{
         requests: PerformanceFeedbackRequest[];
@@ -2607,7 +2665,7 @@ export const PerformanceApi = {
         (r) => r.data.feedback,
       ),
 
-    submitReviewFeedback: (
+  submitReviewFeedback: (
     id: string,
     payload: {
       type: "PEER" | "SUBORDINATE";
@@ -2627,7 +2685,7 @@ export const PerformanceApi = {
         (r) => r.data.feedback,
       ),
 
-    feedbackSummary: (id: string) =>
+  feedbackSummary: (id: string) =>
     api
       .get<{
         summary: FeedbackSummary;
@@ -2701,8 +2759,8 @@ export const PerformanceApi = {
     api
       .get<{
         outcome:
-          | PerformanceOutcome
-          | null;
+        | PerformanceOutcome
+        | null;
       }>(
         `/performance/reviews/${id}/outcome`,
       )
@@ -2714,10 +2772,10 @@ export const PerformanceApi = {
     id: string,
     payload: {
       incrementRecommendation:
-        | "MAXIMUM"
-        | "STANDARD"
-        | "NONE"
-        | "PIP";
+      | "MAXIMUM"
+      | "STANDARD"
+      | "NONE"
+      | "PIP";
       promotionEligible?: boolean;
       trainingNeeds?: string[];
       pipRecommended?: boolean;
@@ -2832,8 +2890,8 @@ export const PayrollApi = {
     api
       .get<{
         structure:
-          | SalaryStructure
-          | null;
+        | SalaryStructure
+        | null;
       }>(
         `/payroll/salary-structure/${employeeId}`,
       )
@@ -2862,8 +2920,8 @@ export const PayrollApi = {
       .post<{
         tax: {
           taxRegime:
-            | "NEW"
-            | "OLD";
+          | "NEW"
+          | "OLD";
           taxYear: number;
           annualGrossIncome: number;
           standardDeduction: number;
@@ -2890,7 +2948,7 @@ export const PayrollApi = {
         (r) => r.data.tax,
       ),
 
-    runs: () =>
+  runs: () =>
     api
       .get<{ runs: PayrollRun[] }>("/payroll/runs")
       .then((r) => r.data.runs),
@@ -2902,7 +2960,7 @@ export const PayrollApi = {
         { month, year },
       )
       .then((r) => r.data),
-lockAttendance: (startDate: string, endDate: string) =>
+  lockAttendance: (startDate: string, endDate: string) =>
     api
       .post<{ run: PayrollRun }>("/payroll/runs/lock-attendance", {
         startDate,
@@ -3556,8 +3614,8 @@ export interface ReportBucket {
 
 export interface ReportsOverview {
   scope:
-    | "ORGANIZATION"
-    | "TEAM";
+  | "ORGANIZATION"
+  | "TEAM";
 
   filters: ReportsFilters;
 
@@ -3805,11 +3863,11 @@ export const ReportsApi = {
           ...filters,
           section,
           ...(section === "custom" &&
-          customSections.length > 0
+            customSections.length > 0
             ? {
-                customSections:
-                  customSections.join(","),
-              }
+              customSections:
+                customSections.join(","),
+            }
             : {}),
         },
         responseType: "blob",

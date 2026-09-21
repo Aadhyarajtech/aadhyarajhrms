@@ -1161,7 +1161,6 @@ export default function JobDetail() {
                               : "Drag to move candidate"}
                           </span>
                         </div>
-
                         <p className="text-[13px] font-medium text-ink">
                           {candidate.firstName} {candidate.lastName}
                         </p>
@@ -1577,7 +1576,7 @@ export default function JobDetail() {
 
                             {candidate.stage === "INTERVIEW" &&
                               (screeningCandidate.finalResult ?? "PENDING") ===
-                                "PENDING" && (
+                              "PENDING" && (
                                 <button
                                   type="button"
                                   disabled={selectCandidateMutation.isPending}
@@ -1641,16 +1640,18 @@ export default function JobDetail() {
                     );
                   })}
 
-                  {!stageCandidates.length && (
-                    <p className="px-1 text-[11.5px] text-ink-faint">
-                      No candidates
-                    </p>
-                  )}
-                </div>
-              </div>
+                  {
+                    !stageCandidates.length && (
+                      <p className="px-1 text-[11.5px] text-ink-faint">
+                        No candidates
+                      </p>
+                    )
+                  }
+                </div >
+              </div >
             );
           })}
-        </div>
+        </div >
       )}
 
       <AddCandidateModal
@@ -1659,457 +1660,475 @@ export default function JobDetail() {
         jobId={jobId!}
       />
 
-      {scheduleFor && (
-        <ScheduleInterviewModal
-          candidate={scheduleFor}
-          onClose={() => setScheduleFor(null)}
-        />
-      )}
+      {
+        scheduleFor && (
+          <ScheduleInterviewModal
+            candidate={scheduleFor}
+            onClose={() => setScheduleFor(null)}
+          />
+        )
+      }
 
-      {offerLetterFor && (
-        <OfferLetterModal
-          candidate={offerLetterFor}
-          job={job}
-          onClose={() => setOfferLetterFor(null)}
-        />
-      )}
+      {
+        offerLetterFor && (
+          <OfferLetterModal
+            candidate={offerLetterFor}
+            job={job}
+            onClose={() => setOfferLetterFor(null)}
+          />
+        )
+      }
 
-      {lifecycleFor && (
-        <CandidateLifecycleModal
-          candidate={lifecycleFor}
-          onClose={() => setLifecycleFor(null)}
-          job={job}
-        />
-      )}
+      {
+        lifecycleFor && (
+          <CandidateLifecycleModal
+            candidate={lifecycleFor}
+            onClose={() => setLifecycleFor(null)}
+            job={job}
+          />
+        )
+      }
 
-      {editCandidateFor && (
-        <EditCandidateModal
-          candidate={editCandidateFor}
-          isLoading={updateCandidateMutation.isPending}
-          onClose={() => {
-            if (!updateCandidateMutation.isPending) setEditCandidateFor(null);
-          }}
-          onSubmit={(values) =>
-            updateCandidateMutation.mutate({
-              id: editCandidateFor.id,
-              values,
-            })
-          }
-        />
-      )}
+      {
+        editCandidateFor && (
+          <EditCandidateModal
+            candidate={editCandidateFor}
+            isLoading={updateCandidateMutation.isPending}
+            onClose={() => {
+              if (!updateCandidateMutation.isPending) setEditCandidateFor(null);
+            }}
+            onSubmit={(values) =>
+              updateCandidateMutation.mutate({
+                id: editCandidateFor.id,
+                values,
+              })
+            }
+          />
+        )
+      }
 
-      {deleteCandidateFor && (
-        <DeleteCandidateModal
-          candidate={deleteCandidateFor}
-          isLoading={deleteCandidateMutation.isPending}
-          onClose={() => {
-            if (!deleteCandidateMutation.isPending) setDeleteCandidateFor(null);
-          }}
-          onConfirm={() =>
-            deleteCandidateMutation.mutate(deleteCandidateFor.id)
-          }
-        />
-      )}
-      {aiDetailsCandidate && (
-        <Modal
-          open={true}
-          onClose={() => setAiDetailsCandidate(null)}
-          title={`AI Resume Screening — ${aiDetailsCandidate.firstName} ${aiDetailsCandidate.lastName}`}
-          size="lg"
-        >
-          <div className="space-y-4">
-            {aiDetailsCandidate.screening && (
-              <>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="text-[10.5px] font-medium text-ink-faint">
-                      Job Fit Score
-                    </p>
+      {
+        deleteCandidateFor && (
+          <DeleteCandidateModal
+            candidate={deleteCandidateFor}
+            isLoading={deleteCandidateMutation.isPending}
+            onClose={() => {
+              if (!deleteCandidateMutation.isPending) setDeleteCandidateFor(null);
+            }}
+            onConfirm={() =>
+              deleteCandidateMutation.mutate(deleteCandidateFor.id)
+            }
+          />
+        )
+      }
+      {
+        aiDetailsCandidate && (
+          <Modal
+            open={true}
+            onClose={() => setAiDetailsCandidate(null)}
+            title={`AI Resume Screening — ${aiDetailsCandidate.firstName} ${aiDetailsCandidate.lastName}`}
+            size="lg"
+          >
+            <div className="space-y-4">
+              {aiDetailsCandidate.screening && (
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="text-[10.5px] font-medium text-ink-faint">
+                        Job Fit Score
+                      </p>
 
-                    <p className="mt-1 text-lg font-semibold text-ink">
-                      {aiDetailsCandidate.screening.score}%
-                    </p>
-                  </div>
+                      <p className="mt-1 text-lg font-semibold text-ink">
+                        {aiDetailsCandidate.screening.score}%
+                      </p>
+                    </div>
 
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="text-[10.5px] font-medium text-ink-faint">
-                      AI Recommendation
-                    </p>
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="text-[10.5px] font-medium text-ink-faint">
+                        AI Recommendation
+                      </p>
 
-                    <div className="mt-1">
-                      <Badge
-                        tone={
-                          aiDetailsCandidate.screening.recommendation === "YES"
-                            ? "success"
-                            : aiDetailsCandidate.screening.recommendation === "NO"
-                              ? "warning"
-                              : "neutral"
-                        }
-                      >
-                        {aiDetailsCandidate.screening.recommendation}
-                      </Badge>
+                      <div className="mt-1">
+                        <Badge
+                          tone={
+                            aiDetailsCandidate.screening.recommendation === "YES"
+                              ? "success"
+                              : aiDetailsCandidate.screening.recommendation === "NO"
+                                ? "warning"
+                                : "neutral"
+                          }
+                        >
+                          {aiDetailsCandidate.screening.recommendation}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="text-[10.5px] font-medium text-ink-faint">
+                        AI Confidence
+                      </p>
+
+                      <div className="mt-1">
+                        <Badge
+                          tone={
+                            aiDetailsCandidate.screening.confidence === "HIGH"
+                              ? "success"
+                              : aiDetailsCandidate.screening.confidence === "MEDIUM"
+                                ? "neutral"
+                                : "warning"
+                          }
+                        >
+                          {aiDetailsCandidate.screening.confidence}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="text-[10.5px] font-medium text-ink-faint">
-                      AI Confidence
-                    </p>
+                  {aiDetailsCandidate.screening.strengths?.length ? (
+                    <div>
+                      <p className="mb-2 text-[12px] font-semibold text-ink">
+                        Key strengths
+                      </p>
 
-                    <div className="mt-1">
-                      <Badge
-                        tone={
-                          aiDetailsCandidate.screening.confidence === "HIGH"
-                            ? "success"
-                            : aiDetailsCandidate.screening.confidence === "MEDIUM"
-                              ? "neutral"
-                              : "warning"
-                        }
-                      >
-                        {aiDetailsCandidate.screening.confidence}
-                      </Badge>
+                      <div className="space-y-1.5">
+                        {aiDetailsCandidate.screening.strengths.map(
+                          (strength, index) => (
+                            <div
+                              key={`strength-${index}`}
+                              className="flex items-start gap-2 text-[12px] text-ink-soft"
+                            >
+                              <span className="font-semibold text-emerald-600">
+                                ✓
+                              </span>
+
+                              <span>{strength}</span>
+                            </div>
+                          ),
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  ) : null}
 
-                {aiDetailsCandidate.screening.strengths?.length ? (
-                  <div>
-                    <p className="mb-2 text-[12px] font-semibold text-ink">
-                      Key strengths
-                    </p>
+                  {aiDetailsCandidate.screening.concerns?.length ? (
+                    <div>
+                      <p className="mb-2 text-[12px] font-semibold text-ink">
+                        Potential concerns
+                      </p>
 
-                    <div className="space-y-1.5">
-                      {aiDetailsCandidate.screening.strengths.map(
-                        (strength, index) => (
-                          <div
-                            key={`strength-${index}`}
-                            className="flex items-start gap-2 text-[12px] text-ink-soft"
-                          >
-                            <span className="font-semibold text-emerald-600">
-                              ✓
-                            </span>
+                      <div className="space-y-1.5">
+                        {aiDetailsCandidate.screening.concerns.map(
+                          (concern, index) => (
+                            <div
+                              key={`concern-${index}`}
+                              className="flex items-start gap-2 text-[12px] text-ink-soft"
+                            >
+                              <span className="font-semibold text-amber-600">
+                                ⚠
+                              </span>
 
-                            <span>{strength}</span>
-                          </div>
-                        ),
-                      )}
+                              <span>{concern}</span>
+                            </div>
+                          ),
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                {aiDetailsCandidate.screening.concerns?.length ? (
-                  <div>
-                    <p className="mb-2 text-[12px] font-semibold text-ink">
-                      Potential concerns
-                    </p>
+                  {aiDetailsCandidate.screening.experienceRelevance && (
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="mb-1 text-[12px] font-semibold text-ink">
+                        Experience relevance
+                      </p>
 
-                    <div className="space-y-1.5">
-                      {aiDetailsCandidate.screening.concerns.map(
-                        (concern, index) => (
-                          <div
-                            key={`concern-${index}`}
-                            className="flex items-start gap-2 text-[12px] text-ink-soft"
-                          >
-                            <span className="font-semibold text-amber-600">
-                              ⚠
-                            </span>
-
-                            <span>{concern}</span>
-                          </div>
-                        ),
-                      )}
+                      <p className="text-[12px] leading-5 text-ink-soft">
+                        {aiDetailsCandidate.screening.experienceRelevance}
+                      </p>
                     </div>
-                  </div>
-                ) : null}
+                  )}
 
-                {aiDetailsCandidate.screening.experienceRelevance && (
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="mb-1 text-[12px] font-semibold text-ink">
-                      Experience relevance
-                    </p>
+                  {aiDetailsCandidate.screening.educationRelevance && (
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="mb-1 text-[12px] font-semibold text-ink">
+                        Education relevance
+                      </p>
 
-                    <p className="text-[12px] leading-5 text-ink-soft">
-                      {aiDetailsCandidate.screening.experienceRelevance}
-                    </p>
-                  </div>
-                )}
-
-                {aiDetailsCandidate.screening.educationRelevance && (
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="mb-1 text-[12px] font-semibold text-ink">
-                      Education relevance
-                    </p>
-
-                    <p className="text-[12px] leading-5 text-ink-soft">
-                      {aiDetailsCandidate.screening.educationRelevance}
-                    </p>
-                  </div>
-                )}
-
-                {aiDetailsCandidate.screening.interviewFocus?.length ? (
-                  <div>
-                    <p className="mb-2 text-[12px] font-semibold text-ink">
-                      Interview focus
-                    </p>
-
-                    <div className="space-y-1.5">
-                      {aiDetailsCandidate.screening.interviewFocus.map(
-                        (focus, index) => (
-                          <div
-                            key={`focus-${index}`}
-                            className="flex items-start gap-2 text-[12px] text-ink-soft"
-                          >
-                            <span className="font-semibold text-ink-faint">
-                              •
-                            </span>
-
-                            <span>{focus}</span>
-                          </div>
-                        ),
-                      )}
+                      <p className="text-[12px] leading-5 text-ink-soft">
+                        {aiDetailsCandidate.screening.educationRelevance}
+                      </p>
                     </div>
-                  </div>
-                ) : null}
+                  )}
 
-                {aiDetailsCandidate.screening.summary && (
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="mb-1 text-[12px] font-semibold text-ink">
-                      Screening summary
+                  {aiDetailsCandidate.screening.interviewFocus?.length ? (
+                    <div>
+                      <p className="mb-2 text-[12px] font-semibold text-ink">
+                        Interview focus
+                      </p>
+
+                      <div className="space-y-1.5">
+                        {aiDetailsCandidate.screening.interviewFocus.map(
+                          (focus, index) => (
+                            <div
+                              key={`focus-${index}`}
+                              className="flex items-start gap-2 text-[12px] text-ink-soft"
+                            >
+                              <span className="font-semibold text-ink-faint">
+                                •
+                              </span>
+
+                              <span>{focus}</span>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {aiDetailsCandidate.screening.summary && (
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="mb-1 text-[12px] font-semibold text-ink">
+                        Screening summary
+                      </p>
+
+                      <p className="text-[12px] leading-5 text-ink-soft">
+                        {aiDetailsCandidate.screening.summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {aiDetailsCandidate.screening.evaluatedAt && (
+                    <p className="text-[10.5px] text-ink-faint">
+                      Evaluated{" "}
+                      {formatDate(aiDetailsCandidate.screening.evaluatedAt)}
                     </p>
+                  )}
 
-                    <p className="text-[12px] leading-5 text-ink-soft">
-                      {aiDetailsCandidate.screening.summary}
-                    </p>
-                  </div>
-                )}
-
-                {aiDetailsCandidate.screening.evaluatedAt && (
-                  <p className="text-[10.5px] text-ink-faint">
-                    Evaluated{" "}
-                    {formatDate(aiDetailsCandidate.screening.evaluatedAt)}
+                  <p className="border-t border-line pt-3 text-[10px] leading-4 text-ink-faint">
+                    AI screening is assistive only. Final hiring decisions should be
+                    made by the recruiter.
                   </p>
-                )}
+                </>
+              )}
+            </div>
+          </Modal>
+        )
+      }
+      {
+        interviewCopilotFor && interviewCopilotData && (
+          <Modal
+            open={true}
+            onClose={() => {
+              setInterviewCopilotFor(null);
+              setInterviewCopilotData(null);
+            }}
+            title={`AI Interview Copilot — ${interviewCopilotFor.firstName} ${interviewCopilotFor.lastName}`}
+            size="lg"
+          >
+            <div className="space-y-6">
+              {/* Focus Areas */}
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-900">
+                  Focus Areas
+                </h3>
 
-                <p className="border-t border-line pt-3 text-[10px] leading-4 text-ink-faint">
-                  AI screening is assistive only. Final hiring decisions should be
-                  made by the recruiter.
+                <div className="flex flex-wrap gap-2">
+                  {interviewCopilotData.focusAreas.map((area) => (
+                    <span
+                      key={area}
+                      className="rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700"
+                    >
+                      {area}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Technical Questions */}
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                  Technical Questions
+                </h3>
+
+                <div className="space-y-3">
+                  {interviewCopilotData.technicalQuestions.map(
+                    (item, index) => (
+                      <div
+                        key={`technical-${index}`}
+                        className="rounded-lg border border-line p-3"
+                      >
+                        <p className="text-sm font-medium text-slate-900">
+                          {index + 1}. {item.question}
+                        </p>
+
+                        {item.followUps.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-semibold text-slate-500">
+                              Follow-ups
+                            </p>
+
+                            <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                              {item.followUps.map((followUp, followUpIndex) => (
+                                <li key={followUpIndex}>{followUp}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+
+              {/* Resume-Based Questions */}
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                  Resume-Based Questions
+                </h3>
+
+                <div className="space-y-3">
+                  {interviewCopilotData.resumeQuestions.map(
+                    (item, index) => (
+                      <div
+                        key={`resume-${index}`}
+                        className="rounded-lg border border-line p-3"
+                      >
+                        <p className="text-sm font-medium text-slate-900">
+                          {index + 1}. {item.question}
+                        </p>
+
+                        {item.followUps.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-semibold text-slate-500">
+                              Follow-ups
+                            </p>
+
+                            <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                              {item.followUps.map((followUp, followUpIndex) => (
+                                <li key={followUpIndex}>{followUp}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+
+              {/* Skill Gap Questions */}
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                  Skill Gap Questions
+                </h3>
+
+                <div className="space-y-3">
+                  {interviewCopilotData.skillGapQuestions.map(
+                    (item, index) => (
+                      <div
+                        key={`skill-gap-${index}`}
+                        className="rounded-lg border border-line p-3"
+                      >
+                        <p className="text-sm font-medium text-slate-900">
+                          {index + 1}. {item.question}
+                        </p>
+
+                        {item.followUps.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-semibold text-slate-500">
+                              Follow-ups
+                            </p>
+
+                            <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                              {item.followUps.map((followUp, followUpIndex) => (
+                                <li key={followUpIndex}>{followUp}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+
+              {/* Behavioral Questions */}
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                  Behavioral Questions
+                </h3>
+
+                <div className="space-y-3">
+                  {interviewCopilotData.behavioralQuestions.map(
+                    (item, index) => (
+                      <div
+                        key={`behavioral-${index}`}
+                        className="rounded-lg border border-line p-3"
+                      >
+                        <p className="text-sm font-medium text-slate-900">
+                          {index + 1}. {item.question}
+                        </p>
+
+                        {item.followUps.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-semibold text-slate-500">
+                              Follow-ups
+                            </p>
+
+                            <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                              {item.followUps.map((followUp, followUpIndex) => (
+                                <li key={followUpIndex}>{followUp}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+
+              {/* AI Disclaimer */}
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs text-amber-800">
+                  AI Interview Copilot provides interview preparation
+                  suggestions based on the job and candidate information.
+                  Interviewers should use their own judgment when evaluating
+                  candidates.
                 </p>
-              </>
-            )}
-          </div>
-        </Modal>
-      )}
-      {interviewCopilotFor && interviewCopilotData && (
-        <Modal
-          open={true}
-          onClose={() => {
-            setInterviewCopilotFor(null);
-            setInterviewCopilotData(null);
-          }}
-          title={`AI Interview Copilot — ${interviewCopilotFor.firstName} ${interviewCopilotFor.lastName}`}
-          size="lg"
-        >
-          <div className="space-y-6">
-            {/* Focus Areas */}
-            <div>
-              <h3 className="mb-2 text-sm font-semibold text-slate-900">
-                Focus Areas
-              </h3>
-
-              <div className="flex flex-wrap gap-2">
-                {interviewCopilotData.focusAreas.map((area) => (
-                  <span
-                    key={area}
-                    className="rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700"
-                  >
-                    {area}
-                  </span>
-                ))}
               </div>
             </div>
+          </Modal>
+        )
+      }
+      {
+        job && (
+          <EditJobModal
+            job={job}
+            open={editJobOpen}
+            isLoading={updateJobMutation.isPending}
+            onClose={() => {
+              if (!updateJobMutation.isPending) setEditJobOpen(false);
+            }}
+            onSubmit={(values) =>
+              updateJobMutation.mutate({ id: job.id, values })
+            }
+          />
+        )
+      }
 
-            {/* Technical Questions */}
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-slate-900">
-                Technical Questions
-              </h3>
-
-              <div className="space-y-3">
-                {interviewCopilotData.technicalQuestions.map(
-                  (item, index) => (
-                    <div
-                      key={`technical-${index}`}
-                      className="rounded-lg border border-line p-3"
-                    >
-                      <p className="text-sm font-medium text-slate-900">
-                        {index + 1}. {item.question}
-                      </p>
-
-                      {item.followUps.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs font-semibold text-slate-500">
-                            Follow-ups
-                          </p>
-
-                          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                            {item.followUps.map((followUp, followUpIndex) => (
-                              <li key={followUpIndex}>{followUp}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  ),
-                )}
-              </div>
-            </div>
-
-            {/* Resume-Based Questions */}
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-slate-900">
-                Resume-Based Questions
-              </h3>
-
-              <div className="space-y-3">
-                {interviewCopilotData.resumeQuestions.map(
-                  (item, index) => (
-                    <div
-                      key={`resume-${index}`}
-                      className="rounded-lg border border-line p-3"
-                    >
-                      <p className="text-sm font-medium text-slate-900">
-                        {index + 1}. {item.question}
-                      </p>
-
-                      {item.followUps.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs font-semibold text-slate-500">
-                            Follow-ups
-                          </p>
-
-                          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                            {item.followUps.map((followUp, followUpIndex) => (
-                              <li key={followUpIndex}>{followUp}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  ),
-                )}
-              </div>
-            </div>
-
-            {/* Skill Gap Questions */}
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-slate-900">
-                Skill Gap Questions
-              </h3>
-
-              <div className="space-y-3">
-                {interviewCopilotData.skillGapQuestions.map(
-                  (item, index) => (
-                    <div
-                      key={`skill-gap-${index}`}
-                      className="rounded-lg border border-line p-3"
-                    >
-                      <p className="text-sm font-medium text-slate-900">
-                        {index + 1}. {item.question}
-                      </p>
-
-                      {item.followUps.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs font-semibold text-slate-500">
-                            Follow-ups
-                          </p>
-
-                          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                            {item.followUps.map((followUp, followUpIndex) => (
-                              <li key={followUpIndex}>{followUp}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  ),
-                )}
-              </div>
-            </div>
-
-            {/* Behavioral Questions */}
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-slate-900">
-                Behavioral Questions
-              </h3>
-
-              <div className="space-y-3">
-                {interviewCopilotData.behavioralQuestions.map(
-                  (item, index) => (
-                    <div
-                      key={`behavioral-${index}`}
-                      className="rounded-lg border border-line p-3"
-                    >
-                      <p className="text-sm font-medium text-slate-900">
-                        {index + 1}. {item.question}
-                      </p>
-
-                      {item.followUps.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs font-semibold text-slate-500">
-                            Follow-ups
-                          </p>
-
-                          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                            {item.followUps.map((followUp, followUpIndex) => (
-                              <li key={followUpIndex}>{followUp}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  ),
-                )}
-              </div>
-            </div>
-
-            {/* AI Disclaimer */}
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <p className="text-xs text-amber-800">
-                AI Interview Copilot provides interview preparation
-                suggestions based on the job and candidate information.
-                Interviewers should use their own judgment when evaluating
-                candidates.
-              </p>
-            </div>
-          </div>
-        </Modal>
-      )}
-      {job && (
-        <EditJobModal
-          job={job}
-          open={editJobOpen}
-          isLoading={updateJobMutation.isPending}
-          onClose={() => {
-            if (!updateJobMutation.isPending) setEditJobOpen(false);
-          }}
-          onSubmit={(values) =>
-            updateJobMutation.mutate({ id: job.id, values })
-          }
-        />
-      )}
-
-      {job && (
-        <DeleteJobModal
-          job={job}
-          open={deleteJobOpen}
-          isLoading={deleteJobMutation.isPending}
-          onClose={() => {
-            if (!deleteJobMutation.isPending) setDeleteJobOpen(false);
-          }}
-          onConfirm={() => deleteJobMutation.mutate(job.id)}
-        />
-      )}
-    </div>
+      {
+        job && (
+          <DeleteJobModal
+            job={job}
+            open={deleteJobOpen}
+            isLoading={deleteJobMutation.isPending}
+            onClose={() => {
+              if (!deleteJobMutation.isPending) setDeleteJobOpen(false);
+            }}
+            onConfirm={() => deleteJobMutation.mutate(job.id)}
+          />
+        )
+      }
+    </div >
   );
 }
 
@@ -3659,78 +3678,78 @@ function OfferLetterModal({
             <p className="text-[12px] text-ink-faint">{current.email}</p>
           </div>
           {current.offer?.offerUrl ? (
-  <div className="rounded-2xl border border-line/70 p-4">
-    <p className="text-[13px] font-semibold text-ink">
-      Offer letter generated
-    </p>
+            <div className="rounded-2xl border border-line/70 p-4">
+              <p className="text-[13px] font-semibold text-ink">
+                Offer letter generated
+              </p>
 
-    <p className="mt-1 text-[12px] text-ink-faint">
-      CTC:{" "}
-      {current.offer?.annualCtc != null
-        ? formatCurrencyINR(current.offer.annualCtc)
-        : "—"}
-      {" • "}
-      Joining: {current.offer?.joiningDate ?? "—"}
-    </p>
+              <p className="mt-1 text-[12px] text-ink-faint">
+                CTC:{" "}
+                {current.offer?.annualCtc != null
+                  ? formatCurrencyINR(current.offer.annualCtc)
+                  : "—"}
+                {" • "}
+                Joining: {current.offer?.joiningDate ?? "—"}
+              </p>
 
-    <div className="mt-3 flex flex-wrap items-center gap-3">
-      <a
-        href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex text-[12px] font-medium text-brand-600 hover:underline"
-      >
-        Open generated offer letter
-      </a>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <a
+                  href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex text-[12px] font-medium text-brand-600 hover:underline"
+                >
+                  Open generated offer letter
+                </a>
 
-      <Button
-        size="sm"
-        variant="secondary"
-        isLoading={offerMutation.isPending}
-        disabled={!joiningDate || Number(annualCtc) <= 0}
-        onClick={() => offerMutation.mutate()}
-      >
-        Regenerate Offer Letter
-      </Button>
-    </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  isLoading={offerMutation.isPending}
+                  disabled={!joiningDate || Number(annualCtc) <= 0}
+                  onClick={() => offerMutation.mutate()}
+                >
+                  Regenerate Offer Letter
+                </Button>
+              </div>
 
-    <p className="mt-2 text-[11px] text-ink-faint">
-      Regenerating creates a new offer document and replaces the previous
-      offer document link.
-    </p>
-  </div>
-) : (
-  <div className="grid gap-3 sm:grid-cols-2">
-    <TextField
-      label="Annual CTC"
-      type="number"
-      value={annualCtc}
-      onChange={(e) => setAnnualCtc(e.target.value)}
-    />
+              <p className="mt-2 text-[11px] text-ink-faint">
+                Regenerating creates a new offer document and replaces the previous
+                offer document link.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextField
+                label="Annual CTC"
+                type="number"
+                value={annualCtc}
+                onChange={(e) => setAnnualCtc(e.target.value)}
+              />
 
-    <TextField
-      label="Joining date"
-      type="date"
-      value={joiningDate}
-      onChange={(e) => setJoiningDate(e.target.value)}
-    />
+              <TextField
+                label="Joining date"
+                type="date"
+                value={joiningDate}
+                onChange={(e) => setJoiningDate(e.target.value)}
+              />
 
-    <div className="sm:col-span-2 flex items-center justify-between gap-3">
-      <p className="text-[11.5px] text-ink-faint">
-        Status: {offerStatus.replaceAll("_", " ")}
-      </p>
+              <div className="sm:col-span-2 flex items-center justify-between gap-3">
+                <p className="text-[11.5px] text-ink-faint">
+                  Status: {offerStatus.replaceAll("_", " ")}
+                </p>
 
-      <Button
-        size="sm"
-        isLoading={offerMutation.isPending}
-        disabled={!joiningDate || Number(annualCtc) <= 0}
-        onClick={() => offerMutation.mutate()}
-      >
-        Generate Offer Letter
-      </Button>
-    </div>
-  </div>
-)}
+                <Button
+                  size="sm"
+                  isLoading={offerMutation.isPending}
+                  disabled={!joiningDate || Number(annualCtc) <= 0}
+                  onClick={() => offerMutation.mutate()}
+                >
+                  Generate Offer Letter
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Modal>
