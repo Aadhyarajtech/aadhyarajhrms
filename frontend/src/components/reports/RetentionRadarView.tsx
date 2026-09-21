@@ -17,24 +17,17 @@ import {
   Building2,
   Users,
   Search,
-  Filter,
   RefreshCw,
   X,
   ChevronRight,
-  HelpCircle,
-  CheckCircle2,
-  Briefcase,
   Calendar,
   MessageSquare,
-  ArrowUpRight,
-  SlidersHorizontal,
 } from "lucide-react";
 import { ReportsApi } from "@/lib/endpoints";
 import { Button } from "@/components/ui/Button";
 import type {
   RetentionRadarResult,
   EmployeeRiskProfile,
-  DepartmentVulnerability,
   RiskLevel,
 } from "@/types";
 
