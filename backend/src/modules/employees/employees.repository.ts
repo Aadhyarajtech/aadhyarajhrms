@@ -640,6 +640,143 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
   return getEmployeeById(id);
 }
 
+const onboardingStages = [
+  "HR Creates Employee Account in System",
+  "Personal & Professional Details Entry",
+  "Document Upload & Verification",
+  "Department & Role Assignment",
+  "Payroll Structure Configuration",
+  "System Login Credentials Issued",
+  "Employee Orientation & Policy Briefing",
+  "Profile Activated — Employee Successfully Onboarded",
+] as const;
+
+const onboardingStageNumbers: Record<string, number> = {
+  ACCOUNT_CREATION: 1,
+  PERSONAL_PROFESSIONAL_DETAILS: 2,
+  DOCUMENT_VERIFICATION: 3,
+  DEPARTMENT_ROLE_ASSIGNMENT: 4,
+  PAYROLL_STRUCTURE: 5,
+  CREDENTIALS: 6,
+  ORIENTATION_POLICY: 7,
+  PROFILE_ACTIVATION: 8,
+};
+
+function defaultOnboarding() {
+  return {
+    currentStage: 1,
+    status: "NOT_STARTED" as const,
+    stages: onboardingStages.map((name, index) => ({
+      stage: index + 1,
+      name,
+      status: "PENDING" as const,
+      completedAt: null,
+      completedBy: null,
+      remarks: null,
+    })),
+    startedAt: null,
+    completedAt: null,
+  };
+}
+
+function normalizeOnboarding(onboarding: any) {
+  const defaults = defaultOnboarding();
+  const stages = defaults.stages.map((stage) => ({
+    ...stage,
+    ...(onboarding?.stages?.find((item: any) => item.stage === stage.stage) ?? {}),
+  }));
+
+  return {
+    ...defaults,
+    ...onboarding,
+    stages,
+  };
+}
+
+export async function getOnboarding(employeeId: string) {
+  const employee = await Employee.findById(employeeId).select("onboarding").lean<any>();
+  return employee ? normalizeOnboarding(employee.onboarding) : undefined;
+}
+
+export async function updateOnboardingStage(
+  employeeId: string,
+  stageKey: string,
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETED",
+  remarks?: string | null,
+) {
+  const employee = await Employee.findById(employeeId).lean<any>();
+  if (!employee) return undefined;
+
+  const stageNumber = onboardingStageNumbers[stageKey];
+  if (!stageNumber) throw AppError.badRequest("Invalid onboarding stage.");
+
+  const onboarding = normalizeOnboarding(employee.onboarding);
+  const now = nowIso();
+  const updatedStages = onboarding.stages.map((stage: any) =>
+    stage.stage === stageNumber
+      ? {
+          ...stage,
+          status,
+          completedAt: status === "COMPLETED" ? (stage.completedAt ?? now) : null,
+          completedBy: status === "COMPLETED" ? (stage.completedBy ?? "HR_ADMIN") : null,
+          remarks: remarks ?? stage.remarks,
+        }
+      : stage,
+  );
+
+  await Employee.updateOne(
+    { _id: employeeId },
+    {
+      $set: {
+        onboarding: {
+          ...onboarding,
+          currentStage: status === "COMPLETED" && stageNumber < 8 ? stageNumber + 1 : stageNumber,
+          status: "IN_PROGRESS",
+          startedAt: onboarding.startedAt ?? now,
+          stages: updatedStages,
+        },
+        updatedAt: now,
+      },
+    },
+  );
+
+  return getEmployeeById(employeeId);
+}
+
+export async function completeOnboarding(employeeId: string) {
+  const employee = await Employee.findById(employeeId).lean<any>();
+  if (!employee) return undefined;
+
+  const onboarding = normalizeOnboarding(employee.onboarding);
+  const incompleteStages = onboarding.stages
+    .filter((stage: any) => stage.status !== "COMPLETED")
+    .map((stage: any) => stage.name);
+
+  if (incompleteStages.length > 0) {
+    return { success: false as const, incompleteStages, employee: await getEmployeeById(employeeId) };
+  }
+
+  const now = nowIso();
+  await Employee.updateOne(
+    { _id: employeeId },
+    {
+      $set: {
+        status: "ACTIVE",
+        onboarding: {
+          ...onboarding,
+          currentStage: 8,
+          status: "COMPLETED",
+          startedAt: onboarding.startedAt ?? now,
+          completedAt: onboarding.completedAt ?? now,
+        },
+        updatedAt: now,
+      },
+    },
+  );
+
+  return { success: true as const, incompleteStages: [], employee: await getEmployeeById(employeeId) };
+}
+
 export async function getOrgChart() {
   const rows = await Employee.find({
     status: {
