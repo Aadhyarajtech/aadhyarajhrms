@@ -1519,6 +1519,62 @@ export const RecruitmentApi = {
       }>(`/recruitment/candidates/${id}/select`)
       .then((r) => r.data.candidate),
 
+  interviewCopilot: (id: string) =>
+    api
+      .post<{
+        message: string;
+        copilot: {
+          focusAreas: string[];
+          technicalQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+          resumeQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+          skillGapQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+          behavioralQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+        };
+      }>(`/recruitment/candidates/${id}/interview-copilot`)
+      .then((r) => r.data.copilot),
+  generateJobDescription: (data: {
+    jobTitle: string;
+    departmentId?: string;
+    designationId?: string;
+    roleCategory?: string;
+    employmentType?: string;
+    location?: string;
+    experienceMin?: number;
+    experienceMax?: number;
+    skills?: string;
+  }) =>
+    api
+      .post<{
+        message: string;
+        draft: {
+          departmentId: string;
+          designationId: string;
+          departmentName: string;
+          designationTitle: string;
+          roleCategory: string;
+          employmentType: string;
+          location: string;
+          experienceMin: number;
+          experienceMax: number;
+          skills: string[];
+          screeningQuestions: string[];
+          description: string;
+        };
+      }>("/recruitment/jobs/ai-generate", data)
+      .then((r) => r.data.draft),
+
   rate: (id: string, rating: number) =>
     api
       .patch<{
@@ -1541,7 +1597,16 @@ export const RecruitmentApi = {
         message: string;
       }>(`/recruitment/candidates/${id}/resume/parse`)
       .then((r) => r.data.candidate),
-
+  autofillResume: (id: string) =>
+    api.post<{
+      message: string;
+      autofill: {
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string;
+      };
+    }>(`/recruitment/candidates/${id}/resume/autofill`).then((r) => r.data.autofill),
   interviews: (candidateId?: string) =>
     api
       .get<{
