@@ -28,6 +28,11 @@ import type {
   AnnouncementStatusEntry,
   Holiday,
   Asset,
+  ExecutiveBriefingResult,
+  AskHrResult,
+  AiCustomReportResult,
+  AiCustomReportPayload,
+  RetentionRadarResult,
 } from "@/types";
 
 // --- Auth --------------------------------------------------------------------
@@ -2746,6 +2751,32 @@ export const ReportsApi = {
       .get<ReportsOverview>("/reports/overview", {
         params: filters,
       })
+      .then((r) => r.data),
+
+  executiveBriefing: (filters: ReportsFilters = {}) =>
+    api
+      .get<ExecutiveBriefingResult>("/reports/ai-briefing", {
+        params: filters,
+      })
+      .then((r) => r.data),
+
+  askHr: (
+    question: string,
+    filters: ReportsFilters = {},
+    history?: { role: "user" | "assistant"; content: string }[],
+  ) =>
+    api
+      .post<AskHrResult>("/reports/ask-ai", { question, filters, history })
+      .then((r) => r.data),
+
+  buildCustomReport: (payload: AiCustomReportPayload = {}) =>
+    api
+      .post<AiCustomReportResult>("/reports/custom-builder", payload)
+      .then((r) => r.data),
+
+  retentionRadar: (filters: { departmentId?: string; minRiskLevel?: string; from?: string; to?: string } = {}) =>
+    api
+      .get<RetentionRadarResult>("/reports/retention-radar", { params: filters })
       .then((r) => r.data),
 
   export: async (
