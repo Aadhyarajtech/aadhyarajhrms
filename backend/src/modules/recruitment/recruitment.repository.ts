@@ -16,7 +16,11 @@ import { nowIso } from "../../db/connection";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { sendRecruitmentEmail } from "@/services/email.service";
 import { env } from "@/config/env";
-
+import {
+  generateInterviewCopilotAI,
+  generateJobRequisitionAI,
+  generateResumeScreeningAI,
+} from "@/services/ai.service";
 type AnyDoc = Record<string, any>;
 
 function toApiDoc(doc: AnyDoc | null | undefined) {
@@ -514,7 +518,67 @@ export interface CreateJobInput {
   roleCategory?: string;
   useTemplate?: boolean;
 }
+export async function generateJobRequisitionDraft(input: {
+  jobTitle: string;
+  departmentId?: string;
+  designationId?: string;
+  roleCategory?: string;
+  employmentType?: string;
+  location?: string;
+  experienceMin?: number;
+  experienceMax?: number;
+  skills?: string;
+}) {
+  const [departments, designations] = await Promise.all([
+    Department.find().select("_id name").lean(),
+    Designation.find().select("_id title departmentId").lean(),
+  ]);
 
+  const selectedDepartment = departments.find(
+    (department) => department._id === input.departmentId,
+  );
+
+  const selectedDesignation = designations.find(
+    (designation) => designation._id === input.designationId,
+  );
+
+  const result = await generateJobRequisitionAI({
+    jobTitle: input.jobTitle,
+    currentDepartment: selectedDepartment?.name,
+    currentDesignation: selectedDesignation?.title,
+    currentRoleCategory: input.roleCategory,
+    currentEmploymentType: input.employmentType,
+    currentLocation: input.location,
+    currentExperienceMin: input.experienceMin,
+    currentExperienceMax: input.experienceMax,
+    currentSkills: input.skills,
+    departments: departments.map((department) => ({
+      id: department._id,
+      name: department.name,
+    })),
+    designations: designations.map((designation) => ({
+      id: designation._id,
+      title: designation.title,
+      departmentId: designation.departmentId,
+    })),
+  });
+
+  const generatedDepartment = departments.find(
+    (department) => department.name === result.departmentName,
+  );
+
+  const generatedDesignation = designations.find(
+    (designation) =>
+      designation.title === result.designationTitle &&
+      designation.departmentId === generatedDepartment?._id,
+  );
+
+  return {
+    ...result,
+    departmentId: generatedDepartment?._id ?? input.departmentId ?? "",
+    designationId: generatedDesignation?._id ?? input.designationId ?? "",
+  };
+}
 export async function createJobPosting(input: CreateJobInput) {
   const now = nowIso();
 
@@ -738,47 +802,47 @@ export async function createJobPosting(input: CreateJobInput) {
     walkInDrive:
       input.hiringMode === "WALK_IN"
         ? {
-            driveDate: input.walkInDrive?.driveDate ?? null,
+          driveDate: input.walkInDrive?.driveDate ?? null,
 
-            startTime: input.walkInDrive?.startTime ?? null,
+          startTime: input.walkInDrive?.startTime ?? null,
 
-            endTime: input.walkInDrive?.endTime ?? null,
+          endTime: input.walkInDrive?.endTime ?? null,
 
-            venue: input.walkInDrive?.venue?.trim() ?? null,
+          venue: input.walkInDrive?.venue?.trim() ?? null,
 
-            coordinatorName: input.walkInDrive?.coordinatorName?.trim() ?? null,
+          coordinatorName: input.walkInDrive?.coordinatorName?.trim() ?? null,
 
-            coordinatorContact:
-              input.walkInDrive?.coordinatorContact?.trim() ?? null,
+          coordinatorContact:
+            input.walkInDrive?.coordinatorContact?.trim() ?? null,
 
-            registrationDeadline:
-              input.walkInDrive?.registrationDeadline ?? null,
+          registrationDeadline:
+            input.walkInDrive?.registrationDeadline ?? null,
 
-            expectedCandidates: input.walkInDrive?.expectedCandidates ?? null,
-          }
+          expectedCandidates: input.walkInDrive?.expectedCandidates ?? null,
+        }
         : null,
 
     campusDrive:
       input.hiringMode === "CAMPUS"
         ? {
-            collegeName: input.campusDrive?.collegeName?.trim() ?? null,
+          collegeName: input.campusDrive?.collegeName?.trim() ?? null,
 
-            campusLocation: input.campusDrive?.campusLocation?.trim() ?? null,
+          campusLocation: input.campusDrive?.campusLocation?.trim() ?? null,
 
-            driveDate: input.campusDrive?.driveDate ?? null,
+          driveDate: input.campusDrive?.driveDate ?? null,
 
-            startTime: input.campusDrive?.startTime ?? null,
+          startTime: input.campusDrive?.startTime ?? null,
 
-            endTime: input.campusDrive?.endTime ?? null,
+          endTime: input.campusDrive?.endTime ?? null,
 
-            placementCoordinator:
-              input.campusDrive?.placementCoordinator?.trim() ?? null,
+          placementCoordinator:
+            input.campusDrive?.placementCoordinator?.trim() ?? null,
 
-            coordinatorContact:
-              input.campusDrive?.coordinatorContact?.trim() ?? null,
+          coordinatorContact:
+            input.campusDrive?.coordinatorContact?.trim() ?? null,
 
-            expectedCandidates: input.campusDrive?.expectedCandidates ?? null,
-          }
+          expectedCandidates: input.campusDrive?.expectedCandidates ?? null,
+        }
         : null,
 
     skills,
@@ -1216,8 +1280,8 @@ export async function getPublicJobPosting(id: string) {
 export async function listCandidates(jobPostingId?: string) {
   const query = jobPostingId
     ? {
-        jobPostingId,
-      }
+      jobPostingId,
+    }
     : {};
 
   const rows: AnyDoc[] = (await Candidate.find(query)
@@ -1351,11 +1415,11 @@ export async function createCandidate(input: CreateCandidateInput) {
     email: normalizedEmail,
   }).lean();
 
- if (duplicate) {
-  throw AppError.conflict(
-    "A candidate with this email already applied for this job.",
-  );
-}
+  if (duplicate) {
+    throw AppError.conflict(
+      "A candidate with this email already applied for this job.",
+    );
+  }
 
   const doc = await Candidate.create({
     jobPostingId: input.jobPostingId,
@@ -1648,14 +1712,14 @@ export async function updateParsedResume(
     candidateDoc.extractedExperience =
       years !== null && Number.isFinite(Number(years))
         ? [
-            {
-              company: null,
-              position: null,
-              startDate: null,
-              endDate: null,
-              description: `${Number(years)} years of experience`,
-            },
-          ]
+          {
+            company: null,
+            position: null,
+            startDate: null,
+            endDate: null,
+            description: `${Number(years)} years of experience`,
+          },
+        ]
         : [];
   }
 
@@ -1803,15 +1867,15 @@ export async function screenCandidate(id: string, resumeText?: string) {
 
   const screeningText = String(
     candidate.resumeText?.trim() ||
-      [
-        candidate.firstName,
-        candidate.lastName,
-        candidate.email,
-        candidate.phone ?? "",
-        candidate.notes ?? "",
-      ]
-        .filter(Boolean)
-        .join(" "),
+    [
+      candidate.firstName,
+      candidate.lastName,
+      candidate.email,
+      candidate.phone ?? "",
+      candidate.notes ?? "",
+    ]
+      .filter(Boolean)
+      .join(" "),
   );
 
   const normalizedResume = normalizeSkillText(screeningText);
@@ -1852,9 +1916,8 @@ export async function screenCandidate(id: string, resumeText?: string) {
   // Generic role templates may contain broad engineering skills. When the
   // job title identifies a concrete technology stack, evaluate that stack
   // instead of scoring only against generic template labels.
-  const roleText = `${job.title ?? ""} ${
-    (job as AnyDoc).designationTitle ?? ""
-  }`.toLowerCase();
+  const roleText = `${job.title ?? ""} ${(job as AnyDoc).designationTitle ?? ""
+    }`.toLowerCase();
 
   const inferredRoleSkills = Object.entries(SCREENING_SKILL_ALIASES)
     .filter(([role]) => roleText.includes(role))
@@ -1870,9 +1933,15 @@ export async function screenCandidate(id: string, resumeText?: string) {
     (skill) => !matchedSkills.includes(skill),
   );
 
-  const score = jobSkills.length
-    ? Math.round((matchedSkills.length / jobSkills.length) * 100)
-    : 0;
+  const aiScreening = await generateResumeScreeningAI({
+    resumeText: screeningText,
+    jobTitle: String(job.title ?? ""),
+    jobDescription: String(job.description ?? ""),
+    requiredSkills: jobSkills,
+  });
+
+
+  const score = aiScreening.score;
 
   let autoShortlisted = false;
   let shortlistingResult: "PENDING" | "SHORTLISTED" | "NOT_SHORTLISTED" =
@@ -1898,10 +1967,10 @@ export async function screenCandidate(id: string, resumeText?: string) {
       : [];
     const parsedExperience = structuredExperience.length
       ? Number.parseFloat(
-          String(structuredExperience[0]?.description ?? "").match(
-            /([0-9]+(?:\.[0-9]+)?)/,
-          )?.[1] ?? "0",
-        )
+        String(structuredExperience[0]?.description ?? "").match(
+          /([0-9]+(?:\.[0-9]+)?)/,
+        )?.[1] ?? "0",
+      )
       : 0;
     const candidateExperience = Math.max(
       parsedExperience,
@@ -1914,15 +1983,25 @@ export async function screenCandidate(id: string, resumeText?: string) {
     shortlistingResult = autoShortlisted ? "SHORTLISTED" : "NOT_SHORTLISTED";
   }
 
-  candidate.extractedSkills = matchedSkills;
-  candidate.jobFitScore = score;
-  candidate.screeningSummary =
-    `AI-assisted screening completed. Matched ${matchedSkills.length} relevant skills. ` +
-    `Fit score: ${score}%. Auto-shortlisting result: ${shortlistingResult}. ` +
-    `Missing skills: ${missingSkills.length ? missingSkills.join(", ") : "None"}. ` +
-    `Human review is required before rejection.`;
-  candidate.autoShortlisted = autoShortlisted;
-  candidate.shortlistingResult = shortlistingResult;
+  candidate.extractedSkills = aiScreening.matchedSkills;
+  candidate.jobFitScore = aiScreening.score;
+
+  (candidate as AnyDoc).screening = {
+    score: aiScreening.score,
+    recommendation: aiScreening.recommendation,
+    confidence: aiScreening.confidence,
+    matchedSkills: aiScreening.matchedSkills,
+    missingSkills: aiScreening.missingSkills,
+    strengths: aiScreening.strengths,
+    concerns: aiScreening.concerns,
+    experienceRelevance: aiScreening.experienceRelevance,
+    educationRelevance: aiScreening.educationRelevance,
+    interviewFocus: aiScreening.interviewFocus,
+    summary: aiScreening.summary,
+    evaluatedAt: nowIso(),
+  };
+
+  candidate.screeningSummary = aiScreening.summary;
 
   if (candidate.stage === "APPLIED") candidate.stage = "SCREENING";
 
@@ -1931,6 +2010,69 @@ export async function screenCandidate(id: string, resumeText?: string) {
 }
 
 // ===========================================================================
+// AI INTERVIEW COPILOT
+// ===========================================================================
+
+export async function interviewCopilot(id: string) {
+  const candidate = await Candidate.findById(id);
+
+  if (!candidate) {
+    return undefined;
+  }
+
+  if (candidate.stage !== "INTERVIEW") {
+    throw new Error(
+      "AI Interview Copilot is available only for candidates in the Interview stage.",
+    );
+  }
+
+  const job = await JobPosting.findById(candidate.jobPostingId).lean();
+
+  if (!job) {
+    throw new Error("Job posting not found.");
+  }
+
+  const candidateDoc = candidate as AnyDoc;
+  const screening = candidateDoc.screening ?? {};
+
+  const resumeText = String(
+    candidate.resumeText?.trim() ||
+    [
+      candidate.firstName,
+      candidate.lastName,
+      candidate.email,
+      candidate.phone ?? "",
+      candidate.notes ?? "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  const requiredSkills = uniqueStrings(
+    ((job as AnyDoc).skills ?? []).map((skill: string) => String(skill)),
+  );
+
+  const copilot = await generateInterviewCopilotAI({
+    candidateName: `${candidate.firstName} ${candidate.lastName}`,
+    jobTitle: String(job.title ?? ""),
+    jobDescription: String(job.description ?? ""),
+    resumeText,
+    requiredSkills,
+    matchedSkills: uniqueStrings(
+      (screening.matchedSkills ?? []).map((skill: string) => String(skill)),
+    ),
+    missingSkills: uniqueStrings(
+      (screening.missingSkills ?? []).map((skill: string) => String(skill)),
+    ),
+    screeningSummary: String(screening.summary ?? candidate.screeningSummary ?? ""),
+  });
+
+  return {
+    message: "AI Interview Copilot generated successfully.",
+    copilot,
+  };
+}
+// ===========================================================================
 // INTERVIEWS
 // ===========================================================================
 
@@ -1938,8 +2080,8 @@ export async function listInterviews(candidateId?: string) {
   const rows: AnyDoc[] = (await Interview.find(
     candidateId
       ? {
-          candidateId,
-        }
+        candidateId,
+      }
       : {},
   )
     .sort({
@@ -2638,21 +2780,21 @@ export async function hireCandidate(id: string, role = "EMPLOYEE") {
   // ---------------------------------------------------------
 
   const hiredCount = await Candidate.countDocuments({
-  jobPostingId: candidate.jobPostingId,
-  stage: "HIRED",
-  _id: { $ne: candidate._id },
-});
+    jobPostingId: candidate.jobPostingId,
+    stage: "HIRED",
+    _id: { $ne: candidate._id },
+  });
 
-const approvedHeadcount = Math.max(
-  1,
-  Number(job.headcount ?? job.openings ?? 1),
-);
-
-if (hiredCount >= approvedHeadcount) {
-  throw AppError.conflict(
-    `Hiring capacity reached: ${hiredCount} of ${approvedHeadcount} approved position(s) for this requisition are already filled.`,
+  const approvedHeadcount = Math.max(
+    1,
+    Number(job.headcount ?? job.openings ?? 1),
   );
-}
+
+  if (hiredCount >= approvedHeadcount) {
+    throw AppError.conflict(
+      `Hiring capacity reached: ${hiredCount} of ${approvedHeadcount} approved position(s) for this requisition are already filled.`,
+    );
+  }
 
   // ---------------------------------------------------------
   // 7. LOAD DESIGNATION / DEPARTMENT
@@ -3036,18 +3178,18 @@ export async function getRecruitmentMetrics() {
   const timeToHireDays =
     hiredCandidates.length > 0
       ? Number(
-          (
-            hiredCandidates.reduce((sum, item: AnyDoc) => {
-              const start = Date.parse(item.appliedAt);
-              const end = Date.parse(item.offer?.joiningDate ?? item.appliedAt);
-              const days =
-                Number.isFinite(start) && Number.isFinite(end)
-                  ? Math.max(0, (end - start) / 86400000)
-                  : 0;
-              return sum + days;
-            }, 0) / hiredCandidates.length
-          ).toFixed(1),
-        )
+        (
+          hiredCandidates.reduce((sum, item: AnyDoc) => {
+            const start = Date.parse(item.appliedAt);
+            const end = Date.parse(item.offer?.joiningDate ?? item.appliedAt);
+            const days =
+              Number.isFinite(start) && Number.isFinite(end)
+                ? Math.max(0, (end - start) / 86400000)
+                : 0;
+            return sum + days;
+          }, 0) / hiredCandidates.length
+        ).toFixed(1),
+      )
       : 0;
 
   return {
