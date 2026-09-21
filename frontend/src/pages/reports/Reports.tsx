@@ -20,6 +20,7 @@ import {
   MessageSquare,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Target,
   Users,
 } from "lucide-react";
@@ -30,9 +31,17 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Button } from "@/components/ui/Button";
 import { formatCurrencyINR } from "@/lib/format";
+import { ExecutiveBriefingModal } from "@/components/reports/ExecutiveBriefingModal";
+import { AskHrDataView } from "@/components/reports/AskHrDataView";
+import { AiCustomReportBuilderView } from "@/components/reports/AiCustomReportBuilderView";
+import { RetentionRadarView } from "@/components/reports/RetentionRadarView";
+import type { ExecutiveBriefingResult } from "@/types";
 
 const TABS = [
   ["overview", "Overview"],
+  ["ask-ai", "Ask HR AI ✦"],
+  ["custom", "AI Custom Report Builder ✦"],
+  ["retention", "AI Retention Radar ✦"],
   ["workforce", "Workforce"],
   ["attendance", "Attendance"],
   ["leave", "Leave"],
@@ -42,7 +51,6 @@ const TABS = [
   ["tickets", "Tickets"],
   ["documents", "Documents"],
   ["audit", "Audit & Compliance"],
-  ["custom", "Custom Report"],
 ] as const;
 
 type Tab = (typeof TABS)[number][0];
@@ -94,11 +102,12 @@ export default function Reports() {
     user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
   const canAudit = canRecruitment;
   const [tab, setTab] = useState<Tab>("overview");
+  const [selectedAiQuery, setSelectedAiQuery] = useState("");
   const [from, setFrom] = useState(() => `${new Date().getFullYear()}-01-01`);
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [departmentId, setDepartmentId] = useState("");
   const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
-  const [customSections, setCustomSections] = useState<string[]>([
+  const [customSections] = useState<string[]>([
     "Workforce",
     "Attendance",
     "Leave",
@@ -124,6 +133,18 @@ export default function Reports() {
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["reports", "overview", filters],
     queryFn: () => ReportsApi.overview(filters),
+  });
+
+  const [briefingModalOpen, setBriefingModalOpen] = useState(false);
+
+  const {
+    data: briefingData,
+    isLoading: isBriefingLoading,
+    refetch: refetchBriefing,
+  } = useQuery<ExecutiveBriefingResult>({
+    queryKey: ["reports", "ai-briefing", filters],
+    queryFn: () => ReportsApi.executiveBriefing(filters),
+    enabled: briefingModalOpen,
   });
 
   const exportReport = async (format: "xlsx" | "pdf") => {
@@ -220,7 +241,30 @@ export default function Reports() {
             : "Organization-wide HR reporting and decision insights"
         }
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelectedAiQuery("");
+                setTab("ask-ai");
+              }}
+              className={
+                tab === "ask-ai"
+                  ? "bg-indigo-700 text-white shadow-sm border-0"
+                  : "bg-gradient-to-r from-indigo-600 to-brand-600 hover:from-indigo-700 hover:to-brand-700 text-white shadow-sm border-0"
+              }
+              leftIcon={<Sparkles size={14} className="text-amber-300" />}
+            >
+              Ask HR AI ✦
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setBriefingModalOpen(true)}
+              className="bg-gradient-to-r from-brand-600 via-purple-600 to-indigo-600 hover:from-brand-700 hover:via-purple-700 hover:to-indigo-700 text-white shadow-sm border-0"
+              leftIcon={<Sparkles size={14} className="text-amber-300 animate-pulse" />}
+            >
+              AI Executive Briefing
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -317,7 +361,25 @@ export default function Reports() {
         ))}
       </div>
 
-      {isLoading || !data ? (
+      {tab === "ask-ai" ? (
+        <AskHrDataView filters={filters} initialQuery={selectedAiQuery} />
+      ) : tab === "custom" ? (
+        <AiCustomReportBuilderView
+          filters={filters}
+          departments={departments.map((d: any) => ({
+            id: d._id || d.id,
+            name: d.name,
+          }))}
+        />
+      ) : tab === "retention" ? (
+        <RetentionRadarView
+          filters={filters}
+          departments={departments.map((d: any) => ({
+            id: d._id || d.id,
+            name: d.name,
+          }))}
+        />
+      ) : isLoading || !data ? (
         <Card>
           <div className="p-10 text-center text-[13px] text-ink-faint">
             Loading reports…
@@ -326,7 +388,15 @@ export default function Reports() {
       ) : (
         <>
           {tab === "overview" && (
-            <Overview data={data} isFetching={isFetching} />
+            <Overview
+              data={data}
+              isFetching={isFetching}
+              onOpenBriefing={() => setBriefingModalOpen(true)}
+              onAskAi={(q) => {
+                setSelectedAiQuery(q);
+                setTab("ask-ai");
+              }}
+            />
           )}
 
           {tab === "workforce" && (
@@ -781,14 +851,6 @@ export default function Reports() {
             </Section>
           )}
 
-          {tab === "custom" && !isManager && (
-            <CustomReport
-              data={data}
-              sections={customSections}
-              setSections={setCustomSections}
-            />
-          )}
-
           {tab === "documents" && (
             <Section
               title="Document & asset report"
@@ -825,6 +887,14 @@ export default function Reports() {
           )}
         </>
       )}
+
+      <ExecutiveBriefingModal
+        isOpen={briefingModalOpen}
+        onClose={() => setBriefingModalOpen(false)}
+        data={briefingData ?? null}
+        isLoading={isBriefingLoading}
+        onRefresh={() => refetchBriefing()}
+      />
     </div>
   );
 }
@@ -893,174 +963,98 @@ function DataTable({
   );
 }
 
-function CustomReport({
+function Overview({
   data,
-  sections,
-  setSections,
+  isFetching,
+  onOpenBriefing,
+  onAskAi,
 }: {
   data: any;
-  sections: string[];
-  setSections: (value: string[]) => void;
+  isFetching: boolean;
+  onOpenBriefing: () => void;
+  onAskAi: (query: string) => void;
 }) {
-  const available = [
-    "Workforce",
-    "Attendance",
-    "Leave",
-    "Payroll",
-    "Recruitment",
-    "Performance",
-    "Tickets",
-    "Documents",
-  ];
-
-  const toggle = (section: string) => {
-    setSections(
-      sections.includes(section)
-        ? sections.filter((item) => item !== section)
-        : [...sections, section],
-    );
-  };
-
-  const metrics: Record<string, [string, string | number][]> = {
-    Workforce: [
-      ["Total Employees", data.workforce.total],
-      ["Active Employees", data.workforce.active],
-      ["New Hires", data.workforce.recentHires],
-      ["Exits", data.workforce.exits],
-    ],
-    Attendance: [
-      ["Attendance Rate", `${data.attendance.attendanceRate}%`],
-      ["Work Hours", data.attendance.totalWorkHours],
-      ["Estimated Overtime", data.attendance.estimatedOvertimeHours],
-    ],
-    Leave: [
-      ["Requests", data.leave.total],
-      ["Leave Days", data.leave.totalDays],
-    ],
-    Payroll: [
-      ["Gross", money(data.payroll.totalGross)],
-      ["Deductions", money(data.payroll.totalDeductions)],
-      ["Net Pay", money(data.payroll.totalNet)],
-      ["LOP", money(data.payroll.totalLop)],
-    ],
-    Recruitment: data.recruitment
-      ? [
-          ["Applications", data.recruitment.applications],
-          ["Offers Sent", data.recruitment.offersSent],
-          ["Offers Accepted", data.recruitment.offersAccepted],
-          ["Hired", data.recruitment.hired],
-        ]
-      : [],
-    Performance: [
-      ["Reviews", data.performance.reviews],
-      ["Average Rating", `${data.performance.averageRating}/5`],
-    ],
-    Tickets: [
-      ["Total", data.tickets.total],
-      ["Resolved / Closed", data.tickets.resolved],
-      ["Avg Resolution", `${data.tickets.averageResolutionHours} hrs`],
-    ],
-    Documents: [
-      ["Total", data.documents.total],
-      ["Verified", data.documents.verified],
-      ["Pending", data.documents.pending],
-      ["Assigned Assets", data.documents.assignedAssets],
-    ],
-  };
-
-  const downloadCustomReport = () => {
-    if (sections.length === 0) return;
-
-    const rows: (string | number)[][] = [["Report", "Metric", "Value"]];
-
-    sections.forEach((section) => {
-      (metrics[section] ?? []).forEach(([metric, value]) => {
-        rows.push([section, metric, value]);
-      });
-    });
-
-    const csv = rows
-      .map((row) =>
-        row
-          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-          .join(","),
-      )
-      .join("\n");
-
-    downloadBlob(
-      new Blob([csv], { type: "text/csv;charset=utf-8" }),
-      `hrms-custom-report-${new Date().toISOString().slice(0, 10)}.csv`,
-    );
-  };
-
-  return (
-    <Section title="Custom report builder" icon={<FileText size={18} />}>
-      <Card>
-        <CardHeader title="Select report sections" />
-        <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          {available.map((section) => (
-            <label
-              key={section}
-              className="flex items-center gap-2 text-[12px] text-ink"
-            >
-              <input
-                type="checkbox"
-                checked={sections.includes(section)}
-                onChange={() => toggle(section)}
-              />
-              {section}
-            </label>
-          ))}
-        </div>
-      </Card>
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3 p-5">
-          <div>
-            <p className="text-[13px] font-semibold text-ink">
-              Download custom report
-            </p>
-            <p className="text-[11px] text-ink-faint">
-              Downloads only the sections selected above using the current
-              report filters.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            onClick={downloadCustomReport}
-            disabled={sections.length === 0}
-            leftIcon={<Download size={14} />}
-          >
-            Download Custom Report
-          </Button>
-        </div>
-      </Card>
-      <DataTable
-        title="Selected report metrics"
-        columns={[
-          ["Report", "report"],
-          ["Metric", "metric"],
-          ["Value", "value"],
-        ]}
-        rows={sections.flatMap((section) =>
-          (metrics[section] ?? []).map(([metric, value]) => ({
-            report: section,
-            metric,
-            value,
-          })),
-        )}
-      />
-      <p className="text-[11px] text-ink-faint">
-        The custom report uses the same role-scoped and date/department-filtered
-        data as the standard reports. The custom download contains only the
-        sections selected above.
-      </p>
-    </Section>
-  );
-}
-
-function Overview({ data, isFetching }: { data: any; isFetching: boolean }) {
   return (
     <div className="space-y-6">
+      {/* AI Executive Briefing Hero Card */}
+      <div className="relative overflow-hidden rounded-2xl border border-brand-200/80 bg-gradient-to-br from-brand-50/70 via-white to-purple-50/50 p-5 shadow-sm transition-all hover:shadow-md">
+        <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-brand-100/90 px-2.5 py-0.5 text-[11px] font-semibold text-brand-700">
+              <Sparkles size={12} className="text-brand-600 animate-pulse" />
+              AI HR Intelligence
+            </div>
+            <h3 className="font-display text-[16px] font-bold text-ink">
+              Executive HR Briefing & Organization Health
+            </h3>
+            <p className="max-w-2xl text-[12px] leading-relaxed text-ink-soft">
+              Synthesize workforce momentum, attendance stability, payroll risk, ticket SLA health, and department-level friction points into an executive management narrative with strategic recommendations.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <Button
+              size="sm"
+              onClick={onOpenBriefing}
+              className="bg-gradient-to-r from-brand-600 via-purple-600 to-indigo-600 hover:from-brand-700 hover:via-purple-700 hover:to-indigo-700 text-white shadow-sm border-0 px-4 py-2"
+              leftIcon={<Sparkles size={14} className="text-amber-300 animate-pulse" />}
+            >
+              Generate AI Briefing
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Ask HR AI Quick Bar */}
+      <div className="rounded-2xl border border-indigo-200/90 bg-gradient-to-r from-indigo-50/70 via-purple-50/40 to-white p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-xs">
+            <Sparkles size={18} className="text-amber-300" />
+          </div>
+          <div>
+            <div className="text-[13px] font-semibold text-ink flex items-center gap-1.5">
+              Ask HR Data
+              <span className="rounded-full bg-indigo-100 text-indigo-700 px-2 py-0.5 text-[10px] font-semibold border border-indigo-200">
+                Natural Language AI
+              </span>
+            </div>
+            <p className="text-[11.5px] text-ink-soft">
+              Instant answers for absenteeism, headcount, payroll costs, tickets, or ratings.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onAskAi("Which department has the highest absenteeism?")}
+            className="rounded-xl border border-amber-200 bg-white px-3 py-1.5 text-[11.5px] font-medium text-amber-800 hover:bg-amber-50/80 transition-all shadow-xs"
+          >
+            Highest absenteeism?
+          </button>
+          <button
+            type="button"
+            onClick={() => onAskAi("What was our total payroll disbursement?")}
+            className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-[11.5px] font-medium text-emerald-800 hover:bg-emerald-50/80 transition-all shadow-xs"
+          >
+            Total payroll?
+          </button>
+          <button
+            type="button"
+            onClick={() => onAskAi("Show unresolved high-priority tickets")}
+            className="rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-[11.5px] font-medium text-rose-800 hover:bg-rose-50/80 transition-all shadow-xs"
+          >
+            High-priority tickets?
+          </button>
+          <Button
+            size="sm"
+            onClick={() => onAskAi("")}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] py-1.5 px-3.5 shadow-xs"
+          >
+            Ask HR AI ✦
+          </Button>
+        </div>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total employees"
