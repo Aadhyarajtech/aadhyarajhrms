@@ -351,30 +351,69 @@ function calculateProfessionalTax(
 /** Processes payroll after attendance is locked. PF and ESI are automatic; TDS remains a declared monthly amount until tax declarations are available. */
 export async function processPayrollRun(month: number, year: number) {
   let run = await PayrollRun.findOne({ month, year }).lean();
-  if (
-    run?.status === "PAID" ||
-    run?.status === "APPROVED" ||
-    run?.status === "HR_REVIEW"
-  )
-    return getPayrollRun(run._id);
+
+  // Normal processing is intentionally one-way. Once payslips have been
+  // generated, the same payroll period must not be silently recalculated.
+  // This protects historical payroll data when a user clicks Process again.
+  if (run && run.status !== "DRAFT" && run.status !== "ATTENDANCE_LOCKED") {
+    throw AppError.conflict(
+      `Payroll for ${month}/${year} is already ${run.status}. It cannot be processed again.`,
+    );
+  }
+
   if (!run || run.status === "DRAFT") {
     await lockAttendanceForPayroll(month, year);
     run = await PayrollRun.findOne({ month, year }).lean();
   }
-  if (!run || run.status !== "ATTENDANCE_LOCKED")
+
+  if (!run || run.status !== "ATTENDANCE_LOCKED") {
     throw AppError.badRequest(
       "Attendance must be locked before payroll processing.",
     );
+  }
+
+  // Never delete payslips as part of the normal Process Payroll operation.
+  // Existing payslips here indicate an inconsistent/partially processed run;
+  // stopping is safer than destroying historical payroll data.
+  const existingPayslipCount = await Payslip.countDocuments({
+    payrollRunId: run._id,
+  });
+  if (existingPayslipCount > 0) {
+    throw AppError.conflict(
+      `This payroll run already contains ${existingPayslipCount} payslip(s). No existing payslips were changed.`,
+    );
+  }
 
   const totalDaysInMonth = daysInMonth(month, year);
   const employees = await Employee.find({
-    status: { $in: ["ACTIVE", "NOTICE_PERIOD"] },
+    status: { $in: ["ACTIVE", "ON_PROBATION", "ON_LEAVE", "NOTICE_PERIOD"] },
+    isArchived: { $ne: true },
   }).lean();
   const employeeIds = employees.map((e) => e._id);
   const structures = await SalaryStructure.find({
     employeeId: { $in: employeeIds },
   }).lean();
   const structureMap = new Map(structures.map((s) => [s.employeeId, s]));
+
+  // Do not generate a partial payroll. A missing salary structure used to be
+  // silently skipped, which made the run headcount/payslip count smaller than
+  // the actual employee population and made payroll look incomplete.
+  const employeesWithoutSalary = employees.filter(
+    (employee) => !structureMap.has(employee._id),
+  );
+  if (employeesWithoutSalary.length > 0) {
+    const names = employeesWithoutSalary
+      .slice(0, 10)
+      .map((employee) =>
+        `${employee.employeeCode} (${employee.firstName} ${employee.lastName})`,
+      )
+      .join(", ");
+    const suffix = employeesWithoutSalary.length > 10 ? " and more" : "";
+    throw AppError.badRequest(
+      `Payroll cannot be processed because ${employeesWithoutSalary.length} eligible employee(s) have no salary structure: ${names}${suffix}.`,
+    );
+  }
+
   const unpaidLeaveTypes = await LeaveType.find({ isPaid: false })
     .select("_id")
     .lean();
@@ -391,7 +430,6 @@ export async function processPayrollRun(month: number, year: number) {
     attendanceMap.set(row.employeeId, list);
   }
 
-  await Payslip.deleteMany({ payrollRunId: run._id });
   let totalGross = 0,
     totalDeductions = 0,
     totalNet = 0,
@@ -708,15 +746,104 @@ export async function listPayslipsForRun(runId: string) {
     .sort((a, b) => (a.firstName ?? "").localeCompare(b.firstName ?? ""));
 }
 
+export async function listMyPayslipsForUser(input: {
+  userId: string;
+  employeeId?: string | null;
+  email?: string | null;
+}) {
+  const employeeIds = new Set<string>();
+
+  if (input.employeeId) employeeIds.add(String(input.employeeId));
+
+  // If an employee record was recreated during a data restore, historical
+  // payslips may still reference the older employee document. Only bridge that
+  // history when the login email is unique; never guess across duplicate email
+  // accounts because that could expose another employee's payroll.
+  const normalizedEmail = String(input.email ?? "").trim().toLowerCase();
+  if (normalizedEmail) {
+    const matchingUsers = await User.find({ email: normalizedEmail })
+      .select("_id")
+      .lean();
+    if (matchingUsers.length === 1) {
+      const linkedEmployees = await Employee.find({
+        userId: matchingUsers[0]._id,
+      })
+        .select("_id")
+        .lean();
+      for (const employee of linkedEmployees) employeeIds.add(employee._id);
+    }
+  }
+
+  if (!employeeIds.size) return [];
+
+  const visibleRuns = await PayrollRun.find({
+    status: { $in: ["PROCESSED", "HR_REVIEW", "APPROVED", "PAID"] },
+  })
+    .select("_id")
+    .lean();
+  const visibleRunIds = visibleRuns.map((r) => r._id);
+
+  const rows = await Payslip.find({
+    employeeId: { $in: [...employeeIds] },
+    payrollRunId: { $in: visibleRunIds },
+  }).lean();
+  if (!rows.length) return [];
+
+  const runIds = [...new Set(rows.map((r) => r.payrollRunId))];
+  const runs = await PayrollRun.find({ _id: { $in: runIds } }).lean();
+  const runMap = new Map(runs.map((r) => [r._id, r]));
+  const employees = await Employee.find({
+    _id: { $in: [...employeeIds] },
+  })
+    .select("_id dateOfBirth firstName lastName employeeCode")
+    .lean();
+  const employeeMap = new Map(employees.map((e) => [e._id, e]));
+
+  return rows
+    .map((r) => {
+      const run = runMap.get(r.payrollRunId);
+      const employee = employeeMap.get(r.employeeId);
+      const taxDetails = run
+        ? getPayslipTaxDetails(r, employee, run.month, run.year)
+        : {
+            taxableIncome: Number.isFinite(Number(r.taxableIncome))
+              ? Number(r.taxableIncome)
+              : 0,
+            annualTax: Number.isFinite(Number(r.annualTax))
+              ? Number(r.annualTax)
+              : 0,
+          };
+      return {
+        id: r._id,
+        ...r,
+        ...taxDetails,
+        month: run?.month ?? null,
+        year: run?.year ?? null,
+        runStatus: run?.status ?? null,
+        firstName: employee?.firstName ?? null,
+        lastName: employee?.lastName ?? null,
+        employeeCode: employee?.employeeCode ?? null,
+      };
+    })
+    .sort(
+      (a, b) =>
+        (b.year ?? 0) - (a.year ?? 0) || (b.month ?? 0) - (a.month ?? 0),
+    );
+}
+
 export async function listPayslipsForEmployee(employeeId: string) {
-  const [paidRuns, employee] = await Promise.all([
-    PayrollRun.find({ status: "PAID" }).select("_id").lean(),
-    Employee.findById(employeeId).select("dateOfBirth").lean(),
-  ]);
-  const paidRunIds = paidRuns.map((r) => r._id);
+  const employee = await Employee.findById(employeeId)
+    .select("dateOfBirth")
+    .lean();
+  const visibleRuns = await PayrollRun.find({
+    status: { $in: ["PROCESSED", "HR_REVIEW", "APPROVED", "PAID"] },
+  })
+    .select("_id")
+    .lean();
+  const visibleRunIds = visibleRuns.map((r) => r._id);
   const rows = await Payslip.find({
     employeeId,
-    payrollRunId: { $in: paidRunIds },
+    payrollRunId: { $in: visibleRunIds },
   }).lean();
   if (!rows.length) return [];
   const runIds = [...new Set(rows.map((r) => r.payrollRunId))];

@@ -94,7 +94,7 @@ export async function listEmployees(filters: EmployeeFilters) {
 
   const [rows, total] = await Promise.all([
     Employee.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, _id: 1 })
       .skip(offset)
       .limit(pageSize)
       .lean(),
@@ -213,85 +213,6 @@ async function nextEmployeeCode(): Promise<string> {
   return candidate;
 }
 
-export const ONBOARDING_STAGE_DEFINITIONS = [
-  { stage: 1, key: "ACCOUNT_CREATION", name: "HR Creates Employee Account in System" },
-  { stage: 2, key: "PERSONAL_PROFESSIONAL_DETAILS", name: "Personal & Professional Details Entry" },
-  { stage: 3, key: "DOCUMENT_VERIFICATION", name: "Document Upload & Verification" },
-  { stage: 4, key: "DEPARTMENT_ROLE_ASSIGNMENT", name: "Department & Role Assignment" },
-  { stage: 5, key: "PAYROLL_STRUCTURE", name: "Payroll Structure Configuration" },
-  { stage: 6, key: "CREDENTIALS", name: "System Login Credentials Issued" },
-  { stage: 7, key: "ORIENTATION_POLICY", name: "Employee Orientation & Policy Briefing" },
-  { stage: 8, key: "PROFILE_ACTIVATION", name: "Profile Activated — Employee Successfully Onboarded" },
-] as const;
-
-export const ONBOARDING_STAGES = ONBOARDING_STAGE_DEFINITIONS.map((item) => item.key) as [
-  "ACCOUNT_CREATION",
-  "PERSONAL_PROFESSIONAL_DETAILS",
-  "DOCUMENT_VERIFICATION",
-  "DEPARTMENT_ROLE_ASSIGNMENT",
-  "PAYROLL_STRUCTURE",
-  "CREDENTIALS",
-  "ORIENTATION_POLICY",
-  "PROFILE_ACTIVATION",
-];
-
-export type OnboardingStageKey = (typeof ONBOARDING_STAGES)[number];
-export type OnboardingStageStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED";
-
-export interface OnboardingStage {
-  stage: number;
-  name: string;
-  status: OnboardingStageStatus;
-  startedAt: string | null;
-  completedAt: string | null;
-  completedBy?: string | null;
-  remarks: string | null;
-}
-
-export interface EmployeeOnboarding {
-  status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
-  currentStage: number | null;
-  stages: OnboardingStage[];
-  startedAt: string | null;
-  completedAt: string | null;
-}
-
-function buildOnboardingStages(
-  statusByStage?: Record<number, OnboardingStageStatus>,
-  timestamps?: Record<number, { startedAt?: string | null; completedAt?: string | null }>,
-): OnboardingStage[] {
-  return ONBOARDING_STAGE_DEFINITIONS.map(({ stage, name }) => ({
-    stage,
-    name,
-    status: statusByStage?.[stage] ?? "PENDING",
-    startedAt: timestamps?.[stage]?.startedAt ?? null,
-    completedAt: timestamps?.[stage]?.completedAt ?? null,
-    completedBy: null,
-    remarks: null,
-  }));
-}
-
-export function createInitialOnboarding(): EmployeeOnboarding {
-  const now = nowIso();
-
-  return {
-    status: "IN_PROGRESS",
-    currentStage: 2,
-    startedAt: now,
-    completedAt: null,
-    stages: buildOnboardingStages(
-      {
-        1: "COMPLETED",
-        2: "IN_PROGRESS",
-      },
-      {
-        1: { startedAt: now, completedAt: now },
-        2: { startedAt: now, completedAt: null },
-      },
-    ),
-  };
-}
-
 export interface CreateEmployeeInput {
   email: string;
   firstName: string;
@@ -332,12 +253,12 @@ export interface CreateEmployeeInput {
   insurancePolicyNumber?: string | null;
 
   employeeAadhaar?: string | null;
-  employeePan?: string | null;
   employeeTan?: string | null;
   bankAccountNumber?: string | null;
   bankIfscCode?: string | null;
   bankBranch?: string | null;
   investmentDeclarations?: Record<string, unknown>;
+  employeePan?: string | null;
   signature?: string | null;
   avatarUrl?: string;
 
@@ -390,8 +311,18 @@ export async function createEmployee(input: CreateEmployeeInput) {
     }
   }
 
+  const normalizedEmail = input.email.toLowerCase().trim();
+  const existingUser = await User.findOne({ email: normalizedEmail })
+    .select("_id")
+    .lean();
+  if (existingUser) {
+    throw AppError.conflict(
+      "An account with this login email already exists. Use the existing employee record or a different email.",
+    );
+  }
+
   const user = await User.create({
-    email: input.email.toLowerCase().trim(),
+    email: normalizedEmail,
     passwordHash,
     role: input.role as any,
     isActive: true,
@@ -426,12 +357,12 @@ export async function createEmployee(input: CreateEmployeeInput) {
     insurancePolicyNumber: input.insurancePolicyNumber ?? null,
 
     employeeAadhaar: input.employeeAadhaar ?? null,
-    employeePan: input.employeePan ?? null,
     employeeTan: input.employeeTan ?? null,
     bankAccountNumber: input.bankAccountNumber ?? null,
     bankIfscCode: input.bankIfscCode ?? null,
     bankBranch: input.bankBranch ?? null,
     investmentDeclarations: input.investmentDeclarations ?? {},
+    employeePan: input.employeePan ?? null,
     signature: input.signature ?? null,
     avatarUrl: input.avatarUrl ?? null,
 
@@ -447,12 +378,24 @@ export async function createEmployee(input: CreateEmployeeInput) {
     grade: input.grade ?? null,
     workLocation: input.workLocation ?? null,
     probationPeriodMonths: input.probationPeriodMonths ?? null,
-    probationStartDate: null,
-    probationEndDate: null,
+    probationStartDate:
+      input.probationPeriodMonths && input.probationPeriodMonths > 0
+        ? input.dateOfJoining
+        : null,
+    probationEndDate:
+      input.probationPeriodMonths && input.probationPeriodMonths > 0
+        ? (() => {
+            const date = new Date(input.dateOfJoining);
+            date.setMonth(date.getMonth() + input.probationPeriodMonths);
+            return date.toISOString();
+          })()
+        : null,
     probationReminderSentAt: null,
 
-    status: "ONBOARDING",
-    onboarding: createInitialOnboarding(),
+    status:
+      input.probationPeriodMonths && input.probationPeriodMonths > 0
+        ? "ON_PROBATION"
+        : "ACTIVE",
 
     dateOfJoining: input.dateOfJoining,
     isArchived: false,
@@ -535,6 +478,7 @@ export interface UpdateEmployeeInput {
   bankIfscCode?: string | null;
   bankBranch?: string | null;
   investmentDeclarations?: Record<string, unknown>;
+  employeePan?: string | null;
   signature?: string | null;
 
   education?: {
@@ -569,7 +513,6 @@ export interface UpdateEmployeeInput {
   }[];
   avatarUrl?: string;
 
-  onboarding?: EmployeeOnboarding;
   dateOfExit?: string | null;
   isArchived?: boolean;
   archivedAt?: string | null;
@@ -639,21 +582,19 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         insurancePolicyNumber: merged.insurancePolicyNumber ?? null,
 
         employeeAadhaar: merged.employeeAadhaar ?? null,
-        employeePan: merged.employeePan ?? null,
         employeeTan: merged.employeeTan ?? null,
         bankAccountNumber: merged.bankAccountNumber ?? null,
         bankIfscCode: merged.bankIfscCode ?? null,
         bankBranch: merged.bankBranch ?? null,
-        investmentDeclarations: input.investmentDeclarations
-          ? { ...(current.investmentDeclarations ?? {}), ...input.investmentDeclarations }
-          : (current.investmentDeclarations ?? {}),
+        investmentDeclarations:
+          merged.investmentDeclarations ?? current.investmentDeclarations ?? {},
+        employeePan: merged.employeePan ?? null,
         signature: merged.signature ?? null,
         avatarUrl: merged.avatarUrl ?? null,
         education: merged.education ?? current.education ?? [],
         certifications: merged.certifications ?? current.certifications ?? [],
         workHistory: merged.workHistory ?? current.workHistory ?? [],
         skills: merged.skills ?? current.skills ?? [],
-        onboarding: input.onboarding ?? current.onboarding ?? createInitialOnboarding(),
         dateOfExit: merged.dateOfExit ?? null,
 
         isArchived:
@@ -980,302 +921,5 @@ export async function getEmployeeAiContext(employeeId: string) {
           name: `${manager.firstName} ${manager.lastName}`.trim(),
         }
       : null,
-  };
-}
-
-export async function getOnboarding(id: string): Promise<EmployeeOnboarding | null> {
-  const employee = await Employee.findById(id).select("onboarding status").lean<any>();
-  if (!employee) return null;
-
-  const raw = employee.onboarding;
-
-  if (raw?.stages?.length) {
-    const stages: OnboardingStage[] = ONBOARDING_STAGE_DEFINITIONS.map(
-      ({ stage, name }) => {
-        const existing = raw.stages.find(
-          (item: any) => Number(item.stage) === stage,
-        );
-
-        return {
-          stage,
-          name: existing?.name ?? name,
-          status: existing?.status ?? "PENDING",
-          startedAt: existing?.startedAt ?? null,
-          completedAt: existing?.completedAt ?? null,
-          completedBy: existing?.completedBy ?? null,
-          remarks: existing?.remarks ?? null,
-        };
-      },
-    );
-
-    return {
-      status:
-        raw.status === "COMPLETED"
-          ? "COMPLETED"
-          : raw.status === "IN_PROGRESS"
-            ? "IN_PROGRESS"
-            : "NOT_STARTED",
-      currentStage:
-        raw.currentStage != null
-          ? Number(raw.currentStage)
-          : stages.find((stage) => stage.status !== "COMPLETED")?.stage ?? null,
-      stages,
-      startedAt: raw.startedAt ?? null,
-      completedAt: raw.completedAt ?? null,
-    };
-  }
-
-  return {
-    status: "NOT_STARTED",
-    currentStage: employee.status === "ONBOARDING" ? 1 : null,
-    stages: buildOnboardingStages(),
-    startedAt: null,
-    completedAt: null,
-  };
-}
-
-function resolveOnboardingStageNumber(stage: number | string): number | null {
-  if (
-    typeof stage === "number" &&
-    Number.isInteger(stage) &&
-    stage >= 1 &&
-    stage <= 8
-  ) {
-    return stage;
-  }
-
-  if (typeof stage === "string") {
-    const numeric = Number(stage);
-    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= 8) {
-      return numeric;
-    }
-
-    return (
-      ONBOARDING_STAGE_DEFINITIONS.find((item) => item.key === stage)?.stage ??
-      null
-    );
-  }
-
-  return null;
-}
-
-function normalizeStoredOnboarding(raw: any): EmployeeOnboarding {
-  if (!raw?.stages?.length) {
-    return {
-      status: "NOT_STARTED",
-      currentStage: 1,
-      stages: buildOnboardingStages(),
-      startedAt: null,
-      completedAt: null,
-    };
-  }
-
-  return {
-    status:
-      raw.status === "COMPLETED"
-        ? "COMPLETED"
-        : raw.status === "IN_PROGRESS"
-          ? "IN_PROGRESS"
-          : "NOT_STARTED",
-    currentStage:
-      raw.currentStage != null
-        ? Number(raw.currentStage)
-        : raw.stages.find((item: any) => item.status !== "COMPLETED")?.stage ??
-          null,
-    stages: ONBOARDING_STAGE_DEFINITIONS.map(({ stage, name }) => {
-      const existing = raw.stages.find(
-        (item: any) => Number(item.stage) === stage,
-      );
-
-      return {
-        stage,
-        name: existing?.name ?? name,
-        status: existing?.status ?? "PENDING",
-        startedAt: existing?.startedAt ?? null,
-        completedAt: existing?.completedAt ?? null,
-        completedBy: existing?.completedBy ?? null,
-        remarks: existing?.remarks ?? null,
-      };
-    }),
-    startedAt: raw.startedAt ?? null,
-    completedAt: raw.completedAt ?? null,
-  };
-}
-
-export async function startOnboarding(id: string) {
-  const employee = await Employee.findById(id).lean<any>();
-  if (!employee) return undefined;
-
-  const now = nowIso();
-  const onboarding = normalizeStoredOnboarding(employee.onboarding);
-
-  if (onboarding.status === "IN_PROGRESS" && onboarding.startedAt) {
-    return getOnboarding(id);
-  }
-
-  onboarding.status = "IN_PROGRESS";
-  onboarding.startedAt = onboarding.startedAt ?? now;
-  onboarding.completedAt = null;
-
-  const stage1 = onboarding.stages.find((stage) => stage.stage === 1)!;
-  stage1.status = "COMPLETED";
-  stage1.startedAt = stage1.startedAt ?? onboarding.startedAt;
-  stage1.completedAt = stage1.completedAt ?? now;
-
-  const stage2 = onboarding.stages.find((stage) => stage.stage === 2)!;
-  stage2.status = "IN_PROGRESS";
-  stage2.startedAt = stage2.startedAt ?? now;
-  stage2.completedAt = null;
-
-  onboarding.currentStage = 2;
-
-  await Employee.updateOne(
-    { _id: id },
-    {
-      $set: {
-        onboarding,
-        status: "ONBOARDING",
-        updatedAt: now,
-      },
-    },
-  );
-
-  return getOnboarding(id);
-}
-
-export async function updateOnboardingStage(
-  id: string,
-  stage: number | string,
-  status: OnboardingStageStatus,
-  remarks?: string | null,
-) {
-  const employee = await Employee.findById(id).lean<any>();
-  if (!employee) return undefined;
-
-  const stageNumber = resolveOnboardingStageNumber(stage);
-  if (!stageNumber) return undefined;
-
-  const onboarding = normalizeStoredOnboarding(employee.onboarding);
-  const now = nowIso();
-
-  if (status === "COMPLETED" && stageNumber > 1) {
-    const previousIncomplete = onboarding.stages.find(
-      (item) => item.stage < stageNumber && item.status !== "COMPLETED",
-    );
-
-    if (previousIncomplete) {
-      return {
-        success: false,
-        reason: "PREVIOUS_STAGE_INCOMPLETE",
-        blockedByStage: previousIncomplete.stage,
-        employee: await getEmployeeById(id),
-      };
-    }
-  }
-
-  const target = onboarding.stages.find((item) => item.stage === stageNumber)!;
-
-  if (status === "IN_PROGRESS") {
-    target.status = "IN_PROGRESS";
-    target.startedAt = target.startedAt ?? now;
-    target.completedAt = null;
-  } else if (status === "COMPLETED") {
-    target.status = "COMPLETED";
-    target.startedAt = target.startedAt ?? now;
-    target.completedAt = target.completedAt ?? now;
-  } else {
-    target.status = "PENDING";
-    target.completedAt = null;
-  }
-
-  if (remarks !== undefined) {
-    target.remarks = remarks?.trim() || null;
-  }
-
-  const nextStage = onboarding.stages.find(
-    (item) => item.status !== "COMPLETED",
-  );
-
-  if (!nextStage) {
-    onboarding.status = "COMPLETED";
-    onboarding.currentStage = null;
-    onboarding.completedAt = onboarding.completedAt ?? now;
-  } else {
-    onboarding.status = "IN_PROGRESS";
-    onboarding.currentStage = nextStage.stage;
-
-    if (nextStage.status === "PENDING") {
-      nextStage.status = "IN_PROGRESS";
-      nextStage.startedAt = nextStage.startedAt ?? now;
-    }
-  }
-
-  await Employee.updateOne(
-    { _id: id },
-    { $set: { onboarding, updatedAt: now } },
-  );
-
-  return {
-    success: true,
-    onboarding: await getOnboarding(id),
-    employee: await getEmployeeById(id),
-  };
-}
-
-export async function completeOnboarding(id: string) {
-  const employee = await Employee.findById(id).lean<any>();
-  if (!employee) return undefined;
-
-  const onboarding = normalizeStoredOnboarding(employee.onboarding);
-
-  const incompleteBeforeActivation = onboarding.stages.filter(
-    (stage) => stage.stage <= 7 && stage.status !== "COMPLETED",
-  );
-
-  if (incompleteBeforeActivation.length > 0) {
-    return {
-      success: false,
-      reason: "INCOMPLETE_STAGES",
-      incompleteStages: incompleteBeforeActivation.map((stage) => stage.stage),
-      employee: await getEmployeeById(id),
-    };
-  }
-
-  const now = nowIso();
-  const stage8 = onboarding.stages.find((stage) => stage.stage === 8)!;
-  stage8.status = "COMPLETED";
-  stage8.startedAt = stage8.startedAt ?? now;
-  stage8.completedAt = stage8.completedAt ?? now;
-
-  onboarding.status = "COMPLETED";
-  onboarding.currentStage = null;
-  onboarding.completedAt = now;
-
-  const probationMonths = Number(employee.probationPeriodMonths ?? 3);
-  const probationStartDate = probationMonths > 0 ? now : null;
-  const probationEnd = new Date(now);
-
-  if (probationMonths > 0) {
-    probationEnd.setMonth(probationEnd.getMonth() + probationMonths);
-  }
-
-  const updated = await Employee.findByIdAndUpdate(
-    id,
-    {
-      $set: {
-        status: probationMonths > 0 ? "ON_PROBATION" : "ACTIVE",
-        probationStartDate,
-        probationEndDate:
-          probationMonths > 0 ? probationEnd.toISOString() : null,
-        onboarding,
-        updatedAt: now,
-      },
-    },
-    { new: true },
-  ).lean();
-
-  return {
-    success: true,
-    employee: updated ? await getEmployeeById(id) : undefined,
   };
 }

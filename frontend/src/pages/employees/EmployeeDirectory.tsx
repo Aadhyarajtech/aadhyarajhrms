@@ -25,7 +25,7 @@ import { TextField, SelectField } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
 import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 50;
 const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
 
 const addEmployeeSchema = z.object({
