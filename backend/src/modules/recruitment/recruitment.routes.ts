@@ -5,11 +5,16 @@ import { authenticate } from "@/middleware/auth";
 import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
-import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
+import {
+  upload,
+  UPLOADS_PUBLIC_PATH,
+  UPLOAD_DIR,
+} from "@/middleware/upload";
 
 import * as repo from "./recruitment.repository";
 import { parseResumeFile } from "./resumeParser";
-
+import { generateInterviewCopilotAI } from "@/services/ai.service";
+import { generateResumeAutofill } from "./resumeAutofill.ai";
 export const recruitmentRouter = Router();
 
 recruitmentRouter.use(authenticate);
@@ -553,7 +558,45 @@ const candidateResumeSchema = z.object({
   resumeUrl: z.string().url().nullable().optional(),
   resumeText: z.string().nullable().optional(),
 });
+// Temporarily upload and analyze a resume for candidate form autofill.
+recruitmentRouter.post(
+  "/candidates/resume/autofill",
+  requirePermission("recruitment.manage"),
+  upload.single("resume"),
+  async (req, res, next) => {
+    let temporaryFilePath: string | null = null;
 
+    try {
+      if (!req.file) {
+        throw AppError.badRequest("Resume file is required.");
+      }
+
+      temporaryFilePath = req.file.path;
+
+      const parsedResume = await parseResumeFile(
+        `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
+      );
+
+      const autofill = await generateResumeAutofill(parsedResume.text);
+
+      res.json({
+        message: "Resume details extracted successfully.",
+        autofill,
+      });
+    } catch (err) {
+      next(err);
+    } finally {
+      if (temporaryFilePath) {
+        try {
+          const fs = await import("node:fs/promises");
+          await fs.unlink(temporaryFilePath);
+        } catch {
+          // Ignore cleanup errors.
+        }
+      }
+    }
+  },
+);
 // Upload a candidate resume as multipart/form-data.
 // The frontend/Postman must send the file in the "resume" field.
 recruitmentRouter.post(
@@ -585,7 +628,35 @@ recruitmentRouter.post(
     }
   },
 );
+// Generate AI candidate details from an uploaded resume.
+recruitmentRouter.post(
+  "/candidates/:id/resume/autofill",
+  requirePermission("recruitment.manage"),
+  async (req, res, next) => {
+    try {
+      const candidate = await repo.getCandidate(req.params.id);
 
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      if (!candidate.resumeUrl) {
+        throw AppError.badRequest("Upload a resume before using AI autofill.");
+      }
+
+      const parsedResume = await parseResumeFile(candidate.resumeUrl);
+
+      const autofill = await generateResumeAutofill(parsedResume.text);
+
+      res.json({
+        message: "Resume details extracted successfully.",
+        autofill,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 // Parse the uploaded resume and persist extracted resume data.
 recruitmentRouter.post(
   "/candidates/:id/resume/parse",
@@ -746,7 +817,7 @@ recruitmentRouter.post(
       if (
         err instanceof Error &&
         err.message ===
-          "Complete at least one interview before selecting the candidate."
+        "Complete at least one interview before selecting the candidate."
       ) {
         next(AppError.badRequest(err.message));
         return;
@@ -885,7 +956,111 @@ recruitmentRouter.post(
     }
   },
 );
+// ============================================================================
+// AI JOB DESCRIPTION GENERATOR
+// ============================================================================
 
+recruitmentRouter.post(
+  "/jobs/ai-generate",
+  requirePermission("recruitment.manage"),
+  async (req, res, next) => {
+    try {
+      const result = await repo.generateJobRequisitionDraft(req.body);
+
+      res.json({
+        message: "AI job description generated successfully.",
+        draft: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+// ============================================================================
+// AI INTERVIEW COPILOT
+// ============================================================================
+
+recruitmentRouter.post(
+  "/candidates/:id/interview-copilot",
+  requirePermission("recruitment.manage"),
+  async (req, res, next) => {
+    try {
+      const result = await repo.interviewCopilot(req.params.id);
+
+      if (!result) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      res.json(result);
+    } catch (err) {
+      if (err instanceof Error) {
+        if (
+          err.message ===
+          "AI Interview Copilot is available only for candidates in the Interview stage."
+        ) {
+          next(AppError.badRequest(err.message));
+          return;
+        }
+
+        if (err.message === "Job posting not found.") {
+          next(AppError.notFound(err.message));
+          return;
+        }
+      }
+
+      next(err);
+    }
+  },
+);
+// ============================================================================
+// AI INTERVIEW COPILOT
+// ============================================================================
+
+recruitmentRouter.post(
+  "/candidates/:id/interview-copilot",
+  requirePermission("recruitment.manage"),
+  async (req, res, next) => {
+    try {
+      const candidate = await repo.getCandidate(req.params.id);
+
+      if (!candidate) {
+        throw AppError.notFound("Candidate not found.");
+      }
+
+      if (candidate.stage !== "INTERVIEW") {
+        throw AppError.badRequest(
+          "AI Interview Copilot is available only for candidates in the Interview stage.",
+        );
+      }
+
+      const job = await repo.getJobPosting(candidate.jobPostingId);
+
+      if (!job) {
+        throw AppError.notFound("Job posting not found.");
+      }
+
+      const screening = candidate.screening;
+
+      const result = await generateInterviewCopilotAI({
+        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        jobTitle: String(job.title ?? ""),
+        jobDescription: String(job.description ?? ""),
+        resumeText: String(candidate.resumeText ?? ""),
+        requiredSkills: Array.isArray(job.skills) ? job.skills : [],
+        matchedSkills: screening?.matchedSkills ?? [],
+        missingSkills: screening?.missingSkills ?? [],
+        screeningSummary: screening?.summary ?? "",
+      });
+
+      res.json({
+        message: "AI Interview Copilot generated successfully.",
+        copilot: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 // ============================================================================
 // INTERVIEWS
 // ============================================================================

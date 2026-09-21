@@ -22,13 +22,13 @@ export interface UserDoc {
   email: string;
   passwordHash: string;
   role:
-    | "SUPER_ADMIN"
-    | "HR_ADMIN"
-    | "MANAGER"
-    | "RECRUITER"
-    | "FINANCE"
-    | "IT_SUPPORT"
-    | "EMPLOYEE";
+  | "SUPER_ADMIN"
+  | "HR_ADMIN"
+  | "MANAGER"
+  | "RECRUITER"
+  | "FINANCE"
+  | "IT_SUPPORT"
+  | "EMPLOYEE";
   isActive: boolean;
   mustResetPwd: boolean;
   lastLoginAt: string | null;
@@ -326,15 +326,15 @@ export interface EmployeeDoc {
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
 
   status:
-    | "ONBOARDING"
-    | "ACTIVE"
-    | "ON_PROBATION"
-    | "ON_LEAVE"
-    | "NOTICE_PERIOD"
-    | "TERMINATED"
-    | "RESIGNED"
-    | "INACTIVE"
-    | "ON_HOLD";
+  | "ONBOARDING"
+  | "ACTIVE"
+  | "ON_PROBATION"
+  | "ON_LEAVE"
+  | "NOTICE_PERIOD"
+  | "TERMINATED"
+  | "RESIGNED"
+  | "INACTIVE"
+  | "ON_HOLD";
 
   dateOfJoining: string;
   dateOfExit: string | null;
@@ -732,15 +732,15 @@ export interface AttendanceBreakDoc {
 
 export interface AttendanceAuditEntry {
   action:
-    | "CHECK_IN"
-    | "CHECK_OUT"
-    | "REGULARIZATION_REQUESTED"
-    | "REGULARIZATION_APPROVED"
-    | "REGULARIZATION_REJECTED"
-    | "STATUS_CHANGED"
-    | "BREAK_RECORDED"
-    | "OVERTIME_CREDITED"
-    | "COMP_OFF_CREDITED";
+  | "CHECK_IN"
+  | "CHECK_OUT"
+  | "REGULARIZATION_REQUESTED"
+  | "REGULARIZATION_APPROVED"
+  | "REGULARIZATION_REJECTED"
+  | "STATUS_CHANGED"
+  | "BREAK_RECORDED"
+  | "OVERTIME_CREDITED"
+  | "COMP_OFF_CREDITED";
   actorId: string;
   actorRole: UserDoc["role"];
   at: string;
@@ -916,11 +916,11 @@ export interface AttendanceRegularizationRequestDoc {
   requestedCheckIn: string | null;
   requestedCheckOut: string | null;
   requestedStatus:
-    | "PRESENT"
-    | "ABSENT"
-    | "HALF_DAY"
-    | "WORK_FROM_HOME"
-    | "ON_LEAVE";
+  | "PRESENT"
+  | "ABSENT"
+  | "HALF_DAY"
+  | "WORK_FROM_HOME"
+  | "ON_LEAVE";
 
   reason: string;
   status: AttendanceRegularizationStatus;
@@ -1299,11 +1299,11 @@ export interface LeaveRequestDoc {
   reason: string;
 
   status:
-    | "PENDING"
-    | "APPROVED"
-    | "REJECTED"
-    | "CANCELLED"
-    | "EXPIRED";
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "EXPIRED";
 
   approverId: string | null;
   decisionNote: string | null;
@@ -2035,6 +2035,20 @@ export interface CandidateDoc {
 
   resumeUrl: string | null;
   resumeText: string | null;
+  screening?: {
+    score: number | null;
+    recommendation: "YES" | "NO" | "REVIEW" | null;
+    confidence: "HIGH" | "MEDIUM" | "LOW" | null;
+    matchedSkills: string[];
+    missingSkills: string[];
+    strengths: string[];
+    concerns: string[];
+    experienceRelevance: string | null;
+    educationRelevance: string | null;
+    interviewFocus: string[];
+    summary: string | null;
+    evaluatedAt: string | null;
+  };
 
   // Automatic resume parsing
   resumeParsingStatus: ResumeParsingStatus;
@@ -2054,11 +2068,11 @@ export interface CandidateDoc {
   finalResult: "PENDING" | "SELECTED" | "REJECTED";
 
   screeningRecommendation:
-    | "PENDING"
-    | "STRONG_FIT"
-    | "GOOD_FIT"
-    | "WEAK_FIT"
-    | "NOT_RECOMMENDED";
+  | "PENDING"
+  | "STRONG_FIT"
+  | "GOOD_FIT"
+  | "WEAK_FIT"
+  | "NOT_RECOMMENDED";
 
   // Answers to role-specific application/screening questions.
   applicationAnswers: Record<string, string>;
@@ -2349,6 +2363,69 @@ const candidateSchema = new Schema<CandidateDoc>(
       type: String,
       default: null,
     },
+    screening: {
+      score: {
+        type: Number,
+        default: null,
+      },
+
+      recommendation: {
+        type: String,
+        enum: ["YES", "NO", "REVIEW"],
+        default: null,
+      },
+
+      confidence: {
+        type: String,
+        enum: ["HIGH", "MEDIUM", "LOW"],
+        default: null,
+      },
+
+      matchedSkills: {
+        type: [String],
+        default: [],
+      },
+
+      missingSkills: {
+        type: [String],
+        default: [],
+      },
+
+      strengths: {
+        type: [String],
+        default: [],
+      },
+
+      concerns: {
+        type: [String],
+        default: [],
+      },
+
+      experienceRelevance: {
+        type: String,
+        default: null,
+      },
+
+      educationRelevance: {
+        type: String,
+        default: null,
+      },
+
+      interviewFocus: {
+        type: [String],
+        default: [],
+      },
+
+      summary: {
+        type: String,
+        default: null,
+      },
+
+      evaluatedAt: {
+        type: String,
+        default: null,
+      },
+    },
     autoShortlisted: {
       type: Boolean,
       default: false,
@@ -2620,12 +2697,12 @@ export interface PerformanceCycleDoc {
   endDate: string;
   isActive: boolean;
   type:
-    | "PROBATION"
-    | "QUARTERLY"
-    | "HALF_YEARLY"
-    | "ANNUAL"
-    | "THREE_SIXTY"
-    | "PIP";
+  | "PROBATION"
+  | "QUARTERLY"
+  | "HALF_YEARLY"
+  | "ANNUAL"
+  | "THREE_SIXTY"
+  | "PIP";
   purpose: string | null;
   ratingScale?: number[];
   ratingWeights?: {
@@ -3385,12 +3462,12 @@ export interface PayrollRunDoc {
   year: number;
 
   status:
-    | "DRAFT"
-    | "ATTENDANCE_LOCKED"
-    | "PROCESSED"
-    | "HR_REVIEW"
-    | "APPROVED"
-    | "PAID";
+  | "DRAFT"
+  | "ATTENDANCE_LOCKED"
+  | "PROCESSED"
+  | "HR_REVIEW"
+  | "APPROVED"
+  | "PAID";
 
   processedAt: string | null;
   attendanceLockedAt: string | null;
@@ -4325,14 +4402,14 @@ export interface TicketDoc {
   employeeId: string;
 
   category:
-    | "HR"
-    | "Payroll"
-    | "Leave"
-    | "Attendance"
-    | "Recruitment"
-    | "Employee Referral"
-    | "IT Support"
-    | "Complaint";
+  | "HR"
+  | "Payroll"
+  | "Leave"
+  | "Attendance"
+  | "Recruitment"
+  | "Employee Referral"
+  | "IT Support"
+  | "Complaint";
 
   priority: "LOW" | "MEDIUM" | "HIGH";
 
@@ -4344,12 +4421,12 @@ export interface TicketDoc {
   assignedTo: string;
 
   status:
-    | "OPEN"
-    | "IN_PROGRESS"
-    | "WAITING_FOR_EMPLOYEE"
-    | "RESOLVED"
-    | "CLOSED"
-    | "EXPIRED";
+  | "OPEN"
+  | "IN_PROGRESS"
+  | "WAITING_FOR_EMPLOYEE"
+  | "RESOLVED"
+  | "CLOSED"
+  | "EXPIRED";
 
   // AI classification metadata
   aiCategory: string | null;

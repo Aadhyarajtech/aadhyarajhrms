@@ -716,6 +716,76 @@ function PostJobModal({
     },
   });
 
+  const aiJobDescriptionMutation = useMutation({
+    mutationFn: RecruitmentApi.generateJobDescription,
+
+    onSuccess: (draft) => {
+      setValue("departmentId", draft.departmentId, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("designationId", draft.designationId, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("roleCategory", draft.roleCategory, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue(
+        "employmentType",
+        draft.employmentType as JobForm["employmentType"],
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+
+      setValue("location", draft.location, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("experienceMin", draft.experienceMin, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("experienceMax", draft.experienceMax, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("skillsText", draft.skills.join(", "), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue(
+        "screeningQuestionsText",
+        draft.screeningQuestions.join("\n"),
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+
+      setValue("description", draft.description, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      showToast("AI job description generated successfully.");
+    },
+
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
+
   const toggleChannel = (channel: string) => {
     const current = selectedChannels ?? [];
 
@@ -768,112 +838,88 @@ function PostJobModal({
   const submitJob = (values: JobForm) => {
     const screeningQuestions = values.screeningQuestionsText
       ? values.screeningQuestionsText
-          .split("\n")
-          .map((item) => item.trim())
-          .filter(Boolean)
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean)
       : [];
 
     const skills = values.skillsText
       ? values.skillsText
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
       : [];
+
     const shortlistingRequiredSkills = values.shortlistingCriteria
       .requiredSkillsText
       ? values.shortlistingCriteria.requiredSkillsText
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
       : [];
 
     const payload = {
       title: values.title.trim(),
-
       departmentId: values.departmentId,
-
       designationId: values.designationId,
-
       roleCategory: values.roleCategory || undefined,
-
       useTemplate: values.useTemplate,
-
       location: values.location?.trim() || "Bengaluru, India",
-
       employmentType: values.employmentType,
-
       experienceMin: values.experienceMin,
-
       experienceMax: values.experienceMax,
-
       description: values.description?.trim() || undefined,
-
       openings: values.openings,
-
       headcount: values.openings,
-
       budgetCtc: values.budgetCtc,
-
       approvalLevelRequired: values.approvalLevelRequired,
-
       postingChannels: values.postingChannels.length
         ? values.postingChannels
         : ["CAREERS"],
-
       screeningQuestions,
-
       hiringMode: values.hiringMode,
 
       walkInDrive:
         values.hiringMode === "WALK_IN"
           ? {
-              driveDate: values.walkInDriveDate || null,
-
-              startTime: values.walkInStartTime || null,
-
-              endTime: values.walkInEndTime || null,
-
-              venue: values.walkInVenue?.trim() || null,
-
-              coordinatorName: values.walkInCoordinatorName?.trim() || null,
-
-              coordinatorContact:
-                values.walkInCoordinatorContact?.trim() || null,
-
-              registrationDeadline: values.walkInRegistrationDeadline || null,
-
-              expectedCandidates: values.walkInExpectedCandidates ?? null,
-            }
+            driveDate: values.walkInDriveDate || null,
+            startTime: values.walkInStartTime || null,
+            endTime: values.walkInEndTime || null,
+            venue: values.walkInVenue?.trim() || null,
+            coordinatorName: values.walkInCoordinatorName?.trim() || null,
+            coordinatorContact:
+              values.walkInCoordinatorContact?.trim() || null,
+            registrationDeadline:
+              values.walkInRegistrationDeadline || null,
+            expectedCandidates:
+              values.walkInExpectedCandidates ?? null,
+          }
           : null,
 
       campusDrive:
         values.hiringMode === "CAMPUS"
           ? {
-              collegeName: values.campusCollegeName?.trim() || null,
-
-              campusLocation: values.campusLocation?.trim() || null,
-
-              driveDate: values.campusDriveDate || null,
-
-              startTime: values.campusStartTime || null,
-
-              endTime: values.campusEndTime || null,
-
-              placementCoordinator:
-                values.campusPlacementCoordinator?.trim() || null,
-
-              coordinatorContact:
-                values.campusCoordinatorContact?.trim() || null,
-
-              expectedCandidates: values.campusExpectedCandidates ?? null,
-            }
+            collegeName: values.campusCollegeName?.trim() || null,
+            campusLocation: values.campusLocation?.trim() || null,
+            driveDate: values.campusDriveDate || null,
+            startTime: values.campusStartTime || null,
+            endTime: values.campusEndTime || null,
+            placementCoordinator:
+              values.campusPlacementCoordinator?.trim() || null,
+            coordinatorContact:
+              values.campusCoordinatorContact?.trim() || null,
+            expectedCandidates:
+              values.campusExpectedCandidates ?? null,
+          }
           : null,
 
       shortlistingCriteria: {
         enabled: values.shortlistingCriteria.enabled,
-        minimumJobFitScore: values.shortlistingCriteria.minimumJobFitScore,
+        minimumJobFitScore:
+          values.shortlistingCriteria.minimumJobFitScore,
         requiredSkills: shortlistingRequiredSkills,
-        minimumExperience: values.shortlistingCriteria.minimumExperience,
+        minimumExperience:
+          values.shortlistingCriteria.minimumExperience,
       },
 
       skills,
@@ -920,12 +966,12 @@ function PostJobModal({
             const [fieldName, fieldError] = firstError;
             const message =
               typeof fieldError === "object" &&
-              fieldError &&
-              "message" in fieldError
+                fieldError &&
+                "message" in fieldError
                 ? String(
-                    (fieldError as { message?: unknown }).message ??
-                      "Please check this field.",
-                  )
+                  (fieldError as { message?: unknown }).message ??
+                  "Please check this field.",
+                )
                 : "Please check this field.";
             showToast(`${fieldName}: ${message}`, "error");
           } else {
@@ -1345,11 +1391,10 @@ function PostJobModal({
               return (
                 <label
                   key={value}
-                  className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition ${
-                    checked
-                      ? "border-brand-300 bg-brand-50"
-                      : "border-line hover:bg-canvas"
-                  }`}
+                  className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition ${checked
+                    ? "border-brand-300 bg-brand-50"
+                    : "border-line hover:bg-canvas"
+                    }`}
                 >
                   <input
                     type="checkbox"
@@ -1386,6 +1431,32 @@ function PostJobModal({
           error={errors.screeningQuestionsText?.message}
           {...register("screeningQuestionsText")}
         />
+        <div className="sm:col-span-2 -mt-2 flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              aiJobDescriptionMutation.mutate({
+                jobTitle: watch("title"),
+                departmentId: watch("departmentId"),
+                designationId: watch("designationId"),
+                roleCategory: watch("roleCategory"),
+                employmentType: watch("employmentType"),
+                location: watch("location"),
+                experienceMin: watch("experienceMin"),
+                experienceMax: watch("experienceMax"),
+                skills: watch("skillsText"),
+              })
+            }
+            isLoading={aiJobDescriptionMutation.isPending}
+            disabled={
+              !watch("title")?.trim() || aiJobDescriptionMutation.isPending
+            }
+          >
+            Generate with AI
+          </Button>
+        </div>
 
         <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
           Enter one question per line.
