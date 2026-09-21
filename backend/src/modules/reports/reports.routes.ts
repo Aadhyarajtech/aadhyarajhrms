@@ -3,6 +3,10 @@ import { authenticate } from "@/middleware/auth";
 import { requirePermission } from "@/middleware/permissions";
 import * as repo from "./reports.repository";
 import { buildExcelReport, buildPdfReport } from "./reportExport.service";
+import { generateExecutiveBriefing } from "../../services/executiveBriefing.service";
+import { askHrData } from "../../services/askHrData.service";
+import { buildCustomReport } from "../../services/customReportBuilder.service";
+import { getRetentionRadar } from "../../services/retentionRadar.service";
 
 export const reportsRouter = Router();
 reportsRouter.use(authenticate, requirePermission("reports.view"));
@@ -84,6 +88,94 @@ reportsRouter.get("/overview", async (req, res, next) => {
       req.user!.employeeId,
     );
     res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+reportsRouter.get("/ai-briefing", async (req, res, next) => {
+  try {
+    const briefing = await generateExecutiveBriefing(
+      filtersFromRequest(req),
+      req.user!.role,
+      req.user!.employeeId,
+    );
+    res.json(briefing);
+  } catch (err) {
+    next(err);
+  }
+});
+
+reportsRouter.post("/ask-ai", async (req, res, next) => {
+  try {
+    const { question, filters, history } = req.body || {};
+    if (!question || typeof question !== "string" || !question.trim()) {
+      res.status(400).json({ message: "A question string is required." });
+      return;
+    }
+
+    const appliedFilters = filters || filtersFromRequest(req);
+    const answer = await askHrData(
+      question,
+      appliedFilters,
+      req.user!.role,
+      req.user!.employeeId,
+      Array.isArray(history) ? history : [],
+    );
+    res.json(answer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+reportsRouter.post("/custom-builder", async (req, res, next) => {
+  try {
+    const {
+      dataset,
+      selectedColumns,
+      groupBy,
+      chartType,
+      prompt,
+      templateId,
+      dateFrom,
+      dateTo,
+      departmentId,
+    } = req.body || {};
+
+    const report = await buildCustomReport(
+      {
+        dataset: typeof dataset === "string" ? (dataset as any) : undefined,
+        selectedColumns: Array.isArray(selectedColumns) ? selectedColumns : undefined,
+        groupBy: typeof groupBy === "string" ? groupBy : undefined,
+        chartType: typeof chartType === "string" ? (chartType as any) : undefined,
+        prompt: typeof prompt === "string" ? prompt : undefined,
+        templateId: typeof templateId === "string" ? templateId : undefined,
+        dateFrom: typeof dateFrom === "string" ? dateFrom : undefined,
+        dateTo: typeof dateTo === "string" ? dateTo : undefined,
+        departmentId: typeof departmentId === "string" ? departmentId : undefined,
+      },
+      req.user!.role,
+      req.user!.employeeId,
+    );
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+});
+
+reportsRouter.get("/retention-radar", async (req, res, next) => {
+  try {
+    const departmentId = typeof req.query.departmentId === "string" ? req.query.departmentId : undefined;
+    const minRiskLevel = typeof req.query.minRiskLevel === "string" ? (req.query.minRiskLevel as any) : undefined;
+    const dateFrom = typeof req.query.from === "string" ? req.query.from : undefined;
+    const dateTo = typeof req.query.to === "string" ? req.query.to : undefined;
+
+    const result = await getRetentionRadar(
+      { departmentId, minRiskLevel, dateFrom, dateTo },
+      req.user!.role,
+      req.user!.employeeId,
+    );
+    res.json(result);
   } catch (err) {
     next(err);
   }
