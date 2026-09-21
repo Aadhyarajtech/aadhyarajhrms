@@ -4,6 +4,7 @@ import { authenticate } from "@/middleware/auth";
 import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
+import { Employee } from "@/db/models";
 import * as repo from "./payroll.repository";
 import { explainPayslip, askPayslipQuestion } from "../../services/payslipExplainer.service";
 import { validatePayrollReadiness } from "../../services/payrollValidation.service";
@@ -263,9 +264,29 @@ payrollRouter.get(
 
 payrollRouter.get("/payslips/mine", async (req, res, next) => {
   try {
-    if (!req.user!.employeeId) throw AppError.forbidden();
+    let employeeId = req.user!.employeeId;
+
+    // Resolve the employee from the authenticated user as a safety net. This
+    // prevents a stale/missing employeeId in an old JWT from making a valid
+    // employee's payslips appear empty.
+    if (!employeeId) {
+      const employee = await Employee.findOne({
+        userId: req.user!.userId,
+      })
+        .select("_id")
+        .lean();
+
+      employeeId = employee?._id ? String(employee._id) : null;
+    }
+
+    if (!employeeId) throw AppError.forbidden("No employee profile is linked to this account.");
+
     res.json({
-      payslips: await repo.listPayslipsForEmployee(req.user!.employeeId),
+      payslips: await repo.listMyPayslipsForUser({
+        userId: req.user!.userId,
+        employeeId,
+        email: req.user!.email,
+      }),
     });
   } catch (err) {
     next(err);

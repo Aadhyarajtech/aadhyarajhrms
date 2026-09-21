@@ -105,7 +105,7 @@ function MyPayslips({ onView }: { onView: (p: Payslip) => void }) {
         <EmptyState
           icon={Wallet}
           title="No payslips yet"
-          description="Your payslips will appear here once payroll has been processed."
+          description="Your payslips will appear here once payroll has been processed and finalized for viewing."
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -341,6 +341,13 @@ function PayrollRuns() {
     },
   });
 
+  const selectedMonth = watch("month");
+  const selectedYear = watch("year");
+  const selectedRun = runs?.find(
+    (run) => run.month === Number(selectedMonth) && run.year === Number(selectedYear),
+  );
+  const canProcessSelectedPeriod = selectedRun?.status === "ATTENDANCE_LOCKED";
+
   const handleLockDateChange = (value: string) => {
     if (!value) return;
     const [selectedYear, selectedMonth] = value.split("-").map(Number);
@@ -456,6 +463,12 @@ function PayrollRuns() {
             leftIcon={<Play size={15} />}
             onClick={handleSubmit((v) => processMutation.mutate(v))}
             isLoading={processMutation.isPending}
+            disabled={!canProcessSelectedPeriod}
+            title={
+              selectedRun
+                ? `Payroll is ${selectedRun.status}. Only attendance-locked payroll can be processed.`
+                : "Lock attendance for this payroll period before processing."
+            }
           >
             Process payroll
           </Button>
