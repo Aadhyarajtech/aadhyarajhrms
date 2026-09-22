@@ -233,76 +233,78 @@ export default function Reports() {
 
   return (
     <div>
-      <PageHeader
-        title="Reports & Analytics"
-        subtitle={
-          isManager
-            ? "Team reporting and analytics"
-            : "Organization-wide HR reporting and decision insights"
-        }
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                setSelectedAiQuery("");
-                setTab("ask-ai");
-              }}
-              className={
-                tab === "ask-ai"
-                  ? "bg-indigo-700 text-white shadow-sm border-0"
-                  : "bg-gradient-to-r from-indigo-600 to-brand-600 hover:from-indigo-700 hover:to-brand-700 text-white shadow-sm border-0"
-              }
-              leftIcon={<Sparkles size={14} className="text-amber-300" />}
-            >
-              Ask HR AI ✦
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setBriefingModalOpen(true)}
-              className="bg-gradient-to-r from-brand-600 via-purple-600 to-indigo-600 hover:from-brand-700 hover:via-purple-700 hover:to-indigo-700 text-white shadow-sm border-0"
-              leftIcon={<Sparkles size={14} className="text-amber-300 animate-pulse" />}
-            >
-              AI Executive Briefing
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => refetch()}
-              leftIcon={<RefreshCw size={14} />}
-            >
-              Refresh
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => exportReport("xlsx")}
-              disabled={!data || exporting !== null}
-              leftIcon={<Download size={14} />}
-            >
-              {exporting === "xlsx" ? "Exporting…" : "Excel"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => exportReport("pdf")}
-              disabled={!data || exporting !== null}
-              leftIcon={<Download size={14} />}
-            >
-              {exporting === "pdf" ? "Exporting…" : "PDF"}
-            </Button>
-            <Button
-              size="sm"
-              onClick={exportCsv}
-              disabled={!data || exporting !== null}
-            >
-              CSV
-            </Button>
-          </div>
-        }
-      />
+      <div className="print:hidden">
+        <PageHeader
+          title="Reports & Analytics"
+          subtitle={
+            isManager
+              ? "Team reporting and analytics"
+              : "Organization-wide HR reporting and decision insights"
+          }
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setSelectedAiQuery("");
+                  setTab("ask-ai");
+                }}
+                className={
+                  tab === "ask-ai"
+                    ? "bg-indigo-700 text-white shadow-sm border-0"
+                    : "bg-gradient-to-r from-indigo-600 to-brand-600 hover:from-indigo-700 hover:to-brand-700 text-white shadow-sm border-0"
+                }
+                leftIcon={<Sparkles size={14} className="text-amber-300" />}
+              >
+                Ask HR AI ✦
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setBriefingModalOpen(true)}
+                className="bg-gradient-to-r from-brand-600 via-purple-600 to-indigo-600 hover:from-brand-700 hover:via-purple-700 hover:to-indigo-700 text-white shadow-sm border-0"
+                leftIcon={<Sparkles size={14} className="text-amber-300 animate-pulse" />}
+              >
+                AI Executive Briefing
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => refetch()}
+                leftIcon={<RefreshCw size={14} />}
+              >
+                Refresh
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportReport("xlsx")}
+                disabled={!data || exporting !== null}
+                leftIcon={<Download size={14} />}
+              >
+                {exporting === "xlsx" ? "Exporting…" : "Excel"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportReport("pdf")}
+                disabled={!data || exporting !== null}
+                leftIcon={<Download size={14} />}
+              >
+                {exporting === "pdf" ? "Exporting…" : "PDF"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={exportCsv}
+                disabled={!data || exporting !== null}
+              >
+                CSV
+              </Button>
+            </div>
+          }
+        />
+      </div>
 
-      <Card className="mb-6">
+      <Card className="mb-6 print:hidden">
         <div className="grid gap-3 p-4 md:grid-cols-3">
           <label className="text-[12px] font-medium text-ink-soft">
             From
@@ -340,7 +342,7 @@ export default function Reports() {
         </div>
       </Card>
 
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="mb-6 flex flex-wrap gap-2 print:hidden">
         {TABS.filter(
           ([key]) =>
             (key !== "recruitment" || canRecruitment) &&
