@@ -54,14 +54,16 @@ export interface Employee {
   managerLastName: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
   status:
-    | "ONBOARDING"
-    | "ON_PROBATION"
-    | "ACTIVE"
-    | "ON_LEAVE"
-    | "NOTICE_PERIOD"
-    | "TERMINATED"
-    | "RESIGNED"
-    | "INACTIVE";
+
+  | "ONBOARDING"
+  | "ON_PROBATION"
+  | "ACTIVE"
+  | "ON_LEAVE"
+  | "NOTICE_PERIOD"
+  | "TERMINATED"
+  | "RESIGNED"
+  | "INACTIVE"
+  | "ON_HOLD";
   dateOfJoining: string;
   dateOfExit: string | null;
   email: string;
@@ -128,11 +130,11 @@ export interface LeaveRequest {
   totalDays: number;
   reason: string;
   status:
-    | "PENDING"
-    | "APPROVED"
-    | "REJECTED"
-    | "CANCELLED"
-    | "EXPIRED";
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "EXPIRED";
   approverId: string | null;
   decisionNote: string | null;
   appliedAt: string;
@@ -436,17 +438,26 @@ export interface Candidate {
   resumeParsingError?: string | null;
   resumeParsedAt?: string | null;
   extractedSkills?: string[];
-  extractedExperience?: number | null;
+  extractedExperience?:
+  | number
+  | null
+  | {
+    company: string | null;
+    position: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    description: string;
+  }[];
   extractedEducation?: string[];
 
   jobFitScore?: number | null;
   screeningSummary?: string | null;
   screeningRecommendation?:
-    | "PENDING"
-    | "STRONG_FIT"
-    | "GOOD_FIT"
-    | "WEAK_FIT"
-    | "NOT_RECOMMENDED";
+  | "PENDING"
+  | "STRONG_FIT"
+  | "GOOD_FIT"
+  | "WEAK_FIT"
+  | "NOT_RECOMMENDED";
 
   /* Application */
   applicationAnswers?: Record<string, string>;
@@ -537,12 +548,12 @@ export interface PerformanceCycle {
   endDate: string;
   isActive: boolean;
   type:
-    | "PROBATION"
-    | "QUARTERLY"
-    | "HALF_YEARLY"
-    | "ANNUAL"
-    | "THREE_SIXTY"
-    | "PIP";
+  | "PROBATION"
+  | "QUARTERLY"
+  | "HALF_YEARLY"
+  | "ANNUAL"
+  | "THREE_SIXTY"
+  | "PIP";
   purpose: string | null;
   ratingScale?: number[];
   ratingWeights?: { self: number; manager: number };
@@ -654,12 +665,12 @@ export interface PayrollRun {
   month: number;
   year: number;
   status:
-    | "DRAFT"
-    | "ATTENDANCE_LOCKED"
-    | "PROCESSED"
-    | "HR_REVIEW"
-    | "APPROVED"
-    | "PAID";
+  | "DRAFT"
+  | "ATTENDANCE_LOCKED"
+  | "PROCESSED"
+  | "HR_REVIEW"
+  | "APPROVED"
+  | "PAID";
   processedAt: string | null;
   attendanceLockedAt: string | null;
   reviewedAt: string | null;
