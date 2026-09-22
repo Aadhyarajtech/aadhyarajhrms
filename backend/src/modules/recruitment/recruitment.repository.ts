@@ -18,6 +18,7 @@ import { sendRecruitmentEmail } from "@/services/email.service";
 import { env } from "@/config/env";
 import {
   generateInterviewCopilotAI,
+  generateInterviewEvaluationAI,
   generateJobRequisitionAI,
   generateResumeScreeningAI,
 } from "@/services/ai.service";
@@ -1310,6 +1311,35 @@ export async function listCandidates(jobPostingId?: string) {
     jobTitle: jobMap.get(row.jobPostingId)?.title ?? null,
   }));
 }
+export async function getRankedCandidates(jobPostingId: string) {
+  const candidates = await listCandidates(jobPostingId);
+
+  return candidates
+    .filter((candidate: any) => {
+      const score =
+        candidate.screening?.score ??
+        candidate.jobFitScore;
+
+      return typeof score === "number";
+    })
+    .sort((a: any, b: any) => {
+      const scoreA =
+        a.screening?.score ??
+        a.jobFitScore ??
+        0;
+
+      const scoreB =
+        b.screening?.score ??
+        b.jobFitScore ??
+        0;
+
+      return scoreB - scoreA;
+    })
+    .map((candidate: any, index: number) => ({
+      ...candidate,
+      rank: index + 1,
+    }));
+}
 
 export async function searchCandidates(input: {
   jobPostingId?: string;
@@ -2310,7 +2340,79 @@ export async function submitInterviewFeedback(
   });
   return updatedInterview;
 }
+export async function evaluateInterviewWithAI(id: string) {
+  const interview = await Interview.findById(id).lean();
 
+  if (!interview) return undefined;
+
+  if (!interview.completed) {
+    throw new Error(
+      "Complete the interview feedback before generating an AI evaluation.",
+    );
+  }
+
+  const candidate = await Candidate.findById(interview.candidateId).lean();
+
+  if (!candidate) {
+    throw new Error("Candidate not found.");
+  }
+
+  const job = await JobPosting.findById(candidate.jobPostingId).lean();
+
+  if (!job) {
+    throw new Error("Job posting not found.");
+  }
+
+  const screening = (candidate as AnyDoc).screening ?? {};
+
+  const resumeText = String(
+    candidate.resumeText?.trim() ||
+    [
+      candidate.firstName,
+      candidate.lastName,
+      candidate.email,
+      candidate.phone ?? "",
+      candidate.notes ?? "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  const requiredSkills = uniqueStrings(
+    ((job as AnyDoc).skills ?? []).map((skill: string) => String(skill)),
+  );
+
+  const evaluation = await generateInterviewEvaluationAI({
+    candidateName: `${candidate.firstName} ${candidate.lastName}`,
+    jobTitle: String(job.title ?? ""),
+    jobDescription: String(job.description ?? ""),
+    resumeText,
+    requiredSkills,
+    matchedSkills: uniqueStrings(
+      (screening.matchedSkills ?? []).map((skill: string) => String(skill)),
+    ),
+    missingSkills: uniqueStrings(
+      (screening.missingSkills ?? []).map((skill: string) => String(skill)),
+    ),
+    screeningSummary: String(
+      screening.summary ?? candidate.screeningSummary ?? "",
+    ),
+    interviewerFeedback: String(interview.feedback ?? ""),
+    interviewerRecommendation: String(interview.recommendation ?? ""),
+    scorecard: Array.isArray(interview.scorecard)
+      ? interview.scorecard.map((item: AnyDoc) => ({
+        criterion: String(item.criterion ?? ""),
+        score: Number(item.score ?? 0),
+        comment: item.comment ? String(item.comment) : null,
+      }))
+      : [],
+  });
+
+  return {
+    message: "AI interview evaluation generated successfully.",
+    evaluation,
+  };
+}
 // ===========================================================================
 // OFFER
 // ===========================================================================
