@@ -3928,3 +3928,48 @@ export const DashboardApi = {
         (r) => r.data,
       ),
 };
+
+// --- AI HR Copilot -----------------------------------------------------------
+
+export interface HrCopilotChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface HrCopilotPageContext {
+  pathname?: string;
+  pageTitle?: string;
+  entityId?: string;
+  module?: string;
+}
+
+export interface HrCopilotChatPayload {
+  message: string;
+
+  conversation?: HrCopilotChatMessage[];
+
+  pageContext?: HrCopilotPageContext;
+}
+
+export interface HrCopilotSource {
+  module: string;
+  description: string;
+}
+
+export interface HrCopilotChatResponse {
+  answer: string;
+  intent: string;
+  sources: HrCopilotSource[];
+}
+
+export const HrCopilotApi = {
+  chat: (
+    payload: HrCopilotChatPayload,
+  ) =>
+    api
+      .post<HrCopilotChatResponse>(
+        "/ai/chat",
+        payload,
+      )
+      .then((response) => response.data),
+};

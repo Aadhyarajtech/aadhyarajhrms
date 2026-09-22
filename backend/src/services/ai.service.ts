@@ -1310,9 +1310,26 @@ export async function generateOrganizationAI<T>(
     clearTimeout(timeout);
 
     if (!response.ok) {
-      console.warn(
-        `[AI] Groq API returned ${response.status} for Organization AI. Using fallback.`,
-      );
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("retry-after");
+        const remainingRequests = response.headers.get("x-ratelimit-remaining-requests");
+        const remainingTokens = response.headers.get("x-ratelimit-remaining-tokens");
+        const resetRequests = response.headers.get("x-ratelimit-reset-requests");
+        const resetTokens = response.headers.get("x-ratelimit-reset-tokens");
+
+        console.warn(
+          `[AI] Groq Organization AI rate-limited (429). ` +
+          `retry-after=${retryAfter ?? "unknown"}, ` +
+          `remainingRequests=${remainingRequests ?? "unknown"}, ` +
+          `remainingTokens=${remainingTokens ?? "unknown"}, ` +
+          `resetRequests=${resetRequests ?? "unknown"}, ` +
+          `resetTokens=${resetTokens ?? "unknown"}. Using fallback.`,
+        );
+      } else {
+        console.warn(
+          `[AI] Groq API returned ${response.status} for Organization AI. Using fallback.`,
+        );
+      }
 
       return fallback;
     }
