@@ -1692,281 +1692,275 @@ export const RecruitmentApi = {
         },
       })
       .then((r) => r.data.candidates),
-
-    searchCandidates: (
-      params: {
-        jobPostingId?: string;
-        stage?: string;
-        finalResult?: string;
-        minJobFitScore?: number;
-        source?: string;
-        query?: string;
-      } = {},
-    ) =>
+    rankedCandidates: (jobPostingId: string) =>
       api
         .get<{
           candidates: Candidate[];
-        }>(
-          "/recruitment/candidates/search",
-          { params },
-        )
-        .then(
-          (r) => r.data.candidates,
-        ),
+        }>("/recruitment/candidates/ranked", {
+          params: {
+            jobPostingId,
+          },
+        })
+        .then((r) => r.data.candidates),
 
-      candidate: (id: string) =>
+      searchCandidates: (
+        params: {
+          jobPostingId?: string;
+          stage?: string;
+          finalResult?: string;
+          minJobFitScore?: number;
+          source?: string;
+          query?: string;
+        } = {},
+      ) =>
         api
           .get<{
-            candidate: Candidate;
+            candidates: Candidate[];
           }>(
-            `/recruitment/candidates/${id}`,
+            "/recruitment/candidates/search",
+            { params },
           )
           .then(
-            (r) => r.data.candidate,
+            (r) => r.data.candidates,
           ),
 
-        createCandidate: (
-          payload: Record<string, unknown>,
-        ) =>
+        candidate: (id: string) =>
           api
-            .post<{
+            .get<{
               candidate: Candidate;
             }>(
-              "/recruitment/candidates",
-              payload,
+              `/recruitment/candidates/${id}`,
             )
             .then(
               (r) => r.data.candidate,
             ),
 
-          uploadResume: (
-            id: string,
-            file: File,
-          ) => {
-            const form = new FormData();
-
-            form.append(
-              "resume",
-              file,
-            );
-
-            return api
+          createCandidate: (
+            payload: Record<string, unknown>,
+          ) =>
+            api
               .post<{
                 candidate: Candidate;
               }>(
-                `/recruitment/candidates/${id}/resume/upload`,
-                form,
-                {
-                  headers: {
-                    "Content-Type":
-                      "multipart/form-data",
-                  },
-                },
+                "/recruitment/candidates",
+                payload,
               )
               .then(
                 (r) => r.data.candidate,
-              );
-          },
+              ),
 
-            updateCandidate: (
+            uploadResume: (
               id: string,
-              payload: {
-                firstName: string;
-                lastName: string;
-                email: string;
-                phone?: string;
-                expectedCtc?: number;
-                source?: string;
-              },
-            ) =>
-              api
-                .patch<{
+              file: File,
+            ) => {
+              const form = new FormData();
+
+              form.append(
+                "resume",
+                file,
+              );
+
+              return api
+                .post<{
                   candidate: Candidate;
                 }>(
-                  `/recruitment/candidates/${id}`,
-                  payload,
+                  `/recruitment/candidates/${id}/resume/upload`,
+                  form,
+                  {
+                    headers: {
+                      "Content-Type":
+                        "multipart/form-data",
+                    },
+                  },
                 )
                 .then(
                   (r) => r.data.candidate,
-                ),
+                );
+            },
 
-              deleteCandidate: (id: string) =>
+              updateCandidate: (
+                id: string,
+                payload: {
+                  firstName: string;
+                  lastName: string;
+                  email: string;
+                  phone?: string;
+                  expectedCtc?: number;
+                  source?: string;
+                },
+              ) =>
                 api
-                  .delete<{
-                    id: string;
-                    deleted: boolean;
+                  .patch<{
+                    candidate: Candidate;
                   }>(
                     `/recruitment/candidates/${id}`,
+                    payload,
                   )
                   .then(
-                    (r) => r.data,
-
+                    (r) => r.data.candidate,
                   ),
 
-                moveStage: (
-                  id: string,
-                  stage: string,
-                ) =>
+                deleteCandidate: (id: string) =>
                   api
-                    .patch<{
-                      candidate: Candidate;
+                    .delete<{
+                      id: string;
+                      deleted: boolean;
                     }>(
-                      `/recruitment/candidates/${id}/stage`,
-                      { stage },
+                      `/recruitment/candidates/${id}`,
                     )
                     .then(
-                      (r) => r.data.candidate,
+                      (r) => r.data,
+
                     ),
 
-                  selectCandidate: (id: string) =>
+                  moveStage: (
+                    id: string,
+                    stage: string,
+                  ) =>
                     api
-                      .post<{
+                      .patch<{
                         candidate: Candidate;
                       }>(
-                        `/recruitment/candidates/${id}/select`,
+                        `/recruitment/candidates/${id}/stage`,
+                        { stage },
                       )
                       .then(
                         (r) => r.data.candidate,
                       ),
 
-                    interviewCopilot: (id: string) =>
+                    selectCandidate: (id: string) =>
                       api
                         .post<{
-                          message: string;
-                          copilot: {
-                            focusAreas: string[];
-                            technicalQuestions: {
-                              question: string;
-                              followUps: string[];
-                            }[];
-                            resumeQuestions: {
-                              question: string;
-                              followUps: string[];
-                            }[];
-                            skillGapQuestions: {
-                              question: string;
-                              followUps: string[];
-                            }[];
-                            behavioralQuestions: {
-                              question: string;
-                              followUps: string[];
-                            }[];
-                          };
-                        }>(`/recruitment/candidates/${id}/interview-copilot`)
-                        .then((r) => r.data.copilot),
+                          candidate: Candidate;
+                        }>(
+                          `/recruitment/candidates/${id}/select`,
+                        )
+                        .then(
+                          (r) => r.data.candidate,
+                        ),
 
-                      generateJobDescription: (data: {
-                        jobTitle: string;
-                        departmentId?: string;
-                        designationId?: string;
-                        roleCategory?: string;
-                        employmentType?: string;
-                        location?: string;
-                        experienceMin?: number;
-                        experienceMax?: number;
-                        skills?: string;
-                      }) =>
+                      interviewCopilot: (id: string) =>
                         api
                           .post<{
                             message: string;
-                            draft: {
-                              departmentId: string;
-                              designationId: string;
-                              departmentName: string;
-                              designationTitle: string;
-                              roleCategory: string;
-                              employmentType: string;
-                              location: string;
-                              experienceMin: number;
-                              experienceMax: number;
-                              skills: string[];
-                              screeningQuestions: string[];
-                              description: string;
+                            copilot: {
+                              focusAreas: string[];
+                              technicalQuestions: {
+                                question: string;
+                                followUps: string[];
+                              }[];
+                              resumeQuestions: {
+                                question: string;
+                                followUps: string[];
+                              }[];
+                              skillGapQuestions: {
+                                question: string;
+                                followUps: string[];
+                              }[];
+                              behavioralQuestions: {
+                                question: string;
+                                followUps: string[];
+                              }[];
                             };
-                          }>("/recruitment/jobs/ai-generate", data)
-                          .then((r) => r.data.draft),
+                          }>(`/recruitment/candidates/${id}/interview-copilot`)
+                          .then((r) => r.data.copilot),
 
-                        interviewCopilot: (id: string) =>
+                        generateJobDescription: (data: {
+                          jobTitle: string;
+                          departmentId?: string;
+                          designationId?: string;
+                          roleCategory?: string;
+                          employmentType?: string;
+                          location?: string;
+                          experienceMin?: number;
+                          experienceMax?: number;
+                          skills?: string;
+                        }) =>
                           api
                             .post<{
                               message: string;
-                              copilot: {
-                                focusAreas: string[];
-                                technicalQuestions: {
-                                  question: string;
-                                  followUps: string[];
-                                }[];
-                                resumeQuestions: {
-                                  question: string;
-                                  followUps: string[];
-                                }[];
-                                skillGapQuestions: {
-                                  question: string;
-                                  followUps: string[];
-                                }[];
-                                behavioralQuestions: {
-                                  question: string;
-                                  followUps: string[];
-                                }[];
+                              draft: {
+                                departmentId: string;
+                                designationId: string;
+                                departmentName: string;
+                                designationTitle: string;
+                                roleCategory: string;
+                                employmentType: string;
+                                location: string;
+                                experienceMin: number;
+                                experienceMax: number;
+                                skills: string[];
+                                screeningQuestions: string[];
+                                description: string;
                               };
-                            }>(`/recruitment/candidates/${id}/interview-copilot`)
-                            .then((r) => r.data.copilot),
-                          generateJobDescription: (data: {
-                            jobTitle: string;
-                            departmentId?: string;
-                            designationId?: string;
-                            roleCategory?: string;
-                            employmentType?: string;
-                            location?: string;
-                            experienceMin?: number;
-                            experienceMax?: number;
-                            skills?: string;
-                          }) =>
+                            }>("/recruitment/jobs/ai-generate", data)
+                            .then((r) => r.data.draft),
+
+                          rate: (id: string, rating: number) =>
                             api
-                              .post<{
-                                message: string;
-                                draft: {
-                                  departmentId: string;
-                                  designationId: string;
-                                  departmentName: string;
-                                  designationTitle: string;
-                                  roleCategory: string;
-                                  employmentType: string;
-                                  location: string;
-                                  experienceMin: number;
-                                  experienceMax: number;
-                                  skills: string[];
-                                  screeningQuestions: string[];
-                                  description: string;
-                                };
-                              }>("/recruitment/jobs/ai-generate", data)
-                              .then((r) => r.data.draft),
+                              .patch<{
+                                candidate: Candidate;
+                              }>(`/recruitment/candidates/${id}/rating`, { rating })
+                              .then((r) => r.data.candidate),
 
-                            rate: (id: string, rating: number) =>
+
+
+                            generateJobDescription: (data: {
+                              jobTitle: string;
+                              departmentId?: string;
+                              designationId?: string;
+                              roleCategory?: string;
+                              employmentType?: string;
+                              location?: string;
+                              experienceMin?: number;
+                              experienceMax?: number;
+                              skills?: string;
+                            }) =>
                               api
-                                .patch<{
-                                  candidate: Candidate;
-                                }>(
-                                  `/recruitment/candidates/${id}/rating`,
-                                  { rating },
-                                )
-                                .then((r) => r.data.candidate),
+                                .post<{
+                                  message: string;
+                                  draft: {
+                                    departmentId: string;
+                                    designationId: string;
+                                    departmentName: string;
+                                    designationTitle: string;
+                                    roleCategory: string;
+                                    employmentType: string;
+                                    location: string;
+                                    experienceMin: number;
+                                    experienceMax: number;
+                                    skills: string[];
+                                    screeningQuestions: string[];
+                                    description: string;
+                                  };
+                                }>("/recruitment/jobs/ai-generate", data)
+                                .then((r) => r.data.draft),
 
-                              screenCandidate: (
-                                id: string,
-                                resumeText?: string,
-                              ) =>
+                              interviewCopilot: (id: string) =>
                                 api
                                   .post<{
-                                    candidate: Candidate;
                                     message: string;
-                                  }>(
-                                    `/recruitment/candidates/${id}/screen`,
-                                    { resumeText },
-                                  )
-                                  .then(
-                                    (r) => r.data.candidate,
-                                  ),
+                                    copilot: {
+                                      focusAreas: string[];
+                                      technicalQuestions: {
+                                        question: string;
+                                        followUps: string[];
+                                      }[];
+                                      resumeQuestions: {
+                                        question: string;
+                                        followUps: string[];
+                                      }[];
+                                      skillGapQuestions: {
+                                        question: string;
+                                        followUps: string[];
+                                      }[];
+                                      behavioralQuestions: {
+                                        question: string;
+                                        followUps: string[];
+                                      }[];
+                                    };
+                                  }>(`/recruitment/candidates/${id}/interview-copilot`)
+                                  .then((r) => r.data.copilot),
 
                                 parseResume: (id: string) =>
                                   api
@@ -1975,7 +1969,6 @@ export const RecruitmentApi = {
                                       message: string;
                                     }>(`/recruitment/candidates/${id}/resume/parse`)
                                     .then((r) => r.data.candidate),
-
 
                                   autofillResume: (id: string) =>
                                     api
@@ -1990,202 +1983,257 @@ export const RecruitmentApi = {
                                       }>(`/recruitment/candidates/${id}/resume/autofill`)
                                       .then((r) => r.data.autofill),
 
-
                                     interviews: (candidateId?: string) =>
                                       api
                                         .get<{
                                           interviews: Interview[];
-                                        }>(
-                                          "/recruitment/interviews",
-                                          {
-                                            params: {
-                                              candidateId,
-                                            },
+                                        }>("/recruitment/interviews", {
+                                          params: {
+                                            candidateId,
                                           },
-                                        )
-                                        .then(
-                                          (r) => r.data.interviews,
-                                        ),
+                                        })
+                                        .then((r) => r.data.interviews),
 
-                                      scheduleInterview: (
-                                        payload: Record<string, unknown>,
-                                      ) =>
+                                      rate: (id: string, rating: number) =>
                                         api
-                                          .post<{
-                                            interview: Interview;
+                                          .patch<{
+                                            candidate: Candidate;
                                           }>(
-                                            "/recruitment/interviews",
-                                            payload,
+                                            `/recruitment/candidates/${id}/rating`,
+                                            { rating },
                                           )
-                                          .then(
-                                            (r) => r.data.interview,
-                                          ),
+                                          .then((r) => r.data.candidate),
 
-                                        submitFeedback: (
+                                        screenCandidate: (
                                           id: string,
-                                          feedback: string,
-                                          recommendation: string,
-                                          scorecard: Array<{
-                                            criterion: string;
-                                            score: number;
-                                            comment?: string;
-                                          }> = [],
+                                          resumeText?: string,
                                         ) =>
                                           api
                                             .post<{
-                                              interview: Interview;
-<<<<<<< HEAD
+                                              candidate: Candidate;
+                                              message: string;
                                             }>(
-                                              `/recruitment/interviews/${id}/feedback`,
-                                              {
-                                                feedback,
-                                                recommendation,
-                                                scorecard,
-                                              },
+                                              `/recruitment/candidates/${id}/screen`,
+                                              { resumeText },
                                             )
                                             .then(
-                                              (r) => r.data.interview,
+                                              (r) => r.data.candidate,
                                             ),
 
-=======
-      }>(`/recruitment/interviews/${id}/feedback`, {
-        feedback,
-        recommendation,
-        scorecard,
-      })
-      .then((r) => r.data.interview),
-  evaluateInterview: (id: string) =>
-    api
-      .post<{
-        message: string;
-        evaluation: {
-          overallAssessment: string;
-          technicalAssessment: string;
-          communicationAssessment: string;
-          strengths: string[];
-          weaknesses: string[];
-          concerns: string[];
-          recommendation:
-          | "PROCEED"
-          | "HOLD"
-          | "REJECT"
-          | "REVIEW_REQUIRED";
-          suggestedNextStep: string;
-        };
-      }>(`/recruitment/interviews/${id}/ai-evaluation`)
-      .then((r) => r.data.evaluation),
->>>>>>> dd68bc1 (Add AI recruitment features)
-                                          generateOffer: (
-                                            id: string,
-                                            payload: {
-                                              annualCtc: number;
-                                              joiningDate: string;
-                                              basic?: number;
-                                              hra?: number;
-                                              specialAllowance?: number;
-                                            },
-                                          ) =>
+                                          parseResume: (id: string) =>
                                             api
                                               .post<{
                                                 candidate: Candidate;
-                                              }>(
-                                                `/recruitment/candidates/${id}/offer`,
-                                                payload,
-                                              )
-                                              .then(
-                                                (r) => r.data.candidate,
-                                              ),
+                                                message: string;
+                                              }>(`/recruitment/candidates/${id}/resume/parse`)
+                                              .then((r) => r.data.candidate),
 
-                                            updateBackgroundVerification: (
-                                              id: string,
-                                              payload: {
-                                                status:
-                                                | "NOT_STARTED"
-                                                | "IN_PROGRESS"
-                                                | "VERIFIED"
-                                                | "FAILED";
-                                                provider?: string;
-                                                reference?: string;
-                                                notes?: string;
-                                              },
-                                            ) =>
+
+                                            autofillResume: (id: string) =>
                                               api
-                                                .patch<{
-                                                  candidate: Candidate;
-                                                }>(
-                                                  `/recruitment/candidates/${id}/background-verification`,
-                                                  payload,
-                                                )
-                                                .then(
-                                                  (r) => r.data.candidate,
-                                                ),
+                                                .post<{
+                                                  message: string;
+                                                  autofill: {
+                                                    firstName: string;
+                                                    lastName: string;
+                                                    email: string;
+                                                    phone: string;
+                                                  };
+                                                }>(`/recruitment/candidates/${id}/resume/autofill`)
+                                                .then((r) => r.data.autofill),
 
-                                              addPreboardingDocument: (
-                                                id: string,
-                                                payload: {
-                                                  type: string;
-                                                  url: string;
-                                                },
-                                              ) =>
+
+                                              interviews: (candidateId?: string) =>
                                                 api
-                                                  .post<{
-                                                    candidate: Candidate;
+                                                  .get<{
+                                                    interviews: Interview[];
                                                   }>(
-                                                    `/recruitment/candidates/${id}/preboarding/documents`,
-                                                    payload,
+                                                    "/recruitment/interviews",
+                                                    {
+                                                      params: {
+                                                        candidateId,
+                                                      },
+                                                    },
                                                   )
                                                   .then(
-                                                    (r) => r.data.candidate,
+                                                    (r) => r.data.interviews,
                                                   ),
 
-                                                verifyPreboardingDocument: (
-                                                  id: string,
-                                                  index: number,
+                                                scheduleInterview: (
+                                                  payload: Record<string, unknown>,
                                                 ) =>
                                                   api
-                                                    .patch<{
-                                                      candidate: Candidate;
+                                                    .post<{
+                                                      interview: Interview;
                                                     }>(
-                                                      `/recruitment/candidates/${id}/preboarding/documents/${index}/verify`,
+                                                      "/recruitment/interviews",
+                                                      payload,
                                                     )
                                                     .then(
-                                                      (r) => r.data.candidate,
+                                                      (r) => r.data.interview,
                                                     ),
 
-                                                  hireCandidate: (
+                                                  submitFeedback: (
                                                     id: string,
-                                                    role:
-                                                      | "EMPLOYEE"
-                                                      | "MANAGER"
-                                                      | "RECRUITER"
-                                                      | "FINANCE"
-                                                      | "IT_SUPPORT"
-                                                      | "HR_ADMIN" = "EMPLOYEE",
+                                                    feedback: string,
+                                                    recommendation: string,
+                                                    scorecard: Array<{
+                                                      criterion: string;
+                                                      score: number;
+                                                      comment?: string;
+                                                    }> = [],
                                                   ) =>
                                                     api
-                                                      .post<{
-                                                        candidate: Candidate;
-                                                      }>(
-                                                        `/recruitment/candidates/${id}/hire`,
-                                                        { role },
-                                                      )
-                                                      .then(
-                                                        (r) => r.data.candidate,
-                                                      ),
+                                                      .post < {
+                                                      interview: Interview;
+                                                      submitInterviewFeedback: (
+                                                        id: string,
+                                                        feedback: string,
+                                                        recommendation: Interview["recommendation"],
+                                                        scorecard: Interview["scorecard"],
+                                                      ) =>
+                                                        api
+                                                          .post<{ interview: Interview }>(
+                                                            `/recruitment/interviews/${id}/feedback`,
+                                                            {
+                                                              feedback,
+                                                              recommendation,
+                                                              scorecard,
+                                                            },
+                                                          )
+                                                          .then((r) => r.data.interview),
 
-                                                    pipelineSummary: () =>
-                                                      api
-                                                        .get<{
-                                                          data: {
-                                                            stage: string;
-                                                            count: number;
-                                                          }[];
-                                                        }>(
-                                                          "/recruitment/analytics/pipeline",
-                                                        )
-                                                        .then(
-                                                          (r) => r.data.data,
-                                                        ),
+                                                      evaluateInterview: (id: string) =>
+                                                        api
+                                                          .post<{
+                                                            message: string;
+                                                            evaluation: {
+                                                              overallAssessment: string;
+                                                              technicalAssessment: string;
+                                                              communicationAssessment: string;
+                                                              strengths: string[];
+                                                              weaknesses: string[];
+                                                              concerns: string[];
+                                                              recommendation:
+                                                              | "PROCEED"
+                                                              | "HOLD"
+                                                              | "REJECT"
+                                                              | "REVIEW_REQUIRED";
+                                                              suggestedNextStep: string;
+                                                            };
+                                                          }>(`/recruitment/interviews/${id}/ai-evaluation`)
+                                                          .then((r) => r.data.evaluation),
+                                                      generateOffer: (
+                                                        id: string,
+                                                        payload: {
+                                                          annualCtc: number;
+                                                          joiningDate: string;
+                                                          basic?: number;
+                                                          hra?: number;
+                                                          specialAllowance?: number;
+                                                        },
+                                                      ) =>
+                                                        api
+                                                          .post<{
+                                                            candidate: Candidate;
+                                                          }>(
+                                                            `/recruitment/candidates/${id}/offer`,
+                                                            payload,
+                                                          )
+                                                          .then(
+                                                            (r) => r.data.candidate,
+                                                          ),
+
+                                                      updateBackgroundVerification: (
+                                                        id: string,
+                                                        payload: {
+                                                          status:
+                                                          | "NOT_STARTED"
+                                                          | "IN_PROGRESS"
+                                                          | "VERIFIED"
+                                                          | "FAILED";
+                                                          provider?: string;
+                                                          reference?: string;
+                                                          notes?: string;
+                                                        },
+                                                      ) =>
+                                                        api
+                                                          .patch<{
+                                                            candidate: Candidate;
+                                                          }>(
+                                                            `/recruitment/candidates/${id}/background-verification`,
+                                                            payload,
+                                                          )
+                                                          .then(
+                                                            (r) => r.data.candidate,
+                                                          ),
+
+                                                      addPreboardingDocument: (
+                                                        id: string,
+                                                        payload: {
+                                                          type: string;
+                                                          url: string;
+                                                        },
+                                                      ) =>
+                                                        api
+                                                          .post<{
+                                                            candidate: Candidate;
+                                                          }>(
+                                                            `/recruitment/candidates/${id}/preboarding/documents`,
+                                                            payload,
+                                                          )
+                                                          .then(
+                                                            (r) => r.data.candidate,
+                                                          ),
+
+                                                      verifyPreboardingDocument: (
+                                                        id: string,
+                                                        index: number,
+                                                      ) =>
+                                                        api
+                                                          .patch<{
+                                                            candidate: Candidate;
+                                                          }>(
+                                                            `/recruitment/candidates/${id}/preboarding/documents/${index}/verify`,
+                                                          )
+                                                          .then(
+                                                            (r) => r.data.candidate,
+                                                          ),
+
+                                                      hireCandidate: (
+                                                        id: string,
+                                                        role:
+                                                          | "EMPLOYEE"
+                                                          | "MANAGER"
+                                                          | "RECRUITER"
+                                                          | "FINANCE"
+                                                          | "IT_SUPPORT"
+                                                          | "HR_ADMIN" = "EMPLOYEE",
+                                                      ) =>
+                                                        api
+                                                          .post<{
+                                                            candidate: Candidate;
+                                                          }>(
+                                                            `/recruitment/candidates/${id}/hire`,
+                                                            { role },
+                                                          )
+                                                          .then(
+                                                            (r) => r.data.candidate,
+                                                          ),
+
+                                                      pipelineSummary: () =>
+                                                        api
+                                                          .get<{
+                                                            data: {
+                                                              stage: string;
+                                                              count: number;
+                                                            }[];
+                                                          }>(
+                                                            "/recruitment/analytics/pipeline",
+                                                          )
+                                                          .then(
+                                                            (r) => r.data.data,
+                                                          ),
 
                                                       openRoles: () =>
                                                         api
@@ -2198,64 +2246,64 @@ export const RecruitmentApi = {
                                                             (r) => r.data.count,
                                                           ),
 
-                                                        updateInterviewRecording: (
-                                                          id: string,
-                                                          recordingUrl: string | null,
-                                                        ) =>
-                                                          api
-                                                            .patch<{
-                                                              interview: Interview;
-                                                            }>(
-                                                              `/recruitment/interviews/${id}/recording`,
-                                                              { recordingUrl },
-                                                            )
-                                                            .then(
-                                                              (r) => r.data.interview,
-                                                            ),
+                                                      updateInterviewRecording: (
+                                                        id: string,
+                                                        recordingUrl: string | null,
+                                                      ) =>
+                                                        api
+                                                          .patch<{
+                                                            interview: Interview;
+                                                          }>(
+                                                            `/recruitment/interviews/${id}/recording`,
+                                                            { recordingUrl },
+                                                          )
+                                                          .then(
+                                                            (r) => r.data.interview,
+                                                          ),
 
-                                                          updateReferralBonus: (
-                                                            id: string,
-                                                            status:
-                                                              | "PENDING"
-                                                              | "APPROVED"
-                                                              | "PAID"
-                                                              | "REJECTED",
-                                                          ) =>
-                                                            api
-                                                              .patch<{
-                                                                candidate: Candidate;
-                                                              }>(
-                                                                `/recruitment/candidates/${id}/referral-bonus`,
-                                                                { status },
-                                                              )
-                                                              .then(
-                                                                (r) => r.data.candidate,
-                                                              ),
+                                                      updateReferralBonus: (
+                                                        id: string,
+                                                        status:
+                                                          | "PENDING"
+                                                          | "APPROVED"
+                                                          | "PAID"
+                                                          | "REJECTED",
+                                                      ) =>
+                                                        api
+                                                          .patch<{
+                                                            candidate: Candidate;
+                                                          }>(
+                                                            `/recruitment/candidates/${id}/referral-bonus`,
+                                                            { status },
+                                                          )
+                                                          .then(
+                                                            (r) => r.data.candidate,
+                                                          ),
 
-                                                            metrics: () =>
-                                                              api
-                                                                .get<{
-                                                                  data: {
-                                                                    applications: number;
-                                                                    screening: number;
-                                                                    interviews: number;
-                                                                    offers: number;
-                                                                    accepted: number;
-                                                                    hired: number;
-                                                                    openRoles: number;
-                                                                    rejected?: number;
-                                                                    pendingOffer?: number;
-                                                                    offerAcceptanceRate?: number;
-                                                                    hireConversionRate?: number;
-                                                                    averageTimeToHireDays?: number;
-                                                                  };
-                                                                }>(
-                                                                  "/recruitment/analytics/metrics",
-                                                                )
-                                                                .then(
-                                                                  (r) => r.data.data,
-                                                                ),
-};
+                                                      metrics: () =>
+                                                        api
+                                                          .get<{
+                                                            data: {
+                                                              applications: number;
+                                                              screening: number;
+                                                              interviews: number;
+                                                              offers: number;
+                                                              accepted: number;
+                                                              hired: number;
+                                                              openRoles: number;
+                                                              rejected?: number;
+                                                              pendingOffer?: number;
+                                                              offerAcceptanceRate?: number;
+                                                              hireConversionRate?: number;
+                                                              averageTimeToHireDays?: number;
+                                                            };
+                                                          }>(
+                                                            "/recruitment/analytics/metrics",
+                                                          )
+                                                          .then(
+                                                            (r) => r.data.data,
+                                                          ),
+                                                    };
 
 // --- Performance Improvement Plans (PIP) -------------------------------------
 export type PipStatus =
