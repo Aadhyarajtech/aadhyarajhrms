@@ -194,30 +194,101 @@ function extractSkills(text: string) {
 }
 
 function extractExperience(text: string): number | null {
-  const patterns = [
+  // 1. Check for an explicit total experience statement first.
+  const explicitPatterns = [
     /(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:professional\s+)?experience/gi,
     /experience\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)/gi,
-    /(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\s*(?:in|of)\s+[a-z0-9+#./ -]+/gi,
   ];
 
-  const values: number[] = [];
+  const explicitValues: number[] = [];
 
-  for (const pattern of patterns) {
+  for (const pattern of explicitPatterns) {
     for (const match of text.matchAll(pattern)) {
       const value = Number(match[1]);
+
       if (Number.isFinite(value) && value >= 0 && value <= 60) {
-        values.push(value);
+        explicitValues.push(value);
       }
     }
   }
 
-  if (!values.length) {
+  if (explicitValues.length > 0) {
+    return Math.max(...explicitValues);
+  }
+
+  // 2. Find the Experience section.
+  const sectionMatch = text.match(
+    /(?:professional\s+experience|work\s+experience|employment\s+history|experience)\s*([\s\S]*?)(?=\n\s*(?:education|projects|technical\s+skills|skills|certifications|achievements)\b|$)/i,
+  );
+
+  const experienceSection = sectionMatch?.[1] ?? "";
+
+  if (!experienceSection) {
     return null;
   }
 
-  // A resume can mention several durations. The largest plausible value is
-  // the safest approximation of total professional experience.
-  return Math.max(...values);
+  const currentYear = new Date().getFullYear();
+
+  // 3. Find simple year/date ranges:
+  //    2021 - 2023
+  //    2021 – 2023
+  //    2021 to 2023
+  //    2022 - Present
+  //    January 2024 – Present
+  const dateRangePattern =
+    /(\d{4})\s*(?:-|–|—|to)\s*(\d{4}|present|current)/gi;
+
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  for (const match of experienceSection.matchAll(dateRangePattern)) {
+    const startYear = Number(match[1]);
+
+    const endText = match[2].toLowerCase();
+
+    const endYear =
+      endText === "present" || endText === "current"
+        ? currentYear
+        : Number(endText);
+
+    if (
+      startYear >= 1950 &&
+      startYear <= currentYear &&
+      endYear >= startYear &&
+      endYear <= currentYear + 1
+    ) {
+      ranges.push({
+        start: startYear,
+        end: endYear,
+      });
+    }
+  }
+
+  if (!ranges.length) {
+    return null;
+  }
+
+  // 4. Merge overlapping periods so simultaneous jobs
+  //    are not counted twice.
+  ranges.sort((a, b) => a.start - b.start);
+
+  const merged: Array<{ start: number; end: number }> = [];
+
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+
+    if (!last || range.start > last.end) {
+      merged.push({ ...range });
+    } else {
+      last.end = Math.max(last.end, range.end);
+    }
+  }
+
+  const totalYears = merged.reduce(
+    (total, range) => total + (range.end - range.start),
+    0,
+  );
+
+  return totalYears > 0 ? totalYears : null;
 }
 
 function extractEducation(text: string): string[] {
