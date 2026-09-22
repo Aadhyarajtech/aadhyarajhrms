@@ -139,7 +139,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/employees",
     label: "Employees",
     icon: Users,
-    permission: "employees.view",
+    roles: ["SUPER_ADMIN", "HR_ADMIN"],
     section: "people",
   },
 
@@ -147,7 +147,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/org-chart",
     label: "Org Chart",
     icon: Network,
-    permission: "employees.view",
+    roles: ["SUPER_ADMIN", "HR_ADMIN"],
     section: "people",
   },
 
@@ -164,57 +164,6 @@ const NAV_ITEMS: NavItem[] = [
     section: "management",
   },
 
-  /* -------------------------------------------------------
-     SETTINGS
-  ------------------------------------------------------- */
-
-  {
-    to: "/app/settings",
-    label: "Settings",
-    icon: Settings,
-  },
-
-  /* -------------------------------------------------------
-     EMPLOYEES
-  ------------------------------------------------------- */
-
-  {
-    to: "/app/employees",
-    label: "Employees",
-    icon: Users,
-    permission: "employees.view",
-  },
-
-  /* -------------------------------------------------------
-     ORG CHART
-  ------------------------------------------------------- */
-
-  {
-    to: "/app/org-chart",
-    label: "Org Chart",
-    icon: Network,
-    roles: ["SUPER_ADMIN", "HR_ADMIN"],
-  },
-
-  /* -------------------------------------------------------
-     RECRUITMENT
-  ------------------------------------------------------- */
-
-  {
-    to: "/app/recruitment",
-    label: "Recruitment",
-    icon: Briefcase,
-    permission: "recruitment.view",
-    section: "management",
-  },
-
-  {
-    to: "/app/announcements",
-    label: "Announcements",
-    icon: Megaphone,
-    permission: "announcements.view",
-    section: "management",
-  },
   {
     to: "/app/recruitment",
     label: "Recruitment",
