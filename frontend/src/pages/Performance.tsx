@@ -200,7 +200,7 @@ export default function Performance() {
           </div>
         </div>
       </div>
-      <Tabs tabs={tabs} active={tab} onChange={setTab} className="-mt-16 mb-6 w-fit" />
+      <Tabs tabs={tabs} active={tab} onChange={setTab} className="mb-6 w-fit max-w-full" />
       {tab === "mine" && <MyPerformance activeCycleId={activeCycle?.id} />}
       {tab === "feedback" && <FeedbackRequests />}
       {tab === "team" && isManager && (
@@ -568,167 +568,167 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
                 </div>
               )}
 
-          {review?.status === "COMPLETED" ? (
-            <div className="rounded-2xl bg-brand-50 p-4">
-              <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
-                <Sparkles size={14} /> AI Performance Insights
-              </p>
-
-              {aiInsightsLoading ? (
-                <p className="mt-2 text-[13px] text-ink-faint">
-                  Generating performance insights...
-                </p>
-              ) : aiInsights ? (
-                <div className="mt-3 space-y-3">
-                  <p className="text-[13px] text-ink">
-                    {aiInsights.summary}
+              {review?.status === "COMPLETED" ? (
+                <div className="rounded-2xl bg-brand-50 p-4">
+                  <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
+                    <Sparkles size={14} /> AI Performance Insights
                   </p>
 
-                  {aiInsights.strengths.length ? (
-                    <div>
-                      <p className="text-[12px] font-medium text-ink-faint">
-                        Strengths
-                      </p>
-                      <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] text-ink-soft">
-                        {aiInsights.strengths.map((item, index) => (
-                          <li key={index}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {aiInsights.developmentAreas.length ? (
-                    <div>
-                      <p className="text-[12px] font-medium text-ink-faint">
-                        Development areas
-                      </p>
-                      <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] text-ink-soft">
-                        {aiInsights.developmentAreas.map((item, index) => (
-                          <li key={index}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {/* AI Development Plan */}
-                  <div className="mt-5 border-t border-brand-100 pt-4">
-                    <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
-                      <Sparkles size={14} /> AI Development Plan
+                  {aiInsightsLoading ? (
+                    <p className="mt-2 text-[13px] text-ink-faint">
+                      Generating performance insights...
                     </p>
-
-                    {aiDevelopmentPlanLoading ? (
-                      <p className="mt-2 text-[13px] text-ink-faint">
-                        Generating development plan...
+                  ) : aiInsights ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-[13px] text-ink">
+                        {aiInsights.summary}
                       </p>
-                    ) : aiDevelopmentPlan ? (
-                      <div className="mt-3 space-y-4">
+
+                      {aiInsights.strengths.length ? (
                         <div>
                           <p className="text-[12px] font-medium text-ink-faint">
-                            Overall Focus
+                            Strengths
                           </p>
-                          <p className="mt-1 text-[13px] text-ink">
-                            {aiDevelopmentPlan.overallFocus}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-[12px] font-medium text-ink-faint">
-                            0–30 Days
-                          </p>
-
-                          <div className="mt-2 space-y-2">
-                            {aiDevelopmentPlan.days30.map((item, index) => (
-                              <div
-                                key={index}
-                                className="rounded-xl border border-brand-100 bg-white p-3"
-                              >
-                                <p className="text-[13px] font-medium text-ink">
-                                  {item.action}
-                                </p>
-                                <p className="mt-1 text-[12px] text-ink-faint">
-                                  Success measure: {item.successMeasure}
-                                </p>
-                              </div>
+                          <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] text-ink-soft">
+                            {aiInsights.strengths.map((item, index) => (
+                              <li key={index}>{item}</li>
                             ))}
-                          </div>
+                          </ul>
                         </div>
+                      ) : null}
 
+                      {aiInsights.developmentAreas.length ? (
                         <div>
                           <p className="text-[12px] font-medium text-ink-faint">
-                            31–60 Days
+                            Development areas
                           </p>
-
-                          <div className="mt-2 space-y-2">
-                            {aiDevelopmentPlan.days60.map((item, index) => (
-                              <div
-                                key={index}
-                                className="rounded-xl border border-brand-100 bg-white p-3"
-                              >
-                                <p className="text-[13px] font-medium text-ink">
-                                  {item.action}
-                                </p>
-                                <p className="mt-1 text-[12px] text-ink-faint">
-                                  Success measure: {item.successMeasure}
-                                </p>
-                              </div>
+                          <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] text-ink-soft">
+                            {aiInsights.developmentAreas.map((item, index) => (
+                              <li key={index}>{item}</li>
                             ))}
-                          </div>
+                          </ul>
                         </div>
+                      ) : null}
+                      {/* AI Development Plan */}
+                      <div className="mt-5 border-t border-brand-100 pt-4">
+                        <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
+                          <Sparkles size={14} /> AI Development Plan
+                        </p>
 
-                        <div>
-                          <p className="text-[12px] font-medium text-ink-faint">
-                            61–90 Days
+                        {aiDevelopmentPlanLoading ? (
+                          <p className="mt-2 text-[13px] text-ink-faint">
+                            Generating development plan...
                           </p>
+                        ) : aiDevelopmentPlan ? (
+                          <div className="mt-3 space-y-4">
+                            <div>
+                              <p className="text-[12px] font-medium text-ink-faint">
+                                Overall Focus
+                              </p>
+                              <p className="mt-1 text-[13px] text-ink">
+                                {aiDevelopmentPlan.overallFocus}
+                              </p>
+                            </div>
 
-                          <div className="mt-2 space-y-2">
-                            {aiDevelopmentPlan.days90.map((item, index) => (
-                              <div
-                                key={index}
-                                className="rounded-xl border border-brand-100 bg-white p-3"
-                              >
-                                <p className="text-[13px] font-medium text-ink">
-                                  {item.action}
-                                </p>
-                                <p className="mt-1 text-[12px] text-ink-faint">
-                                  Success measure: {item.successMeasure}
-                                </p>
+                            <div>
+                              <p className="text-[12px] font-medium text-ink-faint">
+                                0–30 Days
+                              </p>
+
+                              <div className="mt-2 space-y-2">
+                                {aiDevelopmentPlan.days30.map((item, index) => (
+                                  <div
+                                    key={index}
+                                    className="rounded-xl border border-brand-100 bg-white p-3"
+                                  >
+                                    <p className="text-[13px] font-medium text-ink">
+                                      {item.action}
+                                    </p>
+                                    <p className="mt-1 text-[12px] text-ink-faint">
+                                      Success measure: {item.successMeasure}
+                                    </p>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            </div>
+
+                            <div>
+                              <p className="text-[12px] font-medium text-ink-faint">
+                                31–60 Days
+                              </p>
+
+                              <div className="mt-2 space-y-2">
+                                {aiDevelopmentPlan.days60.map((item, index) => (
+                                  <div
+                                    key={index}
+                                    className="rounded-xl border border-brand-100 bg-white p-3"
+                                  >
+                                    <p className="text-[13px] font-medium text-ink">
+                                      {item.action}
+                                    </p>
+                                    <p className="mt-1 text-[12px] text-ink-faint">
+                                      Success measure: {item.successMeasure}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div>
+                              <p className="text-[12px] font-medium text-ink-faint">
+                                61–90 Days
+                              </p>
+
+                              <div className="mt-2 space-y-2">
+                                {aiDevelopmentPlan.days90.map((item, index) => (
+                                  <div
+                                    key={index}
+                                    className="rounded-xl border border-brand-100 bg-white p-3"
+                                  >
+                                    <p className="text-[13px] font-medium text-ink">
+                                      {item.action}
+                                    </p>
+                                    <p className="mt-1 text-[12px] text-ink-faint">
+                                      Success measure: {item.successMeasure}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <p className="mt-2 text-[13px] text-ink-faint">
+                            Development plan is not available yet.
+                          </p>
+                        )}
                       </div>
-                    ) : (
-                      <p className="mt-2 text-[13px] text-ink-faint">
-                        Development plan is not available yet.
-                      </p>
-                    )}
-                  </div>
 
-                  <div>
-                    <p className="text-[12px] font-medium text-ink-faint">
-                      Goal insight
-                    </p>
-                    <p className="mt-1 text-[13px] text-ink-soft">
-                      {aiInsights.goalInsight}
-                    </p>
-                  </div>
+                      <div>
+                        <p className="text-[12px] font-medium text-ink-faint">
+                          Goal insight
+                        </p>
+                        <p className="mt-1 text-[13px] text-ink-soft">
+                          {aiInsights.goalInsight}
+                        </p>
+                      </div>
 
-                  <div>
-                    <p className="text-[12px] font-medium text-ink-faint">
-                      Suggested focus
+                      <div>
+                        <p className="text-[12px] font-medium text-ink-faint">
+                          Suggested focus
+                        </p>
+                        <p className="mt-1 text-[13px] text-ink-soft">
+                          {aiInsights.suggestedFocus}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[13px] text-ink-faint">
+                      AI performance insights are not available yet.
                     </p>
-                    <p className="mt-1 text-[13px] text-ink-soft">
-                      {aiInsights.suggestedFocus}
-                    </p>
-                  </div>
+                  )}
                 </div>
-              ) : (
-                <p className="mt-2 text-[13px] text-ink-faint">
-                  AI performance insights are not available yet.
-                </p>
-              )}
+              ) : null}
             </div>
-          ) : null}
-        </div>
           );
         })()}
       </Card>
