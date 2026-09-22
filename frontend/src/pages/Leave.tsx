@@ -1154,18 +1154,28 @@ function LeaveCalendar() {
   }, [month, year]);
 
   function entriesForDay(date: Date) {
-    if (!entries) return [];
+  if (!Array.isArray(entries)) return [];
 
-    const iso = date
-      .toISOString()
-      .slice(0, 10);
+  const iso = date.toISOString().slice(0, 10);
 
-    return entries.filter(
-      (e: any) =>
-        e.startDate.slice(0, 10) <= iso &&
-        e.endDate.slice(0, 10) >= iso,
-    );
-  }
+  return entries.filter((e: any) => {
+    // Only leave entries have startDate/endDate.
+    // Holiday entries use `date` instead and must not be
+    // processed by the leave-range calculation.
+    if (String(e?.type ?? "").toUpperCase() !== "LEAVE") {
+      return false;
+    }
+
+    const startDate = String(e?.startDate ?? "").slice(0, 10);
+    const endDate = String(e?.endDate ?? "").slice(0, 10);
+
+    if (!startDate || !endDate) {
+      return false;
+    }
+
+    return startDate <= iso && endDate >= iso;
+  });
+}
 
   return (
     <Card>

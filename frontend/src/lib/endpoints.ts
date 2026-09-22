@@ -28,6 +28,11 @@ import type {
   AnnouncementStatusEntry,
   Holiday,
   Asset,
+  ExecutiveBriefingResult,
+  AskHrResult,
+  AiCustomReportResult,
+  AiCustomReportPayload,
+  RetentionRadarResult,
 } from "@/types";
 
 // --- Auth --------------------------------------------------------------------
@@ -1816,10 +1821,64 @@ export const RecruitmentApi = {
         (r) => r.data.candidate,
       ),
 
-  rate: (
-    id: string,
-    rating: number,
-  ) =>
+  interviewCopilot: (id: string) =>
+    api
+      .post<{
+        message: string;
+        copilot: {
+          focusAreas: string[];
+          technicalQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+          resumeQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+          skillGapQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+          behavioralQuestions: {
+            question: string;
+            followUps: string[];
+          }[];
+        };
+      }>(`/recruitment/candidates/${id}/interview-copilot`)
+      .then((r) => r.data.copilot),
+
+  generateJobDescription: (data: {
+    jobTitle: string;
+    departmentId?: string;
+    designationId?: string;
+    roleCategory?: string;
+    employmentType?: string;
+    location?: string;
+    experienceMin?: number;
+    experienceMax?: number;
+    skills?: string;
+  }) =>
+    api
+      .post<{
+        message: string;
+        draft: {
+          departmentId: string;
+          designationId: string;
+          departmentName: string;
+          designationTitle: string;
+          roleCategory: string;
+          employmentType: string;
+          location: string;
+          experienceMin: number;
+          experienceMax: number;
+          skills: string[];
+          screeningQuestions: string[];
+          description: string;
+        };
+      }>("/recruitment/jobs/ai-generate", data)
+      .then((r) => r.data.draft),
+
+  rate: (id: string, rating: number) =>
     api
       .patch<{
         candidate: Candidate;
@@ -1827,9 +1886,7 @@ export const RecruitmentApi = {
         `/recruitment/candidates/${id}/rating`,
         { rating },
       )
-      .then(
-        (r) => r.data.candidate,
-      ),
+      .then((r) => r.data.candidate),
 
   screenCandidate: (
     id: string,
@@ -1852,16 +1909,23 @@ export const RecruitmentApi = {
       .post<{
         candidate: Candidate;
         message: string;
-      }>(
-        `/recruitment/candidates/${id}/resume/parse`,
-      )
-      .then(
-        (r) => r.data.candidate,
-      ),
+      }>(`/recruitment/candidates/${id}/resume/parse`)
+      .then((r) => r.data.candidate),
 
-  interviews: (
-    candidateId?: string,
-  ) =>
+  autofillResume: (id: string) =>
+    api
+      .post<{
+        message: string;
+        autofill: {
+          firstName: string;
+          lastName: string;
+          email: string;
+          phone: string;
+        };
+      }>(`/recruitment/candidates/${id}/resume/autofill`)
+      .then((r) => r.data.autofill),
+
+  interviews: (candidateId?: string) =>
     api
       .get<{
         interviews: Interview[];
@@ -3713,7 +3777,42 @@ export const ReportsApi = {
         (r) => r.data,
       ),
 
-    export: async (
+  executiveBriefing: (filters: ReportsFilters = {}) =>
+    api
+      .get<ExecutiveBriefingResult>("/reports/ai-briefing", {
+        params: filters,
+      })
+      .then((r) => r.data),
+
+  askHr: (
+    question: string,
+    filters: ReportsFilters = {},
+    history?: { role: "user" | "assistant"; content: string }[],
+  ) =>
+    api
+      .post<AskHrResult>("/reports/ask-ai", { question, filters, history })
+      .then((r) => r.data),
+
+  buildCustomReport: (payload: AiCustomReportPayload = {}) =>
+    api
+      .post<AiCustomReportResult>("/reports/custom-builder", payload)
+      .then((r) => r.data),
+
+  retentionRadar: (
+    filters: {
+      departmentId?: string;
+      minRiskLevel?: string;
+      from?: string;
+      to?: string;
+    } = {},
+  ) =>
+    api
+      .get<RetentionRadarResult>("/reports/retention-radar", {
+        params: filters,
+      })
+      .then((r) => r.data),
+
+  export: async (
     format: "xlsx" | "pdf",
     filters: ReportsFilters = {},
     section: ReportExportSection =

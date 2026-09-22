@@ -14,7 +14,6 @@ import {
   TrendingUp,
   ShieldCheck,
   Sparkles,
-  CalendarCheck2,
 } from "lucide-react";
 import { PerformanceApi, EmployeesApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
@@ -68,34 +67,7 @@ export default function Performance() {
   ];
 
   return (
-    <div className="premium-page">
-      <div className="mb-5 overflow-hidden rounded-[26px] border border-slate-200/60 bg-gradient-to-r from-[#3125B8] via-[#5B4FE5] to-[#8068F4] p-5 text-white shadow-[0_18px_42px_rgba(91,79,229,0.18)] sm:p-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-white/90 backdrop-blur-sm">
-              <Sparkles size={12} /> Performance intelligence
-            </div>
-            <h2 className="font-display text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">
-              Grow performance with clarity.
-            </h2>
-            <p className="mt-1.5 max-w-2xl text-[12px] leading-relaxed text-white/75 sm:text-[13px]">
-              Track goals, reviews, feedback and development actions from one focused workspace.
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-3 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-sm">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
-              <CalendarCheck2 size={19} />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/60">Review cycle</p>
-              <p className="mt-0.5 max-w-[210px] truncate text-sm font-semibold">
-                {activeCycle?.name ?? "No active cycle"}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
+    <div>
       <PageHeader
         title="Performance"
         subtitle={
@@ -402,7 +374,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
               )}
             </div>
             {review.selfRating && (
-              <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-slate-50 to-white p-4 shadow-[0_5px_16px_rgba(15,23,42,0.035)]">
+              <div className="rounded-2xl bg-ink/[0.03] p-4">
                 <p className="text-[12px] font-medium text-ink-faint">
                   Your self-assessment
                 </p>
@@ -415,7 +387,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
               </div>
             )}
             {review.managerComments && (
-              <div className="rounded-2xl border border-brand-100/80 bg-gradient-to-br from-brand-50 via-white to-[#FAF8FF] p-4 shadow-[0_5px_16px_rgba(91,79,229,0.05)]">
+              <div className="rounded-2xl bg-brand-50 p-4">
                 <p className="text-[12px] font-medium text-brand-700">
                   Manager feedback
                 </p>
@@ -523,10 +495,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
                             style={{
                               width: `${Math.min(
                                 100,
-                                Math.max(
-                                  0,
-                                  Number(item.achievementPercentage) || 0,
-                                ),
+                                Math.max(0, Number(item.achievementPercentage) || 0),
                               )}%`,
                             }}
                           />
@@ -559,29 +528,17 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <OutcomePill
                           label="Promotion"
-                          value={
-                            outcome.promotionEligible
-                              ? "Eligible"
-                              : "Not eligible"
-                          }
+                          value={outcome.promotionEligible ? "Eligible" : "Not eligible"}
                           active={outcome.promotionEligible}
                         />
                         <OutcomePill
                           label="Fast-track"
-                          value={
-                            outcome.fastTrackEligible
-                              ? "Eligible"
-                              : "Not eligible"
-                          }
+                          value={outcome.fastTrackEligible ? "Eligible" : "Not eligible"}
                           active={outcome.fastTrackEligible}
                         />
                         <OutcomePill
                           label="PIP"
-                          value={
-                            outcome.pipRecommended
-                              ? "Recommended"
-                              : "Not recommended"
-                          }
+                          value={outcome.pipRecommended ? "Recommended" : "Not recommended"}
                           active={outcome.pipRecommended}
                         />
                       </div>
@@ -1235,7 +1192,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
 
 
               return (
-                <div key={g.id} className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-[0_5px_16px_rgba(15,23,42,0.035)]">
+                <div key={g.id} className="rounded-2xl border border-line/60 p-4">
                   <div className="flex items-start justify-between gap-3 text-[13px]">
                     <div className="min-w-0">
                       <p className="font-medium text-ink">{g.title}</p>
@@ -1668,7 +1625,7 @@ function PipManagement() {
                 key={pip.id}
                 type="button"
                 onClick={() => setSelectedPip(pip)}
-                className="w-full rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-left shadow-[0_4px_14px_rgba(15,23,42,0.03)] transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:bg-[#FAF9FF] hover:shadow-[0_10px_22px_rgba(15,23,42,0.06)]"
+                className="w-full rounded-2xl border border-line/60 px-4 py-3 text-left transition hover:bg-ink/[0.02]"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -1720,7 +1677,7 @@ function PipManagement() {
                 <p className="text-[12px] font-medium text-ink-faint">Objectives</p>
                 <div className="mt-2 space-y-3">
                   {(detailQuery.data.objectives ?? []).map((objective: any, index: number) => (
-                    <div key={`${objective.title}-${index}`} className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-slate-50 to-white p-4 shadow-[0_5px_16px_rgba(15,23,42,0.035)]">
+                    <div key={`${objective.title}-${index}`} className="rounded-2xl bg-ink/[0.03] p-4">
                       <p className="text-[13px] font-medium text-ink">{objective.title}</p>
                       {objective.description && <p className="mt-1 text-[12px] text-ink-soft">{objective.description}</p>}
                       {objective.target && <p className="mt-1 text-[12px] text-ink-faint">Target: {objective.target}</p>}
@@ -2033,7 +1990,7 @@ function TeamReviews({
           return (
             <div
               key={emp.id}
-              className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.03)] transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-[0_10px_22px_rgba(15,23,42,0.06)]"
+              className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
             >
               <div className="flex items-center gap-3">
                 <Avatar
@@ -2315,7 +2272,7 @@ function PerformanceOutcomeModal({
         <Skeleton className="h-64 rounded-2xl" />
       ) : (
         <div className="space-y-5">
-          <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-slate-50 to-white p-4 shadow-[0_5px_16px_rgba(15,23,42,0.035)]">
+          <div className="rounded-2xl bg-ink/[0.03] p-4">
             <p className="text-[12px] font-medium text-ink-faint">
               Performance outcome actions
             </p>
@@ -2379,7 +2336,7 @@ function PerformanceOutcomeModal({
           </div>
 
           {outcome && (
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-[0_5px_16px_rgba(15,23,42,0.035)]">
+            <div className="rounded-2xl border border-line/60 p-4">
               <p className="text-[12px] font-medium text-ink-faint">
                 Current outcome
               </p>
@@ -3208,7 +3165,7 @@ function ManagerReviewModal({
       }
     >
       <div className="space-y-5">
-        <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-slate-50 to-white p-4 shadow-[0_5px_16px_rgba(15,23,42,0.035)]">
+        <div className="rounded-2xl bg-ink/[0.03] p-4">
           <p className="text-[12px] font-medium text-ink-faint">
             Manager evaluation
           </p>

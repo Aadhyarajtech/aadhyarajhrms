@@ -97,3 +97,4 @@ export const profileImageUpload = multer({
   },
 });
 export const UPLOAD_DIR_ABSOLUTE = UPLOAD_DIR;
+export { UPLOAD_DIR };
