@@ -330,40 +330,47 @@ function PayrollRuns() {
   });
   const today = new Date();
   const previousMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
-  const [lockDate, setLockDate] = useState(
-    `${previousMonthEnd.getFullYear()}-${String(previousMonthEnd.getMonth() + 1).padStart(2, "0")}-${String(previousMonthEnd.getDate()).padStart(2, "0")}`,
+  const previousMonthStart = new Date(
+    previousMonthEnd.getFullYear(),
+    previousMonthEnd.getMonth(),
+    1,
   );
+  const toInputDate = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
-  const { register, handleSubmit, watch, setValue } = useForm({
+  const { register, handleSubmit, watch } = useForm({
     defaultValues: {
-      month: previousMonthEnd.getMonth() + 1,
-      year: previousMonthEnd.getFullYear(),
+      startDate: toInputDate(previousMonthStart),
+      endDate: toInputDate(previousMonthEnd),
     },
   });
 
-  const selectedMonth = watch("month");
-  const selectedYear = watch("year");
+  const selectedStartDate = watch("startDate");
+  const selectedEndDate = watch("endDate");
   const selectedRun = runs?.find(
-    (run) => run.month === Number(selectedMonth) && run.year === Number(selectedYear),
+    (run) => run.startDate === selectedStartDate && run.endDate === selectedEndDate,
   );
   const canProcessSelectedPeriod = selectedRun?.status === "ATTENDANCE_LOCKED";
 
-  const handleLockDateChange = (value: string) => {
-    if (!value) return;
-    const [selectedYear, selectedMonth] = value.split("-").map(Number);
-    if (!selectedYear || !selectedMonth) return;
-
-    const monthEnd = new Date(selectedYear, selectedMonth, 0);
-    const normalizedDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(monthEnd.getDate()).padStart(2, "0")}`;
-
-    setLockDate(normalizedDate);
-    setValue("month", selectedMonth);
-    setValue("year", selectedYear);
+  const validateDateRange = () => {
+    if (!selectedStartDate || !selectedEndDate) {
+      showToast("Select both payroll start and end dates.", "error");
+      return false;
+    }
+    if (selectedStartDate > selectedEndDate) {
+      showToast("Payroll start date must be on or before the end date.", "error");
+      return false;
+    }
+    if (selectedEndDate >= toInputDate(new Date())) {
+      showToast("Payroll end date must be before today.", "error");
+      return false;
+    }
+    return true;
   };
 
   const lockMutation = useMutation({
-    mutationFn: (v: { month: number; year: number }) =>
-      PayrollApi.lockAttendance(Number(v.month), Number(v.year)),
+    mutationFn: (v: { startDate: string; endDate: string }) =>
+      PayrollApi.lockAttendance(v.startDate, v.endDate),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payroll", "runs"] });
       showToast("Attendance locked for the payroll period.");
@@ -372,8 +379,8 @@ function PayrollRuns() {
   });
 
   const processMutation = useMutation({
-    mutationFn: (v: { month: number; year: number }) =>
-      PayrollApi.process(Number(v.month), Number(v.year)),
+    mutationFn: (v: { startDate: string; endDate: string }) =>
+      PayrollApi.process(v.startDate, v.endDate),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payroll", "runs"] });
       showToast("Payroll processed successfully.");
@@ -425,23 +432,28 @@ function PayrollRuns() {
           subtitle="Generates payslips for every active employee with a salary structure."
         />
         <form className="flex flex-wrap items-end gap-3">
-          <input type="hidden" {...register("month")} />
-          <input type="hidden" {...register("year")} />
           <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-muted">
-            <span>
-              Lock attendance on <span className="text-red-500">*</span>
-            </span>
+            <span>Payroll start date <span className="text-red-500">*</span></span>
             <input
               type="date"
               required
-              value={lockDate}
-              onChange={(event) => handleLockDateChange(event.target.value)}
+              {...register("startDate", { required: true })}
+              max={selectedEndDate || toInputDate(new Date(Date.now() - 86400000))}
               className="h-12 w-[200px] rounded-2xl border border-line bg-white px-4 text-[15px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
             />
-            <span className="text-[12px] font-normal text-ink-faint">
-              The selected date is always the last day of the payroll month.
-            </span>
           </label>
+          <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-muted">
+            <span>Payroll end date <span className="text-red-500">*</span></span>
+            <input
+              type="date"
+              required
+              {...register("endDate", { required: true })}
+              min={selectedStartDate}
+              max={toInputDate(new Date(Date.now() - 86400000))}
+              className="h-12 w-[200px] rounded-2xl border border-line bg-white px-4 text-[15px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            />
+          </label>
+          <span className="pb-3 text-[12px] text-ink-faint">Select any completed period.</span>
           <Button
             type="button"
             variant="outline"
@@ -454,14 +466,18 @@ function PayrollRuns() {
           <Button
             variant="outline"
             leftIcon={<Clock size={15} />}
-            onClick={handleSubmit((v) => lockMutation.mutate(v))}
+            onClick={handleSubmit((v) => {
+              if (validateDateRange()) lockMutation.mutate(v);
+            })}
             isLoading={lockMutation.isPending}
           >
             Lock attendance
           </Button>
           <Button
             leftIcon={<Play size={15} />}
-            onClick={handleSubmit((v) => processMutation.mutate(v))}
+            onClick={handleSubmit((v) => {
+              if (validateDateRange()) processMutation.mutate(v);
+            })}
             isLoading={processMutation.isPending}
             disabled={!canProcessSelectedPeriod}
             title={
@@ -498,7 +514,8 @@ function PayrollRuns() {
                 {runs.map((r) => (
                   <tr key={r.id} className="border-t border-line/60">
                     <td className="py-2.5">
-                      {monthName(r.month)} {r.year}
+                      <div className="font-medium text-ink">{r.startDate} → {r.endDate}</div>
+                      <div className="text-[11px] text-ink-faint">{monthName(r.month)} {r.year}</div>
                     </td>
                     <td className="py-2.5 text-ink-faint">{r.headcount}</td>
                     <td className="py-2.5 text-ink-faint">
@@ -588,12 +605,15 @@ function PayrollRuns() {
       <PayrollValidationModal
         open={showValidationModal}
         onClose={() => setShowValidationModal(false)}
-        initialMonth={Number(watch("month")) || new Date().getMonth() + 1}
-        initialYear={Number(watch("year")) || new Date().getFullYear()}
-        onProceedToProcess={(m, y) => {
-          setValue("month", m);
-          setValue("year", y);
-          processMutation.mutate({ month: m, year: y });
+        initialMonth={new Date(`${selectedEndDate}T00:00:00`).getMonth() + 1}
+        initialYear={new Date(`${selectedEndDate}T00:00:00`).getFullYear()}
+        onProceedToProcess={() => {
+          if (validateDateRange()) {
+            processMutation.mutate({
+              startDate: selectedStartDate,
+              endDate: selectedEndDate,
+            });
+          }
         }}
       />
     </div>

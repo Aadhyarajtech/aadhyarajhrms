@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
 import { profileImageUpload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
-import { isAdmin, isManagerOrAbove } from "@/middleware/rbac";
+import { isAdmin, isManagerOrAbove, requireRole } from "@/middleware/rbac";
 import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
@@ -64,6 +64,14 @@ employeesRouter.post(
 employeesRouter.get(
   "/",
   validate(listQuerySchema, "query"),
+  requireRole(
+    "SUPER_ADMIN",
+    "HR_ADMIN",
+    "MANAGER",
+    "RECRUITER",
+    "FINANCE",
+    "IT_SUPPORT",
+  ),
   requirePermission("employees.view"),
   async (req, res, next) => {
     try {
@@ -424,6 +432,13 @@ employeesRouter.get(
   requirePermission("employees.view"),
   async (req, res, next) => {
     try {
+      if (
+        req.user?.role === "EMPLOYEE" &&
+        req.user.employeeId !== req.params.id
+      ) {
+        throw AppError.forbidden();
+      }
+
       const employeeId = req.params.id;
 
       const employee = await repo.getEmployeeAiContext(employeeId);
@@ -465,45 +480,26 @@ employeesRouter.get(
   "/:id",
   requirePermission("employees.view"),
   async (req, res, next) => {
-  try {
-    const requester = req.user!;
+    try {
+      const employee = await repo.getEmployeeById(req.params.id);
 
-    const employee = await repo.getEmployeeById(req.params.id);
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
 
-    if (!employee) {
-      throw AppError.notFound("Employee not found.");
+      if (
+        req.user?.role === "EMPLOYEE" &&
+        req.user.employeeId !== req.params.id
+      ) {
+        throw AppError.forbidden();
+      }
+
+      res.json({ employee });
+    } catch (err) {
+      next(err);
     }
-
-    // Super Admin and HR Admin can view any employee.
-    const isAdmin =
-      requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
-
-    if (isAdmin) {
-      return res.json({ employee });
-    }
-
-    // Any authenticated employee can view their own profile.
-    if (requester.employeeId === req.params.id) {
-      return res.json({ employee });
-    }
-
-    // Reporting managers can view any employee profile.
-    // This only changes visibility; edit permissions remain restricted below.
-    if (requester.role === "MANAGER") {
-      return res.json({ employee });
-    }
-
-    // Other roles with employees.view (Recruiter, Finance, IT Support) can
-    // view employee profiles. Their write access remains restricted below.
-    if (["RECRUITER", "FINANCE", "IT_SUPPORT"].includes(requester.role)) {
-      return res.json({ employee });
-    }
-
-    throw AppError.forbidden();
-  } catch (err) {
-    next(err);
-  }
-});
+  },
+);
 
 employeesRouter.get(
   "/:id/direct-reports",
@@ -843,34 +839,16 @@ employeesRouter.patch(
 
 employeesRouter.patch(
   "/:id",
+  isAdmin,
   validate(updateEmployeeSchema),
   async (req, res, next) => {
     try {
-      const requester = req.user!;
       const target = (await repo.getEmployeeById(req.params.id)) as any;
       if (!target) throw AppError.notFound("Employee not found.");
 
-      const isSelf = requester.employeeId === req.params.id;
-      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(requester.role);
-      if (!isSelf && !isPrivileged) throw AppError.forbidden();
-
-      // Employees may only edit their own contact details, not org-structural fields.
-      const body = isPrivileged
-        ? req.body
-        : {
-            phone: req.body.phone,
-            personalEmail: req.body.personalEmail,
-            address: req.body.address,
-            city: req.body.city,
-            emergencyContactName: req.body.emergencyContactName,
-            emergencyContactPhone: req.body.emergencyContactPhone,
-            avatarUrl: req.body.avatarUrl,
-          };
-
-            const updateBody: any = { ...body };
+      const updateBody: any = { ...req.body };
 
       if (
-        isPrivileged &&
         req.body.status === "ON_PROBATION" &&
         target.status !== "ON_PROBATION"
       ) {
@@ -904,7 +882,6 @@ employeesRouter.patch(
 );
 
       if (
-        isPrivileged &&
         req.body.status &&
         req.body.status !== target.status
       ) {

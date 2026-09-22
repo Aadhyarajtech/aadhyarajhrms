@@ -1318,8 +1318,8 @@ export interface LeaveRequestDoc {
   _id: string;
   employeeId: string;
   leaveTypeId: string;
-  startDate: string;
-  endDate: string;
+  startDate: string | null;
+  endDate: string | null;
   totalDays: number;
   reason: string;
 
@@ -3549,6 +3549,8 @@ export interface PayrollRunDoc {
 
   month: number;
   year: number;
+  startDate: string;
+  endDate: string;
 
   status:
   | "DRAFT"
@@ -3589,6 +3591,9 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
       type: Number,
       required: true,
     },
+
+    startDate: { type: String, default: null },
+    endDate: { type: String, default: null },
 
     status: {
       type: String,
@@ -3640,14 +3645,10 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
   baseOptions,
 );
 
+payrollRunSchema.index({ month: 1, year: 1 });
 payrollRunSchema.index(
-  {
-    month: 1,
-    year: 1,
-  },
-  {
-    unique: true,
-  },
+  { startDate: 1, endDate: 1 },
+  { unique: true, sparse: true },
 );
 
 export const PayrollRun = model<PayrollRunDoc>("PayrollRun", payrollRunSchema);

@@ -2267,23 +2267,19 @@ export const PayrollApi = {
     api
       .post<PayrollReadinessResult>("/payroll/validate-readiness", { month, year })
       .then((r) => r.data),
-  lockAttendance: (month: number, year: number) =>
+  lockAttendance: (startDate: string, endDate: string) =>
     api
-      .post<{
-        run: PayrollRun;
-      }>("/payroll/runs/lock-attendance", {
-        month,
-        year,
+      .post<{ run: PayrollRun }>("/payroll/runs/lock-attendance", {
+        startDate,
+        endDate,
       })
       .then((r) => r.data.run),
 
-  process: (month: number, year: number) =>
+  process: (startDate: string, endDate: string) =>
     api
-      .post<{
-        run: PayrollRun;
-      }>("/payroll/runs/process", {
-        month,
-        year,
+      .post<{ run: PayrollRun }>("/payroll/runs/process", {
+        startDate,
+        endDate,
       })
       .then((r) => r.data.run),
 

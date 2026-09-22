@@ -725,6 +725,8 @@ export interface PayrollRun {
   id: string;
   month: number;
   year: number;
+  startDate: string;
+  endDate: string;
   status:
   | "DRAFT"
   | "ATTENDANCE_LOCKED"
@@ -1304,5 +1306,3 @@ export interface RetentionRadarResult {
   source: "llm" | "deterministic";
   generatedAt: string;
 }
-
-

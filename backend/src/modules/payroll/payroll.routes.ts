@@ -112,8 +112,8 @@ payrollRouter.get(
 );
 
 const processSchema = z.object({
-  month: z.number().int().min(1).max(12),
-  year: z.number().int().min(2020),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 payrollRouter.post(
   "/runs/lock-attendance",
@@ -122,7 +122,7 @@ payrollRouter.post(
   async (req, res, next) => {
     try {
       res.status(201).json({
-        run: await repo.lockAttendanceForPayroll(req.body.month, req.body.year),
+        run: await repo.lockAttendanceForPayroll(req.body.startDate, req.body.endDate),
       });
     } catch (err) {
       next(err);
@@ -137,7 +137,7 @@ payrollRouter.post(
   async (req, res, next) => {
     try {
       res.status(201).json({
-        run: await repo.processPayrollRun(req.body.month, req.body.year),
+        run: await repo.processPayrollRun(req.body.startDate, req.body.endDate),
       });
     } catch (err) {
       next(err);
