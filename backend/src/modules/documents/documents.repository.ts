@@ -8,6 +8,12 @@ import {
 import { nowIso } from "@/db/connection";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { AppError } from "@/utils/errors";
+import fs from "node:fs/promises";
+import path from "node:path";
+import {
+  PRIVATE_DOCUMENT_DIR_ABSOLUTE,
+  UPLOAD_DIR_ABSOLUTE,
+} from "@/middleware/upload";
 
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
@@ -44,6 +50,7 @@ export async function addDocument(input: {
   type: string;
   fileName: string;
   fileUrl: string;
+  storageKey?: string | null;
   uploadedBy?: string | null;
   requestId?: string | null;
   expiryDate?: string | null;
@@ -53,6 +60,7 @@ export async function addDocument(input: {
     type: input.type,
     fileName: input.fileName,
     fileUrl: input.fileUrl,
+    storageKey: input.storageKey ?? null,
     uploadedAt: nowIso(),
     uploadedBy: input.uploadedBy ?? null,
     requestId: input.requestId ?? null,
@@ -65,8 +73,122 @@ export async function addDocument(input: {
 }
 
 
+export async function setDocumentFileUrl(
+  id: string,
+  storageKey: string,
+) {
+  await DocumentRecord.updateOne(
+    { _id: id },
+    {
+      $set: {
+        storageKey,
+        fileUrl: `/api/documents/${id}/download`,
+      },
+    },
+  );
+  return getDocument(id);
+}
+
+function safePrivateDocumentPath(storageKey: string) {
+  const safeKey = path.basename(storageKey);
+  const root = path.resolve(PRIVATE_DOCUMENT_DIR_ABSOLUTE);
+  const target = path.resolve(root, safeKey);
+  if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+    throw AppError.forbidden();
+  }
+  return target;
+}
+
+export async function getPrivateDocumentPath(id: string) {
+  const row = await DocumentRecord.findById(id).lean();
+  if (!row) throw AppError.notFound("Document not found.");
+  if (!row.storageKey) {
+    throw AppError.notFound("This document is not available through secure storage yet.");
+  }
+  const filePath = safePrivateDocumentPath(row.storageKey);
+  try {
+    await fs.access(filePath);
+  } catch {
+    throw AppError.notFound("Document file not found.");
+  }
+  return { row: toApiDoc(row), filePath };
+}
+
 export async function deleteDocument(id: string) {
+  const row = await DocumentRecord.findById(id).lean();
+  if (!row) return;
+
+  if (row.storageKey) {
+    try {
+      await fs.unlink(safePrivateDocumentPath(row.storageKey));
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+
   await DocumentRecord.deleteOne({ _id: id });
+}
+
+export async function migrateLegacyDocumentsToPrivateStorage() {
+  const rows = await DocumentRecord.find({
+    $or: [
+      { storageKey: { $exists: false } },
+      { storageKey: null },
+    ],
+  }).lean();
+
+  let migrated = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const value = String(row.fileUrl ?? "");
+    if (!value.startsWith("/uploads/")) {
+      skipped += 1;
+      continue;
+    }
+
+    const filename = path.basename(value);
+    if (!filename || filename === "." || filename === "..") {
+      skipped += 1;
+      continue;
+    }
+
+    const source = path.resolve(UPLOAD_DIR_ABSOLUTE, filename);
+    const destination = safePrivateDocumentPath(filename);
+
+    try {
+      await fs.access(source);
+      await fs.mkdir(PRIVATE_DOCUMENT_DIR_ABSOLUTE, { recursive: true });
+
+      try {
+        await fs.rename(source, destination);
+      } catch (error: any) {
+        if (error?.code !== "EXDEV") throw error;
+        await fs.copyFile(source, destination);
+        await fs.unlink(source);
+      }
+
+      await DocumentRecord.updateOne(
+        { _id: row._id },
+        {
+          $set: {
+            storageKey: filename,
+            fileUrl: `/api/documents/${row._id}/download`,
+          },
+        },
+      );
+      migrated += 1;
+    } catch {
+      // Never break application startup because one legacy file is missing.
+      skipped += 1;
+    }
+  }
+
+  if (migrated || skipped) {
+    console.info(
+      `[documents] legacy storage migration complete: ${migrated} migrated, ${skipped} skipped`,
+    );
+  }
 }
 
 export async function getDocument(id: string) {
@@ -197,6 +319,7 @@ export async function fulfillDocumentRequest(input: {
   requestId: string;
   fileName: string;
   fileUrl: string;
+  storageKey: string;
   uploadedByUserId: string;
   expiryDate?: string | null;
 }) {
@@ -217,6 +340,7 @@ export async function fulfillDocumentRequest(input: {
   type: requestRow.type,
   fileName: input.fileName,
   fileUrl: input.fileUrl,
+  storageKey: input.storageKey,
   uploadedBy: input.uploadedByUserId,
   requestId: requestRow._id,
   expiryDate: input.expiryDate ?? null,

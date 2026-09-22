@@ -23,6 +23,7 @@ import {
   Sparkles,
   Target,
   Users,
+  Activity,
 } from "lucide-react";
 import { ReportsApi, OrganizationApi } from "@/lib/endpoints";
 import { useAuth } from "@/context/AuthContext";
@@ -232,80 +233,125 @@ export default function Reports() {
   };
 
   return (
-    <div>
-      <div className="print:hidden">
-        <PageHeader
-          title="Reports & Analytics"
-          subtitle={
-            isManager
-              ? "Team reporting and analytics"
-              : "Organization-wide HR reporting and decision insights"
-          }
-          action={
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  setSelectedAiQuery("");
-                  setTab("ask-ai");
-                }}
-                className={
-                  tab === "ask-ai"
-                    ? "bg-indigo-700 text-white shadow-sm border-0"
-                    : "bg-gradient-to-r from-indigo-600 to-brand-600 hover:from-indigo-700 hover:to-brand-700 text-white shadow-sm border-0"
-                }
-                leftIcon={<Sparkles size={14} className="text-amber-300" />}
-              >
-                Ask HR AI ✦
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => setBriefingModalOpen(true)}
-                className="bg-gradient-to-r from-brand-600 via-purple-600 to-indigo-600 hover:from-brand-700 hover:via-purple-700 hover:to-indigo-700 text-white shadow-sm border-0"
-                leftIcon={<Sparkles size={14} className="text-amber-300 animate-pulse" />}
-              >
-                AI Executive Briefing
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => refetch()}
-                leftIcon={<RefreshCw size={14} />}
-              >
-                Refresh
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => exportReport("xlsx")}
-                disabled={!data || exporting !== null}
-                leftIcon={<Download size={14} />}
-              >
-                {exporting === "xlsx" ? "Exporting…" : "Excel"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => exportReport("pdf")}
-                disabled={!data || exporting !== null}
-                leftIcon={<Download size={14} />}
-              >
-                {exporting === "pdf" ? "Exporting…" : "PDF"}
-              </Button>
-              <Button
-                size="sm"
-                onClick={exportCsv}
-                disabled={!data || exporting !== null}
-              >
-                CSV
-              </Button>
+    <div className="premium-page space-y-6">
+      <div className="relative overflow-hidden rounded-[28px] border border-indigo-200/60 bg-gradient-to-br from-indigo-950 via-violet-800 to-blue-700 p-6 text-white shadow-[0_24px_70px_rgba(79,70,229,0.22)] sm:p-8">
+        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+        <div className="absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-cyan-300/10 blur-3xl" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-100">
+              <Sparkles size={13} /> Workforce Intelligence
             </div>
-          }
-        />
+            <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+              Reports & Analytics
+            </h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-indigo-100">
+              Turn workforce, attendance, leave, payroll, recruitment and performance data into one clear operating view.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[500px]">
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">Employees</p>
+              <p className="mt-1 text-xl font-semibold">{data?.workforce?.total ?? "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">Attendance</p>
+              <p className="mt-1 text-xl font-semibold">{data ? `${data.attendance.attendanceRate}%` : "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">New hires</p>
+              <p className="mt-1 text-xl font-semibold">{data?.workforce?.recentHires ?? "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">Open roles</p>
+              <p className="mt-1 text-xl font-semibold">{data?.recruitment?.openRoles ?? "—"}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <Card className="mb-6 print:hidden">
-        <div className="grid gap-3 p-4 md:grid-cols-3">
+      <PageHeader
+        title="Reports & Analytics"
+        subtitle={
+          isManager
+            ? "Team reporting and analytics"
+            : "Organization-wide HR reporting and decision insights"
+        }
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelectedAiQuery("");
+                setTab("ask-ai");
+              }}
+              className={
+                tab === "ask-ai"
+                  ? "bg-indigo-700 text-white shadow-sm border-0"
+                  : "bg-gradient-to-r from-indigo-600 to-brand-600 hover:from-indigo-700 hover:to-brand-700 text-white shadow-sm border-0"
+              }
+              leftIcon={<Sparkles size={14} className="text-amber-300" />}
+            >
+              Ask HR AI ✦
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setBriefingModalOpen(true)}
+              className="bg-gradient-to-r from-brand-600 via-purple-600 to-indigo-600 hover:from-brand-700 hover:via-purple-700 hover:to-indigo-700 text-white shadow-sm border-0"
+              leftIcon={<Sparkles size={14} className="text-amber-300 animate-pulse" />}
+            >
+              AI Executive Briefing
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => refetch()}
+              leftIcon={<RefreshCw size={14} />}
+            >
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => exportReport("xlsx")}
+              disabled={!data || exporting !== null}
+              leftIcon={<Download size={14} />}
+            >
+              {exporting === "xlsx" ? "Exporting…" : "Excel"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => exportReport("pdf")}
+              disabled={!data || exporting !== null}
+              leftIcon={<Download size={14} />}
+            >
+              {exporting === "pdf" ? "Exporting…" : "PDF"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={exportCsv}
+              disabled={!data || exporting !== null}
+            >
+              CSV
+            </Button>
+          </div>
+        }
+      />
+
+      <Card className="overflow-hidden border-indigo-100/80 bg-gradient-to-br from-white via-indigo-50/30 to-violet-50/40 shadow-[0_12px_40px_rgba(79,70,229,0.08)]">
+        <div className="border-b border-indigo-100/70 bg-white/70 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+              <Activity size={15} />
+            </span>
+            <div>
+              <p className="text-[13px] font-semibold text-ink">Report controls</p>
+              <p className="text-[11px] text-ink-faint">Choose the reporting period and workforce scope.</p>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-3 p-5 md:grid-cols-3">
           <label className="text-[12px] font-medium text-ink-soft">
             From
             <input
@@ -342,7 +388,8 @@ export default function Reports() {
         </div>
       </Card>
 
-      <div className="mb-6 flex flex-wrap gap-2 print:hidden">
+      <div className="mb-6 rounded-2xl border border-line/70 bg-white/80 p-2 shadow-[0_8px_30px_rgba(15,23,42,0.05)] print:hidden">
+        <div className="flex flex-wrap gap-2">
         {TABS.filter(
           ([key]) =>
             (key !== "recruitment" || canRecruitment) &&
@@ -361,6 +408,7 @@ export default function Reports() {
             {label}
           </button>
         ))}
+        </div>
       </div>
 
       {tab === "ask-ai" ? (
@@ -1129,9 +1177,9 @@ function Section({
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-ink">
-        <span className="text-brand-600">{icon}</span>
-        <h2 className="font-display text-[18px] font-semibold">{title}</h2>
+      <div className="flex items-center gap-3 rounded-2xl border border-indigo-100/80 bg-gradient-to-r from-indigo-50/80 to-white px-4 py-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">{icon}</span>
+        <div><h2 className="font-display text-[18px] font-semibold">{title}</h2><p className="text-[11px] text-ink-faint">Detailed metrics for the selected reporting scope.</p></div>
       </div>
       {children}
     </div>

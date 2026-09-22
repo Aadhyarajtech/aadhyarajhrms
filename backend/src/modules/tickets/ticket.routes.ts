@@ -51,17 +51,24 @@ ticketRouter.use(requirePermission("tickets.view"));
 
 const createTicketSchema = z.object({
   category: z.enum([
+    "Payroll Issue",
+    "Leave Issue",
+    "Manager Concern",
+    "Harassment Complaint",
+    "IT Support",
+    "Infrastructure",
+    "Policy Query",
+    "Other",
     "HR",
     "Payroll",
     "Leave",
     "Attendance",
     "Recruitment",
     "Employee Referral",
-    "IT Support",
     "Complaint",
   ]),
 
-  priority: z.enum(["LOW", "MEDIUM", "HIGH"]),
+  priority: z.enum(["CRITICAL", "LOW", "MEDIUM", "HIGH"]),
 
   subject: z.string().min(3),
 
@@ -112,9 +119,20 @@ ticketRouter.post(
         parsed.data.category,
       );
 
-      // Auto-elevate priority to HIGH if AI detects high urgency (financial/work blocker, harassment)
-      const effectivePriority =
-        aiResult?.priority === "HIGH" ? "HIGH" : parsed.data.priority;
+      // Auto-elevate priority to CRITICAL for harassment or high distress; else HIGH if urgent
+      let effectivePriority = parsed.data.priority;
+      if (
+        parsed.data.category === "Harassment Complaint" ||
+        aiResult?.priority === "CRITICAL" ||
+        aiResult?.sentiment === "CRITICAL"
+      ) {
+        effectivePriority = "CRITICAL";
+      } else if (
+        aiResult?.priority === "HIGH" &&
+        effectivePriority !== "CRITICAL"
+      ) {
+        effectivePriority = "HIGH";
+      }
 
       const ticket = await repo.createTicket({
         employeeId: req.user.employeeId,
@@ -1057,74 +1075,48 @@ ticketRouter.get(
         });
       }
 
+      const role = String(req.user.role);
+
+      const staffRoles = [
+        "SUPER_ADMIN",
+        "HR_ADMIN",
+        "FINANCE",
+        "MANAGER",
+        "IT_SUPPORT",
+      ];
+
+      if (!staffRoles.includes(role)) {
+        return res.status(403).json({
+          error: {
+            message:
+              "Only support staff can use similar ticket detection",
+          },
+        });
+      }
+
+      const ticket = await repo.getTicket(req.params.id);
+
+      if (!ticket) {
+        return res.status(404).json({
+          error: {
+            message: "Ticket not found",
+          },
+        });
+      }
+
+      if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to access this ticket",
+          },
+        });
+      }
+
       const result = await findSimilarTickets(req.params.id);
 
       return res.json({
         success: true,
         ...result,
-      });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-/* =========================================================
-   AI CLASSIFY
-   Pre-submission classification endpoint.
-   Frontend calls this before creating a ticket so the employee
-   can see the AI suggestion and optionally accept it.
-========================================================= */
-
-const classifySchema = z.object({
-  subject: z.string().min(3),
-  description: z.string().min(5),
-  category: z.string().optional(),
-});
-
-ticketRouter.post(
-  "/classify",
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    try {
-      if (!req.user?.employeeId) {
-        return res.status(401).json({
-          error: { message: "Authentication required" },
-        });
-      }
-
-      const parsed = classifySchema.safeParse(req.body);
-
-      if (!parsed.success) {
-        return res.status(400).json({
-          error: {
-            message: "Subject and description are required",
-            details: parsed.error.flatten(),
-          },
-        });
-      }
-
-      const result = await classifyTicket(
-        parsed.data.subject,
-        parsed.data.description,
-        parsed.data.category,
-      );
-
-      if (!result) {
-        return res.json({
-          classified: false,
-          message: "AI classification is not available",
-        });
-      }
-
-      return res.json({
-        classified: true,
-        category: result.category,
-        intent: result.intent,
-        confidence: result.confidence,
-        reason: result.reason,
-        priority: result.priority,
-        priorityReason: result.priorityReason,
-        sentiment: result.sentiment,
       });
     } catch (err) {
       next(err);
@@ -1148,13 +1140,42 @@ ticketRouter.post(
         });
       }
 
-      const ticket = await repo.getTicket(req.params.id);
+      const role = String(req.user.role);
 
-      if (!ticket) {
-        return res.status(404).json({
-          error: { message: "Ticket not found" },
-        });
-      }
+const staffRoles = [
+  "SUPER_ADMIN",
+  "HR_ADMIN",
+  "FINANCE",
+  "MANAGER",
+  "IT_SUPPORT",
+];
+
+if (!staffRoles.includes(role)) {
+  return res.status(403).json({
+    error: {
+      message:
+        "Only support staff can analyze existing tickets with AI",
+    },
+  });
+}
+
+const ticket = await repo.getTicket(req.params.id);
+
+if (!ticket) {
+  return res.status(404).json({
+    error: {
+      message: "Ticket not found",
+    },
+  });
+}
+
+if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
+  return res.status(403).json({
+    error: {
+      message: "You are not authorized to analyze this ticket",
+    },
+  });
+}
 
       const result = await classifyTicket(
         ticket.subject,
@@ -1168,7 +1189,6 @@ ticketRouter.post(
         });
       }
 
-      // Update ticket in database
       const updateFields: any = {
         aiCategory: result.category,
         aiIntent: result.intent,
@@ -1184,11 +1204,15 @@ ticketRouter.post(
         updateFields.priority = "HIGH";
       }
 
-      // Smart Re-routing: If AI is confident (>= 0.70) and category differs from current,
-      // re-route to the proper department and update category
-      if (result.confidence >= 0.7 && result.category !== ticket.category) {
+      // Smart Re-routing: only after authorization has passed.
+      if (
+        result.confidence >= 0.7 &&
+        result.category !== ticket.category
+      ) {
         updateFields.category = result.category;
-        updateFields.assignedTo = repo.assignDepartment(result.category);
+        updateFields.assignedTo = repo.assignDepartment(
+          result.category,
+        );
       }
 
       const updatedTicket = await Ticket.findByIdAndUpdate(

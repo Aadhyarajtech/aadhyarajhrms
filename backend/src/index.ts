@@ -6,6 +6,7 @@ import { startEmployeeLifecycleJobs } from "./jobs/employeeLifecycle.job";
 import { startDocumentExpiryJob } from "./jobs/documentExpiry.job";
 import { startAnnouncementScheduler } from "@/modules/announcements/announcement.scheduler";
 import { startRequestExpiryJob } from "./jobs/requestExpiry.job";
+import { migrateLegacyDocumentsToPrivateStorage } from "@/modules/documents/documents.repository";
 
 async function start() {
   /* -------------------------------------------------------
@@ -13,6 +14,7 @@ async function start() {
   ------------------------------------------------------- */
 
   await connectDB();
+  await migrateLegacyDocumentsToPrivateStorage();
 
   /* -------------------------------------------------------
      EMPLOYEE LIFECYCLE JOBS

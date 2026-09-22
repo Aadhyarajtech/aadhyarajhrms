@@ -140,6 +140,16 @@ export default function Documents() {
   const documentForRequest = (requestId: string) =>
     documents.find((d: any) => d.requestId === requestId);
 
+  const pendingIncoming = requestedFromMe.filter(
+    (request: any) =>
+      request.status === "PENDING" || request.status === "OPEN",
+  ).length;
+
+  const pendingOutgoing = requestedByMe.filter(
+    (request: any) =>
+      request.status === "PENDING" || request.status === "OPEN",
+  ).length;
+
   const invalidateAfterFulfillment = (targetEmployeeId: string) => {
     queryClient.invalidateQueries({
       queryKey: ["documents", targetEmployeeId],
@@ -149,12 +159,12 @@ export default function Documents() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="premium-page space-y-6">
       <PageHeader
         title="Documents"
         subtitle="Uploaded employee records, compliance files, and assigned company assets."
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {canRequestFromEmployee && (
               <Button
                 size="sm"
@@ -178,8 +188,66 @@ export default function Documents() {
         }
       />
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Card>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="group relative overflow-hidden rounded-[22px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(79,70,229,0.07)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(79,70,229,0.11)]">
+          <div className="absolute -right-7 -top-7 h-20 w-20 rounded-full bg-indigo-100/50 blur-2xl" />
+          <div className="relative flex items-start justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Documents</p>
+              <p className="mt-1 font-display text-2xl font-semibold tracking-[-0.02em] text-slate-900">{documents.length}</p>
+              <p className="mt-1 text-[11px] text-slate-500">Secure records available</p>
+            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
+              <FileText size={17} />
+            </div>
+          </div>
+        </div>
+
+        <div className="group relative overflow-hidden rounded-[22px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(16,185,129,0.06)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(16,185,129,0.10)]">
+          <div className="absolute -right-7 -top-7 h-20 w-20 rounded-full bg-emerald-100/50 blur-2xl" />
+          <div className="relative flex items-start justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Assets</p>
+              <p className="mt-1 font-display text-2xl font-semibold tracking-[-0.02em] text-slate-900">{assets.length}</p>
+              <p className="mt-1 text-[11px] text-slate-500">Assigned equipment</p>
+            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm ring-1 ring-emerald-100">
+              <Briefcase size={17} />
+            </div>
+          </div>
+        </div>
+
+        <div className="group relative overflow-hidden rounded-[22px] border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(245,158,11,0.06)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(245,158,11,0.10)]">
+          <div className="absolute -right-7 -top-7 h-20 w-20 rounded-full bg-amber-100/50 blur-2xl" />
+          <div className="relative flex items-start justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Action needed</p>
+              <p className="mt-1 font-display text-2xl font-semibold tracking-[-0.02em] text-slate-900">{pendingIncoming}</p>
+              <p className="mt-1 text-[11px] text-slate-500">Requests from HR / manager</p>
+            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm ring-1 ring-amber-100">
+              <Inbox size={17} />
+            </div>
+          </div>
+        </div>
+
+        <div className="group relative overflow-hidden rounded-[22px] border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(124,58,237,0.06)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(124,58,237,0.10)]">
+          <div className="absolute -right-7 -top-7 h-20 w-20 rounded-full bg-violet-100/50 blur-2xl" />
+          <div className="relative flex items-start justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">My requests</p>
+              <p className="mt-1 font-display text-2xl font-semibold tracking-[-0.02em] text-slate-900">{pendingOutgoing}</p>
+              <p className="mt-1 text-[11px] text-slate-500">Awaiting company documents</p>
+            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm ring-1 ring-violet-100">
+              <ClipboardList size={17} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card className="overflow-hidden border-indigo-100/80 bg-gradient-to-br from-white via-white to-[#F7F5FF] shadow-[0_10px_30px_rgba(79,70,229,0.055)]">
           <CardHeader
             title="My documents"
             subtitle="All documents visible to the employee and HR admins."
@@ -201,7 +269,7 @@ export default function Documents() {
           )}
         </Card>
 
-        <Card>
+        <Card className="overflow-hidden border-sky-100/80 bg-gradient-to-br from-white via-white to-[#F4FAFF] shadow-[0_10px_30px_rgba(14,165,233,0.05)]">
           <CardHeader
             title="Assigned assets"
             subtitle="Laptop, phone, and other equipment allocated to the employee."
@@ -216,7 +284,7 @@ export default function Documents() {
             />
           ) : (
             <div className="space-y-2">
-              {assets.map((asset) => (
+              {assets.map((asset: Asset) => (
                 <AssetRow key={asset.id} asset={asset} canManage={canManage} />
               ))}
             </div>
@@ -225,8 +293,8 @@ export default function Documents() {
       </div>
 
       {!!employeeId && (
-        <div className="grid gap-6 xl:grid-cols-2">
-          <Card>
+        <div className="grid gap-5 xl:grid-cols-2">
+          <Card className="overflow-hidden border-slate-200/70 bg-gradient-to-br from-white to-[#FBFAFF]">
             <CardHeader
               title="Documents requested from me"
               subtitle="Document requests raised by HR, admins, or your manager."
@@ -252,8 +320,8 @@ export default function Documents() {
             )}
           </Card>
 
-          <Card>
-            <div className="flex items-center justify-between gap-3">
+          <Card className="overflow-hidden border-slate-200/70 bg-gradient-to-br from-white to-[#F8FBFF]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <CardHeader
                 title="Documents I requested"
                 subtitle="Company-issued documents you've requested from HR."
@@ -292,7 +360,7 @@ export default function Documents() {
       )}
 
       {canProcessCompanyRequests && (
-        <Card>
+        <Card className="overflow-hidden border-slate-200/70 bg-gradient-to-br from-white to-[#FFFCF7]">
           <CardHeader
             title="Company document requests"
             subtitle="Company-issued documents employees have requested. Upload the completed document to fulfil each request."
@@ -357,6 +425,37 @@ export default function Documents() {
   );
 }
 
+async function openPrivateDocument(
+  id: string,
+  fileName: string,
+  showToast: (message: string, variant?: "success" | "error" | "info") => void,
+) {
+  // Open synchronously to avoid popup blockers, then populate it after the
+  // authenticated API request completes.
+  const popup = window.open("about:blank", "_blank");
+
+  try {
+    const blob = await DocumentsApi.download(id);
+    const objectUrl = URL.createObjectURL(blob);
+
+    if (popup) {
+      popup.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } else {
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    }
+  } catch (err) {
+    popup?.close();
+    showToast(getErrorMessage(err), "error");
+  }
+}
+
 function DocumentRow({ doc, canManage }: { doc: any; canManage: boolean }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -372,9 +471,9 @@ function DocumentRow({ doc, canManage }: { doc: any; canManage: boolean }) {
   });
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_10px_22px_rgba(79,70,229,0.07)]">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="rounded-xl bg-brand-50 p-2 text-brand-600">
+        <div className="rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 p-2.5 text-indigo-600 ring-1 ring-indigo-100">
           <FileText size={16} />
         </div>
         <div className="min-w-0">
@@ -389,15 +488,16 @@ function DocumentRow({ doc, canManage }: { doc: any; canManage: boolean }) {
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        <a
-          href={doc.fileUrl}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={() =>
+            void openPrivateDocument(doc.id, doc.fileName, showToast)
+          }
           className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
         >
           <Download size={14} className="mr-1.5" />
           Open
-        </a>
+        </button>
         {canManage && (
           <button
             type="button"
@@ -423,7 +523,8 @@ function AssetRow({ asset, canManage }: { asset: Asset; canManage: boolean }) {
     mutationFn: (nextStatus: string) =>
       DocumentsApi.updateAssetStatus(asset.id, nextStatus),
     onSuccess: (updated) => {
-      setStatus(updated.status);
+      const updatedAsset = updated as Asset;
+      setStatus(updatedAsset.status);
       queryClient.invalidateQueries({ queryKey: ["assets", asset.employeeId] });
       showToast("Asset status updated.");
     },
@@ -431,7 +532,7 @@ function AssetRow({ asset, canManage }: { asset: Asset; canManage: boolean }) {
   });
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_10px_22px_rgba(14,165,233,0.07)]">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">{asset.name}</p>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-faint">
@@ -472,7 +573,7 @@ function IncomingRequestRow({
   onUpload: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_10px_22px_rgba(14,165,233,0.07)]">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">
           {typeLabel(request.type)}
@@ -504,8 +605,10 @@ function OutgoingRequestRow({
   request: any;
   document: any;
 }) {
+  const { showToast } = useToast();
+
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_10px_22px_rgba(14,165,233,0.07)]">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">
           {typeLabel(request.type)}
@@ -520,15 +623,20 @@ function OutgoingRequestRow({
       <div className="flex shrink-0 items-center gap-2">
         <StatusBadge status={request.status} />
         {request.status === "UPLOADED" && document && (
-          <a
-            href={document.fileUrl}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            onClick={() =>
+              void openPrivateDocument(
+                document.id,
+                document.fileName,
+                showToast,
+              )
+            }
             className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
           >
             <Download size={14} className="mr-1.5" />
             Open
-          </a>
+          </button>
         )}
       </div>
     </div>
@@ -545,7 +653,7 @@ function CompanyRequestRow({
   onUpload: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_10px_22px_rgba(14,165,233,0.07)]">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">
           {typeLabel(request.type)}

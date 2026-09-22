@@ -28,6 +28,23 @@ export interface AuthUser {
   employee: AuthEmployee | null;
 }
 
+export interface EmployeeOnboardingStage {
+  stage: number;
+  name: string;
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
+  completedAt: string | null;
+  completedBy: string | null;
+  remarks: string | null;
+}
+
+export interface EmployeeOnboarding {
+  currentStage: number;
+  status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+  stages: EmployeeOnboardingStage[];
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 export interface Employee {
   id: string;
   employeeCode: string;
@@ -66,6 +83,28 @@ export interface Employee {
 
   dateOfJoining: string;
   dateOfExit: string | null;
+  probationPeriodMonths?: number | null;
+  probationStartDate?: string | null;
+  probationEndDate?: string | null;
+  probationReminderSentAt?: string | null;
+  probationExtensionDetails?: {
+    extensionDays: number;
+    extendedFrom: string | null;
+    extendedTo: string;
+    remarks: string | null;
+    extendedAt: string;
+  } | null;
+  noticeStartDate?: string | null;
+  lastWorkingDate?: string | null;
+  noticeDays?: number | null;
+  onboarding?: EmployeeOnboarding;
+  offboardingChecklist?: {
+    assetReturn: boolean;
+    accessRevoked: boolean;
+    exitInterview: boolean;
+    finalSettlement: boolean;
+    completedAt: string | null;
+  } | null;
   email: string;
   role: Role;
   isActive: number;
