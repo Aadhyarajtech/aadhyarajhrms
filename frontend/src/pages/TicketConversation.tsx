@@ -502,10 +502,36 @@ export default function TicketConversation() {
             {ticket.subject}
           </p>
 
-          <p className="text-[11px] text-gray-500">
-            {ticket.category} · {ticket.priority} Priority
-            {ticket.assignedTo ? ` · Assigned to ${ticket.assignedTo}` : ""}
-          </p>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500 mt-0.5">
+            <span className="font-medium text-gray-700">{ticket.category}</span>
+            <span>·</span>
+            <span
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                ticket.priority === "CRITICAL"
+                  ? "bg-rose-100 text-rose-800 border border-rose-300 font-bold animate-pulse"
+                  : ticket.priority === "HIGH"
+                  ? "bg-red-50 text-red-700 border border-red-200"
+                  : ticket.priority === "MEDIUM"
+                  ? "bg-amber-50 text-amber-700 border border-amber-200"
+                  : "bg-slate-50 text-slate-700 border border-slate-200"
+              }`}
+            >
+              {ticket.priority === "CRITICAL" && <span>🚨</span>}
+              {ticket.priority} Priority
+            </span>
+            {ticket.priority === "CRITICAL" && (
+              <span className="text-rose-700 font-semibold">(1-Hour Response SLA)</span>
+            )}
+            {ticket.priority === "HIGH" && (
+              <span className="text-amber-700 font-medium">(4-Hour Response SLA)</span>
+            )}
+            {ticket.assignedTo && <span>· Assigned to {ticket.assignedTo}</span>}
+            {ticket.category === "Harassment Complaint" && (
+              <span className="inline-flex items-center gap-1 rounded bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 font-medium">
+                🔒 POSH Confidential Case
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Staff AI Header Quick Actions — Always visible without scrolling */}

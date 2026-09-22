@@ -28,6 +28,23 @@ export interface AuthUser {
   employee: AuthEmployee | null;
 }
 
+export interface EmployeeOnboardingStage {
+  stage: number;
+  name: string;
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
+  completedAt: string | null;
+  completedBy: string | null;
+  remarks: string | null;
+}
+
+export interface EmployeeOnboarding {
+  currentStage: number;
+  status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+  stages: EmployeeOnboardingStage[];
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 export interface Employee {
   id: string;
   employeeCode: string;
@@ -63,8 +80,31 @@ export interface Employee {
     | "RESIGNED"
     | "INACTIVE"
     | "ON_HOLD";
+
   dateOfJoining: string;
   dateOfExit: string | null;
+  probationPeriodMonths?: number | null;
+  probationStartDate?: string | null;
+  probationEndDate?: string | null;
+  probationReminderSentAt?: string | null;
+  probationExtensionDetails?: {
+    extensionDays: number;
+    extendedFrom: string | null;
+    extendedTo: string;
+    remarks: string | null;
+    extendedAt: string;
+  } | null;
+  noticeStartDate?: string | null;
+  lastWorkingDate?: string | null;
+  noticeDays?: number | null;
+  onboarding?: EmployeeOnboarding;
+  offboardingChecklist?: {
+    assetReturn: boolean;
+    accessRevoked: boolean;
+    exitInterview: boolean;
+    finalSettlement: boolean;
+    completedAt: string | null;
+  } | null;
   email: string;
   role: Role;
   isActive: number;
@@ -175,11 +215,11 @@ export interface LeaveRequest {
   totalDays: number;
   reason: string;
   status:
-    | "PENDING"
-    | "APPROVED"
-    | "REJECTED"
-    | "CANCELLED"
-    | "EXPIRED";
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "EXPIRED";
   approverId: string | null;
   decisionNote: string | null;
   appliedAt: string;
@@ -489,11 +529,11 @@ export interface Candidate {
   jobFitScore?: number | null;
   screeningSummary?: string | null;
   screeningRecommendation?:
-    | "PENDING"
-    | "STRONG_FIT"
-    | "GOOD_FIT"
-    | "WEAK_FIT"
-    | "NOT_RECOMMENDED";
+  | "PENDING"
+  | "STRONG_FIT"
+  | "GOOD_FIT"
+  | "WEAK_FIT"
+  | "NOT_RECOMMENDED";
 
   /* Application */
   applicationAnswers?: Record<string, string>;
@@ -584,12 +624,12 @@ export interface PerformanceCycle {
   endDate: string;
   isActive: boolean;
   type:
-    | "PROBATION"
-    | "QUARTERLY"
-    | "HALF_YEARLY"
-    | "ANNUAL"
-    | "THREE_SIXTY"
-    | "PIP";
+  | "PROBATION"
+  | "QUARTERLY"
+  | "HALF_YEARLY"
+  | "ANNUAL"
+  | "THREE_SIXTY"
+  | "PIP";
   purpose: string | null;
   ratingScale?: number[];
   ratingWeights?: { self: number; manager: number };
@@ -626,6 +666,12 @@ export interface PerformanceReview {
   reviewerLastName: string;
 }
 
+export interface PerformanceMilestone {
+  title: string;
+  targetDate: string | null;
+  completed: boolean;
+}
+
 export interface Goal {
   id: string;
   employeeId: string;
@@ -640,12 +686,30 @@ export interface Goal {
   category: string | null;
   targetValue: number | null;
   currentValue: number | null;
-  milestones: {
-    title: string;
-    targetDate: string | null;
-    completed: boolean;
-  }[];
+  milestones: PerformanceMilestone[];
   assignedBy: string | null;
+
+  /**
+   * Populated by the goal-cascade endpoint.
+   * Normal goal-list responses may omit this field.
+   */
+  children?: Goal[];
+}
+
+/**
+ * Recursive goal hierarchy returned by the goal-cascade API.
+ * A company/department goal can contain child goals through `children`.
+ */
+export interface GoalCascadeNode extends Goal {
+  children: GoalCascadeNode[];
+}
+
+/**
+ * Payload used when changing the completion state of a milestone.
+ */
+export interface UpdateGoalMilestonePayload {
+  milestoneIndex: number;
+  completed: boolean;
 }
 export interface PerformanceOutcome {
   id: string;
@@ -701,12 +765,12 @@ export interface PayrollRun {
   month: number;
   year: number;
   status:
-    | "DRAFT"
-    | "ATTENDANCE_LOCKED"
-    | "PROCESSED"
-    | "HR_REVIEW"
-    | "APPROVED"
-    | "PAID";
+  | "DRAFT"
+  | "ATTENDANCE_LOCKED"
+  | "PROCESSED"
+  | "HR_REVIEW"
+  | "APPROVED"
+  | "PAID";
   processedAt: string | null;
   attendanceLockedAt: string | null;
   reviewedAt: string | null;
@@ -1054,3 +1118,230 @@ export interface PayrollReadinessResult {
   recommendations: string[];
   items: PayrollReadinessItem[];
 }
+
+/* =========================================================
+   AI EXECUTIVE BRIEFING
+========================================================= */
+
+export interface BriefingConcern {
+  area: string;
+  severity: "HIGH" | "MEDIUM" | "LOW";
+  title: string;
+  description: string;
+  metric?: string;
+  department?: string;
+}
+
+export interface BriefingRecommendation {
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  category: "TALENT" | "ATTENDANCE" | "OPERATIONS" | "COST" | "COMPLIANCE";
+  action: string;
+  expectedImpact: string;
+}
+
+export interface DepartmentPulse {
+  department: string;
+  headcount: number;
+  health: "HEALTHY" | "WATCH" | "AT_RISK" | "STABLE";
+  keyIndicator: string;
+}
+
+export interface ExecutiveBriefingResult {
+  headline: string;
+  healthScore: number;
+  periodLabel: string;
+  executiveSummary: string;
+  keyHighlights: string[];
+  criticalConcerns: BriefingConcern[];
+  strategicRecommendations: BriefingRecommendation[];
+  departmentPulse: DepartmentPulse[];
+  metricSnapshots: {
+    totalHeadcount: number;
+    attritionRatePercent: number;
+    attendanceRatePercent: number;
+    openTicketsCount: number;
+    monthlyPayrollCost: number;
+    avgReviewRating: number;
+  };
+  source: "llm" | "deterministic";
+  generatedAt: string;
+}
+
+export type HrDomain =
+  | "ATTENDANCE"
+  | "WORKFORCE"
+  | "PAYROLL"
+  | "TICKETS"
+  | "LEAVE"
+  | "RECRUITMENT"
+  | "PERFORMANCE"
+  | "GENERAL";
+
+export interface AskHrResult {
+  question: string;
+  answerText: string;
+  keyMetric?: {
+    label: string;
+    value: string | number;
+    subtext?: string;
+  };
+  domain: HrDomain;
+  table?: {
+    columns: string[];
+    rows: (string | number)[][];
+  };
+  chartData?: {
+    label: string;
+    value: number;
+  }[];
+  actionLink?: {
+    label: string;
+    url: string;
+    description?: string;
+  };
+  suggestedFollowUps: string[];
+  source: "llm" | "rule";
+}
+
+export type DatasetType =
+  | "WORKFORCE"
+  | "ATTENDANCE"
+  | "PAYROLL"
+  | "LEAVE"
+  | "TICKETS";
+
+export interface DatasetColumnDef {
+  key: string;
+  label: string;
+  type: "text" | "number" | "currency" | "date" | "badge";
+  defaultSelected: boolean;
+}
+
+export interface AiCustomReportKpi {
+  id: string;
+  label: string;
+  value: string | number;
+  subtext?: string;
+  status?: "neutral" | "good" | "warning" | "danger";
+}
+
+export interface GroupedSummaryItem {
+  groupKey: string;
+  groupLabel: string;
+  count: number;
+  metrics: Record<string, string | number>;
+}
+
+export interface AiCustomReportResult {
+  reportId: string;
+  dataset: DatasetType;
+  title: string;
+  subtitle: string;
+  theme: string;
+  executiveSummary: string;
+  keyFindings: string[];
+  kpiCards: AiCustomReportKpi[];
+  columns: DatasetColumnDef[];
+  selectedColumns: string[];
+  rows: Record<string, any>[];
+  totalRecords: number;
+  availableGroupings: { key: string; label: string }[];
+  activeGroupBy?: string;
+  groupedSummary?: GroupedSummaryItem[];
+  chart?: {
+    title: string;
+    type: "bar" | "line";
+    dataKey: string;
+    data: { label: string; value: number }[];
+  };
+  recommendations: {
+    priority: "HIGH" | "MEDIUM" | "LOW";
+    action: string;
+    impact: string;
+  }[];
+  generatedAt: string;
+  source: "llm" | "deterministic";
+}
+
+export interface AiCustomReportPayload {
+  dataset?: DatasetType;
+  selectedColumns?: string[];
+  groupBy?: string;
+  chartType?: "bar" | "line" | "none";
+  prompt?: string;
+  templateId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  departmentId?: string;
+}
+
+export type RiskLevel = "CRITICAL" | "ELEVATED" | "MODERATE" | "STABLE";
+
+export interface RiskDimensionBreakdown {
+  score: number;
+  level: RiskLevel;
+  primarySignal: string;
+}
+
+export interface EmployeeRiskProfile {
+  employeeId: string;
+  employeeCode: string;
+  name: string;
+  email: string;
+  departmentId: string;
+  departmentName: string;
+  designation: string;
+  tenureMonths: number;
+  flightRiskScore: number;
+  riskLevel: RiskLevel;
+  estimatedReplacementCostINR: number;
+  dimensions: {
+    compensation: RiskDimensionBreakdown;
+    burnout: RiskDimensionBreakdown;
+    leaveDisengagement: RiskDimensionBreakdown;
+    grievanceSentiment: RiskDimensionBreakdown;
+  };
+  dominantFactors: string[];
+  suggestedAction: string;
+}
+
+export interface DepartmentVulnerability {
+  departmentId: string;
+  departmentName: string;
+  headcount: number;
+  avgRiskScore: number;
+  vulnerabilityLevel: RiskLevel;
+  criticalCount: number;
+  elevatedCount: number;
+  topRiskDriver: string;
+}
+
+export interface RetentionPlaybook {
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  targetScope: string;
+  diagnosis: string;
+  recommendedAction: string;
+  stayInterviewQuestions: string[];
+  expectedImpact: string;
+}
+
+export interface RetentionRadarResult {
+  orgRiskIndex: number;
+  orgRiskLevel: RiskLevel;
+  totalAuditedEmployees: number;
+  criticalRiskCount: number;
+  elevatedRiskCount: number;
+  moderateRiskCount: number;
+  stableCount: number;
+  totalReplacementExposureINR: number;
+  dominantOrgRiskDriver: string;
+  executiveSummary: string;
+  keyVulnerabilityFindings: string[];
+  departmentVulnerabilities: DepartmentVulnerability[];
+  employeeRoster: EmployeeRiskProfile[];
+  managerPlaybooks: RetentionPlaybook[];
+  source: "llm" | "deterministic";
+  generatedAt: string;
+}
+
+

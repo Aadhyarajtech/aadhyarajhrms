@@ -26,6 +26,43 @@ const ALLOWED_MIME = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
+const PRIVATE_DOCUMENT_DIR = path.join(
+  process.cwd(),
+  "private-uploads",
+  "documents",
+);
+if (!fs.existsSync(PRIVATE_DOCUMENT_DIR)) {
+  fs.mkdirSync(PRIVATE_DOCUMENT_DIR, { recursive: true });
+}
+
+const privateDocumentStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, PRIVATE_DOCUMENT_DIR),
+  filename: (_req, file, cb) => {
+    const safeExt = path.extname(file.originalname).slice(0, 10);
+    cb(
+      null,
+      `${Date.now()}-${crypto.randomBytes(12).toString("hex")}${safeExt}`,
+    );
+  },
+});
+
+export const privateDocumentUpload = multer({
+  storage: privateDocumentStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_MIME.has(file.mimetype)) {
+      return cb(
+        new Error(
+          "Unsupported file type. Please upload a PDF, Word document, or image.",
+        ),
+      );
+    }
+    cb(null, true);
+  },
+});
+
+export const PRIVATE_DOCUMENT_DIR_ABSOLUTE = PRIVATE_DOCUMENT_DIR;
+
 export const upload = multer({
   storage,
   limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
@@ -60,3 +97,4 @@ export const profileImageUpload = multer({
   },
 });
 export const UPLOAD_DIR_ABSOLUTE = UPLOAD_DIR;
+export { UPLOAD_DIR };

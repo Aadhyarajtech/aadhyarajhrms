@@ -14,19 +14,26 @@ import { env } from "@/config/env";
 // =========================================================
 
 const VALID_CATEGORIES = [
+  "Payroll Issue",
+  "Leave Issue",
+  "Manager Concern",
+  "Harassment Complaint",
+  "IT Support",
+  "Infrastructure",
+  "Policy Query",
+  "Other",
   "HR",
   "Payroll",
   "Leave",
   "Attendance",
   "Recruitment",
   "Employee Referral",
-  "IT Support",
   "Complaint",
 ] as const;
 
 type TicketCategory = (typeof VALID_CATEGORIES)[number];
 
-export const VALID_PRIORITIES = ["LOW", "MEDIUM", "HIGH"] as const;
+export const VALID_PRIORITIES = ["CRITICAL", "LOW", "MEDIUM", "HIGH"] as const;
 export type TicketPriority = (typeof VALID_PRIORITIES)[number];
 
 export const VALID_SENTIMENTS = [
@@ -973,8 +980,8 @@ function localFallbackReply(
     const customReply = tone === "formal"
       ? `Dear ${firstName},\n\nRegarding your ticket "${subject}":\n\n${instruction.trim()}\n\nPlease feel free to reach out if you have any further questions.${agentSignOff}`
       : tone === "concise"
-      ? `Hi ${firstName}, regarding "${subject}": ${instruction.trim()}.${agentSignOff}`
-      : `Hi ${firstName},\n\nThank you for following up on "${subject}". ${instruction.trim()}\n\nPlease let us know if you need any additional assistance or clarification.${agentSignOff}`;
+        ? `Hi ${firstName}, regarding "${subject}": ${instruction.trim()}.${agentSignOff}`
+        : `Hi ${firstName},\n\nThank you for following up on "${subject}". ${instruction.trim()}\n\nPlease let us know if you need any additional assistance or clarification.${agentSignOff}`;
     return { reply: customReply, tone };
   }
 
@@ -1277,11 +1284,11 @@ export async function generateOrganizationAI<T>(
 
             ...(options?.userMessage
               ? [
-                  {
-                    role: "user",
-                    content: options.userMessage,
-                  },
-                ]
+                {
+                  role: "user",
+                  content: options.userMessage,
+                },
+              ]
               : []),
           ],
 
@@ -1367,4 +1374,416 @@ export async function generateOrganizationAI<T>(
 
     return fallback;
   }
+}
+// =========================================================
+// RECRUITMENT AI - RESUME SCREENING
+// =========================================================
+
+const resumeScreeningSchema = z.object({
+  score: z.number().min(0).max(100),
+  recommendation: z.enum(["YES", "NO", "REVIEW"]),
+  confidence: z.enum(["HIGH", "MEDIUM", "LOW"]),
+  matchedSkills: z.array(z.string()),
+  missingSkills: z.array(z.string()),
+  strengths: z.array(z.string()).max(5),
+  concerns: z.array(z.string()).max(5),
+  experienceRelevance: z.string(),
+  educationRelevance: z.string(),
+  interviewFocus: z.array(z.string()).max(5),
+  summary: z.string(),
+});
+
+export async function generateResumeScreeningAI(input: {
+  resumeText: string;
+  jobTitle: string;
+  jobDescription: string;
+  requiredSkills: string[];
+}) {
+  const fallback = {
+    score: 0,
+    recommendation: "REVIEW" as const,
+    confidence: "LOW" as const,
+    matchedSkills: [],
+    missingSkills: input.requiredSkills,
+    strengths: [],
+    concerns: ["AI screening could not be completed."],
+    experienceRelevance: "Unable to determine.",
+    educationRelevance: "Unable to determine.",
+    interviewFocus: ["Manually verify candidate qualifications."],
+    summary:
+      "AI screening could not be completed. Manual recruiter review is required.",
+  };
+
+  if (!env.groqApiKey || !input.resumeText.trim()) {
+    return fallback;
+  }
+
+  return generateCalendarAI(
+    `You are an AI recruitment screening assistant.
+
+Evaluate a candidate resume against a job posting.
+
+Rules:
+- Compare only information actually present in the resume and job posting.
+- Do not invent candidate experience, skills, education, qualifications, or achievements.
+- Identify skills explicitly supported by the resume.
+- Identify required skills that are not supported by the resume.
+- Assess how relevant the candidate's experience is to the role.
+- Assess education only from information explicitly present in the resume.
+- Identify concrete candidate strengths supported by the resume.
+- Identify potential concerns or areas that a recruiter should verify.
+- Suggest specific interview focus areas based on the job requirements and candidate gaps.
+- Set confidence to HIGH when there is substantial relevant resume evidence, MEDIUM when evidence is partial, and LOW when resume information is limited.
+- Give recommendation YES when the evidence indicates strong alignment, NO when there is clear poor alignment, otherwise REVIEW.
+- Keep all explanations concise and factual.
+- This is an assistive screening result. It must not make a final hiring decision.
+- Never make decisions based on protected or sensitive personal characteristics.
+
+Return valid JSON with exactly:
+{
+  "score": number,
+  "recommendation": "YES" or "NO" or "REVIEW",
+  "confidence": "HIGH" or "MEDIUM" or "LOW",
+  "matchedSkills": string[],
+  "missingSkills": string[],
+  "strengths": string[],
+  "concerns": string[],
+  "experienceRelevance": string,
+  "educationRelevance": string,
+  "interviewFocus": string[],
+  "summary": string
+}`,
+    `
+JOB TITLE:
+${input.jobTitle}
+
+JOB DESCRIPTION:
+${input.jobDescription || "Not provided"}
+
+REQUIRED SKILLS:
+${input.requiredSkills.join(", ") || "Not provided"}
+
+CANDIDATE RESUME:
+${input.resumeText}
+`,
+    resumeScreeningSchema,
+    fallback,
+    {
+      temperature: 0.1,
+      maxTokens: 700,
+      timeoutMs: 10000,
+    },
+  );
+}
+// =========================================================
+// RECRUITMENT AI - INTERVIEW COPILOT
+// =========================================================
+
+export async function generateInterviewCopilotAI(input: {
+  candidateName: string;
+  jobTitle: string;
+  jobDescription: string;
+  resumeText: string;
+  requiredSkills: string[];
+  matchedSkills: string[];
+  missingSkills: string[];
+  screeningSummary: string;
+}) {
+  const fallback = {
+    focusAreas: input.requiredSkills.slice(0, 5),
+    technicalQuestions: [],
+    resumeQuestions: [],
+    skillGapQuestions: [],
+    behavioralQuestions: [],
+  };
+
+  return generateCalendarAI(
+    `You are an AI Interview Copilot for an enterprise recruitment system.
+
+Your job is to help a human interviewer prepare a structured, job-relevant interview for a candidate.
+
+Use ONLY the candidate, resume, job description, required skills, and screening information provided.
+
+## Generate these sections
+
+1. TECHNICAL QUESTIONS
+Generate 5 questions that evaluate the technical skills required for the role.
+
+2. RESUME-BASED QUESTIONS
+Generate 3 questions based on specific skills, projects, technologies, or experience explicitly present in the candidate's resume.
+
+These questions should help the interviewer verify the candidate's actual knowledge and contribution.
+
+3. SKILL GAP QUESTIONS
+Generate 2 questions focused on important required skills that were identified as missing or weak during screening.
+
+Do not assume the candidate has no knowledge of the skill. The questions should validate the skill.
+
+4. BEHAVIORAL QUESTIONS
+Generate 2 questions focused on problem solving, ownership, teamwork, communication, or handling challenges relevant to the role.
+
+## Follow-up questions
+
+For every generated question, provide 1 or 2 useful follow-up questions that the interviewer can ask if more depth is needed.
+
+## Rules
+
+- Questions must be relevant to the job.
+- Personalize questions using the candidate's resume and screening information.
+- Do not invent candidate experience, skills, projects, qualifications, or achievements.
+- Resume-based questions must be grounded in information explicitly present in the resume.
+- Do not use protected or sensitive characteristics.
+- Do not make a hiring decision.
+- Do not provide an overall candidate recommendation.
+- Keep questions concise and practical for a real interviewer.
+- Avoid duplicate questions.
+- Return valid JSON matching the requested structure.
+
+## Output Format
+
+{
+  "focusAreas": ["skill1", "skill2"],
+  "technicalQuestions": [
+    {
+      "question": "Interview question",
+      "followUps": ["Follow-up question"]
+    }
+  ],
+  "resumeQuestions": [
+    {
+      "question": "Interview question",
+      "followUps": ["Follow-up question"]
+    }
+  ],
+  "skillGapQuestions": [
+    {
+      "question": "Interview question",
+      "followUps": ["Follow-up question"]
+    }
+  ],
+  "behavioralQuestions": [
+    {
+      "question": "Interview question",
+      "followUps": ["Follow-up question"]
+    }
+  ]
+}`,
+    `Candidate: ${input.candidateName}
+
+Job Title: ${input.jobTitle}
+
+Job Description:
+${input.jobDescription}
+
+Required Skills:
+${input.requiredSkills.join(", ") || "Not specified"}
+
+Candidate Resume:
+${input.resumeText || "Not available"}
+
+AI Screening Matched Skills:
+${input.matchedSkills.join(", ") || "None identified"}
+
+AI Screening Missing/Weak Skills:
+${input.missingSkills.join(", ") || "None identified"}
+
+AI Screening Summary:
+${input.screeningSummary || "Not available"}`,
+    z.object({
+      focusAreas: z.array(z.string()).max(8),
+      technicalQuestions: z.array(
+        z.object({
+          question: z.string().min(1),
+          followUps: z.array(z.string()).max(2),
+        }),
+      ).max(5),
+      resumeQuestions: z.array(
+        z.object({
+          question: z.string().min(1),
+          followUps: z.array(z.string()).max(2),
+        }),
+      ).max(3),
+      skillGapQuestions: z.array(
+        z.object({
+          question: z.string().min(1),
+          followUps: z.array(z.string()).max(2),
+        }),
+      ).max(2),
+      behavioralQuestions: z.array(
+        z.object({
+          question: z.string().min(1),
+          followUps: z.array(z.string()).max(2),
+        }),
+      ).max(2),
+    }),
+    fallback,
+    {
+      temperature: 0.3,
+      maxTokens: 1800,
+      timeoutMs: 12000,
+    },
+  );
+}
+export async function generateJobRequisitionAI(input: {
+  jobTitle: string;
+  currentDepartment?: string;
+  currentDesignation?: string;
+  currentRoleCategory?: string;
+  currentEmploymentType?: string;
+  currentLocation?: string;
+  currentExperienceMin?: number;
+  currentExperienceMax?: number;
+  currentSkills?: string;
+  departments: { id: string; name: string }[];
+  designations: {
+    id: string;
+    title: string;
+    departmentId: string;
+  }[];
+}) {
+  const fallback = {
+    departmentName: input.currentDepartment || "",
+    designationTitle: input.currentDesignation || "",
+    roleCategory: input.currentRoleCategory || "",
+    employmentType: (input.currentEmploymentType || "FULL_TIME") as
+  | "FULL_TIME"
+  | "PART_TIME"
+  | "CONTRACT"
+  | "INTERN",
+    location: input.currentLocation || "Bengaluru, India",
+    experienceMin: input.currentExperienceMin ?? 0,
+    experienceMax: input.currentExperienceMax ?? 5,
+    skills: input.currentSkills
+      ? input.currentSkills
+        .split(",")
+        .map((skill) => skill.trim())
+        .filter(Boolean)
+      : [],
+    screeningQuestions: [],
+    description: "",
+  };
+
+  return generateCalendarAI(
+    `You are an AI Job Requisition Generator for an enterprise HRMS.
+
+Your task is to create a complete draft job requisition based primarily on the job title.
+
+Use the job title as the main signal.
+
+The recruiter may already have entered some values. Treat those values as constraints and preserve them where provided.
+
+## Generate
+
+1. Department
+2. Designation
+3. Role Category
+4. Employment Type
+5. Location
+6. Minimum Experience
+7. Maximum Experience
+8. Required Skills
+9. Screening Questions
+10. Job Description
+
+## Department and Designation rules
+
+You MUST choose the department from the provided department list.
+
+You MUST choose the designation from the provided designation list.
+
+Return the exact department name and exact designation title from the provided lists.
+
+Do not invent a department or designation that is not present in the supplied lists.
+
+The designation should belong to the selected department.
+
+## Important rules
+
+- Base the draft primarily on the job title.
+- Preserve recruiter-provided values when they are supplied.
+- Do not invent company-specific facts.
+- Do not include salary claims unless provided.
+- Do not use protected or sensitive characteristics.
+- Keep experience ranges realistic for the role.
+- Suggest practical technical and professional skills relevant to the role.
+- Generate 3 to 5 practical screening questions.
+- Write a professional job description suitable for an HR/recruitment system.
+- The job description should describe responsibilities, qualifications, expectations, and relevant skills.
+- Do not make hiring decisions.
+- This is an editable draft for recruiter review.
+- Return valid JSON matching the requested structure.
+
+## Output Format
+
+{
+  "departmentName": "Engineering",
+  "designationTitle": "Software Engineer",
+  "roleCategory": "ENGINEERING",
+  "employmentType": "FULL_TIME",
+  "location": "Bengaluru, India",
+  "experienceMin": 1,
+  "experienceMax": 4,
+  "skills": ["Python", "FastAPI", "PostgreSQL", "Git"],
+  "screeningQuestions": [
+    "How many years of experience do you have with Python?",
+    "Describe a backend API you have developed.",
+    "What database technologies have you worked with?"
+  ],
+  "description": "Professional job description..."
+}`,
+    `Job Title:
+${input.jobTitle}
+
+Recruiter-provided values:
+Department: ${input.currentDepartment || "Not provided"}
+Designation: ${input.currentDesignation || "Not provided"}
+Role Category: ${input.currentRoleCategory || "Not provided"}
+Employment Type: ${input.currentEmploymentType || "Not provided"}
+Location: ${input.currentLocation || "Not provided"}
+Minimum Experience: ${input.currentExperienceMin !== undefined
+      ? input.currentExperienceMin
+      : "Not provided"
+    }
+Maximum Experience: ${input.currentExperienceMax !== undefined
+      ? input.currentExperienceMax
+      : "Not provided"
+    }
+Required Skills: ${input.currentSkills || "Not provided"}
+
+Available Departments:
+${input.departments
+      .map((department) => `${department.id}: ${department.name}`)
+      .join("\n")}
+
+Available Designations:
+${input.designations
+      .map(
+        (designation) =>
+          `${designation.id}: ${designation.title} (departmentId: ${designation.departmentId})`,
+      )
+      .join("\n")}`,
+    z.object({
+      departmentName: z.string(),
+      designationTitle: z.string(),
+      roleCategory: z.string(),
+      employmentType: z.enum([
+        "FULL_TIME",
+        "PART_TIME",
+        "CONTRACT",
+        "INTERN",
+      ]),
+      location: z.string(),
+      experienceMin: z.number().int().min(0),
+      experienceMax: z.number().int().min(0),
+      skills: z.array(z.string()).max(15),
+      screeningQuestions: z.array(z.string()).max(5),
+      description: z.string(),
+    }),
+    fallback,
+    {
+      temperature: 0.2,
+      maxTokens: 2200,
+      timeoutMs: 15000,
+    },
+  );
 }

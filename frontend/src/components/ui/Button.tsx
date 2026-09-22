@@ -14,11 +14,20 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT_STYLES: Record<Variant, string> = {
-  primary: "bg-brand-500 text-white shadow-soft hover:bg-brand-600 active:bg-brand-700 disabled:bg-brand-300",
-  secondary: "bg-ink text-white hover:bg-ink/90 active:bg-ink/80",
-  outline: "border border-line bg-white text-ink hover:border-brand-300 hover:text-brand-700 hover:bg-brand-50",
-  ghost: "text-ink-soft hover:bg-black/5 hover:text-ink",
-  danger: "bg-danger-500 text-white hover:bg-danger-700",
+  primary:
+    "bg-gradient-to-r from-[#5B4FE5] to-[#6D5BEA] text-white shadow-[0_8px_18px_rgba(91,79,229,0.22)] hover:from-[#5145D7] hover:to-[#634FD9] active:from-[#463CC4] active:to-[#5644C9] disabled:from-[#A9A4EA] disabled:to-[#B5B0ED]",
+
+  secondary:
+    "bg-slate-900 text-white shadow-[0_7px_16px_rgba(15,23,42,0.16)] hover:bg-slate-800 active:bg-slate-950",
+
+  outline:
+    "border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-brand-300 hover:bg-[#F7F5FF] hover:text-brand-700",
+
+  ghost:
+    "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+
+  danger:
+    "bg-gradient-to-r from-[#D14343] to-[#E05252] text-white shadow-[0_7px_16px_rgba(209,67,67,0.18)] hover:from-[#BE3939] hover:to-[#D44747]",
 };
 
 const SIZE_STYLES: Record<Size, string> = {
@@ -28,24 +37,42 @@ const SIZE_STYLES: Record<Size, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = "primary", size = "md", isLoading, leftIcon, rightIcon, className, children, disabled, ...props }, ref) => {
+  (
+    {
+      variant = "primary",
+      size = "md",
+      isLoading,
+      leftIcon,
+      rightIcon,
+      className,
+      children,
+      disabled,
+      ...props
+    },
+    ref,
+  ) => {
     return (
       <button
         ref={ref}
         disabled={disabled || isLoading}
         className={cx(
-          "inline-flex items-center justify-center rounded-xl font-medium transition-all duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-60",
+          "inline-flex items-center justify-center rounded-xl font-semibold tracking-[-0.01em] transition-all duration-150 ease-out",
+          "disabled:cursor-not-allowed disabled:opacity-60",
+          "active:scale-[0.98]",
           VARIANT_STYLES[variant],
           SIZE_STYLES[size],
-          className
+          className,
         )}
         {...props}
       >
         {isLoading ? <Loader2 size={16} className="animate-spin" /> : leftIcon}
+
         {children}
+
         {!isLoading && rightIcon}
       </button>
     );
-  }
+  },
 );
+
 Button.displayName = "Button";

@@ -16,7 +16,7 @@ interface AIClassification {
   intent?: string;
   confidence?: number;
   reason?: string;
-  priority?: "LOW" | "MEDIUM" | "HIGH";
+  priority?: "CRITICAL" | "LOW" | "MEDIUM" | "HIGH";
   priorityReason?: string;
   sentiment?: "POSITIVE" | "NEUTRAL" | "FRUSTRATED" | "CRITICAL";
   message?: string;
@@ -26,7 +26,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [category, setCategory] = useState("HR");
-  const [priority, setPriority] = useState("MEDIUM");
+  const [priority, setPriority] = useState<"CRITICAL" | "LOW" | "MEDIUM" | "HIGH">("MEDIUM");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
@@ -241,18 +241,60 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
 
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2"
+              onChange={(e) => {
+                const val = e.target.value;
+                setCategory(val);
+                if (val === "Harassment Complaint") {
+                  setPriority("CRITICAL");
+                  userChangedPriorityRef.current = true;
+                }
+              }}
+              className="w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
             >
-              <option>HR</option>
-              <option>Payroll</option>
-              <option>Leave</option>
-              <option>Attendance</option>
-              <option>Recruitment</option>
-              <option>Employee Referral</option>
-              <option>IT Support</option>
-              <option>Complaint</option>
+              <optgroup label="SmartHR Pro Core Categories">
+                <option value="Payroll Issue">Payroll Issue (Discrepancy, Tax, Payslip, Bonus)</option>
+                <option value="Leave Issue">Leave Issue (Balance Dispute, Wrongful Rejection)</option>
+                <option value="Manager Concern">Manager Concern (Interpersonal / Workplace)</option>
+                <option value="Harassment Complaint">Harassment Complaint (POSH / Safety / Whistleblower)</option>
+                <option value="IT Support">IT Support (Access, Hardware, VPN, Credentials)</option>
+                <option value="Infrastructure">Infrastructure (Facilities, Desk, Equipment)</option>
+                <option value="Policy Query">Policy Query (HR Policies, Benefits, Insurance)</option>
+                <option value="Other">Other Concern</option>
+              </optgroup>
+              <optgroup label="Legacy Categories">
+                <option value="HR">General HR</option>
+                <option value="Attendance">Attendance Regularization</option>
+                <option value="Recruitment">Recruitment</option>
+                <option value="Employee Referral">Employee Referral</option>
+                <option value="Complaint">General Complaint</option>
+              </optgroup>
             </select>
+
+            {/* POSH / Harassment Special Protection Notice */}
+            {category === "Harassment Complaint" && (
+              <div className="mt-2 flex items-start gap-2.5 rounded-lg border border-rose-200 bg-rose-50/90 p-3 text-xs text-rose-900 animate-fade-in">
+                <span className="text-base leading-none">🔒</span>
+                <div>
+                  <p className="font-semibold text-rose-950">Confidential POSH Grievance Routing</p>
+                  <p className="mt-0.5 text-rose-800 leading-relaxed">
+                    This ticket is routed strictly to the dedicated <strong>POSH Committee & HR Leadership</strong> with maximum urgency (<strong>1-Hour SLA</strong>). Your reporting manager and regular staff will <strong>not</strong> have visibility into this case.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Manager Concern Special Notice */}
+            {category === "Manager Concern" && (
+              <div className="mt-2 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50/90 p-3 text-xs text-amber-900 animate-fade-in">
+                <span className="text-base leading-none">🛡️</span>
+                <div>
+                  <p className="font-semibold text-amber-950">Independent Leadership Review</p>
+                  <p className="mt-0.5 text-amber-800 leading-relaxed">
+                    Manager concern tickets bypass your direct reporting manager and are routed directly to <strong>Senior Leadership & HR Head</strong> for impartial mediation (3 Business Days SLA).
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* AI Classification Suggestion */}
             {aiLoading && (
@@ -393,13 +435,14 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
               value={priority}
               onChange={(e) => {
                 userChangedPriorityRef.current = true;
-                setPriority(e.target.value);
+                setPriority(e.target.value as "CRITICAL" | "LOW" | "MEDIUM" | "HIGH");
               }}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
             >
-              <option value="LOW">Low</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
+              <option value="CRITICAL">🚨 Critical (1 Hour SLA — Safety, POSH, System Down)</option>
+              <option value="HIGH">High (4 Hours SLA — Payroll Discrepancy, Blocker)</option>
+              <option value="MEDIUM">Medium (24 Hours / 1 Day SLA — Standard Request)</option>
+              <option value="LOW">Low (72 Hours / 3 Days SLA — General Inquiry)</option>
             </select>
 
             {/* Suggested priority mismatch helper */}

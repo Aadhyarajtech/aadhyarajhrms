@@ -4,7 +4,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Briefcase, FileText, MapPin, Plus, Users } from "lucide-react";
+import {
+  Briefcase,
+  FileText,
+  MapPin,
+  Plus,
+  Users,
+  Sparkles,
+  TrendingUp,
+  UserPlus,
+  CheckCircle2,
+  Clock3,
+} from "lucide-react";
 import { RecruitmentApi, OrganizationApi } from "@/lib/endpoints";
 import { api, getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -312,8 +323,21 @@ export default function Recruitment() {
     [pipeline],
   );
 
+  const totalCandidates = (jobs ?? []).reduce(
+    (total, job) => total + (job.candidateCount ?? 0),
+    0,
+  );
+
+  const pipelineTotal = pipelineData.reduce(
+    (total, item) => total + item.count,
+    0,
+  );
+
+  const hiredCount =
+    pipeline?.find((item) => item.stage === "HIRED")?.count ?? 0;
+
   return (
-    <div>
+    <div className="premium-page space-y-5">
       <PageHeader
         title="Recruitment"
         subtitle="Manage job requisitions, approvals, postings, and every candidate's journey."
@@ -327,7 +351,103 @@ export default function Recruitment() {
         }
       />
 
-      <Card className="mb-6">
+      <div className="relative overflow-hidden rounded-[28px] border border-indigo-100/80 bg-gradient-to-br from-[#312E81] via-[#5146E5] to-[#7C5CFF] p-5 text-white shadow-[0_18px_50px_rgba(79,70,229,0.17)] sm:p-7">
+        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
+        <div className="absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-violet-300/20 blur-3xl" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-100 backdrop-blur">
+              <Sparkles size={13} />
+              Talent acquisition intelligence
+            </div>
+            <h2 className="font-display text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">
+              Build your next great team.
+            </h2>
+            <p className="mt-1.5 max-w-2xl text-[12px] leading-relaxed text-indigo-100">
+              Track requisitions, candidate movement, hiring sources and
+              volume-hiring activity from one workspace.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+            <div className="min-w-[125px] rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+              <div className="flex items-center gap-2 text-indigo-100">
+                <Briefcase size={15} />
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em]">
+                  Roles
+                </span>
+              </div>
+              <p className="mt-1 font-display text-2xl font-semibold">{jobs?.length ?? 0}</p>
+            </div>
+
+            <div className="min-w-[125px] rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+              <div className="flex items-center gap-2 text-indigo-100">
+                <Users size={15} />
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em]">
+                  Candidates
+                </span>
+              </div>
+              <p className="mt-1 font-display text-2xl font-semibold">{totalCandidates}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="relative overflow-hidden rounded-[22px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(79,70,229,0.06)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Open roles</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{jobs?.length ?? 0}</p>
+            </div>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
+              <Briefcase size={17} />
+            </span>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">Current recruitment requisitions</p>
+        </div>
+
+        <div className="relative overflow-hidden rounded-[22px] border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(14,165,233,0.05)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-600">In pipeline</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{pipelineTotal}</p>
+            </div>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sky-600 shadow-sm ring-1 ring-sky-100">
+              <TrendingUp size={17} />
+            </span>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">Candidates across all stages</p>
+        </div>
+
+        <div className="relative overflow-hidden rounded-[22px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(16,185,129,0.05)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Hired</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{hiredCount}</p>
+            </div>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm ring-1 ring-emerald-100">
+              <CheckCircle2 size={17} />
+            </span>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">Completed hiring outcomes</p>
+        </div>
+
+        <div className="relative overflow-hidden rounded-[22px] border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(245,158,11,0.05)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Referrals</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{referralAnalytics?.totalReferrals ?? 0}</p>
+            </div>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm ring-1 ring-amber-100">
+              <UserPlus size={17} />
+            </span>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">Employee referral volume</p>
+        </div>
+      </div>
+
+      <Card className="mb-6 border-indigo-100/70 bg-gradient-to-br from-white to-[#FBFAFF] shadow-[0_10px_30px_rgba(79,70,229,0.05)]">
         <CardHeader
           title="Pipeline overview"
           subtitle="Candidates by stage across all recruitment roles"
@@ -363,7 +483,7 @@ export default function Recruitment() {
       </Card>
 
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        <Card>
+        <Card className="border-slate-200/70 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.045)]">
           <CardHeader
             title="Recruitment Source Analytics"
             subtitle="Applications and hiring performance by source"
@@ -421,7 +541,7 @@ export default function Recruitment() {
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
+          <Card className="border-amber-100/80 bg-gradient-to-br from-white to-[#FFFBF2] shadow-[0_10px_28px_rgba(245,158,11,0.045)]">
             <CardHeader
               title="Employee Referrals"
               subtitle="Referral pipeline performance"
@@ -452,7 +572,7 @@ export default function Recruitment() {
             </p>
           </Card>
 
-          <Card>
+          <Card className="border-sky-100/80 bg-gradient-to-br from-white to-[#F5FBFF] shadow-[0_10px_28px_rgba(14,165,233,0.045)]">
             <CardHeader
               title="Volume Hiring"
               subtitle="Walk-in and campus recruitment"
@@ -498,12 +618,27 @@ export default function Recruitment() {
           description="Create your first job requisition to start building your recruitment pipeline."
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">
+                Hiring workspace
+              </p>
+              <h3 className="mt-1 font-display text-lg font-semibold tracking-[-0.015em] text-slate-900">
+                Current requisitions
+              </h3>
+            </div>
+            <div className="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-slate-500 sm:flex">
+              <Clock3 size={13} />
+              Live pipeline
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {jobs.map((job) => (
             <Card
               key={job.id}
               hoverable
-              className="cursor-pointer"
+              className="cursor-pointer border-slate-200/70 bg-gradient-to-br from-white via-white to-[#FBFAFF] shadow-[0_8px_24px_rgba(15,23,42,0.045)] hover:border-indigo-200/80 hover:shadow-[0_16px_34px_rgba(79,70,229,0.10)]"
               onClick={() => navigate(`/app/recruitment/${job.id}`)}
             >
               <div className="flex items-start justify-between gap-3">
@@ -548,7 +683,8 @@ export default function Recruitment() {
               )}
             </Card>
           ))}
-        </div>
+          </div>
+        </>
       )}
 
       <PostJobModal open={postOpen} onClose={() => setPostOpen(false)} />
@@ -716,6 +852,76 @@ function PostJobModal({
     },
   });
 
+  const aiJobDescriptionMutation = useMutation({
+    mutationFn: RecruitmentApi.generateJobDescription,
+
+    onSuccess: (draft) => {
+      setValue("departmentId", draft.departmentId, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("designationId", draft.designationId, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("roleCategory", draft.roleCategory, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue(
+        "employmentType",
+        draft.employmentType as JobForm["employmentType"],
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+
+      setValue("location", draft.location, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("experienceMin", draft.experienceMin, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("experienceMax", draft.experienceMax, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue("skillsText", draft.skills.join(", "), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      setValue(
+        "screeningQuestionsText",
+        draft.screeningQuestions.join("\n"),
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+
+      setValue("description", draft.description, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      showToast("AI job description generated successfully.");
+    },
+
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
+
   const toggleChannel = (channel: string) => {
     const current = selectedChannels ?? [];
 
@@ -768,112 +974,88 @@ function PostJobModal({
   const submitJob = (values: JobForm) => {
     const screeningQuestions = values.screeningQuestionsText
       ? values.screeningQuestionsText
-          .split("\n")
-          .map((item) => item.trim())
-          .filter(Boolean)
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean)
       : [];
 
     const skills = values.skillsText
       ? values.skillsText
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
       : [];
+
     const shortlistingRequiredSkills = values.shortlistingCriteria
       .requiredSkillsText
       ? values.shortlistingCriteria.requiredSkillsText
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
       : [];
 
     const payload = {
       title: values.title.trim(),
-
       departmentId: values.departmentId,
-
       designationId: values.designationId,
-
       roleCategory: values.roleCategory || undefined,
-
       useTemplate: values.useTemplate,
-
       location: values.location?.trim() || "Bengaluru, India",
-
       employmentType: values.employmentType,
-
       experienceMin: values.experienceMin,
-
       experienceMax: values.experienceMax,
-
       description: values.description?.trim() || undefined,
-
       openings: values.openings,
-
       headcount: values.openings,
-
       budgetCtc: values.budgetCtc,
-
       approvalLevelRequired: values.approvalLevelRequired,
-
       postingChannels: values.postingChannels.length
         ? values.postingChannels
         : ["CAREERS"],
-
       screeningQuestions,
-
       hiringMode: values.hiringMode,
 
       walkInDrive:
         values.hiringMode === "WALK_IN"
           ? {
-              driveDate: values.walkInDriveDate || null,
-
-              startTime: values.walkInStartTime || null,
-
-              endTime: values.walkInEndTime || null,
-
-              venue: values.walkInVenue?.trim() || null,
-
-              coordinatorName: values.walkInCoordinatorName?.trim() || null,
-
-              coordinatorContact:
-                values.walkInCoordinatorContact?.trim() || null,
-
-              registrationDeadline: values.walkInRegistrationDeadline || null,
-
-              expectedCandidates: values.walkInExpectedCandidates ?? null,
-            }
+            driveDate: values.walkInDriveDate || null,
+            startTime: values.walkInStartTime || null,
+            endTime: values.walkInEndTime || null,
+            venue: values.walkInVenue?.trim() || null,
+            coordinatorName: values.walkInCoordinatorName?.trim() || null,
+            coordinatorContact:
+              values.walkInCoordinatorContact?.trim() || null,
+            registrationDeadline:
+              values.walkInRegistrationDeadline || null,
+            expectedCandidates:
+              values.walkInExpectedCandidates ?? null,
+          }
           : null,
 
       campusDrive:
         values.hiringMode === "CAMPUS"
           ? {
-              collegeName: values.campusCollegeName?.trim() || null,
-
-              campusLocation: values.campusLocation?.trim() || null,
-
-              driveDate: values.campusDriveDate || null,
-
-              startTime: values.campusStartTime || null,
-
-              endTime: values.campusEndTime || null,
-
-              placementCoordinator:
-                values.campusPlacementCoordinator?.trim() || null,
-
-              coordinatorContact:
-                values.campusCoordinatorContact?.trim() || null,
-
-              expectedCandidates: values.campusExpectedCandidates ?? null,
-            }
+            collegeName: values.campusCollegeName?.trim() || null,
+            campusLocation: values.campusLocation?.trim() || null,
+            driveDate: values.campusDriveDate || null,
+            startTime: values.campusStartTime || null,
+            endTime: values.campusEndTime || null,
+            placementCoordinator:
+              values.campusPlacementCoordinator?.trim() || null,
+            coordinatorContact:
+              values.campusCoordinatorContact?.trim() || null,
+            expectedCandidates:
+              values.campusExpectedCandidates ?? null,
+          }
           : null,
 
       shortlistingCriteria: {
         enabled: values.shortlistingCriteria.enabled,
-        minimumJobFitScore: values.shortlistingCriteria.minimumJobFitScore,
+        minimumJobFitScore:
+          values.shortlistingCriteria.minimumJobFitScore,
         requiredSkills: shortlistingRequiredSkills,
-        minimumExperience: values.shortlistingCriteria.minimumExperience,
+        minimumExperience:
+          values.shortlistingCriteria.minimumExperience,
       },
 
       skills,
@@ -920,12 +1102,12 @@ function PostJobModal({
             const [fieldName, fieldError] = firstError;
             const message =
               typeof fieldError === "object" &&
-              fieldError &&
-              "message" in fieldError
+                fieldError &&
+                "message" in fieldError
                 ? String(
-                    (fieldError as { message?: unknown }).message ??
-                      "Please check this field.",
-                  )
+                  (fieldError as { message?: unknown }).message ??
+                  "Please check this field.",
+                )
                 : "Please check this field.";
             showToast(`${fieldName}: ${message}`, "error");
           } else {
@@ -1345,11 +1527,10 @@ function PostJobModal({
               return (
                 <label
                   key={value}
-                  className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition ${
-                    checked
-                      ? "border-brand-300 bg-brand-50"
-                      : "border-line hover:bg-canvas"
-                  }`}
+                  className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition ${checked
+                    ? "border-brand-300 bg-brand-50"
+                    : "border-line hover:bg-canvas"
+                    }`}
                 >
                   <input
                     type="checkbox"
@@ -1386,6 +1567,32 @@ function PostJobModal({
           error={errors.screeningQuestionsText?.message}
           {...register("screeningQuestionsText")}
         />
+        <div className="sm:col-span-2 -mt-2 flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              aiJobDescriptionMutation.mutate({
+                jobTitle: watch("title"),
+                departmentId: watch("departmentId"),
+                designationId: watch("designationId"),
+                roleCategory: watch("roleCategory"),
+                employmentType: watch("employmentType"),
+                location: watch("location"),
+                experienceMin: watch("experienceMin"),
+                experienceMax: watch("experienceMax"),
+                skills: watch("skillsText"),
+              })
+            }
+            isLoading={aiJobDescriptionMutation.isPending}
+            disabled={
+              !watch("title")?.trim() || aiJobDescriptionMutation.isPending
+            }
+          >
+            Generate with AI
+          </Button>
+        </div>
 
         <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
           Enter one question per line.
