@@ -22,26 +22,35 @@ import ExecutiveHelpdeskAnalytics from "@/components/tickets/ExecutiveHelpdeskAn
 
 const ALL_CATEGORIES = [
   { value: "ALL", label: "All Categories" },
-  { value: "HR", label: "HR" },
+  { value: "Payroll Issue", label: "Payroll Issue" },
+  { value: "Leave Issue", label: "Leave Issue" },
+  { value: "Manager Concern", label: "Manager Concern" },
+  { value: "Harassment Complaint", label: "Harassment Complaint (POSH)" },
+  { value: "IT Support", label: "IT Support" },
+  { value: "Infrastructure", label: "Infrastructure" },
+  { value: "Policy Query", label: "Policy Query" },
+  { value: "Other", label: "Other Concern" },
+  { value: "HR", label: "General HR" },
   { value: "Payroll", label: "Payroll" },
   { value: "Leave", label: "Leave" },
   { value: "Attendance", label: "Attendance" },
   { value: "Recruitment", label: "Recruitment" },
   { value: "Employee Referral", label: "Employee Referral" },
-  { value: "IT Support", label: "IT Support" },
   { value: "Complaint", label: "Complaint / Grievance" },
 ];
 
 function getCategoryOptions(role?: string) {
   if (role === "IT_SUPPORT") {
     return [
-      { value: "ALL", label: "All IT Support Tickets" },
+      { value: "ALL", label: "All IT Support & Infra Tickets" },
       { value: "IT Support", label: "IT Support" },
+      { value: "Infrastructure", label: "Infrastructure" },
     ];
   }
   if (role === "FINANCE") {
     return [
       { value: "ALL", label: "All Payroll Tickets" },
+      { value: "Payroll Issue", label: "Payroll Issue" },
       { value: "Payroll", label: "Payroll" },
     ];
   }
@@ -158,14 +167,25 @@ export default function Tickets() {
   const departmentScopedTickets = (data || []).filter((ticket: any) => {
     if (user?.role === "IT_SUPPORT") {
       return (
-        ticket.category === "IT Support" || ticket.assignedTo === "IT_SUPPORT"
+        ticket.category === "IT Support" ||
+        ticket.category === "Infrastructure" ||
+        ticket.assignedTo === "IT_SUPPORT"
       );
     }
     if (user?.role === "FINANCE") {
-      return ticket.category === "Payroll" || ticket.assignedTo === "FINANCE";
+      return (
+        ticket.category === "Payroll" ||
+        ticket.category === "Payroll Issue" ||
+        ticket.assignedTo === "FINANCE"
+      );
     }
     if (user?.role === "MANAGER") {
-      return ticket.category === "Complaint";
+      // Managers only see standard complaints assigned to them, NEVER harassment or manager concerns
+      return (
+        ticket.category === "Complaint" &&
+        ticket.category !== "Harassment Complaint" &&
+        ticket.category !== "Manager Concern"
+      );
     }
     return true;
   });
@@ -556,14 +576,17 @@ export default function Tickets() {
                   {/* Priority */}
                   <td className="py-2.5 px-2 whitespace-nowrap">
                     <span
-                      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold ${
-                        ticket.priority === "HIGH"
+                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold ${
+                        ticket.priority === "CRITICAL"
+                          ? "bg-rose-100 text-rose-800 border border-rose-300 font-bold animate-pulse shadow-2xs"
+                          : ticket.priority === "HIGH"
                           ? "bg-red-50 text-red-700 border border-red-200"
                           : ticket.priority === "MEDIUM"
                           ? "bg-amber-50 text-amber-700 border border-amber-200"
                           : "bg-slate-50 text-slate-700 border border-slate-200"
                       }`}
                     >
+                      {ticket.priority === "CRITICAL" && <span>🚨</span>}
                       {ticket.priority}
                     </span>
                   </td>

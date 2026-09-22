@@ -96,8 +96,9 @@ export function PayrollAnomalyModal({
         const matchesCode = item.employeeCode?.toLowerCase().includes(query);
         const matchesTitle = item.title.toLowerCase().includes(query);
         const matchesDept = item.department?.toLowerCase().includes(query);
-        return matchesName || matchesCode || matchesTitle || matchesDept;
+        return Boolean(matchesName || matchesCode || matchesTitle || matchesDept);
       }
+      return true;
     });
   }, [audit?.anomalies, activeCategory, activeSeverity, searchQuery]);
 

@@ -38,6 +38,7 @@ const goalSchema = z.object({
   category: z.string().optional(),
   targetValue: z.string().optional(),
   currentValue: z.string().optional(),
+  parentGoalId: z.string().optional(),
   milestones: z.string().optional(),
 });
 type GoalForm = z.infer<typeof goalSchema>;
@@ -232,6 +233,10 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
     queryKey: ["performance", "goals", "mine"],
     queryFn: () => PerformanceApi.goals(),
   });
+  const { data: goalCascade } = useQuery({
+    queryKey: ["performance", "goal-cascade", activeCycleId],
+    queryFn: () => PerformanceApi.goalCascade(),
+  });
   const { data: trend } = useQuery({
     queryKey: ["performance", "goal-trend"],
     queryFn: () => PerformanceApi.goalTrend(),
@@ -320,6 +325,31 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
           : scorecard.overallRating >= 3
             ? "Developing"
             : "Needs Improvement";
+
+  const milestoneMutation = useMutation({
+    mutationFn: ({
+      id,
+      milestoneIndex,
+      completed,
+    }: {
+      id: string;
+      milestoneIndex: number;
+      completed: boolean;
+    }) =>
+      PerformanceApi.updateGoalMilestone(id, milestoneIndex, completed),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "goals", "mine"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "goal-cascade", activeCycleId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "goal-trend"],
+      });
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
   return (
     <div className="space-y-6">
       <Card>
@@ -378,64 +408,165 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
         )}
       </Card>
 
-      <Card>
-        <CardHeader title="Performance insights" />
-        <div className="space-y-4">
-          {trend?.length ? (
-            <div>
-              <p className="flex items-center gap-1.5 text-[12px] font-medium text-ink-faint">
-                <TrendingUp size={14} /> Goal achievement history
-              </p>
-              <div className="mt-2 space-y-2">
-                {trend.slice(-3).map((item) => (
-                  <div
-                    key={item.cycleId ?? item.cycleName}
-                    className="flex justify-between text-[13px]"
-                  >
-                    <span className="text-ink-soft">{item.cycleName}</span>
-                    <span className="font-medium text-ink">
-                      {item.achievementPercentage}%
-                    </span>
-                  </div>
-                ))}
+      <Card className="overflow-hidden">
+        <CardHeader
+          title="Performance insights"
+          subtitle="A quick view of your goals, feedback, and review progress."
+        />
+
+        {(() => {
+          const latestTrend = trend?.length ? trend[trend.length - 1] : null;
+          const achievement = latestTrend?.achievementPercentage;
+          const rating = review?.finalRating ?? review?.selfRating;
+          const responseCount = feedback?.responseCount ?? 0;
+
+          return (
+            <div className="space-y-5">
+              {/* At-a-glance metrics */}
+              <div className="grid gap-3 sm:grid-cols-3">
+                <InsightMetric
+                  icon={Target}
+                  label="Goal achievement"
+                  value={achievement != null ? `${achievement}%` : "—"}
+                  helper={latestTrend?.cycleName ?? "No cycle data yet"}
+                  progress={achievement}
+                />
+
+                <InsightMetric
+                  icon={Star}
+                  label="Performance rating"
+                  value={rating != null ? `${rating}/5` : "—"}
+                  helper={
+                    review?.finalRating != null
+                      ? "Final rating"
+                      : review?.selfRating != null
+                        ? "Self-assessment"
+                        : "Not rated yet"
+                  }
+                  rating={rating}
+                />
+
+                <InsightMetric
+                  icon={MessageSquare}
+                  label="360° feedback"
+                  value={responseCount ? `${responseCount}` : "—"}
+                  helper={
+                    responseCount
+                      ? `Anonymous response${responseCount === 1 ? "" : "s"}`
+                      : "No responses yet"
+                  }
+                />
               </div>
-            </div>
-          ) : (
-            <p className="text-[13px] text-ink-faint">
-              Goal trends appear after goals are added to a cycle.
-            </p>
-          )}
 
-          {feedback?.responseCount ? (
-            <div className="rounded-2xl bg-ink/[0.03] p-4">
-              <p className="text-[12px] font-medium text-ink-faint">
-                360-degree feedback
-              </p>
-              <p className="mt-1 text-[13px] text-ink">
-                {feedback.responseCount} anonymous response
-                {feedback.responseCount === 1 ? "" : "s"}
-              </p>
-            </div>
-          ) : null}
+              {/* Goal history */}
+              <div className="rounded-2xl border border-line/60 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="flex items-center gap-1.5 text-[12px] font-semibold text-ink">
+                      <TrendingUp size={14} className="text-brand-600" />
+                      Goal achievement history
+                    </p>
+                    <p className="mt-1 text-[11.5px] text-ink-faint">
+                      Progress across your recent performance cycles
+                    </p>
+                  </div>
+                  {latestTrend && (
+                    <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">
+                      Latest {latestTrend.achievementPercentage}%
+                    </span>
+                  )}
+                </div>
 
-          {outcome ? (
-            <div className="rounded-2xl bg-brand-50 p-4">
-              <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
-                <Award size={14} /> Review outcome
-              </p>
-              <p className="mt-1 text-[13px] text-ink-soft">
-                {outcome.incrementRecommendation} increment
-                {outcome.promotionEligible ? " · Promotion eligible" : ""}
-                {outcome.fastTrackEligible ? " · Fast-track nominee" : ""}
-                {outcome.pipRecommended ? " · PIP created" : ""}
-              </p>
-              {outcome.trainingNeeds.length ? (
-                <p className="mt-1 text-[12px] text-ink-faint">
-                  Development focus: {outcome.trainingNeeds.join(", ")}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+                {trend?.length ? (
+                  <div className="mt-4 space-y-3">
+                    {trend.slice(-3).map((item) => (
+                      <div key={item.cycleId ?? item.cycleName}>
+                        <div className="mb-1.5 flex items-center justify-between gap-3 text-[12px]">
+                          <span className="min-w-0 truncate text-ink-soft">
+                            {item.cycleName}
+                          </span>
+                          <span className="shrink-0 font-semibold text-ink">
+                            {item.achievementPercentage}%
+                          </span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-ink/[0.08]">
+                          <div
+                            className="h-full rounded-full bg-brand-500 transition-all"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.max(0, Number(item.achievementPercentage) || 0),
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl bg-ink/[0.03] px-3 py-3 text-[12px] text-ink-faint">
+                    Goal trends will appear after goals are added to a performance cycle.
+                  </div>
+                )}
+              </div>
+
+              {/* Review outcome */}
+              {outcome ? (
+                <div className="rounded-2xl border border-brand-200 bg-brand-50/70 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-white p-2 shadow-sm">
+                      <Award size={17} className="text-brand-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-semibold text-brand-700">
+                        Review outcome
+                      </p>
+                      <p className="mt-1 text-[13px] font-medium text-ink">
+                        {outcome.incrementRecommendation} increment
+                      </p>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <OutcomePill
+                          label="Promotion"
+                          value={outcome.promotionEligible ? "Eligible" : "Not eligible"}
+                          active={outcome.promotionEligible}
+                        />
+                        <OutcomePill
+                          label="Fast-track"
+                          value={outcome.fastTrackEligible ? "Eligible" : "Not eligible"}
+                          active={outcome.fastTrackEligible}
+                        />
+                        <OutcomePill
+                          label="PIP"
+                          value={outcome.pipRecommended ? "Recommended" : "Not recommended"}
+                          active={outcome.pipRecommended}
+                        />
+                      </div>
+
+                      {outcome.trainingNeeds.length ? (
+                        <p className="mt-3 text-[11.5px] leading-5 text-ink-faint">
+                          <span className="font-medium text-ink-soft">
+                            Development focus:
+                          </span>{" "}
+                          {outcome.trainingNeeds.join(", ")}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-2xl bg-ink/[0.03] px-4 py-3">
+                  <Award size={17} className="text-ink-faint" />
+                  <div>
+                    <p className="text-[12px] font-medium text-ink-soft">
+                      Review outcome
+                    </p>
+                    <p className="mt-0.5 text-[11.5px] text-ink-faint">
+                      Outcome details will appear after the review is completed.
+                    </p>
+                  </div>
+                </div>
+              )}
 
           {review?.status === "COMPLETED" ? (
             <div className="rounded-2xl bg-brand-50 p-4">
@@ -598,6 +729,33 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
             </div>
           ) : null}
         </div>
+          );
+        })()}
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader
+          title="Goal cascade"
+          subtitle="Company, department, and individual goals are connected through parent-child relationships."
+        />
+        {!goalCascade?.length ? (
+          <p className="text-[13px] text-ink-faint">
+            No goal cascade is configured for your current goals.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {goalCascade.map((goal: any) => (
+              <GoalCascadeNode
+                key={goal.id}
+                goal={goal}
+                onToggleMilestone={(id, milestoneIndex, completed) =>
+                  milestoneMutation.mutate({ id, milestoneIndex, completed })
+                }
+                isUpdating={milestoneMutation.isPending}
+              />
+            ))}
+          </div>
+        )}
       </Card>
       <Card>
         <CardHeader
@@ -1142,9 +1300,18 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
                       </p>
                       <div className="mt-1.5 space-y-1">
                         {goal.milestones.map((milestone: any, index: number) => (
-                          <div
+                          <button
                             key={`${milestone.title}-${index}`}
-                            className="flex items-center gap-2 text-[12px] text-ink-soft"
+                            type="button"
+                            onClick={() =>
+                              milestoneMutation.mutate({
+                                id: g.id,
+                                milestoneIndex: index,
+                                completed: !milestone.completed,
+                              })
+                            }
+                            disabled={milestoneMutation.isPending}
+                            className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-[12px] text-ink-soft hover:bg-ink/[0.03] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             <CheckCircle2
                               size={14}
@@ -1168,7 +1335,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
                                 · {formatDate(milestone.targetDate)}
                               </span>
                             )}
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -1200,7 +1367,12 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
         )}
       </Card>
 
-      <AddGoalModal open={goalOpen} onClose={() => setGoalOpen(false)} cycleId={activeCycleId} />
+      <AddGoalModal
+        open={goalOpen}
+        onClose={() => setGoalOpen(false)}
+        cycleId={activeCycleId}
+        parentGoals={goals ?? []}
+      />
       {
         review && (
           <SelfReviewModal
@@ -2189,88 +2361,152 @@ function PerformanceOutcomeModal({
 }
 
 function FeedbackRequests() {
-  const [selected, setSelected] = useState<{ id: string; name: string } | null>(
-    null,
-  );
-  const { data: requests, isLoading } = useQuery({
+  const { data: cycles, isLoading: cyclesLoading } = useQuery({
+    queryKey: ["performance", "cycles"],
+    queryFn: () => PerformanceApi.cycles(),
+  });
+  const { data: reviews, isLoading: reviewsLoading } = useQuery({
     queryKey: ["performance", "feedback-requests"],
     queryFn: () => PerformanceApi.feedbackRequests(),
   });
-  if (isLoading) return <Skeleton className="h-64 rounded-3xl" />;
-  if (!requests?.length)
-    return (
-      <EmptyState
-        icon={MessageSquare}
-        title="No 360 feedback requests"
-        description="Feedback requests will appear when reviews are initiated in the active cycle."
-      />
+  const [selected, setSelected] = useState<{
+    id: string;
+    name: string;
+    designation: string;
+  } | null>(null);
+  const [submittedIds, setSubmittedIds] = useState<string[]>([]);
+
+  const activeCycle = cycles?.find((cycle) => cycle.isActive);
+  const pendingReviews = (reviews ?? []).filter(
+    (review) =>
+      (!activeCycle || review.cycleId === activeCycle.id) &&
+      !submittedIds.includes(review.id) &&
+      review.status === "PENDING",
+  );
+
+  const handleSubmitted = (reviewId: string) => {
+    setSubmittedIds((current) =>
+      current.includes(reviewId) ? current : [...current, reviewId],
     );
+    setSelected(null);
+  };
+
+  if (cyclesLoading || reviewsLoading) {
+    return <Skeleton className="h-64 rounded-3xl" />;
+  }
+
   return (
-    <Card>
-      <CardHeader
-        title="360-degree feedback"
-        subtitle="Your responses are aggregated and never show your name to the reviewee."
-      />
-      <div className="space-y-2">
-        {requests.map((request) => (
-          <div
-            key={request.id}
-            className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-3"
-          >
-            <div className="flex items-center gap-3">
-              <Avatar
-                firstName={request.revieweeFirstName ?? ""}
-                lastName={request.revieweeLastName ?? ""}
-                src={request.revieweeAvatar ?? undefined}
-                size="sm"
-              />
-              <div>
-                <p className="text-[13px] font-medium text-ink">
-                  {request.revieweeFirstName} {request.revieweeLastName}
-                </p>
-                <p className="text-[12px] text-ink-faint">
-                  {request.type} feedback
-                </p>
-              </div>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title="360-degree feedback"
+          subtitle={
+            activeCycle
+              ? `Feedback requests for ${activeCycle.name}`
+              : "Feedback requests from active performance reviews"
+          }
+        />
+        <div className="rounded-2xl bg-ink/[0.03] p-4">
+          <div className="flex items-start gap-3">
+            <MessageSquare size={18} className="mt-0.5 text-brand-600" />
+            <div>
+              <p className="text-[13px] font-medium text-ink">
+                Anonymous feedback
+              </p>
+              <p className="mt-1 text-[12px] leading-5 text-ink-soft">
+                Rate collaboration, communication, and ownership. Your name is
+                not displayed to the reviewee; feedback is presented as
+                aggregated results.
+              </p>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                setSelected({
-                  id: request.id,
-                  name: `${request.revieweeFirstName ?? ""} ${request.revieweeLastName ?? ""}`,
-                })
-              }
-            >
-              Give feedback
-            </Button>
           </div>
-        ))}
-      </div>
+        </div>
+
+        {!pendingReviews.length ? (
+          <EmptyState
+            icon={CheckCircle2}
+            title="No pending 360 feedback"
+            description={
+              activeCycle
+                ? "There are no outstanding feedback requests for the active cycle."
+                : "Feedback requests will appear when reviews are initiated."
+            }
+          />
+        ) : (
+          <div className="mt-4 space-y-2">
+            {pendingReviews.map((review) => (
+              <div
+                key={review.id}
+                className="flex flex-col gap-3 rounded-2xl border border-line/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <Avatar
+                    firstName={review.revieweeFirstName ?? ""}
+                    lastName={review.revieweeLastName ?? ""}
+                    src={review.revieweeAvatar ?? undefined}
+                    size="sm"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-ink">
+                      {review.revieweeFirstName} {review.revieweeLastName}
+                    </p>
+                    <p className="text-[12px] text-ink-faint">
+                      {review.revieweeDesignation ?? "Employee"}
+                      {review.revieweeDepartment
+                        ? ` · ${review.revieweeDepartment}`
+                        : ""}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setSelected({
+                      id: review.id,
+                      name: `${review.revieweeFirstName ?? ""} ${review.revieweeLastName ?? ""}`.trim(),
+                      designation: review.revieweeDesignation ?? "Employee",
+                    })
+                  }
+                >
+                  Give feedback
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {selected && (
         <FeedbackModal
           requestId={selected.id}
           employeeName={selected.name}
+          employeeDesignation={selected.designation}
           onClose={() => setSelected(null)}
+          onSubmitted={() => handleSubmitted(selected.id)}
         />
       )}
-    </Card>
+    </div>
   );
 }
+
 
 function FeedbackModal({
   requestId,
   employeeName,
+  employeeDesignation,
   onClose,
+  onSubmitted,
 }: {
   requestId: string;
   employeeName: string;
+  employeeDesignation?: string;
   onClose: () => void;
+  onSubmitted: () => void;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [type, setType] = useState<"PEER" | "SUBORDINATE">("PEER");
+  const [type, setType] = useState<"PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL">("PEER");
   const [ratings, setRatings] = useState<Record<string, number>>({
     Collaboration: 3,
     Communication: 3,
@@ -2293,7 +2529,7 @@ function FeedbackModal({
         queryKey: ["performance", "feedback-requests"],
       });
       showToast("Anonymous feedback submitted.");
-      onClose();
+      onSubmitted();
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
@@ -2309,7 +2545,11 @@ function FeedbackModal({
           </Button>
           <Button
             isLoading={mutation.isPending}
-            onClick={handleSubmit((value) => mutation.mutate(value))}
+            onClick={handleSubmit((value) =>
+              mutation.mutate({
+                comments: value.comments?.trim() || "",
+              }),
+            )}
           >
             Submit feedback
           </Button>
@@ -2317,15 +2557,27 @@ function FeedbackModal({
       }
     >
       <div className="space-y-4">
+        <div className="rounded-2xl bg-brand-50 p-4">
+          <p className="text-[12px] font-medium text-brand-700">
+            {employeeDesignation || "360-degree review"}
+          </p>
+          <p className="mt-1 text-[12px] leading-5 text-ink-soft">
+            Provide objective feedback based on your working experience with
+            this employee. Your response is stored anonymously and contributes
+            to the aggregate review results.
+          </p>
+        </div>
+
         <SelectField
           label="Feedback relationship"
           value={type}
           onChange={(event) =>
-            setType(event.target.value as "PEER" | "SUBORDINATE")
+            setType(event.target.value as "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL")
           }
         >
           <option value="PEER">Peer</option>
           <option value="SUBORDINATE">Subordinate</option>
+          <option value="CROSS_FUNCTIONAL">Cross-functional</option>
         </SelectField>
         {Object.entries(ratings).map(([competency, rating]) => (
           <div key={competency}>
@@ -2368,18 +2620,178 @@ function FeedbackModal({
   );
 }
 
+function InsightMetric({
+  icon: Icon,
+  label,
+  value,
+  helper,
+  progress,
+  rating,
+}: {
+  icon: typeof Target;
+  label: string;
+  value: string;
+  helper: string;
+  progress?: number;
+  rating?: number | null;
+}) {
+  return (
+    <div className="rounded-2xl border border-line/60 bg-white p-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
+          <Icon size={14} className="text-brand-600" />
+          {label}
+        </span>
+      </div>
+
+      <p className="mt-3 text-2xl font-semibold tracking-tight text-ink">
+        {value}
+      </p>
+
+      <p className="mt-1 text-[11.5px] text-ink-faint">{helper}</p>
+
+      {progress != null && (
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
+          <div
+            className="h-full rounded-full bg-brand-500 transition-all"
+            style={{
+              width: `${Math.min(100, Math.max(0, Number(progress) || 0))}%`,
+            }}
+          />
+        </div>
+      )}
+
+      {rating != null && (
+        <div className="mt-3 flex items-center gap-0.5" aria-label={`Rating ${rating} out of 5`}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <Star
+              key={star}
+              size={13}
+              className={
+                star <= Math.round(rating)
+                  ? "fill-gold-500 text-gold-500"
+                  : "text-line"
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OutcomePill({
+  label,
+  value,
+  active,
+}: {
+  label: string;
+  value: string;
+  active: boolean;
+}) {
+  return (
+    <span
+      className={cx(
+        "rounded-full border px-2.5 py-1 text-[10.5px] font-medium",
+        active
+          ? "border-brand-200 bg-white text-brand-700"
+          : "border-line/60 bg-white/60 text-ink-faint",
+      )}
+    >
+      {label}: {value}
+    </span>
+  );
+}
+
+function GoalCascadeNode({
+  goal,
+  onToggleMilestone,
+  isUpdating,
+  depth = 0,
+}: {
+  goal: any;
+  onToggleMilestone: (id: string, milestoneIndex: number, completed: boolean) => void;
+  isUpdating: boolean;
+  depth?: number;
+}) {
+  return (
+    <div className={cx("rounded-2xl border border-line/60 p-3", depth > 0 && "ml-4")}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[13px] font-medium text-ink">{goal.title}</p>
+          {goal.category && (
+            <p className="mt-0.5 text-[11.5px] text-ink-faint">KPI: {goal.category}</p>
+          )}
+        </div>
+        <Badge
+          tone={
+            goal.status === "AT_RISK"
+              ? "warning"
+              : goal.status === "COMPLETED"
+                ? "success"
+                : "neutral"
+          }
+        >
+          {goal.progress}% · {goal.status.replace("_", " ")}
+        </Badge>
+      </div>
+
+      {goal.milestones?.length ? (
+        <div className="mt-2 space-y-1">
+          {goal.milestones.map((milestone: any, index: number) => (
+            <button
+              key={`${goal.id}-cascade-milestone-${index}`}
+              type="button"
+              onClick={() => onToggleMilestone(goal.id, index, !milestone.completed)}
+              disabled={isUpdating}
+              className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-[12px] text-ink-soft hover:bg-ink/[0.03] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <CheckCircle2
+                size={14}
+                className={milestone.completed ? "text-brand-600" : "text-line"}
+              />
+              <span className={milestone.completed ? "line-through opacity-70" : ""}>
+                {milestone.title}
+              </span>
+              {milestone.targetDate && (
+                <span className="text-ink-faint">· {formatDate(milestone.targetDate)}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {goal.children?.length ? (
+        <div className="mt-2 space-y-2">
+          {goal.children.map((child: any) => (
+            <GoalCascadeNode
+              key={child.id}
+              goal={child}
+              onToggleMilestone={onToggleMilestone}
+              isUpdating={isUpdating}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AddGoalModal({
   open,
   onClose,
   employeeId,
   employeeName,
   cycleId,
+  parentGoals = [],
 }: {
   open: boolean;
   onClose: () => void;
   employeeId?: string;
   employeeName?: string;
   cycleId?: string;
+  parentGoals?: any[];
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -2397,9 +2809,28 @@ function AddGoalModal({
       category: "",
       targetValue: "",
       currentValue: "",
+      parentGoalId: "",
       milestones: "",
     },
   });
+
+  const { data: assignedEmployeeCascade } = useQuery({
+    queryKey: ["performance", "goal-cascade", employeeId],
+    queryFn: () => PerformanceApi.goalCascade(employeeId),
+    enabled: !!employeeId,
+  });
+
+  const flattenGoals = (items: any[], result: any[] = []) => {
+    for (const item of items) {
+      result.push(item);
+      if (item.children?.length) flattenGoals(item.children, result);
+    }
+    return result;
+  };
+
+  const availableParentGoals = employeeId
+    ? flattenGoals(assignedEmployeeCascade ?? [])
+    : parentGoals;
 
   const mutation = useMutation({
     mutationFn: async (value: GoalForm) => {
@@ -2428,6 +2859,7 @@ function AddGoalModal({
         dueDate: value.dueDate,
         employeeId,
         cycleId: cycleId ?? null,
+        parentGoalId: value.parentGoalId?.trim() || null,
         category: value.category?.trim() || undefined,
         targetValue,
         currentValue,
@@ -2486,6 +2918,17 @@ function AddGoalModal({
           label="Description"
           {...register("description")}
         />
+        {availableParentGoals.length ? (
+          <SelectField label="Parent goal (optional)" {...register("parentGoalId")}>
+            <option value="">No parent goal</option>
+            {availableParentGoals.map((parent: any) => (
+              <option key={parent.id} value={parent.id}>
+                {parent.title}
+              </option>
+            ))}
+          </SelectField>
+        ) : null}
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <TextField
             label="KPI category"

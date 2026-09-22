@@ -96,20 +96,46 @@ type ScreeningCandidate = Candidate & {
   experience?: number;
   autoShortlisted?: boolean;
   shortlistingResult?:
-    | "PENDING"
-    | "SHORTLISTED"
-    | "NOT_SHORTLISTED"
-    | "NOT_CONFIGURED";
+  | "PENDING"
+  | "SHORTLISTED"
+  | "NOT_SHORTLISTED"
+  | "NOT_CONFIGURED";
   finalResult?: "PENDING" | "SELECTED" | "REJECTED";
   screening?: {
     score: number;
-    recommendation: string;
+    recommendation: "YES" | "NO" | "REVIEW";
+    confidence: "HIGH" | "MEDIUM" | "LOW";
     requiredSkills: string[];
     matchedSkills: string[];
     missingSkills: string[];
+    strengths: string[];
+    concerns: string[];
+    experienceRelevance: string;
+    educationRelevance: string;
+    interviewFocus: string[];
+    summary: string;
+    evaluatedAt?: string;
   };
 };
-
+type InterviewCopilot = {
+  focusAreas: string[];
+  technicalQuestions: {
+    question: string;
+    followUps: string[];
+  }[];
+  resumeQuestions: {
+    question: string;
+    followUps: string[];
+  }[];
+  skillGapQuestions: {
+    question: string;
+    followUps: string[];
+  }[];
+  behavioralQuestions: {
+    question: string;
+    followUps: string[];
+  }[];
+};
 /* =========================================================
    LOCAL REQUISITION TYPES
 ========================================================= */
@@ -174,16 +200,16 @@ export default function JobDetail() {
   const { showToast } = useToast();
 
   const [addOpen, setAddOpen] = useState(false);
-const [scheduleFor, setScheduleFor] = useState<Candidate | null>(null);
-const [rejectOpen, setRejectOpen] = useState(false);
+  const [scheduleFor, setScheduleFor] = useState<Candidate | null>(null);
+  const [rejectOpen, setRejectOpen] = useState(false);
 
-const [draggedCandidateId, setDraggedCandidateId] = useState<string | null>(
-  null,
-);
+  const [draggedCandidateId, setDraggedCandidateId] = useState<string | null>(
+    null,
+  );
 
-const [dragOverStage, setDragOverStage] = useState<
-  Candidate["stage"] | null
->(null);
+  const [dragOverStage, setDragOverStage] = useState<
+    Candidate["stage"] | null
+  >(null);
 
 
 
@@ -204,6 +230,13 @@ const [dragOverStage, setDragOverStage] = useState<
   const [screeningStage, setScreeningStage] = useState<
     "ALL" | Candidate["stage"]
   >("ALL");
+  const [aiDetailsCandidate, setAiDetailsCandidate] =
+    useState<ScreeningCandidate | null>(null);
+  const [interviewCopilotFor, setInterviewCopilotFor] =
+    useState<Candidate | null>(null);
+  const [interviewCopilotData, setInterviewCopilotData] =
+    useState<InterviewCopilot | null>(null);
+  void interviewCopilotFor;
   const [screeningSource, setScreeningSource] = useState("ALL");
   const [minimumFit, setMinimumFit] = useState(0);
   const [screeningRecommendation, setScreeningRecommendation] = useState("ALL");
@@ -247,6 +280,7 @@ const [dragOverStage, setDragOverStage] = useState<
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
+
   const selectCandidateMutation = useMutation({
     mutationFn: (id: string) => RecruitmentApi.selectCandidate(id),
     onSuccess: (_response, selectedId) => {
@@ -275,117 +309,117 @@ const [dragOverStage, setDragOverStage] = useState<
   });
 
   const handleCandidateDragStart = (
-  event: DragEvent<HTMLDivElement>,
-  candidateId: string,
-) => {
-  setDraggedCandidateId(candidateId);
+    event: DragEvent<HTMLDivElement>,
+    candidateId: string,
+  ) => {
+    setDraggedCandidateId(candidateId);
 
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", candidateId);
-};
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", candidateId);
+  };
 
-const handleCandidateDragEnd = () => {
-  setDraggedCandidateId(null);
-  setDragOverStage(null);
-};
+  const handleCandidateDragEnd = () => {
+    setDraggedCandidateId(null);
+    setDragOverStage(null);
+  };
 
-const handleStageDragOver = (
-  event: DragEvent<HTMLDivElement>,
-  stage: Candidate["stage"],
-) => {
-  event.preventDefault();
+  const handleStageDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    stage: Candidate["stage"],
+  ) => {
+    event.preventDefault();
 
-  event.dataTransfer.dropEffect = "move";
-  setDragOverStage(stage);
-};
+    event.dataTransfer.dropEffect = "move";
+    setDragOverStage(stage);
+  };
 
-const canMoveCandidateToStage = (
-  candidate: Candidate,
-  targetStage: Candidate["stage"],
-) => {
-  if (candidate.stage === targetStage) {
-    return false;
-  }
-
-  // Hired candidates are final.
-  if (candidate.stage === "HIRED") {
-    return false;
-  }
-
-  // Rejected candidates are final.
-  if (candidate.stage === "REJECTED") {
-    return false;
-  }
-
-  // Hired should only happen through the hiring lifecycle action.
-  if (targetStage === "HIRED") {
-    return false;
-  }
-
-  return true;
-};
-
-const handleStageDragLeave = (
-  event: DragEvent<HTMLDivElement>,
-  stage: Candidate["stage"],
-) => {
-  const currentTarget = event.currentTarget;
-  const relatedTarget = event.relatedTarget as Node | null;
-
-  if (!relatedTarget || !currentTarget.contains(relatedTarget)) {
-    setDragOverStage((current) =>
-      current === stage ? null : current,
-    );
-  }
-};
-
-const handleStageDrop = (
-  event: DragEvent<HTMLDivElement>,
-  stage: Candidate["stage"],
-) => {
-  event.preventDefault();
-
-  const candidateId =
-    event.dataTransfer.getData("text/plain") || draggedCandidateId;
-
-  setDragOverStage(null);
-  setDraggedCandidateId(null);
-
-  if (!candidateId) return;
-
-  const candidate = (candidates ?? []).find(
-    (item) => item.id === candidateId,
-  );
-
-  if (!candidate) return;
-
-  // Prevent invalid lifecycle transitions in the UI.
-  if (!canMoveCandidateToStage(candidate, stage)) {
-    if (candidate.stage === "HIRED") {
-      showToast(
-        "Hired candidates cannot be moved back in the recruitment pipeline.",
-        "error",
-      );
-    } else if (candidate.stage === "REJECTED") {
-      showToast(
-        "Rejected candidates cannot be moved back into the recruitment pipeline.",
-        "error",
-      );
-    } else if (stage === "HIRED") {
-      showToast(
-        "Use the hiring workflow to move a candidate to Hired.",
-        "error",
-      );
+  const canMoveCandidateToStage = (
+    candidate: Candidate,
+    targetStage: Candidate["stage"],
+  ) => {
+    if (candidate.stage === targetStage) {
+      return false;
     }
 
-    return;
-  }
+    // Hired candidates are final.
+    if (candidate.stage === "HIRED") {
+      return false;
+    }
 
-  stageMutation.mutate({
-    id: candidate.id,
-    stage,
-  });
-};
+    // Rejected candidates are final.
+    if (candidate.stage === "REJECTED") {
+      return false;
+    }
+
+    // Hired should only happen through the hiring lifecycle action.
+    if (targetStage === "HIRED") {
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleStageDragLeave = (
+    event: DragEvent<HTMLDivElement>,
+    stage: Candidate["stage"],
+  ) => {
+    const currentTarget = event.currentTarget;
+    const relatedTarget = event.relatedTarget as Node | null;
+
+    if (!relatedTarget || !currentTarget.contains(relatedTarget)) {
+      setDragOverStage((current) =>
+        current === stage ? null : current,
+      );
+    }
+  };
+
+  const handleStageDrop = (
+    event: DragEvent<HTMLDivElement>,
+    stage: Candidate["stage"],
+  ) => {
+    event.preventDefault();
+
+    const candidateId =
+      event.dataTransfer.getData("text/plain") || draggedCandidateId;
+
+    setDragOverStage(null);
+    setDraggedCandidateId(null);
+
+    if (!candidateId) return;
+
+    const candidate = (candidates ?? []).find(
+      (item) => item.id === candidateId,
+    );
+
+    if (!candidate) return;
+
+    // Prevent invalid lifecycle transitions in the UI.
+    if (!canMoveCandidateToStage(candidate, stage)) {
+      if (candidate.stage === "HIRED") {
+        showToast(
+          "Hired candidates cannot be moved back in the recruitment pipeline.",
+          "error",
+        );
+      } else if (candidate.stage === "REJECTED") {
+        showToast(
+          "Rejected candidates cannot be moved back into the recruitment pipeline.",
+          "error",
+        );
+      } else if (stage === "HIRED") {
+        showToast(
+          "Use the hiring workflow to move a candidate to Hired.",
+          "error",
+        );
+      }
+
+      return;
+    }
+
+    stageMutation.mutate({
+      id: candidate.id,
+      stage,
+    });
+  };
 
   const rateMutation = useMutation({
     mutationFn: ({ id, rating }: { id: string; rating: number }) =>
@@ -417,6 +451,22 @@ const handleStageDrop = (
       });
 
       showToast("AI candidate screening completed.");
+    },
+
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+  const interviewCopilotMutation = useMutation({
+    mutationFn: (id: string) => RecruitmentApi.interviewCopilot(id),
+
+    onSuccess: (data, candidateId) => {
+      const candidate = (candidates ?? []).find(
+        (item) => item.id === candidateId,
+      );
+
+      if (!candidate) return;
+
+      setInterviewCopilotData(data);
+      setInterviewCopilotFor(candidate);
     },
 
     onError: (err) => showToast(getErrorMessage(err), "error"),
@@ -555,15 +605,15 @@ const handleStageDrop = (
 
       const approvedJob: RecruitmentJob | undefined = responseJob
         ? {
-            ...job,
-            ...responseJob,
-            requisitionStatus: responseJob.requisitionStatus ?? "APPROVED",
-          }
+          ...job,
+          ...responseJob,
+          requisitionStatus: responseJob.requisitionStatus ?? "APPROVED",
+        }
         : job
           ? {
-              ...job,
-              requisitionStatus: "APPROVED",
-            }
+            ...job,
+            requisitionStatus: "APPROVED",
+          }
           : undefined;
 
       if (approvedJob) {
@@ -577,11 +627,11 @@ const handleStageDrop = (
             return oldJobs.map((item) =>
               item.id === approvedJob.id
                 ? {
-                    ...item,
-                    ...approvedJob,
-                    requisitionStatus:
-                      approvedJob.requisitionStatus ?? "APPROVED",
-                  }
+                  ...item,
+                  ...approvedJob,
+                  requisitionStatus:
+                    approvedJob.requisitionStatus ?? "APPROVED",
+                }
                 : item,
             );
           },
@@ -1032,7 +1082,7 @@ const handleStageDrop = (
             <Skeleton key={i} className="h-72 rounded-3xl" />
           ))}
         </div>
-              ) : (
+      ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           {STAGES.map((stage) => {
             const stageCandidates = filteredCandidates.filter(
@@ -1060,16 +1110,16 @@ const handleStageDrop = (
               >
                 <div className="mb-3 flex items-center justify-between px-1">
                   <div>
-  <p className="text-[13px] font-semibold text-ink-soft">
-    {stage.label}
-  </p>
+                    <p className="text-[13px] font-semibold text-ink-soft">
+                      {stage.label}
+                    </p>
 
-  {draggedCandidateId && dragOverStage === stage.key && (
-    <p className="mt-0.5 text-[10px] font-medium text-brand-600">
-      Drop candidate here
-    </p>
-  )}
-</div>
+                    {draggedCandidateId && dragOverStage === stage.key && (
+                      <p className="mt-0.5 text-[10px] font-medium text-brand-600">
+                        Drop candidate here
+                      </p>
+                    )}
+                  </div>
 
                   <Badge tone="neutral">{stageCandidates.length}</Badge>
                 </div>
@@ -1080,38 +1130,39 @@ const handleStageDrop = (
 
                     const screening = screeningCandidate.screening;
 
+
+
                     return (
 
                       <Card
-  key={candidate.id}
-  padded={false}
-  draggable={
-    candidate.stage !== "HIRED" &&
-    candidate.stage !== "REJECTED"
-  }
-  onDragStart={(event) =>
-    handleCandidateDragStart(event, candidate.id)
-  }
-  onDragEnd={handleCandidateDragEnd}
-  className={cx(
-    "cursor-grab p-3.5 transition-all duration-200",
-    draggedCandidateId === candidate.id
-      ? "scale-[0.98] opacity-50"
-      : "hover:-translate-y-0.5 hover:shadow-md",
-    draggedCandidateId === candidate.id && "cursor-grabbing",
-  )}
->
-  <div className="mb-2 flex items-center gap-1.5 text-[10px] text-ink-faint">
-    <span className="inline-flex h-1.5 w-1.5 rounded-full bg-ink/30" />
-    <span>
-      {candidate.stage === "HIRED" || candidate.stage === "REJECTED"
-        ? "Final pipeline stage"
-        : "Drag to move candidate"}
-    </span>
-  </div>
+                        key={candidate.id}
+                        padded={false}
+                        draggable={
+                          candidate.stage !== "HIRED" &&
+                          candidate.stage !== "REJECTED"
+                        }
+                        onDragStart={(event) =>
+                          handleCandidateDragStart(event, candidate.id)
+                        }
+                        onDragEnd={handleCandidateDragEnd}
+                        className={cx(
+                          "cursor-grab p-3.5 transition-all duration-200",
+                          draggedCandidateId === candidate.id
+                            ? "scale-[0.98] opacity-50"
+                            : "hover:-translate-y-0.5 hover:shadow-md",
+                          draggedCandidateId === candidate.id && "cursor-grabbing",
+                        )}
+                      >
+                        <div className="mb-2 flex items-center gap-1.5 text-[10px] text-ink-faint">
+                          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-ink/30" />
+                          <span>
+                            {candidate.stage === "HIRED" || candidate.stage === "REJECTED"
+                              ? "Final pipeline stage"
+                              : "Drag to move candidate"}
+                          </span>
+                        </div>
 
-  <p className="text-[13px] font-medium text-ink">
- 
+                        <p className="text-[13px] font-medium text-ink">
                           {candidate.firstName} {candidate.lastName}
                         </p>
 
@@ -1156,23 +1207,23 @@ const handleStageDrop = (
 
                         {(duplicateIds.has(candidate.id) ||
                           isSpamCandidate(candidate)) && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {duplicateIds.has(candidate.id) && (
-                              <Badge tone="warning">
-                                <span className="flex items-center gap-1">
-                                  <Copy size={10} /> Duplicate
-                                </span>
-                              </Badge>
-                            )}
-                            {isSpamCandidate(candidate) && (
-                              <Badge tone="warning">
-                                <span className="flex items-center gap-1">
-                                  <AlertTriangle size={10} /> Suspicious
-                                </span>
-                              </Badge>
-                            )}
-                          </div>
-                        )}
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {duplicateIds.has(candidate.id) && (
+                                <Badge tone="warning">
+                                  <span className="flex items-center gap-1">
+                                    <Copy size={10} /> Duplicate
+                                  </span>
+                                </Badge>
+                              )}
+                              {isSpamCandidate(candidate) && (
+                                <Badge tone="warning">
+                                  <span className="flex items-center gap-1">
+                                    <AlertTriangle size={10} /> Suspicious
+                                  </span>
+                                </Badge>
+                              )}
+                            </div>
+                          )}
 
                         <div className="mt-3 flex items-center justify-end gap-2 border-t border-line/60 pt-3">
                           <button
@@ -1214,15 +1265,15 @@ const handleStageDrop = (
                           const recommendation =
                             screening?.recommendation ??
                             (screeningCandidate.shortlistingResult ===
-                            "SHORTLISTED"
+                              "SHORTLISTED"
                               ? "YES"
                               : screeningCandidate.shortlistingResult ===
-                                  "NOT_SHORTLISTED"
+                                "NOT_SHORTLISTED"
                                 ? "NO"
                                 : null);
                           const screeningStatus =
                             fitScore != null ||
-                            screeningCandidate.screeningSummary
+                              screeningCandidate.screeningSummary
                               ? "SCREENED"
                               : "NOT_SCREENED";
                           const statusTone =
@@ -1236,9 +1287,9 @@ const handleStageDrop = (
                               : "NOT_CONFIGURED");
                           const shortlistDisplayStatus =
                             shortlistStatus === "PENDING" &&
-                            (screeningCandidate.finalResult === "SELECTED" ||
-                              screeningCandidate.stage === "OFFER" ||
-                              screeningCandidate.stage === "HIRED")
+                              (screeningCandidate.finalResult === "SELECTED" ||
+                                screeningCandidate.stage === "OFFER" ||
+                                screeningCandidate.stage === "HIRED")
                               ? "NOT_CONFIGURED"
                               : shortlistStatus;
 
@@ -1272,6 +1323,45 @@ const handleStageDrop = (
                                       {fitScore}%
                                     </span>
                                   </div>
+                                  {recommendation && (
+                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                      <span className="text-xs font-medium text-slate-500">
+                                        AI Recommendation:
+                                      </span>
+
+                                      <Badge
+                                        tone={
+                                          recommendation === "YES"
+                                            ? "success"
+                                            : recommendation === "NO"
+                                              ? "warning"
+                                              : "neutral"
+                                        }
+                                      >
+                                        {recommendation}
+                                      </Badge>
+                                    </div>
+                                  )}
+
+                                  {screening?.confidence && (
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                      <span className="text-xs font-medium text-slate-500">
+                                        AI Confidence:
+                                      </span>
+
+                                      <Badge
+                                        tone={
+                                          screening.confidence === "HIGH"
+                                            ? "success"
+                                            : screening.confidence === "MEDIUM"
+                                              ? "neutral"
+                                              : "warning"
+                                        }
+                                      >
+                                        {screening.confidence}
+                                      </Badge>
+                                    </div>
+                                  )}
                                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white">
                                     <div
                                       className="h-full rounded-full bg-brand-500 transition-all"
@@ -1320,7 +1410,7 @@ const handleStageDrop = (
                                       shortlistDisplayStatus === "SHORTLISTED"
                                         ? "success"
                                         : shortlistDisplayStatus ===
-                                            "NOT_SHORTLISTED"
+                                          "NOT_SHORTLISTED"
                                           ? "warning"
                                           : "neutral"
                                     }
@@ -1328,9 +1418,9 @@ const handleStageDrop = (
                                     {shortlistDisplayStatus === "NOT_CONFIGURED"
                                       ? "MANUAL REVIEW"
                                       : shortlistDisplayStatus.replaceAll(
-                                          "_",
-                                          " ",
-                                        )}
+                                        "_",
+                                        " ",
+                                      )}
                                   </Badge>
                                 </div>
                               )}
@@ -1343,10 +1433,10 @@ const handleStageDrop = (
                                   <Badge
                                     tone={
                                       screeningCandidate.finalResult ===
-                                      "SELECTED"
+                                        "SELECTED"
                                         ? "success"
                                         : screeningCandidate.finalResult ===
-                                            "REJECTED"
+                                          "REJECTED"
                                           ? "warning"
                                           : "neutral"
                                     }
@@ -1394,24 +1484,19 @@ const handleStageDrop = (
                                   </div>
                                 </div>
                               )}
-
-                              {screeningCandidate.screeningSummary && (
-                                <div className="mt-2 rounded-lg bg-white/70 p-2">
-                                  <p className="mb-0.5 text-[10px] font-medium text-ink-soft">
-                                    Screening summary
-                                  </p>
-                                  <p className="line-clamp-4 text-[10px] leading-4 text-ink-faint">
-                                    {screeningCandidate.screeningSummary}
-                                  </p>
-                                </div>
+                              {screeningCandidate.screening && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-2 w-full"
+                                  onClick={() => setAiDetailsCandidate(screeningCandidate)}
+                                >
+                                  View AI Details
+                                </Button>
                               )}
 
-                              {screeningStatus === "SCREENED" && (
-                                <p className="mt-2 text-[9.5px] text-ink-faint">
-                                  AI screening is assistive only. Final hiring
-                                  decisions should be made by the recruiter.
-                                </p>
-                              )}
+
+
 
                               <Button
                                 size="sm"
@@ -1435,81 +1520,123 @@ const handleStageDrop = (
 
                               {(candidate.finalResult === "SELECTED" ||
                                 candidate.stage === "OFFER") && (
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  className="mt-2 w-full"
-                                  leftIcon={<FileText size={12} />}
-                                  onClick={() => setOfferLetterFor(candidate)}
-                                >
-                                  {candidate.offer?.offerUrl
-                                    ? "View / Manage Offer Letter"
-                                    : "Generate Offer Letter"}
-                                </Button>
-                              )}
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="mt-2 w-full"
+                                    leftIcon={<FileText size={12} />}
+                                    onClick={() => setOfferLetterFor(candidate)}
+                                  >
+                                    {candidate.offer?.offerUrl
+                                      ? "View / Manage Offer Letter"
+                                      : "Generate Offer Letter"}
+                                  </Button>
+                                )}
                             </div>
                           );
                         })()}
 
                         <div className="mt-2.5">
-  <div className="grid grid-cols-2 gap-2">
-    <button
-      type="button"
-      onClick={() => setScheduleFor(candidate)}
-      className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 hover:bg-brand-50"
-    >
-      <Calendar size={12} />
-      <span>Interview</span>
-    </button>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setScheduleFor(candidate)}
+                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-50"
+                            >
+                              <Calendar size={12} className="shrink-0" />
+                              <span>Interview</span>
+                            </button>
 
-    <button
-      type="button"
-      onClick={() => setLifecycleFor(candidate)}
-      className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 hover:bg-brand-50"
-    >
-      <FileText size={12} />
-      <span>Lifecycle</span>
-    </button>
+                            {candidate.stage === "INTERVIEW" && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setInterviewCopilotData(null);
+                                  interviewCopilotMutation.mutate(candidate.id);
+                                }}
+                                disabled={interviewCopilotMutation.isPending}
+                                className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-brand-200 bg-brand-50 px-2 py-1.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-100 disabled:opacity-50"
+                              >
+                                <Sparkles size={12} />
+                                <span>
+                                  {interviewCopilotMutation.isPending
+                                    ? "Generating..."
+                                    : "AI Interview Copilot"}
+                                </span>
+                              </button>
+                            )}
 
-    {candidate.stage === "INTERVIEW" &&
-  (screeningCandidate.finalResult ?? "PENDING") === "PENDING" && (
-    <button
-      type="button"
-      disabled={selectCandidateMutation.isPending}
-      onClick={() => selectCandidateMutation.mutate(candidate.id)}
-      className="col-span-2 flex items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
-    >
-      <UserCheck size={12} />
-      <span>
-        {selectCandidateMutation.isPending
-          ? "Selecting..."
-          : "Select Candidate"}
-      </span>
-    </button>
-  )}
+                            <button
+                              type="button"
+                              onClick={() => setLifecycleFor(candidate)}
+                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-50"
+                            >
+                              <FileText size={12} className="shrink-0" />
+                              <span>Lifecycle</span>
+                            </button>
 
-    {stage.key !== "HIRED" &&
-      stage.key !== "REJECTED" && (
-        <select
-          value={candidate.stage}
-          onChange={(event) =>
-            stageMutation.mutate({
-              id: candidate.id,
-              stage: event.target.value,
-            })
-          }
-          aria-label={`Move ${candidate.firstName} ${candidate.lastName} to another stage`}
-          className="col-span-2 w-full rounded-lg border border-line bg-white px-2 py-1.5 text-center text-[11px] font-medium text-ink shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-        >
-          {STAGES.map((s) => (
-            <option key={s.key} value={s.key}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      )}
-  </div>
-</div>
+                            {candidate.stage === "INTERVIEW" &&
+                              (screeningCandidate.finalResult ?? "PENDING") ===
+                                "PENDING" && (
+                                <button
+                                  type="button"
+                                  disabled={selectCandidateMutation.isPending}
+                                  onClick={() =>
+                                    selectCandidateMutation.mutate(candidate.id)
+                                  }
+                                  className="col-span-2 flex items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                                >
+                                  <UserCheck size={12} />
+                                  <span>
+                                    {selectCandidateMutation.isPending
+                                      ? "Selecting..."
+                                      : "Select Candidate"}
+                                  </span>
+                                </button>
+                              )}
+
+                            {stage.key !== "HIRED" &&
+                              stage.key !== "REJECTED" && (
+                                <select
+                                  value={candidate.stage}
+                                  onChange={(event) => {
+                                    const targetStage =
+                                      event.target.value as Candidate["stage"];
+
+                                    if (
+                                      !canMoveCandidateToStage(
+                                        candidate,
+                                        targetStage,
+                                      )
+                                    ) {
+                                      showToast(
+                                        targetStage === "HIRED"
+                                          ? "Use the hiring workflow to move a candidate to Hired."
+                                          : targetStage === "REJECTED"
+                                            ? "Use the rejection workflow to reject a candidate."
+                                            : "This candidate cannot be moved to that stage.",
+                                        "error",
+                                      );
+                                      return;
+                                    }
+
+                                    stageMutation.mutate({
+                                      id: candidate.id,
+                                      stage: targetStage,
+                                    });
+                                  }}
+                                  aria-label={`Move ${candidate.firstName} ${candidate.lastName} to another stage`}
+                                  className="col-span-2 w-full rounded-lg border border-line bg-white px-2 py-1.5 text-center text-[11px] font-medium text-ink shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                                >
+                                  {STAGES.map((s) => (
+                                    <option key={s.key} value={s.key}>
+                                      {s.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                          </div>
+                        </div>
                       </Card>
                     );
                   })}
@@ -1583,7 +1710,380 @@ const handleStageDrop = (
           }
         />
       )}
+      {aiDetailsCandidate && (
+        <Modal
+          open={true}
+          onClose={() => setAiDetailsCandidate(null)}
+          title={`AI Resume Screening — ${aiDetailsCandidate.firstName} ${aiDetailsCandidate.lastName}`}
+          size="lg"
+        >
+          <div className="space-y-4">
+            {aiDetailsCandidate.screening && (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-line bg-surface p-3">
+                    <p className="text-[10.5px] font-medium text-ink-faint">
+                      Job Fit Score
+                    </p>
 
+                    <p className="mt-1 text-lg font-semibold text-ink">
+                      {aiDetailsCandidate.screening.score}%
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-line bg-surface p-3">
+                    <p className="text-[10.5px] font-medium text-ink-faint">
+                      AI Recommendation
+                    </p>
+
+                    <div className="mt-1">
+                      <Badge
+                        tone={
+                          aiDetailsCandidate.screening.recommendation === "YES"
+                            ? "success"
+                            : aiDetailsCandidate.screening.recommendation === "NO"
+                              ? "warning"
+                              : "neutral"
+                        }
+                      >
+                        {aiDetailsCandidate.screening.recommendation}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-line bg-surface p-3">
+                    <p className="text-[10.5px] font-medium text-ink-faint">
+                      AI Confidence
+                    </p>
+
+                    <div className="mt-1">
+                      <Badge
+                        tone={
+                          aiDetailsCandidate.screening.confidence === "HIGH"
+                            ? "success"
+                            : aiDetailsCandidate.screening.confidence === "MEDIUM"
+                              ? "neutral"
+                              : "warning"
+                        }
+                      >
+                        {aiDetailsCandidate.screening.confidence}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {aiDetailsCandidate.screening.strengths?.length ? (
+                  <div>
+                    <p className="mb-2 text-[12px] font-semibold text-ink">
+                      Key strengths
+                    </p>
+
+                    <div className="space-y-1.5">
+                      {aiDetailsCandidate.screening.strengths.map(
+                        (strength, index) => (
+                          <div
+                            key={`strength-${index}`}
+                            className="flex items-start gap-2 text-[12px] text-ink-soft"
+                          >
+                            <span className="font-semibold text-emerald-600">
+                              ✓
+                            </span>
+
+                            <span>{strength}</span>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {aiDetailsCandidate.screening.concerns?.length ? (
+                  <div>
+                    <p className="mb-2 text-[12px] font-semibold text-ink">
+                      Potential concerns
+                    </p>
+
+                    <div className="space-y-1.5">
+                      {aiDetailsCandidate.screening.concerns.map(
+                        (concern, index) => (
+                          <div
+                            key={`concern-${index}`}
+                            className="flex items-start gap-2 text-[12px] text-ink-soft"
+                          >
+                            <span className="font-semibold text-amber-600">
+                              ⚠
+                            </span>
+
+                            <span>{concern}</span>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {aiDetailsCandidate.screening.experienceRelevance && (
+                  <div className="rounded-xl border border-line bg-surface p-3">
+                    <p className="mb-1 text-[12px] font-semibold text-ink">
+                      Experience relevance
+                    </p>
+
+                    <p className="text-[12px] leading-5 text-ink-soft">
+                      {aiDetailsCandidate.screening.experienceRelevance}
+                    </p>
+                  </div>
+                )}
+
+                {aiDetailsCandidate.screening.educationRelevance && (
+                  <div className="rounded-xl border border-line bg-surface p-3">
+                    <p className="mb-1 text-[12px] font-semibold text-ink">
+                      Education relevance
+                    </p>
+
+                    <p className="text-[12px] leading-5 text-ink-soft">
+                      {aiDetailsCandidate.screening.educationRelevance}
+                    </p>
+                  </div>
+                )}
+
+                {aiDetailsCandidate.screening.interviewFocus?.length ? (
+                  <div>
+                    <p className="mb-2 text-[12px] font-semibold text-ink">
+                      Interview focus
+                    </p>
+
+                    <div className="space-y-1.5">
+                      {aiDetailsCandidate.screening.interviewFocus.map(
+                        (focus, index) => (
+                          <div
+                            key={`focus-${index}`}
+                            className="flex items-start gap-2 text-[12px] text-ink-soft"
+                          >
+                            <span className="font-semibold text-ink-faint">
+                              •
+                            </span>
+
+                            <span>{focus}</span>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {aiDetailsCandidate.screening.summary && (
+                  <div className="rounded-xl border border-line bg-surface p-3">
+                    <p className="mb-1 text-[12px] font-semibold text-ink">
+                      Screening summary
+                    </p>
+
+                    <p className="text-[12px] leading-5 text-ink-soft">
+                      {aiDetailsCandidate.screening.summary}
+                    </p>
+                  </div>
+                )}
+
+                {aiDetailsCandidate.screening.evaluatedAt && (
+                  <p className="text-[10.5px] text-ink-faint">
+                    Evaluated{" "}
+                    {formatDate(aiDetailsCandidate.screening.evaluatedAt)}
+                  </p>
+                )}
+
+                <p className="border-t border-line pt-3 text-[10px] leading-4 text-ink-faint">
+                  AI screening is assistive only. Final hiring decisions should be
+                  made by the recruiter.
+                </p>
+              </>
+            )}
+          </div>
+        </Modal>
+      )}
+      {interviewCopilotFor && interviewCopilotData && (
+        <Modal
+          open={true}
+          onClose={() => {
+            setInterviewCopilotFor(null);
+            setInterviewCopilotData(null);
+          }}
+          title={`AI Interview Copilot — ${interviewCopilotFor.firstName} ${interviewCopilotFor.lastName}`}
+          size="lg"
+        >
+          <div className="space-y-6">
+            {/* Focus Areas */}
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-slate-900">
+                Focus Areas
+              </h3>
+
+              <div className="flex flex-wrap gap-2">
+                {interviewCopilotData.focusAreas.map((area) => (
+                  <span
+                    key={area}
+                    className="rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700"
+                  >
+                    {area}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Technical Questions */}
+            <div>
+              <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                Technical Questions
+              </h3>
+
+              <div className="space-y-3">
+                {interviewCopilotData.technicalQuestions.map(
+                  (item, index) => (
+                    <div
+                      key={`technical-${index}`}
+                      className="rounded-lg border border-line p-3"
+                    >
+                      <p className="text-sm font-medium text-slate-900">
+                        {index + 1}. {item.question}
+                      </p>
+
+                      {item.followUps.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold text-slate-500">
+                            Follow-ups
+                          </p>
+
+                          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                            {item.followUps.map((followUp, followUpIndex) => (
+                              <li key={followUpIndex}>{followUp}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+
+            {/* Resume-Based Questions */}
+            <div>
+              <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                Resume-Based Questions
+              </h3>
+
+              <div className="space-y-3">
+                {interviewCopilotData.resumeQuestions.map(
+                  (item, index) => (
+                    <div
+                      key={`resume-${index}`}
+                      className="rounded-lg border border-line p-3"
+                    >
+                      <p className="text-sm font-medium text-slate-900">
+                        {index + 1}. {item.question}
+                      </p>
+
+                      {item.followUps.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold text-slate-500">
+                            Follow-ups
+                          </p>
+
+                          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                            {item.followUps.map((followUp, followUpIndex) => (
+                              <li key={followUpIndex}>{followUp}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+
+            {/* Skill Gap Questions */}
+            <div>
+              <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                Skill Gap Questions
+              </h3>
+
+              <div className="space-y-3">
+                {interviewCopilotData.skillGapQuestions.map(
+                  (item, index) => (
+                    <div
+                      key={`skill-gap-${index}`}
+                      className="rounded-lg border border-line p-3"
+                    >
+                      <p className="text-sm font-medium text-slate-900">
+                        {index + 1}. {item.question}
+                      </p>
+
+                      {item.followUps.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold text-slate-500">
+                            Follow-ups
+                          </p>
+
+                          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                            {item.followUps.map((followUp, followUpIndex) => (
+                              <li key={followUpIndex}>{followUp}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+
+            {/* Behavioral Questions */}
+            <div>
+              <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                Behavioral Questions
+              </h3>
+
+              <div className="space-y-3">
+                {interviewCopilotData.behavioralQuestions.map(
+                  (item, index) => (
+                    <div
+                      key={`behavioral-${index}`}
+                      className="rounded-lg border border-line p-3"
+                    >
+                      <p className="text-sm font-medium text-slate-900">
+                        {index + 1}. {item.question}
+                      </p>
+
+                      {item.followUps.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold text-slate-500">
+                            Follow-ups
+                          </p>
+
+                          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                            {item.followUps.map((followUp, followUpIndex) => (
+                              <li key={followUpIndex}>{followUp}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+
+            {/* AI Disclaimer */}
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs text-amber-800">
+                AI Interview Copilot provides interview preparation
+                suggestions based on the job and candidate information.
+                Interviewers should use their own judgment when evaluating
+                candidates.
+              </p>
+            </div>
+          </div>
+        </Modal>
+      )}
       {job && (
         <EditJobModal
           job={job}
@@ -1977,11 +2477,13 @@ function AddCandidateModal({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [isAnalyzingResume, setIsAnalyzingResume] = useState(false);
 
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<CandidateForm>({
     resolver: zodResolver(candidateSchema),
@@ -2153,9 +2655,82 @@ function AddCandidateModal({
               type="file"
               accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               disabled={mutation.isPending}
-              onChange={(event) => {
+              onChange={async (event) => {
                 const file = event.target.files?.[0] ?? null;
+
+                if (!file) {
+                  setResumeFile(null);
+                  return;
+                }
+
+                const fileName = file.name.toLowerCase();
+                const hasAllowedExtension = ALLOWED_RESUME_EXTENSIONS.some((ext) =>
+                  fileName.endsWith(ext),
+                );
+
+                if (
+                  !hasAllowedExtension ||
+                  !ALLOWED_RESUME_TYPES.has(file.type)
+                ) {
+                  showToast("Resume must be a PDF, DOC or DOCX file.", "error");
+                  event.target.value = "";
+                  return;
+                }
+
+                if (file.size > MAX_RESUME_SIZE_BYTES) {
+                  showToast("Resume size must not exceed 5 MB.", "error");
+                  event.target.value = "";
+                  return;
+                }
+
                 setResumeFile(file);
+                setIsAnalyzingResume(true);
+
+                try {
+                  const formData = new FormData();
+                  formData.append("resume", file);
+
+                  const response = await api.post<{
+                    message: string;
+                    autofill: {
+                      firstName: string;
+                      lastName: string;
+                      email: string;
+                      phone: string;
+                    };
+                  }>("/recruitment/candidates/resume/autofill", formData, {
+                    headers: {
+                      "Content-Type": "multipart/form-data",
+                    },
+                  });
+
+                  const autofill = response.data.autofill;
+
+                  if (autofill.firstName) {
+                    setValue("firstName", autofill.firstName);
+                  }
+
+                  if (autofill.lastName) {
+                    setValue("lastName", autofill.lastName);
+                  }
+
+                  if (autofill.email) {
+                    setValue("email", autofill.email);
+                  }
+
+                  if (autofill.phone) {
+                    setValue("phone", autofill.phone);
+                  }
+
+                  showToast("Resume analyzed and candidate details filled.");
+                } catch (error) {
+                  showToast(
+                    `Resume analysis failed. ${getErrorMessage(error)}`,
+                    "error",
+                  );
+                } finally {
+                  setIsAnalyzingResume(false);
+                }
               }}
               className="block w-full text-[12px] text-ink-faint file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-[11px] file:font-medium file:text-brand-700 hover:file:bg-brand-100"
             />
@@ -2164,7 +2739,12 @@ function AddCandidateModal({
               Upload the candidate's resume. PDF, DOC and DOCX files are
               supported.
             </p>
-
+            {isAnalyzingResume && (
+              <div className="mt-2 flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                <span>AI is analyzing the resume...</span>
+              </div>
+            )}
             {resumeFile && (
               <div className="mt-2 flex items-center gap-2 rounded-lg bg-white px-2.5 py-2 text-[11px] text-ink">
                 <FileText size={13} className="shrink-0 text-brand-600" />
@@ -2173,7 +2753,7 @@ function AddCandidateModal({
                 </span>
                 <button
                   type="button"
-                  disabled={mutation.isPending}
+                  disabled={mutation.isPending || isAnalyzingResume}
                   onClick={() => setResumeFile(null)}
                   className="shrink-0 font-medium text-red-600 hover:underline disabled:opacity-50"
                 >
@@ -2827,10 +3407,10 @@ function ScheduleInterviewModal({
                           onChange={(e) =>
                             setRecommendation(
                               e.target.value as
-                                | "STRONG_YES"
-                                | "YES"
-                                | "NO"
-                                | "STRONG_NO",
+                              | "STRONG_YES"
+                              | "YES"
+                              | "NO"
+                              | "STRONG_NO",
                             )
                           }
                         >
@@ -3014,14 +3594,6 @@ function OfferLetterModal({
     setJoiningDate(loaded.offer?.joiningDate ?? "");
   }, [rawCandidate, job?.budgetCtc]);
 
-  const refreshCandidate = () => {
-    void queryClient.invalidateQueries({
-      queryKey: ["candidate", candidate.id],
-    });
-    void queryClient.invalidateQueries({ queryKey: ["candidates", job?.id] });
-    void queryClient.invalidateQueries({ queryKey: ["recruitment"] });
-  };
-
   const offerMutation = useMutation({
     mutationFn: () => {
       const ctc = Number(annualCtc);
@@ -3041,8 +3613,24 @@ function OfferLetterModal({
         joiningDate,
       });
     },
-    onSuccess: () => {
-      refreshCandidate();
+    onSuccess: (updatedCandidate) => {
+      queryClient.setQueryData(["candidate", candidate.id], updatedCandidate);
+      queryClient.setQueryData<Candidate[] | undefined>(
+        ["candidates", job?.id],
+        (existing) =>
+          existing?.map((item) =>
+            item.id === candidate.id ? updatedCandidate : item,
+          ),
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["candidate", candidate.id],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["candidates", job?.id],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["recruitment"],
+      });
       showToast("Offer letter generated successfully.");
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
@@ -3070,65 +3658,86 @@ function OfferLetterModal({
             </p>
             <p className="text-[12px] text-ink-faint">{current.email}</p>
           </div>
-
           {current.offer?.offerUrl ? (
-            <div className="rounded-2xl border border-line/70 p-4">
-              <p className="text-[13px] font-semibold text-ink">
-                Offer letter generated
-              </p>
-              <p className="mt-1 text-[12px] text-ink-faint">
-                CTC:{" "}
-                {current.offer?.annualCtc != null
-                  ? formatCurrencyINR(current.offer.annualCtc)
-                  : "—"}
-                {" • "}
-                Joining: {current.offer?.joiningDate ?? "—"}
-              </p>
-              <a
-                href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex text-[12px] font-medium text-brand-600 hover:underline"
-              >
-                Open generated offer letter
-              </a>
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextField
-                label="Annual CTC"
-                type="number"
-                value={annualCtc}
-                onChange={(e) => setAnnualCtc(e.target.value)}
-              />
-              <TextField
-                label="Joining date"
-                type="date"
-                value={joiningDate}
-                onChange={(e) => setJoiningDate(e.target.value)}
-              />
-              <div className="sm:col-span-2 flex items-center justify-between gap-3">
-                <p className="text-[11.5px] text-ink-faint">
-                  Status: {offerStatus.replaceAll("_", " ")}
-                </p>
-                <Button
-                  size="sm"
-                  isLoading={offerMutation.isPending}
-                  disabled={!joiningDate || Number(annualCtc) <= 0}
-                  onClick={() => offerMutation.mutate()}
-                >
-                  Generate Offer Letter
-                </Button>
-              </div>
-            </div>
-          )}
+  <div className="rounded-2xl border border-line/70 p-4">
+    <p className="text-[13px] font-semibold text-ink">
+      Offer letter generated
+    </p>
+
+    <p className="mt-1 text-[12px] text-ink-faint">
+      CTC:{" "}
+      {current.offer?.annualCtc != null
+        ? formatCurrencyINR(current.offer.annualCtc)
+        : "—"}
+      {" • "}
+      Joining: {current.offer?.joiningDate ?? "—"}
+    </p>
+
+    <div className="mt-3 flex flex-wrap items-center gap-3">
+      <a
+        href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex text-[12px] font-medium text-brand-600 hover:underline"
+      >
+        Open generated offer letter
+      </a>
+
+      <Button
+        size="sm"
+        variant="secondary"
+        isLoading={offerMutation.isPending}
+        disabled={!joiningDate || Number(annualCtc) <= 0}
+        onClick={() => offerMutation.mutate()}
+      >
+        Regenerate Offer Letter
+      </Button>
+    </div>
+
+    <p className="mt-2 text-[11px] text-ink-faint">
+      Regenerating creates a new offer document and replaces the previous
+      offer document link.
+    </p>
+  </div>
+) : (
+  <div className="grid gap-3 sm:grid-cols-2">
+    <TextField
+      label="Annual CTC"
+      type="number"
+      value={annualCtc}
+      onChange={(e) => setAnnualCtc(e.target.value)}
+    />
+
+    <TextField
+      label="Joining date"
+      type="date"
+      value={joiningDate}
+      onChange={(e) => setJoiningDate(e.target.value)}
+    />
+
+    <div className="sm:col-span-2 flex items-center justify-between gap-3">
+      <p className="text-[11.5px] text-ink-faint">
+        Status: {offerStatus.replaceAll("_", " ")}
+      </p>
+
+      <Button
+        size="sm"
+        isLoading={offerMutation.isPending}
+        disabled={!joiningDate || Number(annualCtc) <= 0}
+        onClick={() => offerMutation.mutate()}
+      >
+        Generate Offer Letter
+      </Button>
+    </div>
+  </div>
+)}
         </div>
       )}
     </Modal>
   );
 }
 
- function CandidateLifecycleModal({
+function CandidateLifecycleModal({
   candidate,
   onClose,
   job,
@@ -3442,10 +4051,10 @@ function OfferLetterModal({
                   onChange={(e) =>
                     setBgvStatus(
                       e.target.value as
-                        | "NOT_STARTED"
-                        | "IN_PROGRESS"
-                        | "VERIFIED"
-                        | "FAILED",
+                      | "NOT_STARTED"
+                      | "IN_PROGRESS"
+                      | "VERIFIED"
+                      | "FAILED",
                     )
                   }
                 >
@@ -3691,10 +4300,10 @@ function OfferLetterModal({
                   onChange={(e) =>
                     setReferralBonusStatus(
                       e.target.value as
-                        | "NOT_APPLICABLE"
-                        | "PENDING"
-                        | "APPROVED"
-                        | "PAID",
+                      | "NOT_APPLICABLE"
+                      | "PENDING"
+                      | "APPROVED"
+                      | "PAID",
                     )
                   }
                 >
@@ -3741,8 +4350,8 @@ function OfferLetterModal({
             complete={hired}
           >
             {!offerAccepted ||
-            !bgvVerified ||
-            !preboardingCompleted ? (
+              !bgvVerified ||
+              !preboardingCompleted ? (
               <p className="text-[12px] text-ink-faint">
                 Hiring unlocks after Offer Accepted, BGV Verified
                 and Pre-boarding Completed.

@@ -108,6 +108,38 @@ performanceRouter.post(
   },
 );
 
+const cycleUpdateSchema = cycleSchema.partial().extend({
+  purpose: z.string().max(1000).nullable().optional(),
+});
+
+performanceRouter.patch(
+  "/cycles/:id",
+  requirePermission("performance.manage"),
+  validate(cycleUpdateSchema),
+  async (req, res, next) => {
+    try {
+      const cycle = await repo.updateCycle(req.params.id, req.body);
+      if (!cycle) throw AppError.notFound("Review cycle not found.");
+      res.json({ cycle });
+    } catch (err) { next(err); }
+  },
+);
+
+const cycleStatusSchema = z.object({ isActive: z.boolean() });
+
+performanceRouter.patch(
+  "/cycles/:id/status",
+  requirePermission("performance.manage"),
+  validate(cycleStatusSchema),
+  async (req, res, next) => {
+    try {
+      const cycle = await repo.setCycleActive(req.params.id, req.body.isActive);
+      if (!cycle) throw AppError.notFound("Review cycle not found.");
+      res.json({ cycle });
+    } catch (err) { next(err); }
+  },
+);
+
 performanceRouter.patch(
   "/cycles/:id/activate",
   requirePermission("performance.manage"),
@@ -156,6 +188,28 @@ performanceRouter.get("/reviews", async (req, res, next) => {
         }
 
         filters.reviewerId = employeeId;
+
+        // Creating a cycle does not automatically create review documents.
+        // Ensure the manager has a review assigned for each direct report so
+        // Team Reviews is populated even when assignments were not pre-seeded.
+        const activeCycle = filters.cycleId
+          ? null
+          : await repo.getActiveCycle();
+        const cycleId = filters.cycleId ?? (activeCycle as any)?.id;
+
+        if (cycleId) {
+          const reports = await repo.listDirectReports(employeeId);
+          await Promise.all(
+            reports.map((report: any) =>
+              repo.ensureReview(
+                String(cycleId),
+                String(report.id),
+                String(employeeId),
+              ),
+            ),
+          );
+          filters.cycleId = String(cycleId);
+        }
       }
 
       // HR Admin and Super Admin can view all team reviews.
@@ -178,15 +232,106 @@ performanceRouter.get("/reviews", async (req, res, next) => {
   }
 });
 
+performanceRouter.get("/team/direct-reports", async (req, res, next) => {
+  try {
+    const { role, employeeId } = req.user!;
+
+    if (!employeeId) {
+      throw AppError.forbidden("Employee profile not found.");
+    }
+
+    if (!["MANAGER", "HR_ADMIN", "SUPER_ADMIN"].includes(role)) {
+      throw AppError.forbidden(
+        "You are not authorized to view direct reports.",
+      );
+    }
+
+    if (role === "MANAGER") {
+      res.json({
+        employees: await repo.listDirectReports(employeeId),
+      });
+      return;
+    }
+
+    const requestedManagerId = req.query.managerId as string | undefined;
+    if (requestedManagerId) {
+      res.json({
+        employees: await repo.listDirectReports(requestedManagerId),
+      });
+      return;
+    }
+
+    res.json({ employees: [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
 performanceRouter.get("/reviews/mine", async (req, res, next) => {
   try {
+    const employeeId = req.user!.employeeId;
+    if (!employeeId) {
+      return res.json({ review: null });
+    }
+
     const cycle = await repo.getActiveCycle();
-    if (!cycle || !req.user!.employeeId) return res.json({ review: null });
-    const reviews = await repo.listReviews({
-      cycleId: (cycle as any).id,
-      revieweeId: req.user!.employeeId,
+    if (!cycle) {
+      return res.json({ review: null });
+    }
+
+    // A cycle alone does not create employee review assignments. If the
+    // employee has a manager, create the missing review assignment lazily so
+    // the My Performance screen can immediately display the active cycle.
+    const employee = (await getEmployeeById(employeeId)) as any;
+    if (!employee) {
+      throw AppError.notFound("Employee profile not found.");
+    }
+
+    const cycleId = String((cycle as any).id);
+
+    // Always check for an existing assignment first. This also supports
+    // employees whose assignment was created manually by HR/Admin.
+    const existingReviews = await repo.listReviews({
+      cycleId,
+      revieweeId: employeeId,
     });
-    res.json({ review: reviews[0] ?? null });
+
+    if (existingReviews.length > 0) {
+      return res.json({ review: existingReviews[0] });
+    }
+
+    const reviewerId = employee.managerId;
+
+    // Normal employee workflow: the direct manager is the reviewer.
+    if (reviewerId) {
+      const review = await repo.ensureReview(
+        cycleId,
+        employeeId,
+        String(reviewerId),
+      );
+
+      return res.json({ review });
+    }
+
+    // HR/Super Admin accounts may not have a manager in the employee
+    // hierarchy. Keep their My Performance page usable by creating a
+    // self-owned review assignment for the active cycle. Privileged users
+    // can subsequently complete the manager/outcome step through the
+    // existing authorization rules.
+    if (["HR_ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
+      const review = await repo.ensureReview(
+        cycleId,
+        employeeId,
+        employeeId,
+      );
+
+      return res.json({ review });
+    }
+
+    // A regular employee without a manager cannot receive an automatic
+    // manager-review assignment. Return the existing empty state rather than
+    // inventing a reviewer.
+    return res.json({ review: null });
   } catch (err) {
     next(err);
   }
@@ -384,9 +529,10 @@ performanceRouter.get("/goals", async (req, res, next) => {
     }
 
     const targetEmployeeId = requestedEmployeeId ?? employeeId;
+    const cycleId = req.query.cycleId as string | undefined;
 
     res.json({
-      goals: await repo.listGoals(targetEmployeeId),
+      goals: await repo.listGoals(targetEmployeeId, cycleId),
     });
   } catch (err) {
     next(err);
@@ -505,9 +651,58 @@ const progressSchema = z.object({
   progress: z.number().int().min(0).max(100),
 });
 
+const milestoneUpdateSchema = z.object({
+  milestoneIndex: z.number().int().min(0),
+  completed: z.boolean(),
+});
+
 const currentValueSchema = z.object({
   currentValue: z.number().nonnegative().nullable(),
 });
+
+performanceRouter.patch(
+  "/goals/:id/milestones",
+  validate(milestoneUpdateSchema),
+  async (req, res, next) => {
+    try {
+      const goal = await repo.getGoal(req.params.id);
+      if (!goal) throw AppError.notFound("Goal not found.");
+
+      const { role, employeeId } = req.user!;
+      if (!employeeId) {
+        throw AppError.forbidden("Employee profile not found.");
+      }
+
+      if (goal.employeeId !== employeeId) {
+        if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+          // Privileged roles may update any goal.
+        } else if (role === "MANAGER") {
+          const employee = await getEmployeeById(goal.employeeId) as any;
+          if (!employee || employee.managerId !== employeeId) {
+            throw AppError.forbidden(
+              "You can only update milestones for your direct reports.",
+            );
+          }
+        } else {
+          throw AppError.forbidden(
+            "You can only update milestones for your own goals.",
+          );
+        }
+      }
+
+      const updatedGoal = await repo.updateGoalMilestone(
+        req.params.id,
+        req.body.milestoneIndex,
+        req.body.completed,
+      );
+
+      if (!updatedGoal) throw AppError.notFound("Goal not found.");
+      res.json({ goal: updatedGoal });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 performanceRouter.patch(
   "/goals/:id/progress",
@@ -609,6 +804,44 @@ performanceRouter.patch(
   },
 );
 
+performanceRouter.get("/goals/cascade", async (req, res, next) => {
+  try {
+    const { role, employeeId } = req.user!;
+    const requestedEmployeeId = req.query.employeeId as string | undefined;
+
+    if (!employeeId) {
+      throw AppError.forbidden("Employee profile not found.");
+    }
+
+    const targetEmployeeId = requestedEmployeeId ?? employeeId;
+
+    if (targetEmployeeId !== employeeId) {
+      if (!["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role)) {
+        throw AppError.forbidden(
+          "You are not authorized to view another employee's goal cascade.",
+        );
+      }
+
+      if (role === "MANAGER") {
+        const employee = await getEmployeeById(targetEmployeeId) as any;
+        if (!employee || employee.managerId !== employeeId) {
+          throw AppError.forbidden(
+            "You can only view goal cascades for your direct reports.",
+          );
+        }
+      }
+    }
+
+    const cycleId = req.query.cycleId as string | undefined;
+
+    res.json({
+      goals: await repo.listGoalCascade(targetEmployeeId, cycleId),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 performanceRouter.get("/goals/trend", async (req, res, next) => {
   try {
     const { role, employeeId } = req.user!;
@@ -635,24 +868,30 @@ performanceRouter.get("/goals/trend", async (req, res, next) => {
       }
     }
 
+    const cycleId = req.query.cycleId as string | undefined;
+
     res.json({
-      data: await repo.getGoalTrend(requestedEmployeeId ?? employeeId),
+      data: await repo.getGoalTrend(
+        requestedEmployeeId ?? employeeId,
+        cycleId,
+      ),
     });
   } catch (err) {
     next(err);
   }
 });
 const feedbackSchema = z.object({
-  type: z.enum(["PEER", "SUBORDINATE"]),
+  type: z.enum(["PEER", "SUBORDINATE", "CROSS_FUNCTIONAL"]),
   competencyRatings: z
     .array(
       z.object({
-        competency: z.string().min(1),
+        competency: z.string().trim().min(1).max(200),
         rating: z.number().int().min(1).max(5),
       }),
     )
-    .min(1),
-  comments: z.string().max(2000).optional(),
+    .min(1)
+    .max(20),
+  comments: z.string().trim().max(2000).optional(),
 });
 
 const feedbackRequestSchema = z.object({
@@ -660,16 +899,53 @@ const feedbackRequestSchema = z.object({
   reviewId: z.string(),
   reviewerEmployeeId: z.string(),
   revieweeEmployeeId: z.string(),
-  type: z.enum(["PEER", "SUBORDINATE"]),
+  type: z.enum(["PEER", "SUBORDINATE", "CROSS_FUNCTIONAL"]),
   dueDate: z.string().optional(),
+});
+
+performanceRouter.get("/feedback-requests/available", async (req, res, next) => {
+  try {
+    const employeeId = req.user!.employeeId;
+    if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+    const cycleId = req.query.cycleId as string | undefined;
+    const reviews = await repo.listReviews({ cycleId });
+    const currentEmployee = (await getEmployeeById(employeeId)) as any;
+    if (!currentEmployee) throw AppError.notFound("Employee not found.");
+    const availableReviews = reviews
+      .filter((review: any) => review.revieweeId !== employeeId && review.reviewerId !== employeeId)
+      .map((review: any) => ({
+        ...review,
+        isCrossFunctional:
+          Boolean(currentEmployee.departmentId) &&
+          Boolean(review.revieweeDepartmentId) &&
+          currentEmployee.departmentId !== review.revieweeDepartmentId,
+      }));
+    res.json({ reviews: availableReviews });
+  } catch (err) { next(err); }
+});
+
+performanceRouter.get("/feedback/mine", async (req, res, next) => {
+  try {
+    const employeeId = req.user!.employeeId;
+    if (!employeeId) throw AppError.forbidden("Employee profile not found.");
+    const reviewId = req.query.reviewId as string | undefined;
+    res.json({ feedback: await repo.listFeedbackForReviewer(employeeId, reviewId) });
+  } catch (err) { next(err); }
 });
 
 performanceRouter.get("/feedback-requests", async (req, res, next) => {
   try {
     const employeeId = req.user!.employeeId;
     if (!employeeId) throw AppError.forbidden("Employee profile not found.");
-    res.json({ requests: await repo.listFeedbackRequests(employeeId, req.query.cycleId as string | undefined) });
-  } catch (err) { next(err); }
+    res.json({
+      requests: await repo.listFeedbackRequests(
+        employeeId,
+        req.query.cycleId as string | undefined,
+      ),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 performanceRouter.post(
@@ -717,11 +993,31 @@ performanceRouter.post(
   async (req, res, next) => {
     try {
       const employeeId = req.user!.employeeId;
-      if (!employeeId) throw AppError.forbidden("Employee profile not found.");
-      const request = (await repo.listFeedbackRequests(employeeId)).find((item: any) => item.reviewId === req.params.id && item.status === "PENDING");
-      if (!request) throw AppError.forbidden("You do not have a pending feedback request for this review.");
-      res.status(201).json({ feedback: await repo.submitFeedback({ requestId: request.id, reviewerEmployeeId: employeeId, ...req.body }) });
-    } catch (err) { next(err); }
+if (!employeeId) {
+        throw AppError.forbidden("Employee profile not found.");
+      }
+
+      const requests = await repo.listFeedbackRequests(employeeId);
+      const request = requests.find(
+        (item: any) =>
+          String(item.reviewId) === String(req.params.id) &&
+          item.status === "PENDING",
+      );
+      if (!request) {
+        throw AppError.forbidden(
+          "You do not have a pending feedback request for this review.",
+        );
+      }
+      res.status(201).json({
+        feedback: await repo.submitFeedback({
+          requestId: request.id,
+          reviewerEmployeeId: employeeId,
+          ...req.body,
+        }),
+      });
+    } catch (err) {
+      next(err);
+    }
   },
 );
 
@@ -730,18 +1026,29 @@ performanceRouter.get(
   async (req, res, next) => {
     try {
       const review = await repo.getReview(req.params.id);
-      if (!review) throw AppError.notFound();
+      if (!review) throw AppError.notFound("Review not found.");
+
+      const employeeId = req.user!.employeeId;
       const allowed =
-        review.revieweeId === req.user!.employeeId ||
-        review.reviewerId === req.user!.employeeId ||
+        review.revieweeId === employeeId ||
+        review.reviewerId === employeeId ||
         ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
-      if (!allowed) throw AppError.forbidden();
-      res.json({ summary: await repo.getFeedbackSummary(req.params.id) });
+
+      if (!allowed) {
+        throw AppError.forbidden(
+          "You are not authorized to view this feedback summary.",
+        );
+      }
+
+      res.json({
+        summary: await repo.getFeedbackSummary(req.params.id),
+      });
     } catch (err) {
       next(err);
     }
   },
 );
+
 performanceRouter.get("/reviews/:id/outcome", async (req, res, next) => {
   try {
     const review = await repo.getReview(req.params.id);
@@ -1311,7 +1618,10 @@ performanceRouter.get(
         );
       }
 
-      const goals = await repo.listGoals(goalEmployeeId);
+      const goals = await repo.listGoals(
+        goalEmployeeId,
+        (req.query.cycleId as string | undefined) ?? null,
+      );
       const achievementValues = goals
         .map((goal: any) =>
           Number(goal.achievementPercentage ?? goal.progress ?? 0),

@@ -20,8 +20,10 @@ import {
   MessageSquare,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Target,
   Users,
+  Activity,
 } from "lucide-react";
 import { ReportsApi, OrganizationApi } from "@/lib/endpoints";
 import { useAuth } from "@/context/AuthContext";
@@ -30,9 +32,17 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Button } from "@/components/ui/Button";
 import { formatCurrencyINR } from "@/lib/format";
+import { ExecutiveBriefingModal } from "@/components/reports/ExecutiveBriefingModal";
+import { AskHrDataView } from "@/components/reports/AskHrDataView";
+import { AiCustomReportBuilderView } from "@/components/reports/AiCustomReportBuilderView";
+import { RetentionRadarView } from "@/components/reports/RetentionRadarView";
+import type { ExecutiveBriefingResult } from "@/types";
 
 const TABS = [
   ["overview", "Overview"],
+  ["ask-ai", "Ask HR AI ✦"],
+  ["custom", "AI Custom Report Builder ✦"],
+  ["retention", "AI Retention Radar ✦"],
   ["workforce", "Workforce"],
   ["attendance", "Attendance"],
   ["leave", "Leave"],
@@ -42,7 +52,6 @@ const TABS = [
   ["tickets", "Tickets"],
   ["documents", "Documents"],
   ["audit", "Audit & Compliance"],
-  ["custom", "Custom Report"],
 ] as const;
 
 type Tab = (typeof TABS)[number][0];
@@ -94,11 +103,12 @@ export default function Reports() {
     user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
   const canAudit = canRecruitment;
   const [tab, setTab] = useState<Tab>("overview");
+  const [selectedAiQuery, setSelectedAiQuery] = useState("");
   const [from, setFrom] = useState(() => `${new Date().getFullYear()}-01-01`);
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [departmentId, setDepartmentId] = useState("");
   const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
-  const [customSections, setCustomSections] = useState<string[]>([
+  const [customSections] = useState<string[]>([
     "Workforce",
     "Attendance",
     "Leave",
@@ -124,6 +134,18 @@ export default function Reports() {
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["reports", "overview", filters],
     queryFn: () => ReportsApi.overview(filters),
+  });
+
+  const [briefingModalOpen, setBriefingModalOpen] = useState(false);
+
+  const {
+    data: briefingData,
+    isLoading: isBriefingLoading,
+    refetch: refetchBriefing,
+  } = useQuery<ExecutiveBriefingResult>({
+    queryKey: ["reports", "ai-briefing", filters],
+    queryFn: () => ReportsApi.executiveBriefing(filters),
+    enabled: briefingModalOpen,
   });
 
   const exportReport = async (format: "xlsx" | "pdf") => {
@@ -211,7 +233,43 @@ export default function Reports() {
   };
 
   return (
-    <div>
+    <div className="premium-page space-y-6">
+      <div className="relative overflow-hidden rounded-[28px] border border-indigo-200/60 bg-gradient-to-br from-indigo-950 via-violet-800 to-blue-700 p-6 text-white shadow-[0_24px_70px_rgba(79,70,229,0.22)] sm:p-8">
+        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+        <div className="absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-cyan-300/10 blur-3xl" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-100">
+              <Sparkles size={13} /> Workforce Intelligence
+            </div>
+            <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+              Reports & Analytics
+            </h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-indigo-100">
+              Turn workforce, attendance, leave, payroll, recruitment and performance data into one clear operating view.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[500px]">
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">Employees</p>
+              <p className="mt-1 text-xl font-semibold">{data?.workforce?.total ?? "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">Attendance</p>
+              <p className="mt-1 text-xl font-semibold">{data ? `${data.attendance.attendanceRate}%` : "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">New hires</p>
+              <p className="mt-1 text-xl font-semibold">{data?.workforce?.recentHires ?? "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200">Open roles</p>
+              <p className="mt-1 text-xl font-semibold">{data?.recruitment?.openRoles ?? "—"}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <PageHeader
         title="Reports & Analytics"
         subtitle={
@@ -221,6 +279,29 @@ export default function Reports() {
         }
         action={
           <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelectedAiQuery("");
+                setTab("ask-ai");
+              }}
+              className={
+                tab === "ask-ai"
+                  ? "bg-indigo-700 text-white shadow-sm border-0"
+                  : "bg-gradient-to-r from-indigo-600 to-brand-600 hover:from-indigo-700 hover:to-brand-700 text-white shadow-sm border-0"
+              }
+              leftIcon={<Sparkles size={14} className="text-amber-300" />}
+            >
+              Ask HR AI ✦
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setBriefingModalOpen(true)}
+              className="bg-gradient-to-r from-brand-600 via-purple-600 to-indigo-600 hover:from-brand-700 hover:via-purple-700 hover:to-indigo-700 text-white shadow-sm border-0"
+              leftIcon={<Sparkles size={14} className="text-amber-300 animate-pulse" />}
+            >
+              AI Executive Briefing
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -258,8 +339,19 @@ export default function Reports() {
         }
       />
 
-      <Card className="mb-6">
-        <div className="grid gap-3 p-4 md:grid-cols-3">
+      <Card className="overflow-hidden border-indigo-100/80 bg-gradient-to-br from-white via-indigo-50/30 to-violet-50/40 shadow-[0_12px_40px_rgba(79,70,229,0.08)]">
+        <div className="border-b border-indigo-100/70 bg-white/70 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+              <Activity size={15} />
+            </span>
+            <div>
+              <p className="text-[13px] font-semibold text-ink">Report controls</p>
+              <p className="text-[11px] text-ink-faint">Choose the reporting period and workforce scope.</p>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-3 p-5 md:grid-cols-3">
           <label className="text-[12px] font-medium text-ink-soft">
             From
             <input
@@ -296,7 +388,8 @@ export default function Reports() {
         </div>
       </Card>
 
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="mb-6 rounded-2xl border border-line/70 bg-white/80 p-2 shadow-[0_8px_30px_rgba(15,23,42,0.05)] print:hidden">
+        <div className="flex flex-wrap gap-2">
         {TABS.filter(
           ([key]) =>
             (key !== "recruitment" || canRecruitment) &&
@@ -315,9 +408,28 @@ export default function Reports() {
             {label}
           </button>
         ))}
+        </div>
       </div>
 
-      {isLoading || !data ? (
+      {tab === "ask-ai" ? (
+        <AskHrDataView filters={filters} initialQuery={selectedAiQuery} />
+      ) : tab === "custom" ? (
+        <AiCustomReportBuilderView
+          filters={filters}
+          departments={departments.map((d: any) => ({
+            id: d._id || d.id,
+            name: d.name,
+          }))}
+        />
+      ) : tab === "retention" ? (
+        <RetentionRadarView
+          filters={filters}
+          departments={departments.map((d: any) => ({
+            id: d._id || d.id,
+            name: d.name,
+          }))}
+        />
+      ) : isLoading || !data ? (
         <Card>
           <div className="p-10 text-center text-[13px] text-ink-faint">
             Loading reports…
@@ -326,7 +438,15 @@ export default function Reports() {
       ) : (
         <>
           {tab === "overview" && (
-            <Overview data={data} isFetching={isFetching} />
+            <Overview
+              data={data}
+              isFetching={isFetching}
+              onOpenBriefing={() => setBriefingModalOpen(true)}
+              onAskAi={(q) => {
+                setSelectedAiQuery(q);
+                setTab("ask-ai");
+              }}
+            />
           )}
 
           {tab === "workforce" && (
@@ -781,14 +901,6 @@ export default function Reports() {
             </Section>
           )}
 
-          {tab === "custom" && !isManager && (
-            <CustomReport
-              data={data}
-              sections={customSections}
-              setSections={setCustomSections}
-            />
-          )}
-
           {tab === "documents" && (
             <Section
               title="Document & asset report"
@@ -825,6 +937,14 @@ export default function Reports() {
           )}
         </>
       )}
+
+      <ExecutiveBriefingModal
+        isOpen={briefingModalOpen}
+        onClose={() => setBriefingModalOpen(false)}
+        data={briefingData ?? null}
+        isLoading={isBriefingLoading}
+        onRefresh={() => refetchBriefing()}
+      />
     </div>
   );
 }
@@ -893,174 +1013,98 @@ function DataTable({
   );
 }
 
-function CustomReport({
+function Overview({
   data,
-  sections,
-  setSections,
+  isFetching,
+  onOpenBriefing,
+  onAskAi,
 }: {
   data: any;
-  sections: string[];
-  setSections: (value: string[]) => void;
+  isFetching: boolean;
+  onOpenBriefing: () => void;
+  onAskAi: (query: string) => void;
 }) {
-  const available = [
-    "Workforce",
-    "Attendance",
-    "Leave",
-    "Payroll",
-    "Recruitment",
-    "Performance",
-    "Tickets",
-    "Documents",
-  ];
-
-  const toggle = (section: string) => {
-    setSections(
-      sections.includes(section)
-        ? sections.filter((item) => item !== section)
-        : [...sections, section],
-    );
-  };
-
-  const metrics: Record<string, [string, string | number][]> = {
-    Workforce: [
-      ["Total Employees", data.workforce.total],
-      ["Active Employees", data.workforce.active],
-      ["New Hires", data.workforce.recentHires],
-      ["Exits", data.workforce.exits],
-    ],
-    Attendance: [
-      ["Attendance Rate", `${data.attendance.attendanceRate}%`],
-      ["Work Hours", data.attendance.totalWorkHours],
-      ["Estimated Overtime", data.attendance.estimatedOvertimeHours],
-    ],
-    Leave: [
-      ["Requests", data.leave.total],
-      ["Leave Days", data.leave.totalDays],
-    ],
-    Payroll: [
-      ["Gross", money(data.payroll.totalGross)],
-      ["Deductions", money(data.payroll.totalDeductions)],
-      ["Net Pay", money(data.payroll.totalNet)],
-      ["LOP", money(data.payroll.totalLop)],
-    ],
-    Recruitment: data.recruitment
-      ? [
-          ["Applications", data.recruitment.applications],
-          ["Offers Sent", data.recruitment.offersSent],
-          ["Offers Accepted", data.recruitment.offersAccepted],
-          ["Hired", data.recruitment.hired],
-        ]
-      : [],
-    Performance: [
-      ["Reviews", data.performance.reviews],
-      ["Average Rating", `${data.performance.averageRating}/5`],
-    ],
-    Tickets: [
-      ["Total", data.tickets.total],
-      ["Resolved / Closed", data.tickets.resolved],
-      ["Avg Resolution", `${data.tickets.averageResolutionHours} hrs`],
-    ],
-    Documents: [
-      ["Total", data.documents.total],
-      ["Verified", data.documents.verified],
-      ["Pending", data.documents.pending],
-      ["Assigned Assets", data.documents.assignedAssets],
-    ],
-  };
-
-  const downloadCustomReport = () => {
-    if (sections.length === 0) return;
-
-    const rows: (string | number)[][] = [["Report", "Metric", "Value"]];
-
-    sections.forEach((section) => {
-      (metrics[section] ?? []).forEach(([metric, value]) => {
-        rows.push([section, metric, value]);
-      });
-    });
-
-    const csv = rows
-      .map((row) =>
-        row
-          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-          .join(","),
-      )
-      .join("\n");
-
-    downloadBlob(
-      new Blob([csv], { type: "text/csv;charset=utf-8" }),
-      `hrms-custom-report-${new Date().toISOString().slice(0, 10)}.csv`,
-    );
-  };
-
-  return (
-    <Section title="Custom report builder" icon={<FileText size={18} />}>
-      <Card>
-        <CardHeader title="Select report sections" />
-        <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          {available.map((section) => (
-            <label
-              key={section}
-              className="flex items-center gap-2 text-[12px] text-ink"
-            >
-              <input
-                type="checkbox"
-                checked={sections.includes(section)}
-                onChange={() => toggle(section)}
-              />
-              {section}
-            </label>
-          ))}
-        </div>
-      </Card>
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3 p-5">
-          <div>
-            <p className="text-[13px] font-semibold text-ink">
-              Download custom report
-            </p>
-            <p className="text-[11px] text-ink-faint">
-              Downloads only the sections selected above using the current
-              report filters.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            onClick={downloadCustomReport}
-            disabled={sections.length === 0}
-            leftIcon={<Download size={14} />}
-          >
-            Download Custom Report
-          </Button>
-        </div>
-      </Card>
-      <DataTable
-        title="Selected report metrics"
-        columns={[
-          ["Report", "report"],
-          ["Metric", "metric"],
-          ["Value", "value"],
-        ]}
-        rows={sections.flatMap((section) =>
-          (metrics[section] ?? []).map(([metric, value]) => ({
-            report: section,
-            metric,
-            value,
-          })),
-        )}
-      />
-      <p className="text-[11px] text-ink-faint">
-        The custom report uses the same role-scoped and date/department-filtered
-        data as the standard reports. The custom download contains only the
-        sections selected above.
-      </p>
-    </Section>
-  );
-}
-
-function Overview({ data, isFetching }: { data: any; isFetching: boolean }) {
   return (
     <div className="space-y-6">
+      {/* AI Executive Briefing Hero Card */}
+      <div className="relative overflow-hidden rounded-2xl border border-brand-200/80 bg-gradient-to-br from-brand-50/70 via-white to-purple-50/50 p-5 shadow-sm transition-all hover:shadow-md">
+        <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-brand-100/90 px-2.5 py-0.5 text-[11px] font-semibold text-brand-700">
+              <Sparkles size={12} className="text-brand-600 animate-pulse" />
+              AI HR Intelligence
+            </div>
+            <h3 className="font-display text-[16px] font-bold text-ink">
+              Executive HR Briefing & Organization Health
+            </h3>
+            <p className="max-w-2xl text-[12px] leading-relaxed text-ink-soft">
+              Synthesize workforce momentum, attendance stability, payroll risk, ticket SLA health, and department-level friction points into an executive management narrative with strategic recommendations.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <Button
+              size="sm"
+              onClick={onOpenBriefing}
+              className="bg-gradient-to-r from-brand-600 via-purple-600 to-indigo-600 hover:from-brand-700 hover:via-purple-700 hover:to-indigo-700 text-white shadow-sm border-0 px-4 py-2"
+              leftIcon={<Sparkles size={14} className="text-amber-300 animate-pulse" />}
+            >
+              Generate AI Briefing
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Ask HR AI Quick Bar */}
+      <div className="rounded-2xl border border-indigo-200/90 bg-gradient-to-r from-indigo-50/70 via-purple-50/40 to-white p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-xs">
+            <Sparkles size={18} className="text-amber-300" />
+          </div>
+          <div>
+            <div className="text-[13px] font-semibold text-ink flex items-center gap-1.5">
+              Ask HR Data
+              <span className="rounded-full bg-indigo-100 text-indigo-700 px-2 py-0.5 text-[10px] font-semibold border border-indigo-200">
+                Natural Language AI
+              </span>
+            </div>
+            <p className="text-[11.5px] text-ink-soft">
+              Instant answers for absenteeism, headcount, payroll costs, tickets, or ratings.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onAskAi("Which department has the highest absenteeism?")}
+            className="rounded-xl border border-amber-200 bg-white px-3 py-1.5 text-[11.5px] font-medium text-amber-800 hover:bg-amber-50/80 transition-all shadow-xs"
+          >
+            Highest absenteeism?
+          </button>
+          <button
+            type="button"
+            onClick={() => onAskAi("What was our total payroll disbursement?")}
+            className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-[11.5px] font-medium text-emerald-800 hover:bg-emerald-50/80 transition-all shadow-xs"
+          >
+            Total payroll?
+          </button>
+          <button
+            type="button"
+            onClick={() => onAskAi("Show unresolved high-priority tickets")}
+            className="rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-[11.5px] font-medium text-rose-800 hover:bg-rose-50/80 transition-all shadow-xs"
+          >
+            High-priority tickets?
+          </button>
+          <Button
+            size="sm"
+            onClick={() => onAskAi("")}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] py-1.5 px-3.5 shadow-xs"
+          >
+            Ask HR AI ✦
+          </Button>
+        </div>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total employees"
@@ -1133,9 +1177,9 @@ function Section({
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-ink">
-        <span className="text-brand-600">{icon}</span>
-        <h2 className="font-display text-[18px] font-semibold">{title}</h2>
+      <div className="flex items-center gap-3 rounded-2xl border border-indigo-100/80 bg-gradient-to-r from-indigo-50/80 to-white px-4 py-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">{icon}</span>
+        <div><h2 className="font-display text-[18px] font-semibold">{title}</h2><p className="text-[11px] text-ink-faint">Detailed metrics for the selected reporting scope.</p></div>
       </div>
       {children}
     </div>
