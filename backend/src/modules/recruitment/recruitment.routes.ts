@@ -436,7 +436,28 @@ recruitmentRouter.get(
     }
   },
 );
+recruitmentRouter.get(
+  "/candidates/ranked",
+  requirePermission("recruitment.manage"),
+  async (req, res, next) => {
+    try {
+      const jobPostingId =
+        typeof req.query.jobPostingId === "string"
+          ? req.query.jobPostingId
+          : undefined;
 
+      if (!jobPostingId) {
+        throw AppError.badRequest("jobPostingId is required.");
+      }
+
+      const candidates = await repo.getRankedCandidates(jobPostingId);
+
+      res.json({ candidates });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 recruitmentRouter.get(
   "/candidates/:id",
   requirePermission("recruitment.manage"),
@@ -495,6 +516,23 @@ recruitmentRouter.post(
         candidate,
       });
     } catch (err) {
+      // Candidate creation business-rule failures are client errors, not
+      // server failures. Keep the repository validation intact while
+      // returning a useful 400 response to Postman/frontend clients.
+      if (
+        err instanceof Error &&
+        (
+          err.message.startsWith("Applications are only accepted for open jobs.") ||
+          err.message.startsWith("Applications are only accepted for open, approved jobs.") ||
+          err.message === "Job posting not found." ||
+          err.message ===
+          "A candidate with this email already applied for this job."
+        )
+      ) {
+        next(AppError.badRequest(err.message));
+        return;
+      }
+
       next(err);
     }
   },
@@ -684,6 +722,11 @@ recruitmentRouter.post(
 
       try {
         const parsed = await parseResumeFile(candidate.resumeUrl);
+        console.log("RESUME PARSER RESULT:", {
+          experience: parsed.experience,
+          skills: parsed.skills,
+          education: parsed.education,
+        });
 
         const updated = await repo.updateParsedResume(req.params.id, {
           resumeText: parsed.text,
@@ -1057,6 +1100,47 @@ recruitmentRouter.post(
         copilot: result,
       });
     } catch (err) {
+      next(err);
+    }
+  },
+);
+// ============================================================================
+// AI INTERVIEW EVALUATION
+// ============================================================================
+
+recruitmentRouter.post(
+  "/interviews/:id/ai-evaluation",
+  requirePermission("recruitment.manage"),
+  async (req, res, next) => {
+    try {
+      const result = await repo.evaluateInterviewWithAI(req.params.id);
+
+      if (!result) {
+        throw AppError.notFound("Interview not found.");
+      }
+
+      res.json(result);
+    } catch (err) {
+      if (err instanceof Error) {
+        if (
+          err.message ===
+          "Complete the interview feedback before generating an AI evaluation."
+        ) {
+          next(AppError.badRequest(err.message));
+          return;
+        }
+
+        if (err.message === "Candidate not found.") {
+          next(AppError.notFound(err.message));
+          return;
+        }
+
+        if (err.message === "Job posting not found.") {
+          next(AppError.notFound(err.message));
+          return;
+        }
+      }
+
       next(err);
     }
   },

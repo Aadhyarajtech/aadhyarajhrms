@@ -50,8 +50,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/EmptyState";
 
 import { formatDate, formatCurrencyINR, cx } from "@/lib/format";
-import type { Candidate } from "@/types";
-
+import type { Candidate, Interview } from "@/types";
 /* =========================================================
    CANDIDATE PIPELINE
 ========================================================= */
@@ -230,6 +229,8 @@ export default function JobDetail() {
   const [screeningStage, setScreeningStage] = useState<
     "ALL" | Candidate["stage"]
   >("ALL");
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [showCandidateComparison, setShowCandidateComparison] = useState(false);
   const [aiDetailsCandidate, setAiDetailsCandidate] =
     useState<ScreeningCandidate | null>(null);
   const [interviewCopilotFor, setInterviewCopilotFor] =
@@ -260,7 +261,12 @@ export default function JobDetail() {
     queryFn: () => RecruitmentApi.candidates(jobId!),
     enabled: !!jobId,
   });
-
+  const { data: rankedCandidates, isLoading: rankedCandidatesLoading } =
+    useQuery({
+      queryKey: ["ranked-candidates", jobId],
+      queryFn: () => RecruitmentApi.rankedCandidates(jobId!),
+      enabled: !!jobId,
+    });
   const stageMutation = useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: string }) =>
       RecruitmentApi.moveStage(id, stage),
@@ -451,6 +457,23 @@ export default function JobDetail() {
       });
 
       showToast("AI candidate screening completed.");
+    },
+
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+  const parseResumeMutation = useMutation({
+    mutationFn: (id: string) => RecruitmentApi.parseResume(id),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["candidates", jobId],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["candidate"],
+      });
+
+      showToast("Resume parsed successfully.");
     },
 
     onError: (err) => showToast(getErrorMessage(err), "error"),
@@ -858,7 +881,189 @@ export default function JobDetail() {
             )}
           </div>
         </div>
+        {selectedCandidateIds.length > 0 && (
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <span className="text-xs text-ink-faint">
+              {selectedCandidateIds.length} candidate
+              {selectedCandidateIds.length !== 1 ? "s" : ""} selected
+            </span>
 
+            <button
+              type="button"
+              disabled={selectedCandidateIds.length < 2}
+              onClick={() => setShowCandidateComparison(true)}
+              className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Compare Selected
+            </button>
+          </div>
+        )}
+        {showCandidateComparison && (
+          <div className="mt-4 rounded-2xl border border-line/60 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  Candidate Comparison
+                </p>
+                <p className="mt-1 text-xs text-ink-faint">
+                  Compare the selected candidates using their existing screening data.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCandidateComparison(false)}
+                className="rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-surface"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 overflow-x-auto">
+              <div
+                className="grid min-w-[600px] gap-3"
+                style={{
+                  gridTemplateColumns: `repeat(${selectedCandidateIds.length}, minmax(0, 1fr))`,
+                }}
+              >
+                {selectedCandidateIds.map((candidateId) => {
+                  const candidate = candidates?.find(
+                    (item) => item.id === candidateId,
+                  ) as ScreeningCandidate | undefined;
+
+                  if (!candidate) return null;
+
+                  const screening = candidate.screening;
+
+                  const fitScore =
+                    candidate.jobFitScore ??
+                    screening?.score ??
+                    null;
+
+                  return (
+                    <div
+                      key={candidate.id}
+                      className="rounded-xl border border-line/60 p-3"
+                    >
+                      <p className="text-sm font-semibold text-ink">
+                        {candidate.firstName} {candidate.lastName}
+                      </p>
+
+                      <p className="mt-1 truncate text-[11px] text-ink-faint">
+                        {candidate.email}
+                      </p>
+
+                      <div className="mt-4 space-y-3">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                            AI Score
+                          </p>
+                          <p className="mt-1 text-lg font-semibold text-ink">
+                            {fitScore !== null ? `${fitScore}/100` : "—"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                            Experience
+                          </p>
+                          <p className="mt-1 text-xs text-ink">
+                            {Array.isArray(candidate.extractedExperience) &&
+                              candidate.extractedExperience.length > 0
+                              ? candidate.extractedExperience[0]?.description ?? "—"
+                              : "—"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                            Stage
+                          </p>
+                          <p className="mt-1 text-xs text-ink">
+                            {candidate.stage}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                            Recommendation
+                          </p>
+                          <p className="mt-1 text-xs text-ink">
+                            {screening?.recommendation ?? "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="mt-4 rounded-2xl border border-line/60 bg-canvas p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-ink">
+                AI Candidate Ranking
+              </p>
+              <p className="mt-1 text-xs text-ink-faint">
+                Candidates ranked by their existing AI screening score.
+              </p>
+            </div>
+
+            {rankedCandidatesLoading && (
+              <span className="text-xs text-ink-faint">
+                Loading ranking...
+              </span>
+            )}
+          </div>
+
+          {!rankedCandidatesLoading && rankedCandidates?.length ? (
+            <div className="mt-3 space-y-2">
+              {rankedCandidates.slice(0, 5).map((candidate: any) => {
+                const score =
+                  candidate.screening?.score ??
+                  candidate.jobFitScore ??
+                  0;
+
+                return (
+                  <div
+                    key={candidate.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-line/60 px-3 py-2.5"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-semibold text-brand-700">
+                        {candidate.rank}
+                      </span>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">
+                          {candidate.firstName} {candidate.lastName}
+                        </p>
+                        <p className="truncate text-[11px] text-ink-faint">
+                          {candidate.email}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-semibold text-ink">
+                        {score}/100
+                      </p>
+                      <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                        AI Score
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : !rankedCandidatesLoading ? (
+            <p className="mt-3 text-xs text-ink-faint">
+              No screened candidates available for ranking.
+            </p>
+          ) : null}
+        </div>
         <div className="mt-4 rounded-2xl border border-line/60 bg-ink/[0.015] p-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12">
             <div className="relative xl:col-span-4">
@@ -1162,10 +1367,32 @@ export default function JobDetail() {
                           </span>
                         </div>
 
-                        <p className="text-[13px] font-medium text-ink">
+                        <div className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedCandidateIds.includes(candidate.id)}
+                            onChange={(event) => {
+                              event.stopPropagation();
 
-                          {candidate.firstName} {candidate.lastName}
-                        </p>
+                              setSelectedCandidateIds((current) => {
+                                if (event.target.checked) {
+                                  if (current.length >= 3) {
+                                    return current;
+                                  }
+
+                                  return [...current, candidate.id];
+                                }
+
+                                return current.filter((id) => id !== candidate.id);
+                              });
+                            }}
+                            className="mt-0.5 h-3.5 w-3.5 rounded border-line"
+                          />
+
+                          <p className="text-[13px] font-medium text-ink">
+                            {candidate.firstName} {candidate.lastName}
+                          </p>
+                        </div>
 
                         <p className="truncate text-[11.5px] text-ink-faint">
                           {candidate.email}
@@ -1490,9 +1717,16 @@ export default function JobDetail() {
                                   size="sm"
                                   variant="outline"
                                   className="mt-2 w-full"
-                                  onClick={() => setAiDetailsCandidate(screeningCandidate)}
+                                  leftIcon={<FileText size={12} />}
+                                  isLoading={
+                                    parseResumeMutation.isPending &&
+                                    parseResumeMutation.variables === candidate.id
+                                  }
+                                  onClick={() => parseResumeMutation.mutate(candidate.id)}
                                 >
-                                  View AI Details
+                                  {candidate.resumeParsingStatus === "PARSED"
+                                    ? "Re-parse Resume"
+                                    : "Parse Resume"}
                                 </Button>
                               )}
 
@@ -3174,6 +3408,25 @@ function ScheduleInterviewModal({
 
   const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
 
+  const [interviewEvaluationFor, setInterviewEvaluationFor] =
+    useState<Interview | null>(null);
+
+  const [interviewEvaluationData, setInterviewEvaluationData] =
+    useState<{
+      overallAssessment: string;
+      technicalAssessment: string;
+      communicationAssessment: string;
+      strengths: string[];
+      weaknesses: string[];
+      concerns: string[];
+      recommendation:
+      | "PROCEED"
+      | "HOLD"
+      | "REJECT"
+      | "REVIEW_REQUIRED";
+      suggestedNextStep: string;
+    } | null>(null);
+
   const [feedbackText, setFeedbackText] = useState("");
 
   const [recommendation, setRecommendation] = useState<
@@ -3258,7 +3511,16 @@ function ScheduleInterviewModal({
 
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
+  const interviewEvaluationMutation = useMutation({
+    mutationFn: (id: string) => RecruitmentApi.evaluateInterview(id),
 
+    onSuccess: (data) => {
+      setInterviewEvaluationData(data);
+      showToast("AI interview evaluation generated.");
+    },
+
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
   return (
     <Modal
       open
@@ -3295,7 +3557,6 @@ function ScheduleInterviewModal({
                       </a>
                     )}
                   </div>
-
                   {interview.completed ? (
                     <Badge tone="success">
                       {interview.recommendation?.replace("_", " ") ||
@@ -3305,6 +3566,25 @@ function ScheduleInterviewModal({
                     <Badge tone="warning">Scheduled</Badge>
                   )}
                 </div>
+
+                {interview.completed && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    leftIcon={<Sparkles size={12} />}
+                    isLoading={
+                      interviewEvaluationMutation.isPending &&
+                      interviewEvaluationMutation.variables === interview.id
+                    }
+                    onClick={() => {
+                      setInterviewEvaluationFor(interview);
+                      setInterviewEvaluationData(null);
+                      interviewEvaluationMutation.mutate(interview.id);
+                    }}
+                  >
+                    AI Interview Evaluation
+                  </Button>
+                )}
 
                 {interview.feedback && (
                   <div className="mt-2 rounded-lg bg-ink/[0.025] p-2.5">
@@ -3317,7 +3597,97 @@ function ScheduleInterviewModal({
                     </p>
                   </div>
                 )}
+                {interviewEvaluationFor?.id === interview.id &&
+                  interviewEvaluationData && (
+                    <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/40 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[12px] font-semibold text-ink">
+                          AI Interview Evaluation
+                        </p>
 
+                        <Badge tone="success">
+                          {interviewEvaluationData.recommendation.replaceAll("_", " ")}
+                        </Badge>
+                      </div>
+
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                            Overall Assessment
+                          </p>
+                          <p className="mt-1 text-[12px] text-ink-soft">
+                            {interviewEvaluationData.overallAssessment}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                            Technical Assessment
+                          </p>
+                          <p className="mt-1 text-[12px] text-ink-soft">
+                            {interviewEvaluationData.technicalAssessment}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                            Communication Assessment
+                          </p>
+                          <p className="mt-1 text-[12px] text-ink-soft">
+                            {interviewEvaluationData.communicationAssessment}
+                          </p>
+                        </div>
+
+                        {interviewEvaluationData.strengths.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                              Strengths
+                            </p>
+                            <ul className="mt-1 list-disc space-y-1 pl-4 text-[12px] text-ink-soft">
+                              {interviewEvaluationData.strengths.map((item, index) => (
+                                <li key={index}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {interviewEvaluationData.weaknesses.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                              Weaknesses
+                            </p>
+                            <ul className="mt-1 list-disc space-y-1 pl-4 text-[12px] text-ink-soft">
+                              {interviewEvaluationData.weaknesses.map((item, index) => (
+                                <li key={index}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {interviewEvaluationData.concerns.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                              Concerns
+                            </p>
+                            <ul className="mt-1 list-disc space-y-1 pl-4 text-[12px] text-ink-soft">
+                              {interviewEvaluationData.concerns.map((item, index) => (
+                                <li key={index}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                            Suggested Next Step
+                          </p>
+                          <p className="mt-1 text-[12px] text-ink-soft">
+                            {interviewEvaluationData.suggestedNextStep}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 {interview.recordingUrl && (
                   <a
                     href={interview.recordingUrl}

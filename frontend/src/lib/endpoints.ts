@@ -1341,6 +1341,16 @@ export const RecruitmentApi = {
         },
       })
       .then((r) => r.data.candidates),
+  rankedCandidates: (jobPostingId: string) =>
+    api
+      .get<{
+        candidates: Candidate[];
+      }>("/recruitment/candidates/ranked", {
+        params: {
+          jobPostingId,
+        },
+      })
+      .then((r) => r.data.candidates),
 
   searchCandidates: (
     params: {
@@ -1552,7 +1562,26 @@ export const RecruitmentApi = {
         scorecard,
       })
       .then((r) => r.data.interview),
-
+  evaluateInterview: (id: string) =>
+    api
+      .post<{
+        message: string;
+        evaluation: {
+          overallAssessment: string;
+          technicalAssessment: string;
+          communicationAssessment: string;
+          strengths: string[];
+          weaknesses: string[];
+          concerns: string[];
+          recommendation:
+          | "PROCEED"
+          | "HOLD"
+          | "REJECT"
+          | "REVIEW_REQUIRED";
+          suggestedNextStep: string;
+        };
+      }>(`/recruitment/interviews/${id}/ai-evaluation`)
+      .then((r) => r.data.evaluation),
   generateOffer: (
     id: string,
     payload: {
