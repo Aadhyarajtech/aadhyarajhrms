@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   useQuery,
   useQueryClient,
@@ -37,6 +37,8 @@ export function Topbar({
   const { user, logout } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isMyTicketsPage = location.pathname === "/app/my-tickets";
   const queryClient = useQueryClient();
 
   const [notifOpen, setNotifOpen] = useState(false);
@@ -478,16 +480,18 @@ export function Topbar({
 
         {user?.employee && (
           <div className="hidden items-center gap-2 sm:flex">
-            <Button
-              size="sm"
-              variant="secondary"
-              leftIcon={
-                <TicketPlus size={14} />
-              }
-              onClick={onRaiseTicket}
-            >
-              Raise Ticket
-            </Button>
+            {!isMyTicketsPage && (
+              <Button
+                size="sm"
+                variant="primary"
+                leftIcon={
+                  <TicketPlus size={14} />
+                }
+                onClick={onRaiseTicket}
+              >
+                Raise Ticket
+              </Button>
+            )}
 
             {todayAttendance?.checkIn &&
             !todayAttendance?.checkOut ? (

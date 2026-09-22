@@ -1163,7 +1163,6 @@ export default function JobDetail() {
                         </div>
 
                         <p className="text-[13px] font-medium text-ink">
-
                           {candidate.firstName} {candidate.lastName}
                         </p>
 
@@ -1542,12 +1541,11 @@ export default function JobDetail() {
                             <button
                               type="button"
                               onClick={() => setScheduleFor(candidate)}
-                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 hover:bg-brand-50"
+                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-50"
                             >
-                              <Calendar size={12} />
+                              <Calendar size={12} className="shrink-0" />
                               <span>Interview</span>
                             </button>
-
 
                             {candidate.stage === "INTERVIEW" && (
                               <button
@@ -1557,7 +1555,7 @@ export default function JobDetail() {
                                   interviewCopilotMutation.mutate(candidate.id);
                                 }}
                                 disabled={interviewCopilotMutation.isPending}
-                                className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-brand-200 bg-brand-50 px-2 py-1.5 text-[11px] font-medium text-brand-600 hover:bg-brand-100 disabled:opacity-50"
+                                className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-brand-200 bg-brand-50 px-2 py-1.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-100 disabled:opacity-50"
                               >
                                 <Sparkles size={12} />
                                 <span>
@@ -1567,21 +1565,25 @@ export default function JobDetail() {
                                 </span>
                               </button>
                             )}
+
                             <button
                               type="button"
                               onClick={() => setLifecycleFor(candidate)}
-                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 hover:bg-brand-50"
+                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-50"
                             >
-                              <FileText size={12} />
+                              <FileText size={12} className="shrink-0" />
                               <span>Lifecycle</span>
                             </button>
 
                             {candidate.stage === "INTERVIEW" &&
-                              (screeningCandidate.finalResult ?? "PENDING") === "PENDING" && (
+                              (screeningCandidate.finalResult ?? "PENDING") ===
+                                "PENDING" && (
                                 <button
                                   type="button"
                                   disabled={selectCandidateMutation.isPending}
-                                  onClick={() => selectCandidateMutation.mutate(candidate.id)}
+                                  onClick={() =>
+                                    selectCandidateMutation.mutate(candidate.id)
+                                  }
                                   className="col-span-2 flex items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
                                 >
                                   <UserCheck size={12} />
@@ -1597,12 +1599,32 @@ export default function JobDetail() {
                               stage.key !== "REJECTED" && (
                                 <select
                                   value={candidate.stage}
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    const targetStage =
+                                      event.target.value as Candidate["stage"];
+
+                                    if (
+                                      !canMoveCandidateToStage(
+                                        candidate,
+                                        targetStage,
+                                      )
+                                    ) {
+                                      showToast(
+                                        targetStage === "HIRED"
+                                          ? "Use the hiring workflow to move a candidate to Hired."
+                                          : targetStage === "REJECTED"
+                                            ? "Use the rejection workflow to reject a candidate."
+                                            : "This candidate cannot be moved to that stage.",
+                                        "error",
+                                      );
+                                      return;
+                                    }
+
                                     stageMutation.mutate({
                                       id: candidate.id,
-                                      stage: event.target.value,
-                                    })
-                                  }
+                                      stage: targetStage,
+                                    });
+                                  }}
                                   aria-label={`Move ${candidate.firstName} ${candidate.lastName} to another stage`}
                                   className="col-span-2 w-full rounded-lg border border-line bg-white px-2 py-1.5 text-center text-[11px] font-medium text-ink shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
                                 >
@@ -3572,14 +3594,6 @@ function OfferLetterModal({
     setJoiningDate(loaded.offer?.joiningDate ?? "");
   }, [rawCandidate, job?.budgetCtc]);
 
-  const refreshCandidate = () => {
-    void queryClient.invalidateQueries({
-      queryKey: ["candidate", candidate.id],
-    });
-    void queryClient.invalidateQueries({ queryKey: ["candidates", job?.id] });
-    void queryClient.invalidateQueries({ queryKey: ["recruitment"] });
-  };
-
   const offerMutation = useMutation({
     mutationFn: () => {
       const ctc = Number(annualCtc);
@@ -3599,8 +3613,24 @@ function OfferLetterModal({
         joiningDate,
       });
     },
-    onSuccess: () => {
-      refreshCandidate();
+    onSuccess: (updatedCandidate) => {
+      queryClient.setQueryData(["candidate", candidate.id], updatedCandidate);
+      queryClient.setQueryData<Candidate[] | undefined>(
+        ["candidates", job?.id],
+        (existing) =>
+          existing?.map((item) =>
+            item.id === candidate.id ? updatedCandidate : item,
+          ),
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["candidate", candidate.id],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["candidates", job?.id],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["recruitment"],
+      });
       showToast("Offer letter generated successfully.");
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
@@ -3628,58 +3658,79 @@ function OfferLetterModal({
             </p>
             <p className="text-[12px] text-ink-faint">{current.email}</p>
           </div>
-
           {current.offer?.offerUrl ? (
-            <div className="rounded-2xl border border-line/70 p-4">
-              <p className="text-[13px] font-semibold text-ink">
-                Offer letter generated
-              </p>
-              <p className="mt-1 text-[12px] text-ink-faint">
-                CTC:{" "}
-                {current.offer?.annualCtc != null
-                  ? formatCurrencyINR(current.offer.annualCtc)
-                  : "—"}
-                {" • "}
-                Joining: {current.offer?.joiningDate ?? "—"}
-              </p>
-              <a
-                href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex text-[12px] font-medium text-brand-600 hover:underline"
-              >
-                Open generated offer letter
-              </a>
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextField
-                label="Annual CTC"
-                type="number"
-                value={annualCtc}
-                onChange={(e) => setAnnualCtc(e.target.value)}
-              />
-              <TextField
-                label="Joining date"
-                type="date"
-                value={joiningDate}
-                onChange={(e) => setJoiningDate(e.target.value)}
-              />
-              <div className="sm:col-span-2 flex items-center justify-between gap-3">
-                <p className="text-[11.5px] text-ink-faint">
-                  Status: {offerStatus.replaceAll("_", " ")}
-                </p>
-                <Button
-                  size="sm"
-                  isLoading={offerMutation.isPending}
-                  disabled={!joiningDate || Number(annualCtc) <= 0}
-                  onClick={() => offerMutation.mutate()}
-                >
-                  Generate Offer Letter
-                </Button>
-              </div>
-            </div>
-          )}
+  <div className="rounded-2xl border border-line/70 p-4">
+    <p className="text-[13px] font-semibold text-ink">
+      Offer letter generated
+    </p>
+
+    <p className="mt-1 text-[12px] text-ink-faint">
+      CTC:{" "}
+      {current.offer?.annualCtc != null
+        ? formatCurrencyINR(current.offer.annualCtc)
+        : "—"}
+      {" • "}
+      Joining: {current.offer?.joiningDate ?? "—"}
+    </p>
+
+    <div className="mt-3 flex flex-wrap items-center gap-3">
+      <a
+        href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex text-[12px] font-medium text-brand-600 hover:underline"
+      >
+        Open generated offer letter
+      </a>
+
+      <Button
+        size="sm"
+        variant="secondary"
+        isLoading={offerMutation.isPending}
+        disabled={!joiningDate || Number(annualCtc) <= 0}
+        onClick={() => offerMutation.mutate()}
+      >
+        Regenerate Offer Letter
+      </Button>
+    </div>
+
+    <p className="mt-2 text-[11px] text-ink-faint">
+      Regenerating creates a new offer document and replaces the previous
+      offer document link.
+    </p>
+  </div>
+) : (
+  <div className="grid gap-3 sm:grid-cols-2">
+    <TextField
+      label="Annual CTC"
+      type="number"
+      value={annualCtc}
+      onChange={(e) => setAnnualCtc(e.target.value)}
+    />
+
+    <TextField
+      label="Joining date"
+      type="date"
+      value={joiningDate}
+      onChange={(e) => setJoiningDate(e.target.value)}
+    />
+
+    <div className="sm:col-span-2 flex items-center justify-between gap-3">
+      <p className="text-[11.5px] text-ink-faint">
+        Status: {offerStatus.replaceAll("_", " ")}
+      </p>
+
+      <Button
+        size="sm"
+        isLoading={offerMutation.isPending}
+        disabled={!joiningDate || Number(annualCtc) <= 0}
+        onClick={() => offerMutation.mutate()}
+      >
+        Generate Offer Letter
+      </Button>
+    </div>
+  </div>
+)}
         </div>
       )}
     </Modal>

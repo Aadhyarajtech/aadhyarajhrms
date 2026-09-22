@@ -44,18 +44,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
+
     if (!token) {
       setIsLoading(false);
       return;
     }
+
     AuthApi.me()
       .then(async (freshUser) => {
         setUser(freshUser);
-        const access = await GovernanceApi.me();
-        setPermissions(access.permissions);
+
+        try {
+          const access = await GovernanceApi.me();
+          setPermissions(access.permissions ?? []);
+        } catch {
+          // Keep authentication working even if permission loading fails.
+          setPermissions([]);
+        }
       })
       .catch(() => {
         localStorage.removeItem(TOKEN_KEY);
+        setUser(null);
+        setPermissions([]);
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -63,14 +73,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       queryClient.clear();
+
       const { token, user: loggedInUser } = await AuthApi.login(
         email,
         password,
       );
+
       localStorage.setItem(TOKEN_KEY, token);
       setUser(loggedInUser);
-      const access = await GovernanceApi.me();
-      setPermissions(access.permissions);
+
+      try {
+        const access = await GovernanceApi.me();
+        setPermissions(access.permissions ?? []);
+      } catch {
+        setPermissions([]);
+      }
     },
     [queryClient],
   );
@@ -78,17 +95,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshUser = useCallback(async () => {
     const fresh = await AuthApi.me();
     setUser(fresh);
-    const access = await GovernanceApi.me();
-    setPermissions(access.permissions);
+
+    try {
+      const access = await GovernanceApi.me();
+      setPermissions(access.permissions ?? []);
+    } catch {
+      setPermissions([]);
+    }
   }, []);
 
   const hasPermission = useCallback(
     (permission: string) => {
-      if (user?.role === "SUPER_ADMIN") return true;
-      if (permissions.includes(permission)) return true;
-      if (permission.endsWith(".view")) {
-        return permissions.includes(`${permission.slice(0, -5)}.manage`);
+      if (user?.role === "SUPER_ADMIN") {
+        return true;
       }
+
+      if (permissions.includes(permission)) {
+        return true;
+      }
+
+      // A manage permission also grants its corresponding view permission.
+      if (permission.endsWith(".view")) {
+        return permissions.includes(
+          `${permission.slice(0, -5)}.manage`,
+        );
+      }
+
       return false;
     },
     [permissions, user?.role],
@@ -113,6 +145,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
+
+  if (!ctx) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+
   return ctx;
 }

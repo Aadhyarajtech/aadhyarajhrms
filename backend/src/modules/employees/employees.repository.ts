@@ -3,6 +3,44 @@ import { Employee, User, Department, Designation } from "@/db/models";
 import { nowIso } from "@/db/connection";
 import { AppError } from "@/utils/errors";
 
+export const EMPLOYEE_ONBOARDING_STAGES = [
+  "HR Creates Employee Account in System",
+  "Personal & Professional Details Entry",
+  "Document Upload & Verification",
+  "Department & Role Assignment",
+  "Payroll Structure Configuration",
+  "System Login Credentials Issued",
+  "Employee Orientation & Policy Briefing",
+  "Profile Activated — Employee Successfully Onboarded",
+] as const;
+
+export function buildDefaultOnboarding(status?: string) {
+  const completedLegacy = Boolean(status && status !== "ONBOARDING");
+  const stages = EMPLOYEE_ONBOARDING_STAGES.map((name, index) => ({
+    stage: index + 1,
+    name,
+    status: completedLegacy || index === 0 ? "COMPLETED" : "PENDING",
+    completedAt: completedLegacy || index === 0 ? nowIso() : null,
+    completedBy: null,
+    remarks: null,
+  }));
+
+  return {
+    currentStage: completedLegacy ? 8 : 2,
+    status: completedLegacy ? "COMPLETED" : "IN_PROGRESS",
+    stages,
+    startedAt: nowIso(),
+    completedAt: completedLegacy ? nowIso() : null,
+  };
+}
+
+function normalizeOnboarding(onboarding: any, employeeStatus?: string) {
+  if (!onboarding || !Array.isArray(onboarding.stages) || onboarding.stages.length < 8) {
+    return buildDefaultOnboarding(employeeStatus);
+  }
+  return onboarding;
+}
+
 export interface EmployeeFilters {
   search?: string;
   departmentId?: string;
@@ -40,9 +78,11 @@ async function enrichEmployees(employeeDocs: any[]) {
     const manager = e.managerId ? managerMap.get(e.managerId) : undefined;
     const user = userMap.get(e.userId);
     const { _id, ...rest } = e;
+    const onboarding = normalizeOnboarding(e.onboarding, e.status);
     return {
       id: _id,
       ...rest,
+      onboarding,
       departmentName: dept?.name ?? null,
       departmentCode: dept?.code ?? null,
       departmentColor: dept?.colorHex ?? null,
@@ -392,10 +432,23 @@ export async function createEmployee(input: CreateEmployeeInput) {
         : null,
     probationReminderSentAt: null,
 
-    status:
-      input.probationPeriodMonths && input.probationPeriodMonths > 0
-        ? "ON_PROBATION"
-        : "ACTIVE",
+    // New employees stay in the onboarding lifecycle until all 8 stages
+    // are completed. This keeps account creation separate from activation.
+    status: "ONBOARDING",
+    onboarding: {
+      currentStage: 2,
+      status: "IN_PROGRESS",
+      stages: EMPLOYEE_ONBOARDING_STAGES.map((name, index) => ({
+        stage: index + 1,
+        name,
+        status: index === 0 ? "COMPLETED" : "PENDING",
+        completedAt: index === 0 ? now : null,
+        completedBy: null,
+        remarks: null,
+      })),
+      startedAt: now,
+      completedAt: null,
+    },
 
     dateOfJoining: input.dateOfJoining,
     isArchived: false,
@@ -526,6 +579,127 @@ export interface UpdateEmployeeInput {
   } | null;
 }
 
+export async function updateOnboardingStage(
+  id: string,
+  stageNumber: number,
+  completedBy: string,
+  remarks?: string | null,
+) {
+  const current = await Employee.findById(id).lean<any>();
+  if (!current) return undefined;
+
+  const onboarding = normalizeOnboarding(current.onboarding, current.status);
+
+  if (stageNumber < 2 || stageNumber > 7) {
+    throw new Error("Only onboarding stages 2 through 7 can be completed individually.");
+  }
+
+  if (current.status !== "ONBOARDING") {
+    throw new Error("Only employees in ONBOARDING status can update onboarding stages.");
+  }
+
+  const currentStage = Number(onboarding.currentStage || 2);
+  if (stageNumber !== currentStage) {
+    throw new Error(`Complete onboarding stage ${currentStage} before stage ${stageNumber}.`);
+  }
+
+  const now = nowIso();
+  const stages = onboarding.stages.map((stage: any) => {
+    if (stage.stage === stageNumber) {
+      return {
+        ...stage,
+        status: "COMPLETED",
+        completedAt: now,
+        completedBy,
+        remarks: typeof remarks === "string" && remarks.trim() ? remarks.trim() : null,
+      };
+    }
+    if (stage.stage === stageNumber + 1) {
+      return { ...stage, status: "IN_PROGRESS" };
+    }
+    return stage;
+  });
+
+  const updated = await Employee.findByIdAndUpdate(
+    id,
+    {
+      $set: {
+        onboarding: {
+          ...onboarding,
+          currentStage: stageNumber + 1,
+          status: "IN_PROGRESS",
+          startedAt: onboarding.startedAt ?? now,
+          stages,
+        },
+        updatedAt: now,
+      },
+    },
+    { new: true },
+  ).lean();
+
+  return enrichEmployee(updated);
+}
+
+export async function completeOnboarding(id: string, completedBy: string) {
+  const current = await Employee.findById(id).lean<any>();
+  if (!current) return undefined;
+
+  const onboarding = normalizeOnboarding(current.onboarding, current.status);
+  const priorStagesComplete = onboarding.stages
+    .filter((stage: any) => stage.stage < 8)
+    .every((stage: any) => stage.status === "COMPLETED");
+
+  if (current.status !== "ONBOARDING") {
+    throw new Error("Only employees in ONBOARDING status can complete onboarding.");
+  }
+
+  if (!priorStagesComplete) {
+    const nextStage = onboarding.stages.find((stage: any) => stage.status !== "COMPLETED")?.stage ?? 8;
+    throw new Error(`Complete onboarding stage ${nextStage} before activation.`);
+  }
+
+  const now = nowIso();
+  const probationMonths = Number(current.probationPeriodMonths ?? 0);
+  const probationStartDate = probationMonths > 0
+    ? (current.probationStartDate ?? current.dateOfJoining ?? now)
+    : null;
+  const probationEndDate = probationStartDate && probationMonths > 0
+    ? (() => {
+        const date = new Date(probationStartDate);
+        date.setMonth(date.getMonth() + probationMonths);
+        return date.toISOString();
+      })()
+    : null;
+
+  const updatedOnboarding = {
+    ...onboarding,
+    currentStage: 8,
+    status: "COMPLETED",
+    completedAt: now,
+    stages: onboarding.stages.map((stage: any) =>
+      stage.stage === 8
+        ? { ...stage, status: "COMPLETED", completedAt: now, completedBy, remarks: stage.remarks ?? null }
+        : { ...stage, status: "COMPLETED" },
+    ),
+  };
+
+  const updated = await Employee.findByIdAndUpdate(
+    id,
+    {
+      $set: {
+        onboarding: updatedOnboarding,
+        status: probationMonths > 0 ? "ON_PROBATION" : "ACTIVE",
+        probationStartDate,
+        probationEndDate,
+        updatedAt: now,
+      },
+    },
+    { new: true },
+  ).lean();
+
+  return enrichEmployee(updated);
+}
+
 export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
   const current = await Employee.findById(id).lean<any>();
   if (!current) return undefined;
@@ -595,6 +769,7 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         certifications: merged.certifications ?? current.certifications ?? [],
         workHistory: merged.workHistory ?? current.workHistory ?? [],
         skills: merged.skills ?? current.skills ?? [],
+        onboarding: merged.onboarding ?? current.onboarding ?? buildDefaultOnboarding(merged.status),
         dateOfExit: merged.dateOfExit ?? null,
 
         isArchived:
@@ -638,143 +813,6 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
     },
   );
   return getEmployeeById(id);
-}
-
-const onboardingStages = [
-  "HR Creates Employee Account in System",
-  "Personal & Professional Details Entry",
-  "Document Upload & Verification",
-  "Department & Role Assignment",
-  "Payroll Structure Configuration",
-  "System Login Credentials Issued",
-  "Employee Orientation & Policy Briefing",
-  "Profile Activated — Employee Successfully Onboarded",
-] as const;
-
-const onboardingStageNumbers: Record<string, number> = {
-  ACCOUNT_CREATION: 1,
-  PERSONAL_PROFESSIONAL_DETAILS: 2,
-  DOCUMENT_VERIFICATION: 3,
-  DEPARTMENT_ROLE_ASSIGNMENT: 4,
-  PAYROLL_STRUCTURE: 5,
-  CREDENTIALS: 6,
-  ORIENTATION_POLICY: 7,
-  PROFILE_ACTIVATION: 8,
-};
-
-function defaultOnboarding() {
-  return {
-    currentStage: 1,
-    status: "NOT_STARTED" as const,
-    stages: onboardingStages.map((name, index) => ({
-      stage: index + 1,
-      name,
-      status: "PENDING" as const,
-      completedAt: null,
-      completedBy: null,
-      remarks: null,
-    })),
-    startedAt: null,
-    completedAt: null,
-  };
-}
-
-function normalizeOnboarding(onboarding: any) {
-  const defaults = defaultOnboarding();
-  const stages = defaults.stages.map((stage) => ({
-    ...stage,
-    ...(onboarding?.stages?.find((item: any) => item.stage === stage.stage) ?? {}),
-  }));
-
-  return {
-    ...defaults,
-    ...onboarding,
-    stages,
-  };
-}
-
-export async function getOnboarding(employeeId: string) {
-  const employee = await Employee.findById(employeeId).select("onboarding").lean<any>();
-  return employee ? normalizeOnboarding(employee.onboarding) : undefined;
-}
-
-export async function updateOnboardingStage(
-  employeeId: string,
-  stageKey: string,
-  status: "PENDING" | "IN_PROGRESS" | "COMPLETED",
-  remarks?: string | null,
-) {
-  const employee = await Employee.findById(employeeId).lean<any>();
-  if (!employee) return undefined;
-
-  const stageNumber = onboardingStageNumbers[stageKey];
-  if (!stageNumber) throw AppError.badRequest("Invalid onboarding stage.");
-
-  const onboarding = normalizeOnboarding(employee.onboarding);
-  const now = nowIso();
-  const updatedStages = onboarding.stages.map((stage: any) =>
-    stage.stage === stageNumber
-      ? {
-          ...stage,
-          status,
-          completedAt: status === "COMPLETED" ? (stage.completedAt ?? now) : null,
-          completedBy: status === "COMPLETED" ? (stage.completedBy ?? "HR_ADMIN") : null,
-          remarks: remarks ?? stage.remarks,
-        }
-      : stage,
-  );
-
-  await Employee.updateOne(
-    { _id: employeeId },
-    {
-      $set: {
-        onboarding: {
-          ...onboarding,
-          currentStage: status === "COMPLETED" && stageNumber < 8 ? stageNumber + 1 : stageNumber,
-          status: "IN_PROGRESS",
-          startedAt: onboarding.startedAt ?? now,
-          stages: updatedStages,
-        },
-        updatedAt: now,
-      },
-    },
-  );
-
-  return getEmployeeById(employeeId);
-}
-
-export async function completeOnboarding(employeeId: string) {
-  const employee = await Employee.findById(employeeId).lean<any>();
-  if (!employee) return undefined;
-
-  const onboarding = normalizeOnboarding(employee.onboarding);
-  const incompleteStages = onboarding.stages
-    .filter((stage: any) => stage.status !== "COMPLETED")
-    .map((stage: any) => stage.name);
-
-  if (incompleteStages.length > 0) {
-    return { success: false as const, incompleteStages, employee: await getEmployeeById(employeeId) };
-  }
-
-  const now = nowIso();
-  await Employee.updateOne(
-    { _id: employeeId },
-    {
-      $set: {
-        status: "ACTIVE",
-        onboarding: {
-          ...onboarding,
-          currentStage: 8,
-          status: "COMPLETED",
-          startedAt: onboarding.startedAt ?? now,
-          completedAt: onboarding.completedAt ?? now,
-        },
-        updatedAt: now,
-      },
-    },
-  );
-
-  return { success: true as const, incompleteStages: [], employee: await getEmployeeById(employeeId) };
 }
 
 export async function getOrgChart() {
