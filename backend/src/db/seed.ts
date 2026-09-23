@@ -694,7 +694,10 @@ export async function runSeed() {
   const { processPayrollRun, markRunPaid } = await import("../modules/payroll/payroll.repository.js");
   for (let i = 3; i >= 1; i--) {
     const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-    const runRecord = (await processPayrollRun(d.getMonth() + 1, d.getFullYear())) as any;
+    const startDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const endDate = `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, "0")}-${String(monthEnd.getDate()).padStart(2, "0")}`;
+    const runRecord = (await processPayrollRun(startDate, endDate)) as any;
     if (runRecord) await markRunPaid(runRecord.id);
   }
 

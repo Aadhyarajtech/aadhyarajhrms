@@ -191,6 +191,8 @@ export const EmployeesApi = {
           firstName: string;
           lastName: string;
           designationTitle?: string | null;
+          role?: string;
+          isManager?: boolean;
         }[];
       }>("/employees/managers")
       .then((r) => r.data.managers),
@@ -535,9 +537,9 @@ export interface AttendanceAiInsights {
 
   trend: {
     direction:
-      | "IMPROVING"
-      | "DECLINING"
-      | "STABLE";
+    | "IMPROVING"
+    | "DECLINING"
+    | "STABLE";
     change: number;
     recentRate: number;
     previousRate: number;
@@ -545,9 +547,9 @@ export interface AttendanceAiInsights {
 
   patterns: {
     type:
-      | "POSITIVE"
-      | "WARNING"
-      | "INFO";
+    | "POSITIVE"
+    | "WARNING"
+    | "INFO";
     title: string;
     description: string;
   }[];
@@ -880,28 +882,28 @@ export interface AttendanceApiRecord
   status: AttendanceStatus;
 
   checkInLatitude?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkInLongitude?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkInAccuracy?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkOutLatitude?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkOutLongitude?:
-    | number
-    | null;
+  | number
+  | null;
 
   checkOutAccuracy?:
-    | number
-    | null;
+  | number
+  | null;
 
   effectiveWorkHours?: number;
   breakMinutes?: number;
@@ -909,8 +911,8 @@ export interface AttendanceApiRecord
   earlyDepartureMinutes?: number;
   overtimeHours?: number;
   earlyDepartureReason?:
-    | string
-    | null;
+  | string
+  | null;
   compOffCredited?: boolean;
 
   auditTrail?: Array<{
@@ -939,8 +941,8 @@ export interface AttendanceRegularizationRequest {
   requestedCheckIn: string | null;
   requestedCheckOut: string | null;
   requestedStatus:
-    | AttendanceStatus
-    | string;
+  | AttendanceStatus
+  | string;
   reason: string;
   status: AttendanceRegularizationStatus;
   expiresAt?: string | null;
@@ -958,8 +960,8 @@ export const AttendanceApi = {
     api
       .get<{
         record:
-          | AttendanceRecord
-          | null;
+        | AttendanceRecord
+        | null;
       }>("/attendance/today")
       .then(
         (r) => r.data.record,
@@ -1280,7 +1282,7 @@ export const AttendanceApi = {
           employeeId,
         },
       )
-            .then(
+      .then(
         (r) => r.data.record,
       ),
 
@@ -1309,8 +1311,8 @@ export const AttendanceApi = {
         result: {
           request: AttendanceRegularizationRequest;
           attendance:
-            | AttendanceRecord
-            | null;
+          | AttendanceRecord
+          | null;
         };
         message: string;
       }>(
@@ -1364,9 +1366,9 @@ export interface LeaveConflictAnalysis {
   hasConflict: boolean;
 
   impactLevel:
-    | "LOW"
-    | "MEDIUM"
-    | "HIGH";
+  | "LOW"
+  | "MEDIUM"
+  | "HIGH";
 
   affectedEmployees: number;
 
@@ -1493,13 +1495,13 @@ export const LeaveApi = {
       ),
 
   apply: (payload: {
-  leaveTypeId: string;
-  startDate: string;
-  endDate: string;
-  halfDay?: boolean;
-  halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
-  reason: string;
-}) =>
+    leaveTypeId: string;
+    startDate: string;
+    endDate: string;
+    halfDay?: boolean;
+    halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
+    reason: string;
+  }) =>
     api
       .post<{
         request: LeaveRequest;
@@ -1666,7 +1668,6 @@ export const RecruitmentApi = {
       .then(
         (r) => r.data.job,
       ),
-
   candidates: (
     jobPostingId?: string,
   ) =>
@@ -1681,10 +1682,21 @@ export const RecruitmentApi = {
           },
         },
       )
-      .then(
-        (r) => r.data.candidates,
-      ),
+      .then((r) => r.data.candidates),
 
+  rankedCandidates: (jobPostingId: string) =>
+    api
+      .get<{
+        candidates: Candidate[];
+      }>(
+        "/recruitment/candidates/ranked",
+        {
+          params: {
+            jobPostingId,
+          },
+        },
+      )
+      .then((r) => r.data.candidates),
   searchCandidates: (
     params: {
       jobPostingId?: string;
@@ -1877,32 +1889,12 @@ export const RecruitmentApi = {
         };
       }>("/recruitment/jobs/ai-generate", data)
       .then((r) => r.data.draft),
-
   rate: (id: string, rating: number) =>
     api
       .patch<{
         candidate: Candidate;
-      }>(
-        `/recruitment/candidates/${id}/rating`,
-        { rating },
-      )
+      }>(`/recruitment/candidates/${id}/rating`, { rating })
       .then((r) => r.data.candidate),
-
-  screenCandidate: (
-    id: string,
-    resumeText?: string,
-  ) =>
-    api
-      .post<{
-        candidate: Candidate;
-        message: string;
-      }>(
-        `/recruitment/candidates/${id}/screen`,
-        { resumeText },
-      )
-      .then(
-        (r) => r.data.candidate,
-      ),
 
   parseResume: (id: string) =>
     api
@@ -1929,17 +1921,30 @@ export const RecruitmentApi = {
     api
       .get<{
         interviews: Interview[];
-      }>(
-        "/recruitment/interviews",
-        {
-          params: {
-            candidateId,
-          },
+      }>("/recruitment/interviews", {
+        params: {
+          candidateId,
         },
+      })
+      .then((r) => r.data.interviews),
+
+
+  screenCandidate: (
+    id: string,
+    resumeText?: string,
+  ) =>
+    api
+      .post<{
+        candidate: Candidate;
+        message: string;
+      }>(
+        `/recruitment/candidates/${id}/screen`,
+        { resumeText },
       )
       .then(
-        (r) => r.data.interviews,
+        (r) => r.data.candidate,
       ),
+
 
   scheduleInterview: (
     payload: Record<string, unknown>,
@@ -1966,9 +1971,7 @@ export const RecruitmentApi = {
     }> = [],
   ) =>
     api
-      .post<{
-        interview: Interview;
-      }>(
+      .post<{ interview: Interview }>(
         `/recruitment/interviews/${id}/feedback`,
         {
           feedback,
@@ -1976,10 +1979,45 @@ export const RecruitmentApi = {
           scorecard,
         },
       )
-      .then(
-        (r) => r.data.interview,
-      ),
+      .then((r) => r.data.interview),
 
+  submitInterviewFeedback: (
+    id: string,
+    feedback: string,
+    recommendation: Interview["recommendation"],
+    scorecard: Interview["scorecard"],
+  ) =>
+    api
+      .post<{ interview: Interview }>(
+        `/recruitment/interviews/${id}/feedback`,
+        {
+          feedback,
+          recommendation,
+          scorecard,
+        },
+      )
+      .then((r) => r.data.interview),
+
+  evaluateInterview: (id: string) =>
+    api
+      .post<{
+        message: string;
+        evaluation: {
+          overallAssessment: string;
+          technicalAssessment: string;
+          communicationAssessment: string;
+          strengths: string[];
+          weaknesses: string[];
+          concerns: string[];
+          recommendation:
+          | "PROCEED"
+          | "HOLD"
+          | "REJECT"
+          | "REVIEW_REQUIRED";
+          suggestedNextStep: string;
+        };
+      }>(`/recruitment/interviews/${id}/ai-evaluation`)
+      .then((r) => r.data.evaluation),
   generateOffer: (
     id: string,
     payload: {
@@ -2005,10 +2043,10 @@ export const RecruitmentApi = {
     id: string,
     payload: {
       status:
-        | "NOT_STARTED"
-        | "IN_PROGRESS"
-        | "VERIFIED"
-        | "FAILED";
+      | "NOT_STARTED"
+      | "IN_PROGRESS"
+      | "VERIFIED"
+      | "FAILED";
       provider?: string;
       reference?: string;
       notes?: string;
@@ -2399,8 +2437,8 @@ export const PerformanceApi = {
     api
       .get<{
         review:
-          | PerformanceReview
-          | null;
+        | PerformanceReview
+        | null;
       }>(
         "/performance/reviews/mine",
       )
@@ -2541,7 +2579,7 @@ export const PerformanceApi = {
   deactivateCycle: (id: string) =>
     api.patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/deactivate`).then((r) => r.data.cycle),
 
-   feedbackRequests: (cycleId?: string) =>
+  feedbackRequests: (cycleId?: string) =>
     api
       .get<{
         requests: PerformanceFeedbackRequest[];
@@ -2607,7 +2645,7 @@ export const PerformanceApi = {
         (r) => r.data.feedback,
       ),
 
-    submitReviewFeedback: (
+  submitReviewFeedback: (
     id: string,
     payload: {
       type: "PEER" | "SUBORDINATE";
@@ -2627,7 +2665,7 @@ export const PerformanceApi = {
         (r) => r.data.feedback,
       ),
 
-    feedbackSummary: (id: string) =>
+  feedbackSummary: (id: string) =>
     api
       .get<{
         summary: FeedbackSummary;
@@ -2701,8 +2739,8 @@ export const PerformanceApi = {
     api
       .get<{
         outcome:
-          | PerformanceOutcome
-          | null;
+        | PerformanceOutcome
+        | null;
       }>(
         `/performance/reviews/${id}/outcome`,
       )
@@ -2714,10 +2752,10 @@ export const PerformanceApi = {
     id: string,
     payload: {
       incrementRecommendation:
-        | "MAXIMUM"
-        | "STANDARD"
-        | "NONE"
-        | "PIP";
+      | "MAXIMUM"
+      | "STANDARD"
+      | "NONE"
+      | "PIP";
       promotionEligible?: boolean;
       trainingNeeds?: string[];
       pipRecommended?: boolean;
@@ -2832,8 +2870,8 @@ export const PayrollApi = {
     api
       .get<{
         structure:
-          | SalaryStructure
-          | null;
+        | SalaryStructure
+        | null;
       }>(
         `/payroll/salary-structure/${employeeId}`,
       )
@@ -2862,8 +2900,8 @@ export const PayrollApi = {
       .post<{
         tax: {
           taxRegime:
-            | "NEW"
-            | "OLD";
+          | "NEW"
+          | "OLD";
           taxYear: number;
           annualGrossIncome: number;
           standardDeduction: number;
@@ -2890,7 +2928,7 @@ export const PayrollApi = {
         (r) => r.data.tax,
       ),
 
-    runs: () =>
+  runs: () =>
     api
       .get<{ runs: PayrollRun[] }>("/payroll/runs")
       .then((r) => r.data.runs),
@@ -2902,42 +2940,26 @@ export const PayrollApi = {
         { month, year },
       )
       .then((r) => r.data),
-
   lockAttendance: (
-    month: number,
-    year: number,
+    startDate: string,
+    endDate: string,
+    departmentIds: string[],
   ) =>
     api
-      .post<{
-        run: PayrollRun;
-      }>(
-        "/payroll/runs/lock-attendance",
-        {
-          month,
-          year,
-        },
-      )
-      .then(
-        (r) => r.data.run,
-      ),
+      .post<{ run: PayrollRun }>("/payroll/runs/lock-attendance", {
+        startDate,
+        endDate,
+        departmentIds,
+      })
+      .then((r) => r.data.run),
 
-  process: (
-    month: number,
-    year: number,
-  ) =>
+  process: (startDate: string, endDate: string) =>
     api
-      .post<{
-        run: PayrollRun;
-      }>(
-        "/payroll/runs/process",
-        {
-          month,
-          year,
-        },
-      )
-      .then(
-        (r) => r.data.run,
-      ),
+      .post<{ run: PayrollRun }>("/payroll/runs/process", {
+        startDate,
+        endDate,
+      })
+      .then((r) => r.data.run),
 
   submitForReview: (id: string) =>
     api
@@ -3577,8 +3599,8 @@ export interface ReportBucket {
 
 export interface ReportsOverview {
   scope:
-    | "ORGANIZATION"
-    | "TEAM";
+  | "ORGANIZATION"
+  | "TEAM";
 
   filters: ReportsFilters;
 
@@ -3826,11 +3848,11 @@ export const ReportsApi = {
           ...filters,
           section,
           ...(section === "custom" &&
-          customSections.length > 0
+            customSections.length > 0
             ? {
-                customSections:
-                  customSections.join(","),
-              }
+              customSections:
+                customSections.join(","),
+            }
             : {}),
         },
         responseType: "blob",
@@ -3948,4 +3970,49 @@ export const DashboardApi = {
       .then(
         (r) => r.data,
       ),
+};
+
+// --- AI HR Copilot -----------------------------------------------------------
+
+export interface HrCopilotChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface HrCopilotPageContext {
+  pathname?: string;
+  pageTitle?: string;
+  entityId?: string;
+  module?: string;
+}
+
+export interface HrCopilotChatPayload {
+  message: string;
+
+  conversation?: HrCopilotChatMessage[];
+
+  pageContext?: HrCopilotPageContext;
+}
+
+export interface HrCopilotSource {
+  module: string;
+  description: string;
+}
+
+export interface HrCopilotChatResponse {
+  answer: string;
+  intent: string;
+  sources: HrCopilotSource[];
+}
+
+export const HrCopilotApi = {
+  chat: (
+    payload: HrCopilotChatPayload,
+  ) =>
+    api
+      .post<HrCopilotChatResponse>(
+        "/ai/chat",
+        payload,
+      )
+      .then((response) => response.data),
 };

@@ -21,7 +21,11 @@ import { getKpiAchievementPercentage } from "./payroll.performance";
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
   const { _id, ...rest } = doc;
-  return { id: _id, ...rest };
+  const startDate =
+    rest.startDate ?? `${rest.year}-${String(rest.month).padStart(2, "0")}-01`;
+  const endDate =
+    rest.endDate ?? new Date(rest.year, rest.month, 0).toISOString().slice(0, 10);
+  return { id: _id, ...rest, startDate, endDate };
 }
 
 export async function getSalaryStructure(employeeId: string) {
@@ -281,46 +285,129 @@ function getPayslipTaxDetails(
   };
 }
 
-function monthPrefix(month: number, year: number) {
-  return `${year}-${String(month).padStart(2, "0")}`;
+function normalizePayrollDate(value: string, field: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw AppError.badRequest(`A valid ${field} is required (YYYY-MM-DD).`);
+  }
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    throw AppError.badRequest(`A valid ${field} is required (YYYY-MM-DD).`);
+  }
+  return value;
 }
 
-export async function lockAttendanceForPayroll(month: number, year: number) {
-  if (!Number.isInteger(month) || month < 1 || month > 12) {
-    throw AppError.badRequest("A valid payroll month is required.");
+function getPayrollPeriod(startDate: string, endDate: string) {
+  const start = normalizePayrollDate(startDate, "payroll start date");
+  const end = normalizePayrollDate(endDate, "payroll end date");
+  if (start > end) {
+    throw AppError.badRequest("Payroll start date must be on or before the end date.");
   }
-  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
-    throw AppError.badRequest("A valid payroll year is required.");
-  }
+  const startMs = Date.parse(`${start}T00:00:00Z`);
+  const endMs = Date.parse(`${end}T00:00:00Z`);
+  const totalDays = Math.floor((endMs - startMs) / 86400000) + 1;
+  const endDateObj = new Date(`${end}T00:00:00Z`);
+  return {
+    startDate: start,
+    endDate: end,
+    totalDays,
+    month: endDateObj.getUTCMonth() + 1,
+    year: endDateObj.getUTCFullYear(),
+  };
+}
 
-  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
-  if (new Date() <= monthEnd) {
+export async function lockAttendanceForPayroll(
+  startDate: string,
+  endDate: string,
+  departmentIds: string[],
+) {
+  const period = getPayrollPeriod(startDate, endDate);
+  const endDateTime = new Date(`${period.endDate}T23:59:59.999Z`);
+  if (new Date() <= endDateTime) {
     throw AppError.badRequest(
-      "Attendance can only be locked after the selected payroll month has ended.",
+      "Attendance can only be locked after the selected payroll period has ended.",
     );
   }
 
-  let run = await PayrollRun.findOne({ month, year }).lean();
-  const now = nowIso();
-  if (run && run.status !== "DRAFT") {
-    if (run.status === "ATTENDANCE_LOCKED") return getPayrollRun(run._id);
+  const selectedDepartmentIds = [...new Set((departmentIds ?? []).map(String).filter(Boolean))];
+  if (!selectedDepartmentIds.length) {
+    throw AppError.badRequest("Select at least one department to lock attendance.");
+  }
+
+  const departments = await Department.find({
+    _id: { $in: selectedDepartmentIds },
+  })
+    .select("_id name")
+    .lean();
+  const knownDepartmentIds = new Set(departments.map((department) => department._id));
+  const invalidDepartmentIds = selectedDepartmentIds.filter(
+    (departmentId) => !knownDepartmentIds.has(departmentId),
+  );
+  if (invalidDepartmentIds.length) {
+    throw AppError.badRequest("One or more selected departments do not exist.");
+  }
+
+  let run = await PayrollRun.findOne({
+    startDate: period.startDate,
+    endDate: period.endDate,
+  }).lean();
+
+  if (run && ["PROCESSED", "HR_REVIEW", "APPROVED", "PAID"].includes(run.status)) {
     throw AppError.badRequest(
       "This payroll period has already moved past attendance lock.",
     );
   }
+
+  const existingLockedDepartmentIds = new Set(
+    run?.attendanceLockedDepartmentIds ?? [],
+  );
+  selectedDepartmentIds.forEach((departmentId) => existingLockedDepartmentIds.add(departmentId));
+  const lockedDepartmentIds = [...existingLockedDepartmentIds];
+
+  const payrollEmployees = await Employee.find({
+    status: { $in: ["ACTIVE", "ON_PROBATION", "ON_LEAVE", "NOTICE_PERIOD"] },
+    isArchived: { $ne: true },
+  })
+    .select("_id departmentId")
+    .lean();
+
+  const requiredDepartmentIds = [
+    ...new Set(
+      payrollEmployees
+        .map((employee) => employee.departmentId)
+        .filter(Boolean),
+    ),
+  ];
+  const allDepartmentsLocked = requiredDepartmentIds.every((departmentId) =>
+    existingLockedDepartmentIds.has(departmentId),
+  );
+  const status = allDepartmentsLocked ? "ATTENDANCE_LOCKED" : "DRAFT";
+
+  const now = nowIso();
   if (!run) {
     run = await PayrollRun.create({
-      month,
-      year,
-      status: "ATTENDANCE_LOCKED",
-      attendanceLockedAt: now,
+      month: period.month,
+      year: period.year,
+      startDate: period.startDate,
+      endDate: period.endDate,
+      status,
+      attendanceLockedAt: allDepartmentsLocked ? now : null,
+      attendanceLockedDepartmentIds: lockedDepartmentIds,
     });
   } else {
     await PayrollRun.updateOne(
       { _id: run._id },
-      { $set: { status: "ATTENDANCE_LOCKED", attendanceLockedAt: now } },
+      {
+        $set: {
+          ...period,
+          status,
+          attendanceLockedAt:
+            allDepartmentsLocked ? run.attendanceLockedAt ?? now : null,
+          attendanceLockedDepartmentIds: lockedDepartmentIds,
+        },
+      },
     );
   }
+
   return getPayrollRun(run._id);
 }
 
@@ -349,21 +436,23 @@ function calculateProfessionalTax(
 }
 
 /** Processes payroll after attendance is locked. PF and ESI are automatic; TDS remains a declared monthly amount until tax declarations are available. */
-export async function processPayrollRun(month: number, year: number) {
-  let run = await PayrollRun.findOne({ month, year }).lean();
+export async function processPayrollRun(startDate: string, endDate: string) {
+  const period = getPayrollPeriod(startDate, endDate);
+  let run = await PayrollRun.findOne({
+    startDate: period.startDate,
+    endDate: period.endDate,
+  }).lean();
 
-  // Normal processing is intentionally one-way. Once payslips have been
-  // generated, the same payroll period must not be silently recalculated.
-  // This protects historical payroll data when a user clicks Process again.
   if (run && run.status !== "DRAFT" && run.status !== "ATTENDANCE_LOCKED") {
     throw AppError.conflict(
-      `Payroll for ${month}/${year} is already ${run.status}. It cannot be processed again.`,
+      `Payroll for ${period.startDate} to ${period.endDate} is already ${run.status}. It cannot be processed again.`,
     );
   }
 
   if (!run || run.status === "DRAFT") {
-    await lockAttendanceForPayroll(month, year);
-    run = await PayrollRun.findOne({ month, year }).lean();
+    throw AppError.badRequest(
+      "Attendance must be locked for all payroll departments before payroll processing.",
+    );
   }
 
   if (!run || run.status !== "ATTENDANCE_LOCKED") {
@@ -384,7 +473,7 @@ export async function processPayrollRun(month: number, year: number) {
     );
   }
 
-  const totalDaysInMonth = daysInMonth(month, year);
+  const totalDaysInMonth = period.totalDays;
   const employees = await Employee.find({
     status: { $in: ["ACTIVE", "ON_PROBATION", "ON_LEAVE", "NOTICE_PERIOD"] },
     isArchived: { $ne: true },
@@ -418,10 +507,9 @@ export async function processPayrollRun(month: number, year: number) {
     .select("_id")
     .lean();
   const unpaidLeaveTypeIds = unpaidLeaveTypes.map((t) => t._id);
-  const prefix = monthPrefix(month, year);
   const attendanceRows = await Attendance.find({
     employeeId: { $in: employeeIds },
-    date: { $regex: `^${prefix}-` },
+    date: { $gte: period.startDate, $lte: period.endDate },
   }).lean();
   const attendanceMap = new Map<string, typeof attendanceRows>();
   for (const row of attendanceRows) {
@@ -443,10 +531,8 @@ export async function processPayrollRun(month: number, year: number) {
       employeeId: emp._id,
       status: "APPROVED",
       leaveTypeId: { $in: unpaidLeaveTypeIds },
-      $or: [
-        { startDate: { $regex: `^${prefix}` } },
-        { endDate: { $regex: `^${prefix}` } },
-      ],
+      startDate: { $lte: period.endDate },
+      endDate: { $gte: period.startDate },
     }).lean();
     const leaveLopDays = unpaidRequests.reduce(
       (sum, r) => sum + r.totalDays,
@@ -464,8 +550,11 @@ export async function processPayrollRun(month: number, year: number) {
       structure.conveyance +
       structure.medical +
       structure.specialAllowance;
+    const calendarDaysInEndMonth = daysInMonth(period.month, period.year);
+    const periodFactor = totalDaysInMonth / Math.max(calendarDaysInEndMonth, 1);
+    const periodFixedGross = roundMoney(fixedGross * periodFactor);
     const configuredPerformanceBonus = roundMoney(
-      structure.performanceBonus ?? 0,
+      (structure.performanceBonus ?? 0) * periodFactor,
     );
     const kpiAchievementPercentage = await getKpiAchievementPercentage(emp._id);
     const performanceBonus = roundMoney(
@@ -482,13 +571,13 @@ export async function processPayrollRun(month: number, year: number) {
       overtimeHours * hourlyBasic * overtimeRate,
     );
     const grossEarnings = roundMoney(
-      fixedGross + performanceBonus + overtimeAmount,
+      periodFixedGross + performanceBonus + overtimeAmount,
     );
     const lop = roundMoney(
-      (fixedGross / Math.max(totalDaysInMonth, 1)) * lopDays,
+      (fixedGross / Math.max(calendarDaysInEndMonth, 1)) * lopDays,
     );
 
-    const pf = roundMoney(structure.basic * 0.12);
+    const pf = roundMoney(structure.basic * 0.12 * periodFactor);
     const automaticProfessionalTax = calculateProfessionalTax(
       emp.state,
       grossEarnings,
@@ -499,9 +588,9 @@ export async function processPayrollRun(month: number, year: number) {
         : Number(structure.professionalTax ?? 0),
     );
     const monthlyTaxableSalaryBase = roundMoney(
-      fixedGross + performanceBonus + overtimeAmount,
+      periodFixedGross + performanceBonus + overtimeAmount,
     );
-    const taxYear = Number(structure.taxYear ?? (month >= 4 ? year : year - 1));
+    const taxYear = Number(structure.taxYear ?? (period.month >= 4 ? period.year : period.year - 1));
     const taxRegime = structure.taxRegime === "OLD" ? "OLD" : "NEW";
     const tax = calculateAnnualTax({
       taxYear,
@@ -522,15 +611,15 @@ export async function processPayrollRun(month: number, year: number) {
     });
     const fyStartMonth = 4;
     const monthsElapsed =
-      month >= fyStartMonth ? month - fyStartMonth : month + 12 - fyStartMonth;
+      period.month >= fyStartMonth ? period.month - fyStartMonth : period.month + 12 - fyStartMonth;
     const monthsRemaining = Math.max(1, 12 - monthsElapsed);
     const priorRunQuery =
-      month >= 4
-        ? { year: taxYear, month: { $gte: 4, $lt: month } }
+      period.month >= 4
+        ? { year: taxYear, month: { $gte: 4, $lt: period.month } }
         : {
             $or: [
               { year: taxYear, month: { $gte: 4 } },
-              { year: taxYear + 1, month: { $lt: month } },
+              { year: taxYear + 1, month: { $lt: period.month } },
             ],
           };
     const priorRunRows = await PayrollRun.find({
@@ -1071,5 +1160,8 @@ export async function reprocessPayrollRun(id: string) {
     throw AppError.notFound("Payroll run not found.");
   }
 
-  return processPayrollRun(run.month, run.year);
+  return processPayrollRun(
+    run.startDate ?? `${run.year}-${String(run.month).padStart(2, "0")}-01`,
+    run.endDate ?? new Date(run.year, run.month, 0).toISOString().slice(0, 10),
+  );
 }

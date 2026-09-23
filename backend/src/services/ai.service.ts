@@ -1181,11 +1181,27 @@ export async function generateCalendarAI<T>(
     );
 
     clearTimeout(timeout);
-
     if (!response.ok) {
+      const errorBody = await response.text();
+
       console.warn(
         `[AI] Groq API returned ${response.status} for Calendar AI. Using fallback.`,
       );
+
+      console.warn("[AI] Groq error details:", {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorBody,
+        retryAfter: response.headers.get("retry-after"),
+        remainingRequests: response.headers.get(
+          "x-ratelimit-remaining-requests",
+        ),
+        remainingTokens: response.headers.get(
+          "x-ratelimit-remaining-tokens",
+        ),
+        resetRequests: response.headers.get("x-ratelimit-reset-requests"),
+        resetTokens: response.headers.get("x-ratelimit-reset-tokens"),
+      });
 
       return fallback;
     }
@@ -1310,9 +1326,26 @@ export async function generateOrganizationAI<T>(
     clearTimeout(timeout);
 
     if (!response.ok) {
-      console.warn(
-        `[AI] Groq API returned ${response.status} for Organization AI. Using fallback.`,
-      );
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("retry-after");
+        const remainingRequests = response.headers.get("x-ratelimit-remaining-requests");
+        const remainingTokens = response.headers.get("x-ratelimit-remaining-tokens");
+        const resetRequests = response.headers.get("x-ratelimit-reset-requests");
+        const resetTokens = response.headers.get("x-ratelimit-reset-tokens");
+
+        console.warn(
+          `[AI] Groq Organization AI rate-limited (429). ` +
+          `retry-after=${retryAfter ?? "unknown"}, ` +
+          `remainingRequests=${remainingRequests ?? "unknown"}, ` +
+          `remainingTokens=${remainingTokens ?? "unknown"}, ` +
+          `resetRequests=${resetRequests ?? "unknown"}, ` +
+          `resetTokens=${resetTokens ?? "unknown"}. Using fallback.`,
+        );
+      } else {
+        console.warn(
+          `[AI] Groq API returned ${response.status} for Organization AI. Using fallback.`,
+        );
+      }
 
       return fallback;
     }
@@ -1607,6 +1640,163 @@ ${input.screeningSummary || "Not available"}`,
     },
   );
 }
+export async function generateInterviewEvaluationAI(input: {
+  candidateName: string;
+  jobTitle: string;
+  jobDescription: string;
+  resumeText: string;
+  requiredSkills: string[];
+  matchedSkills: string[];
+  missingSkills: string[];
+  screeningSummary: string;
+  interviewerFeedback: string;
+  interviewerRecommendation: string;
+  scorecard: {
+    criterion: string;
+    score: number;
+    comment: string | null;
+  }[];
+}) {
+  const fallback = {
+    overallAssessment: "AI evaluation unavailable.",
+    technicalAssessment: "Not available.",
+    communicationAssessment: "Not available.",
+    strengths: [],
+    weaknesses: [],
+    concerns: [],
+    recommendation: "REVIEW_REQUIRED" as const,
+    suggestedNextStep: "Manual review required.",
+  };
+
+  return generateCalendarAI(
+    `You are an AI Interview Evaluation Assistant for an enterprise recruitment system.
+
+Your job is to help a human recruiter analyze a completed interview.
+
+Use ONLY the candidate, resume, job description, screening information, interviewer feedback, and interviewer scorecard provided.
+
+The human interviewer remains responsible for the hiring decision.
+
+## Generate these sections
+
+1. OVERALL ASSESSMENT
+Provide a concise summary of how the candidate performed during the interview based on the available evidence.
+
+2. TECHNICAL ASSESSMENT
+Evaluate the candidate's demonstrated technical knowledge against the job requirements and interview evidence.
+
+3. COMMUNICATION ASSESSMENT
+Evaluate communication based ONLY on the interview feedback and scorecard comments provided.
+
+4. STRENGTHS
+Identify the candidate's demonstrated strengths supported by the interview evidence.
+
+5. WEAKNESSES
+Identify areas where the interview evidence indicates gaps or weaknesses.
+
+6. CONCERNS
+Identify specific concerns that the recruiter may want to verify in a later stage.
+
+7. RECOMMENDATION
+Provide one of:
+- PROCEED
+- HOLD
+- REJECT
+- REVIEW_REQUIRED
+
+This is an AI-assisted recommendation for recruiter review, not an automatic hiring decision.
+
+8. SUGGESTED NEXT STEP
+Provide a concise suggested recruitment next step based on the evidence.
+
+## Rules
+
+- Use only the information provided.
+- Do not invent interview answers, candidate experience, skills, qualifications, or achievements.
+- Do not infer protected or sensitive characteristics.
+- Do not make claims that are unsupported by the interview evidence.
+- Distinguish between interviewer-provided evidence and AI analysis.
+- Treat the interviewer scorecard and feedback as primary interview evidence.
+- Consider the job requirements when evaluating technical relevance.
+- Keep the evaluation concise and practical for recruiters.
+- Do not repeat the entire interview feedback.
+- Return valid JSON matching the requested structure.
+
+## Output Format
+
+{
+  "overallAssessment": "Concise assessment",
+  "technicalAssessment": "Technical assessment",
+  "communicationAssessment": "Communication assessment",
+  "strengths": ["Strength 1", "Strength 2"],
+  "weaknesses": ["Weakness 1", "Weakness 2"],
+  "concerns": ["Concern 1"],
+  "recommendation": "PROCEED",
+  "suggestedNextStep": "Suggested next step"
+}`,
+    `Candidate: ${input.candidateName}
+
+Job Title: ${input.jobTitle}
+
+Job Description:
+${input.jobDescription}
+
+Required Skills:
+${input.requiredSkills.join(", ") || "Not specified"}
+
+Candidate Resume:
+${input.resumeText || "Not available"}
+
+AI Screening Matched Skills:
+${input.matchedSkills.join(", ") || "None identified"}
+
+AI Screening Missing/Weak Skills:
+${input.missingSkills.join(", ") || "None identified"}
+
+AI Screening Summary:
+${input.screeningSummary || "Not available"}
+
+Interviewer Feedback:
+${input.interviewerFeedback || "Not provided"}
+
+Interviewer Recommendation:
+${input.interviewerRecommendation || "Not provided"}
+
+Interviewer Scorecard:
+${input.scorecard.length > 0
+      ? input.scorecard
+        .map(
+          (item) =>
+            `Criterion: ${item.criterion}
+Score: ${item.score}
+Comment: ${item.comment || "No comment"}`,
+        )
+        .join("\n\n")
+      : "No scorecard provided"
+    }`,
+    z.object({
+      overallAssessment: z.string().min(1),
+      technicalAssessment: z.string().min(1),
+      communicationAssessment: z.string().min(1),
+      strengths: z.array(z.string()).max(6),
+      weaknesses: z.array(z.string()).max(6),
+      concerns: z.array(z.string()).max(6),
+      recommendation: z.enum([
+        "PROCEED",
+        "HOLD",
+        "REJECT",
+        "REVIEW_REQUIRED",
+      ]),
+      suggestedNextStep: z.string().min(1),
+    }),
+    fallback,
+    {
+      temperature: 0.2,
+      maxTokens: 1600,
+      timeoutMs: 12000,
+    },
+  );
+}
 export async function generateJobRequisitionAI(input: {
   jobTitle: string;
   currentDepartment?: string;
@@ -1629,10 +1819,10 @@ export async function generateJobRequisitionAI(input: {
     designationTitle: input.currentDesignation || "",
     roleCategory: input.currentRoleCategory || "",
     employmentType: (input.currentEmploymentType || "FULL_TIME") as
-  | "FULL_TIME"
-  | "PART_TIME"
-  | "CONTRACT"
-  | "INTERN",
+      | "FULL_TIME"
+      | "PART_TIME"
+      | "CONTRACT"
+      | "INTERN",
     location: input.currentLocation || "Bengaluru, India",
     experienceMin: input.currentExperienceMin ?? 0,
     experienceMax: input.currentExperienceMax ?? 5,
