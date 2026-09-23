@@ -21,10 +21,12 @@ const TICKET_STATUSES = [
   "CLOSED",
 ] as const;
 
-type TicketStatus = (typeof TICKET_STATUSES)[number];
-
-function isTicketStatus(status: string): status is TicketStatus {
-  return (TICKET_STATUSES as readonly string[]).includes(status);
+export function isTicketStatus(
+  status: string,
+): status is (typeof TICKET_STATUSES)[number] {
+  return TICKET_STATUSES.includes(
+    status as (typeof TICKET_STATUSES)[number],
+  );
 }
 
 const TICKET_ESCALATION_TARGETS = ["HR_ADMIN", "SUPER_ADMIN"] as const;
@@ -287,7 +289,8 @@ export async function updateTicketStatus(id: string, status: string) {
   }
 
   return Ticket.findByIdAndUpdate(
-    id,    {
+    id,
+    {
       $set: {
         status,
         updatedAt: new Date().toISOString(),
@@ -681,7 +684,6 @@ export async function getTicketMessages(ticketId: string) {
     })
     .lean();
 }
-
 // =========================================================
 // CREATE TICKET MESSAGE
 // =========================================================
@@ -699,15 +701,10 @@ export async function createTicketMessage(data: {
 
   const message = await TicketMessage.create({
     ticketId: data.ticketId,
-
     employeeId: data.employeeId,
-
     senderName: data.senderName,
-
     senderRole: data.senderRole,
-
     message: data.message,
-
     createdAt: new Date(),
   });
 

@@ -1233,6 +1233,124 @@ if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
 );
 
 /* =========================================================
+   TICKET CONVERSATION MESSAGES
+
+   Employees can access their own tickets.
+   Support staff can access tickets they are authorized to handle.
+========================================================= */
+
+const createMessageSchema = z.object({
+  message: z.string().trim().min(1).max(5000),
+});
+
+ticketRouter.get(
+  "/:id/messages",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
+
+      const ticket = await repo.getTicket(req.params.id);
+
+      if (!ticket) {
+        return res.status(404).json({
+          error: {
+            message: "Ticket not found",
+          },
+        });
+      }
+
+      if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to view this ticket",
+          },
+        });
+      }
+
+      const messages = await messageRepo.getTicketMessages(
+        req.params.id,
+      );
+
+      return res.json({
+        messages,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+ticketRouter.post(
+  "/:id/messages",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
+
+      const parsed = createMessageSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: {
+            message: "Invalid message",
+            details: parsed.error.flatten(),
+          },
+        });
+      }
+
+      const ticket = await repo.getTicket(req.params.id);
+
+      if (!ticket) {
+        return res.status(404).json({
+          error: {
+            message: "Ticket not found",
+          },
+        });
+      }
+
+      if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to send messages on this ticket",
+          },
+        });
+      }
+
+      const senderEmployeeId =
+        req.user.employeeId ||
+        req.user.userId ||
+        "STAFF";
+
+      const createdMessage =
+        await messageRepo.createTicketMessage({
+          ticketId: req.params.id,
+          employeeId: senderEmployeeId,
+          senderName: req.user.name || "User",
+          senderRole: String(req.user.role || "EMPLOYEE"),
+          message: parsed.data.message,
+        });
+
+      return res.status(201).json({
+        message: createdMessage,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
    PHASE 3: SUMMARIZE TICKET THREAD
    Staff-only endpoint. Generates a 3-bullet executive summary
    of the ticket and its conversation history.

@@ -6,9 +6,15 @@ import {
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  CheckCircle2,
+  Clock3,
   ExternalLink,
   FileText,
+  PlayCircle,
+  RotateCcw,
   Send,
+  ShieldAlert,
+  XCircle,
 } from "lucide-react";
 import {
   useEffect,
@@ -29,8 +35,14 @@ interface Ticket {
   description: string;
   employeeId?: string;
   assignedTo?: string;
+  assignedManagerId?: string | null;
   status: string;
   attachment?: string;
+  isEscalated?: boolean;
+  escalatedAt?: string | null;
+  escalatedById?: string | null;
+  escalatedTo?: string | null;
+  escalationReason?: string | null;
   aiCategory?: string | null;
   aiIntent?: string | null;
   aiConfidence?: number | null;
@@ -368,6 +380,15 @@ export default function TicketDetails() {
   const [messageText, setMessageText] =
     useState("");
 
+  const [escalationOpen, setEscalationOpen] =
+    useState(false);
+
+  const [escalatedTo, setEscalatedTo] =
+    useState<"HR_ADMIN" | "SUPER_ADMIN">("HR_ADMIN");
+
+  const [escalationReason, setEscalationReason] =
+    useState("");
+
   const messagesEndRef =
     useRef<HTMLDivElement | null>(null);
 
@@ -375,6 +396,95 @@ export default function TicketDetails() {
 
   const currentEmployeeId =
     currentUser?.employeeId || null;
+
+  /* =========================================================
+     UPDATE TICKET STATUS
+  ========================================================= */
+
+  const statusMutation = useMutation({
+    mutationFn: async (status: string) => {
+      if (!id) {
+        throw new Error("Ticket ID not found");
+      }
+
+      const res = await api.patch(`/tickets/${id}`, {
+        status,
+      });
+
+      return res.data.ticket as Ticket;
+    },
+
+    onSuccess: (updatedTicket) => {
+      queryClient.setQueryData(
+        ["ticket", id],
+        updatedTicket,
+      );
+
+      queryClient.invalidateQueries({
+        queryKey: ["ticket", id],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["ticket-messages", id],
+      });
+
+      showToast(
+        `Ticket status changed to ${formatStatus(updatedTicket.status)}.`,
+      );
+    },
+
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
+
+  /* =========================================================
+     MANAGER GRIEVANCE ESCALATION
+  ========================================================= */
+
+  const escalationMutation = useMutation({
+    mutationFn: async () => {
+      if (!id) {
+        throw new Error("Ticket ID not found");
+      }
+
+      if (!escalationReason.trim()) {
+        throw new Error("Escalation reason is required.");
+      }
+
+      const res = await api.post(`/tickets/${id}/escalate`, {
+        escalatedTo,
+        reason: escalationReason.trim(),
+      });
+
+      return res.data.ticket as Ticket;
+    },
+
+    onSuccess: (updatedTicket) => {
+      queryClient.setQueryData(
+        ["ticket", id],
+        updatedTicket,
+      );
+
+      queryClient.invalidateQueries({
+        queryKey: ["ticket", id],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["ticket-messages", id],
+      });
+
+      setEscalationOpen(false);
+      setEscalationReason("");
+      setEscalatedTo("HR_ADMIN");
+
+      showToast("Grievance escalated successfully.");
+    },
+
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
 
   /* =========================================================
      GET TICKET
@@ -869,6 +979,196 @@ export default function TicketDetails() {
             </div>
 
           </div>
+
+          {/* =================================================
+              TICKET ACTIONS
+          ================================================= */}
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            {data.status === "OPEN" && (
+              <button
+                type="button"
+                disabled={statusMutation.isPending}
+                onClick={() =>
+                  statusMutation.mutate("IN_PROGRESS")
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <PlayCircle size={15} />
+                Start Working
+              </button>
+            )}
+
+            {data.status === "IN_PROGRESS" && (
+              <button
+                type="button"
+                disabled={statusMutation.isPending}
+                onClick={() =>
+                  statusMutation.mutate("WAITING_FOR_EMPLOYEE")
+                }
+                className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Clock3 size={15} />
+                Request Information
+              </button>
+            )}
+
+            {data.status === "WAITING_FOR_EMPLOYEE" && (
+              <button
+                type="button"
+                disabled={statusMutation.isPending}
+                onClick={() =>
+                  statusMutation.mutate("IN_PROGRESS")
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <PlayCircle size={15} />
+                Resume
+              </button>
+            )}
+
+            {data.status === "IN_PROGRESS" && (
+              <button
+                type="button"
+                disabled={statusMutation.isPending}
+                onClick={() =>
+                  statusMutation.mutate("RESOLVED")
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <CheckCircle2 size={15} />
+                Resolve Ticket
+              </button>
+            )}
+
+            {data.status === "RESOLVED" && (
+              <>
+                <button
+                  type="button"
+                  disabled={statusMutation.isPending}
+                  onClick={() =>
+                    statusMutation.mutate("CLOSED")
+                  }
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <XCircle size={15} />
+                  Close Ticket
+                </button>
+
+                <button
+                  type="button"
+                  disabled={statusMutation.isPending}
+                  onClick={() =>
+                    statusMutation.mutate("IN_PROGRESS")
+                  }
+                  className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw size={15} />
+                  Reopen Ticket
+                </button>
+              </>
+            )}
+
+            {normalizeRole(currentUser?.role) === "MANAGER" &&
+              data.category === "Complaint" &&
+              !data.isEscalated &&
+              data.status !== "CLOSED" && (
+                <button
+                  type="button"
+                  onClick={() => setEscalationOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-amber-700"
+                >
+                  <ShieldAlert size={15} />
+                  Escalate Grievance
+                </button>
+              )}
+
+            {data.isEscalated && (
+              <span className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-800">
+                <ShieldAlert size={15} />
+                Escalated to {getRoleLabel(data.escalatedTo || "")}
+              </span>
+            )}
+          </div>
+
+          {/* ESCALATION MODAL */}
+
+          {escalationOpen && (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    Escalate Grievance
+                  </h3>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    Send this manager grievance to HR Admin or Super Admin.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEscalationOpen(false)}
+                  className="rounded-lg p-1.5 text-gray-500 hover:bg-white"
+                >
+                  <XCircle size={18} />
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[220px_1fr]">
+                <select
+                  value={escalatedTo}
+                  onChange={(event) =>
+                    setEscalatedTo(
+                      event.target.value as
+                        | "HR_ADMIN"
+                        | "SUPER_ADMIN",
+                    )
+                  }
+                  className="h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                >
+                  <option value="HR_ADMIN">
+                    HR Admin
+                  </option>
+                  <option value="SUPER_ADMIN">
+                    Super Admin
+                  </option>
+                </select>
+
+                <textarea
+                  rows={3}
+                  maxLength={1000}
+                  value={escalationReason}
+                  onChange={(event) =>
+                    setEscalationReason(event.target.value)
+                  }
+                  placeholder="Explain why this grievance needs escalation..."
+                  className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                />
+              </div>
+
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-[11px] text-gray-500">
+                  {escalationReason.length}/1000
+                </span>
+
+                <button
+                  type="button"
+                  disabled={
+                    escalationMutation.isPending ||
+                    !escalationReason.trim()
+                  }
+                  onClick={() =>
+                    escalationMutation.mutate()
+                  }
+                  className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {escalationMutation.isPending
+                    ? "Escalating..."
+                    : "Confirm Escalation"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* COLOR LEGEND */}
 

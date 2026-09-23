@@ -206,7 +206,9 @@ export default function TicketConversation() {
   const sendMessage = useMutation({
     mutationFn: async () => {
       if (!id) throw new Error("Ticket ID is missing");
-      if (ticketExpired) throw new Error("This ticket has expired and cannot be updated.");
+      if (ticketExpired) {
+        throw new Error("This ticket has expired and cannot be updated.");
+      }
 
       const text = message.trim();
 
@@ -214,14 +216,8 @@ export default function TicketConversation() {
         throw new Error("Message cannot be empty");
       }
 
-      const form = new FormData();
-      form.append("message", text);
-      if (selectedFile) {
-        form.append("attachment", selectedFile);
-      }
-
-      const res = await api.post(`/tickets/${id}/messages`, form, {
-        headers: { "Content-Type": "multipart/form-data" },
+      const res = await api.post(`/tickets/${id}/messages`, {
+        message: text,
       });
 
       return res.data.message;
@@ -231,12 +227,18 @@ export default function TicketConversation() {
       setMessage("");
       setSelectedFile(null);
       isUserAtBottom.current = true;
+
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 50);
 
-      queryClient.invalidateQueries({ queryKey: ["ticket-messages", id] });
-      queryClient.invalidateQueries({ queryKey: ["ticket", id] });
+      queryClient.invalidateQueries({
+        queryKey: ["ticket-messages", id],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["ticket", id],
+      });
     },
   });
 
