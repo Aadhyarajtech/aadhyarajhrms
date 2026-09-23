@@ -67,6 +67,7 @@ export interface Employee {
   designationTitle: string;
   designationLevel: number;
   managerId: string | null;
+  isManager: boolean;
   managerFirstName: string | null;
   managerLastName: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
@@ -784,6 +785,7 @@ export interface PayrollRun {
   | "PAID";
   processedAt: string | null;
   attendanceLockedAt: string | null;
+  attendanceLockedDepartmentIds: string[];
   reviewedAt: string | null;
   reviewedByUserId: string | null;
   approvedAt: string | null;

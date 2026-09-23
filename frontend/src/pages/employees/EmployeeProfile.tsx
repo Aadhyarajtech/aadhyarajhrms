@@ -2734,6 +2734,7 @@ type EmployeeForm = {
   departmentId: string;
   designationId: string;
   managerId: string;
+  isManager: boolean;
 
   gender: string;
   maritalStatus: string;
@@ -2814,6 +2815,7 @@ function EditEmployeeModal({
         departmentId: employee.departmentId ?? "",
         designationId: employee.designationId ?? "",
         managerId: employee.managerId ?? "",
+        isManager: employee.isManager === true,
         gender: employee.gender ?? "",
         maritalStatus: employee.maritalStatus ?? "",
         dateOfBirth: employee.dateOfBirth ?? "",
@@ -2865,6 +2867,7 @@ function EditEmployeeModal({
       departmentId: employee.departmentId ?? "",
       designationId: employee.designationId ?? "",
       managerId: employee.managerId ?? "",
+      isManager: employee.isManager === true,
 
       gender: employee.gender ?? "",
       maritalStatus: employee.maritalStatus ?? "",
@@ -3105,6 +3108,23 @@ function EditEmployeeModal({
                   ))}
                 </select>
                 {errors.designationId && <p className="mt-1 text-xs text-danger-500">{errors.designationId.message}</p>}
+              </div>
+
+              {/* Manager Status */}
+              <div className="sm:col-span-2 rounded-xl border border-line/60 bg-surface/40 px-4 py-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    {...register("isManager")}
+                    className="mt-0.5 h-4 w-4 rounded border-line text-primary-600 focus:ring-primary-500"
+                  />
+                  <span>
+                    <span className="block text-[13px] font-medium text-ink">Is Manager</span>
+                    <span className="block text-[11px] text-ink-faint">
+                      When enabled, this employee becomes available in Reporting Manager selections.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {/* Reporting Manager */}

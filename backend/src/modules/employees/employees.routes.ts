@@ -550,6 +550,7 @@ const createEmployeeSchema = z.object({
   departmentId: z.string(),
   designationId: z.string(),
   managerId: z.string().nullable().optional(),
+  isManager: z.boolean().optional(),
   employmentType: z
     .enum(["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"])
     .optional(),
@@ -604,6 +605,7 @@ const updateEmployeeSchema = z.object({
   departmentId: z.string().optional(),
   designationId: z.string().optional(),
   managerId: z.string().nullable().optional(),
+  isManager: z.boolean().optional(),
   employmentType: z
     .enum(["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"])
     .optional(),

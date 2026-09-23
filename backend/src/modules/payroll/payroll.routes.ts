@@ -115,14 +115,22 @@ const processSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
+
+const lockAttendanceSchema = processSchema.extend({
+  departmentIds: z.array(z.string().min(1)).min(1, "Select at least one department to lock."),
+});
 payrollRouter.post(
   "/runs/lock-attendance",
   requirePermission("payroll.manage"),
-  validate(processSchema),
+  validate(lockAttendanceSchema),
   async (req, res, next) => {
     try {
       res.status(201).json({
-        run: await repo.lockAttendanceForPayroll(req.body.startDate, req.body.endDate),
+        run: await repo.lockAttendanceForPayroll(
+          req.body.startDate,
+          req.body.endDate,
+          req.body.departmentIds,
+        ),
       });
     } catch (err) {
       next(err);

@@ -58,19 +58,25 @@ async function enrichEmployees(employeeDocs: any[]) {
   const managerIds = [
     ...new Set(employeeDocs.map((e) => e.managerId).filter(Boolean)),
   ];
+  const employeeIds = employeeDocs.map((e) => e._id);
   const userIds = [...new Set(employeeDocs.map((e) => e.userId))];
 
-  const [departments, designations, managers, users] = await Promise.all([
+  const [departments, designations, managers, users, reportCounts] = await Promise.all([
     Department.find({ _id: { $in: departmentIds } }).lean(),
     Designation.find({ _id: { $in: designationIds } }).lean(),
     Employee.find({ _id: { $in: managerIds } }).lean(),
     User.find({ _id: { $in: userIds } }).lean(),
+    Employee.aggregate([
+      { $match: { managerId: { $in: employeeIds } } },
+      { $group: { _id: "$managerId", count: { $sum: 1 } } },
+    ]),
   ]);
 
   const deptMap = new Map(departments.map((d) => [d._id, d]));
   const desMap = new Map(designations.map((d) => [d._id, d]));
   const managerMap = new Map(managers.map((m) => [m._id, m]));
   const userMap = new Map(users.map((u) => [u._id, u]));
+  const reportCountMap = new Map(reportCounts.map((r) => [r._id, r.count]));
 
   return employeeDocs.map((e) => {
     const dept = deptMap.get(e.departmentId);
@@ -83,6 +89,10 @@ async function enrichEmployees(employeeDocs: any[]) {
       id: _id,
       ...rest,
       onboarding,
+      isManager:
+        e.isManager === true ||
+        (reportCountMap.get(e._id) ?? 0) > 0 ||
+        user?.role === "MANAGER",
       departmentName: dept?.name ?? null,
       departmentCode: dept?.code ?? null,
       departmentColor: dept?.colorHex ?? null,
@@ -174,9 +184,22 @@ async function validateManagerAssignment(
     throw AppError.badRequest("An employee cannot report to themself.");
   }
 
-  const manager = await Employee.findById(managerId).select("_id managerId status").lean<any>();
+  const manager = await Employee.findById(managerId).select("_id managerId status isManager userId").lean<any>();
   if (!manager) {
     throw AppError.notFound("Reporting manager not found.");
+  }
+
+  // Reporting managers are employees explicitly marked as managers. Keep
+  // legacy MANAGER-role accounts valid until their employee profile is
+  // updated, so existing reporting relationships are not broken.
+  const managerUser = await User.findOne({ _id: manager.userId }).select("role").lean<any>();
+  const hasExistingDirectReports = await Employee.exists({ managerId });
+  if (
+    manager.isManager !== true &&
+    managerUser?.role !== "MANAGER" &&
+    !hasExistingDirectReports
+  ) {
+    throw AppError.badRequest("The selected employee is not marked as a manager.");
   }
 
   // Follow the proposed manager's chain. If it reaches the employee being
@@ -261,6 +284,7 @@ export interface CreateEmployeeInput {
   departmentId: string;
   designationId: string;
   managerId?: string | null;
+  isManager?: boolean;
   employmentType?: string;
   dateOfJoining: string;
   gender?: string;
@@ -413,6 +437,7 @@ export async function createEmployee(input: CreateEmployeeInput) {
     departmentId: input.departmentId,
     designationId: input.designationId,
     managerId: input.managerId ?? null,
+    isManager: input.isManager ?? input.role === "MANAGER",
     employmentType: (input.employmentType as any) ?? "FULL_TIME",
 
     grade: input.grade ?? null,
@@ -471,6 +496,7 @@ export interface UpdateEmployeeInput {
   departmentId?: string;
   designationId?: string;
   managerId?: string | null;
+  isManager?: boolean;
   employmentType?: string;
   grade?: string | null;
   workLocation?: string | null;
@@ -705,9 +731,22 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
   if (!current) return undefined;
 
   const merged = { ...current, ...input };
+  const hasIsManagerUpdate = Object.prototype.hasOwnProperty.call(input, "isManager");
 
   if (Object.prototype.hasOwnProperty.call(input, "managerId")) {
     await validateManagerAssignment(id, merged.managerId ?? null);
+  }
+
+  if (hasIsManagerUpdate && input.isManager === false) {
+    const directReportCount = await Employee.countDocuments({
+      managerId: id,
+      status: { $nin: ["TERMINATED", "RESIGNED", "INACTIVE"] },
+    });
+    if (directReportCount > 0) {
+      throw AppError.badRequest(
+        `Cannot remove manager status while ${directReportCount} employee(s) still report to this employee. Reassign them first.`,
+      );
+    }
   }
 
   await Employee.updateOne(
@@ -719,6 +758,7 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         departmentId: merged.departmentId,
         designationId: merged.designationId,
         managerId: merged.managerId ?? null,
+        ...(hasIsManagerUpdate ? { isManager: Boolean(input.isManager) } : {}),
         employmentType: merged.employmentType,
         grade: merged.grade ?? null,
         workLocation: merged.workLocation ?? null,
@@ -958,6 +998,10 @@ export async function getHeadcountTrend(months = 6) {
 }
 
 export async function getManagersList() {
+  // Reporting-manager candidates are employees, not User.role values.
+  // `isManager` is the explicit source of truth for newly maintained data.
+  // Existing records with direct reports or the legacy MANAGER role remain
+  // available so the current hierarchy is not broken during the transition.
   const rows = await Employee.find({
     status: {
       $in: ["ACTIVE", "ON_PROBATION", "ON_LEAVE", "NOTICE_PERIOD", "ON_HOLD"],
@@ -987,22 +1031,16 @@ export async function getManagersList() {
   return rows
     .filter((employee) => {
       const role = userMap.get(employee.userId)?.role;
-      // Include actual managers even before their first report is assigned.
-      // Also retain employees who already have reports, so restored data does
-      // not disappear from the manager selector.
-      return (
-        role === "MANAGER" ||
-        role === "HR_ADMIN" ||
-        role === "SUPER_ADMIN" ||
-        (reportMap.get(employee._id) ?? 0) > 0
-      );
+      const hasDirectReports = (reportMap.get(employee._id) ?? 0) > 0;
+      const isLegacyManager = employee.isManager === undefined && role === "MANAGER";
+      return employee.isManager === true || hasDirectReports || isLegacyManager;
     })
     .map((employee) => ({
       id: employee._id,
       firstName: employee.firstName ?? "",
       lastName: employee.lastName ?? "",
       designationTitle: desMap.get(employee.designationId)?.title ?? null,
-      role: userMap.get(employee.userId)?.role ?? null,
+      isManager: employee.isManager === true || (reportMap.get(employee._id) ?? 0) > 0 || userMap.get(employee.userId)?.role === "MANAGER",
       directReportCount: reportMap.get(employee._id) ?? 0,
     }));
 }
