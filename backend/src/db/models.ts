@@ -346,6 +346,7 @@ export interface EmployeeDoc {
   departmentId: string;
   designationId: string;
   managerId: string | null;
+  isManager: boolean;
   shiftId: string | null;
 
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
@@ -610,6 +611,7 @@ const employeeSchema = new Schema<EmployeeDoc>(
     departmentId: { type: String, required: true },
     designationId: { type: String, required: true },
     managerId: { type: String, default: null },
+    isManager: { type: Boolean, default: false },
     shiftId: { type: String, default: null },
 
     employmentType: {
@@ -3562,6 +3564,7 @@ export interface PayrollRunDoc {
 
   processedAt: string | null;
   attendanceLockedAt: string | null;
+  attendanceLockedDepartmentIds: string[];
   reviewedAt: string | null;
   reviewedByUserId: string | null;
   approvedAt: string | null;
@@ -3613,6 +3616,7 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
       default: null,
     },
     attendanceLockedAt: { type: String, default: null },
+    attendanceLockedDepartmentIds: { type: [String], default: [] },
     reviewedAt: { type: String, default: null },
     reviewedByUserId: { type: String, default: null },
     approvedAt: { type: String, default: null },

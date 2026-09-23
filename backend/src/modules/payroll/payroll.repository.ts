@@ -315,7 +315,11 @@ function getPayrollPeriod(startDate: string, endDate: string) {
   };
 }
 
-export async function lockAttendanceForPayroll(startDate: string, endDate: string) {
+export async function lockAttendanceForPayroll(
+  startDate: string,
+  endDate: string,
+  departmentIds: string[],
+) {
   const period = getPayrollPeriod(startDate, endDate);
   const endDateTime = new Date(`${period.endDate}T23:59:59.999Z`);
   if (new Date() <= endDateTime) {
@@ -324,32 +328,86 @@ export async function lockAttendanceForPayroll(startDate: string, endDate: strin
     );
   }
 
+  const selectedDepartmentIds = [...new Set((departmentIds ?? []).map(String).filter(Boolean))];
+  if (!selectedDepartmentIds.length) {
+    throw AppError.badRequest("Select at least one department to lock attendance.");
+  }
+
+  const departments = await Department.find({
+    _id: { $in: selectedDepartmentIds },
+  })
+    .select("_id name")
+    .lean();
+  const knownDepartmentIds = new Set(departments.map((department) => department._id));
+  const invalidDepartmentIds = selectedDepartmentIds.filter(
+    (departmentId) => !knownDepartmentIds.has(departmentId),
+  );
+  if (invalidDepartmentIds.length) {
+    throw AppError.badRequest("One or more selected departments do not exist.");
+  }
+
   let run = await PayrollRun.findOne({
     startDate: period.startDate,
     endDate: period.endDate,
   }).lean();
-  const now = nowIso();
-  if (run && run.status !== "DRAFT") {
-    if (run.status === "ATTENDANCE_LOCKED") return getPayrollRun(run._id);
+
+  if (run && ["PROCESSED", "HR_REVIEW", "APPROVED", "PAID"].includes(run.status)) {
     throw AppError.badRequest(
       "This payroll period has already moved past attendance lock.",
     );
   }
+
+  const existingLockedDepartmentIds = new Set(
+    run?.attendanceLockedDepartmentIds ?? [],
+  );
+  selectedDepartmentIds.forEach((departmentId) => existingLockedDepartmentIds.add(departmentId));
+  const lockedDepartmentIds = [...existingLockedDepartmentIds];
+
+  const payrollEmployees = await Employee.find({
+    status: { $in: ["ACTIVE", "ON_PROBATION", "ON_LEAVE", "NOTICE_PERIOD"] },
+    isArchived: { $ne: true },
+  })
+    .select("_id departmentId")
+    .lean();
+
+  const requiredDepartmentIds = [
+    ...new Set(
+      payrollEmployees
+        .map((employee) => employee.departmentId)
+        .filter(Boolean),
+    ),
+  ];
+  const allDepartmentsLocked = requiredDepartmentIds.every((departmentId) =>
+    existingLockedDepartmentIds.has(departmentId),
+  );
+  const status = allDepartmentsLocked ? "ATTENDANCE_LOCKED" : "DRAFT";
+
+  const now = nowIso();
   if (!run) {
     run = await PayrollRun.create({
       month: period.month,
       year: period.year,
       startDate: period.startDate,
       endDate: period.endDate,
-      status: "ATTENDANCE_LOCKED",
-      attendanceLockedAt: now,
+      status,
+      attendanceLockedAt: allDepartmentsLocked ? now : null,
+      attendanceLockedDepartmentIds: lockedDepartmentIds,
     });
   } else {
     await PayrollRun.updateOne(
       { _id: run._id },
-      { $set: { ...period, status: "ATTENDANCE_LOCKED", attendanceLockedAt: now } },
+      {
+        $set: {
+          ...period,
+          status,
+          attendanceLockedAt:
+            allDepartmentsLocked ? run.attendanceLockedAt ?? now : null,
+          attendanceLockedDepartmentIds: lockedDepartmentIds,
+        },
+      },
     );
   }
+
   return getPayrollRun(run._id);
 }
 
@@ -392,11 +450,9 @@ export async function processPayrollRun(startDate: string, endDate: string) {
   }
 
   if (!run || run.status === "DRAFT") {
-    await lockAttendanceForPayroll(period.startDate, period.endDate);
-    run = await PayrollRun.findOne({
-      startDate: period.startDate,
-      endDate: period.endDate,
-    }).lean();
+    throw AppError.badRequest(
+      "Attendance must be locked for all payroll departments before payroll processing.",
+    );
   }
 
   if (!run || run.status !== "ATTENDANCE_LOCKED") {

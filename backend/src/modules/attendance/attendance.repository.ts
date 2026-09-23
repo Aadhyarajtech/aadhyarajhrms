@@ -46,38 +46,51 @@ function toApiRecord(doc: any): AttendanceApiRecord | undefined {
   return { id: _id, ...rest };
 }
 
-async function assertAttendancePeriodUnlocked(date: string) {
+async function assertAttendancePeriodUnlocked(
+  date: string,
+  employeeId?: string,
+) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!match) return;
 
-  // Payroll locking protects completed/historical attendance. The current
-  // business day must remain writable so employees can still check in, take
-  // breaks, check out, and complete other same-day attendance actions even
-  // when a PayrollRun for the current calendar month is already locked.
-  //
-  // This also makes a current-month lock behave as an implicit "lock through
-  // yesterday" cutoff: as the day changes, only the new current day remains
-  // writable. Future dates remain protected because they do not equal today.
   const today = todayDateString();
   if (date === today) return;
 
-  const year = Number(match[1]);
-  const month = Number(match[2]);
   const run = await PayrollRun.findOne({
-    month,
-    year,
-    status: {
-      $in: ["ATTENDANCE_LOCKED", "PROCESSED", "HR_REVIEW", "APPROVED", "PAID"],
-    },
+    startDate: { $lte: date },
+    endDate: { $gte: date },
   })
-    .select("_id status")
+    .select("_id status attendanceLockedDepartmentIds")
     .lean();
 
-  if (run) {
-    throw AppError.badRequest(
-      "Attendance for this payroll period is locked. Only today's attendance can be changed.",
-    );
+  if (!run) return;
+
+  // A department-specific payroll lock only protects employees whose department
+  // was explicitly selected. Other departments remain editable for the same
+  // payroll period.
+  if (employeeId) {
+    const employee = await Employee.findById(employeeId)
+      .select("departmentId")
+      .lean();
+    if (!employee) return;
+
+    const lockedDepartmentIds = run.attendanceLockedDepartmentIds ?? [];
+    if (!lockedDepartmentIds.includes(employee.departmentId)) return;
+  } else {
+    // Preserve the legacy period-wide behavior for callers that do not have an
+    // employee context, while employee-specific attendance operations use the
+    // department-aware branch above.
+    if ((run.attendanceLockedDepartmentIds ?? []).length === 0) {
+      throw AppError.badRequest(
+        "Attendance for this payroll period is locked. Only today's attendance can be changed.",
+      );
+    }
+    return;
   }
+
+  throw AppError.badRequest(
+    "Attendance for your department is locked for this payroll period. Only today's attendance can be changed.",
+  );
 }
 
 function getHoursBetween(start: string | null, end: string | null): number {
@@ -403,7 +416,7 @@ export async function checkIn(
   },
 ) {
   assertValidLocation(location);
-  await assertAttendancePeriodUnlocked(todayDateString());
+  await assertAttendancePeriodUnlocked(todayDateString(), employeeId);
 
   const employee = await Employee.findById(employeeId)
     .select("_id status")
@@ -501,7 +514,7 @@ export async function checkOut(
   },
 ) {
   assertValidLocation(options);
-  await assertAttendancePeriodUnlocked(todayDateString());
+  await assertAttendancePeriodUnlocked(todayDateString(), employeeId);
 
   const existing = await getTodayRecord(employeeId);
   if (!existing || !existing.checkIn) {
@@ -615,7 +628,7 @@ export async function checkOut(
 }
 
 export async function startBreak(employeeId: string) {
-  await assertAttendancePeriodUnlocked(todayDateString());
+  await assertAttendancePeriodUnlocked(todayDateString(), employeeId);
   const attendance = await Attendance.findOne({
     employeeId,
     date: todayDateString(),
@@ -664,7 +677,7 @@ export async function startBreak(employeeId: string) {
 }
 
 export async function endBreak(employeeId: string) {
-  await assertAttendancePeriodUnlocked(todayDateString());
+  await assertAttendancePeriodUnlocked(todayDateString(), employeeId);
   const attendance = await Attendance.findOne({
     employeeId,
     date: todayDateString(),
@@ -1065,7 +1078,7 @@ export async function requestRegularization(
     throw new Error("Invalid attendance date.");
   }
 
-  await assertAttendancePeriodUnlocked(date);
+  await assertAttendancePeriodUnlocked(date, employeeId);
 
   const reason = note.trim();
 
@@ -1195,7 +1208,7 @@ export async function approveRegularization(
     throw new Error("Pending regularization request not found.");
   }
 
-  await assertAttendancePeriodUnlocked(request.date);
+  await assertAttendancePeriodUnlocked(request.date, request.employeeId);
 
   const employee = await Employee.findOne(
     includeAll

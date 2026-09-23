@@ -191,6 +191,8 @@ export const EmployeesApi = {
           firstName: string;
           lastName: string;
           designationTitle?: string | null;
+          role?: string;
+          isManager?: boolean;
         }[];
       }>("/employees/managers")
       .then((r) => r.data.managers),
@@ -2938,11 +2940,16 @@ export const PayrollApi = {
         { month, year },
       )
       .then((r) => r.data),
-  lockAttendance: (startDate: string, endDate: string) =>
+  lockAttendance: (
+    startDate: string,
+    endDate: string,
+    departmentIds: string[],
+  ) =>
     api
       .post<{ run: PayrollRun }>("/payroll/runs/lock-attendance", {
         startDate,
         endDate,
+        departmentIds,
       })
       .then((r) => r.data.run),
 
