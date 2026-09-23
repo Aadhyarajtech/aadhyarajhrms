@@ -63,6 +63,7 @@ const NAV_ITEMS: NavItem[] = [
       "SUPER_ADMIN",
       "HR_ADMIN",
       "MANAGER",
+      "RECRUITER",
       "FINANCE",
       "IT_SUPPORT",
     ],
@@ -73,7 +74,15 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/attendance",
     label: "Attendance",
     icon: Clock,
-    permission: "attendance.view",
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+      "EMPLOYEE",
+    ],
     section: "workspace",
   },
 
@@ -81,7 +90,15 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/leave",
     label: "Leave",
     icon: CalendarDays,
-    permission: "leave.view",
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+      "EMPLOYEE",
+    ],
     section: "workspace",
   },
 
@@ -89,32 +106,65 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/calendar",
     label: "Calendar",
     icon: CalendarDays,
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+      "EMPLOYEE",
+    ],
     section: "workspace",
   },
 
-  {
-    to: "/app/performance",
-    label: "Performance",
-    icon: Target,
-    permission: "performance.view",
-    section: "workspace",
-  },
+ {
+  to: "/app/performance",
+  label: "Performance",
+  icon: Target,
+  roles: [
+    "SUPER_ADMIN",
+    "HR_ADMIN",
+    "MANAGER",
+    "RECRUITER",
+    "FINANCE",
+    "IT_SUPPORT",
+    "EMPLOYEE",
+  ],
+  section: "workspace",
+},
 
   {
-    to: "/app/payroll",
-    label: "Payroll",
-    icon: Wallet,
-    permission: "payroll.view",
-    section: "workspace",
-  },
+  to: "/app/payroll",
+  label: "Payroll",
+  icon: Wallet,
+  roles: [
+    "SUPER_ADMIN",
+    "HR_ADMIN",
+    "MANAGER",
+    "RECRUITER",
+    "FINANCE",
+    "IT_SUPPORT",
+    "EMPLOYEE",
+  ],
+  section: "workspace",
+},
 
   {
-    to: "/app/documents",
-    label: "Documents",
-    icon: Briefcase,
-    permission: "documents.view",
-    section: "workspace",
-  },
+  to: "/app/documents",
+  label: "Documents",
+  icon: Briefcase,
+  roles: [
+    "SUPER_ADMIN",
+    "HR_ADMIN",
+    "MANAGER",
+    "RECRUITER",
+    "FINANCE",
+    "IT_SUPPORT",
+    "EMPLOYEE",
+  ],
+  section: "workspace",
+},
 
   {
     to: "/app/employees/",
@@ -131,7 +181,14 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/my-team",
     label: "My Team",
     icon: Users,
-    roles: ["MANAGER"],
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+    ],
     section: "people",
   },
 
@@ -139,7 +196,14 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/employees",
     label: "Employees",
     icon: Users,
-    roles: ["SUPER_ADMIN", "HR_ADMIN"],
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+    ],
     section: "people",
   },
 
@@ -147,7 +211,14 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/org-chart",
     label: "Org Chart",
     icon: Network,
-    roles: ["SUPER_ADMIN", "HR_ADMIN"],
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+    ],
     section: "people",
   },
 
@@ -159,8 +230,14 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/reports",
     label: "Reports & Analytics",
     icon: BarChart3,
-    permission: "reports.view",
-    roles: ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"],
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+    ],
     section: "management",
   },
 
@@ -168,28 +245,52 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/recruitment",
     label: "Recruitment",
     icon: Briefcase,
-    permission: "recruitment.view",
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+    ],
     section: "management",
   },
 
-  {
-    to: "/app/announcements",
-    label: "Announcements",
-    icon: Megaphone,
-    permission: "announcements.view",
-    section: "management",
-  },
+ {
+  to: "/app/announcements",
+  label: "Announcements",
+  icon: Megaphone,
+  roles: [
+    "SUPER_ADMIN",
+    "HR_ADMIN",
+    "MANAGER",
+    "RECRUITER",
+    "FINANCE",
+    "IT_SUPPORT",
+    "EMPLOYEE",
+  ],
+  section: "management",
+},
 
   /* =======================================================
      SYSTEM
   ======================================================= */
 
-  {
-    to: "/app/settings",
-    label: "Settings",
-    icon: Settings,
-    section: "system",
-  },
+ {
+  to: "/app/settings",
+  label: "Settings",
+  icon: Settings,
+  roles: [
+    "SUPER_ADMIN",
+    "HR_ADMIN",
+    "MANAGER",
+    "RECRUITER",
+    "FINANCE",
+    "IT_SUPPORT",
+    "EMPLOYEE",
+  ],
+  section: "system",
+},
 ];
 
 /* =========================================================
@@ -217,22 +318,25 @@ export function Sidebar({
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }) {
-  const { user, hasPermission } = useAuth();
+  const { user } = useAuth();
 
   const role = user?.role;
 
   /* -------------------------------------------------------
-     FILTER NAVIGATION BY ROLE / PERMISSION
+     FILTER NAVIGATION BY ROLE
+     
+     All non-EMPLOYEE roles receive the full sidebar.
+     EMPLOYEE receives only items explicitly containing
+     EMPLOYEE in their roles list or items without a role
+     restriction.
   ------------------------------------------------------- */
 
   const items = NAV_ITEMS.filter((item) => {
-    const roleAllowed =
-      !item.roles || (role && item.roles.includes(role));
+    if (!item.roles) {
+      return true;
+    }
 
-    const permissionAllowed =
-      !item.permission || hasPermission(item.permission);
-
-    return roleAllowed && permissionAllowed;
+    return !!role && item.roles.includes(role);
   });
 
   /* -------------------------------------------------------

@@ -251,23 +251,55 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
               }}
               className="w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
             >
-              <optgroup label="SmartHR Pro Core Categories">
-                <option value="Payroll Issue">Payroll Issue (Discrepancy, Tax, Payslip, Bonus)</option>
-                <option value="Leave Issue">Leave Issue (Balance Dispute, Wrongful Rejection)</option>
-                <option value="Manager Concern">Manager Concern (Interpersonal / Workplace)</option>
-                <option value="Harassment Complaint">Harassment Complaint (POSH / Safety / Whistleblower)</option>
-                <option value="IT Support">IT Support (Access, Hardware, VPN, Credentials)</option>
-                <option value="Infrastructure">Infrastructure (Facilities, Desk, Equipment)</option>
-                <option value="Policy Query">Policy Query (HR Policies, Benefits, Insurance)</option>
-                <option value="Other">Other Concern</option>
-              </optgroup>
-              <optgroup label="Legacy Categories">
-                <option value="HR">General HR</option>
-                <option value="Attendance">Attendance Regularization</option>
-                <option value="Recruitment">Recruitment</option>
-                <option value="Employee Referral">Employee Referral</option>
-                <option value="Complaint">General Complaint</option>
-              </optgroup>
+              <option value="">Select a category</option>
+
+<option value="Payroll Issue">
+  Payroll Issue (Discrepancy, Tax, Payslip, Bonus)
+</option>
+
+<option value="Leave Issue">
+  Leave Issue (Balance Dispute, Wrongful Rejection)
+</option>
+
+<option value="Attendance">
+  Attendance (Attendance / Regularization)
+</option>
+
+<option value="Manager Concern">
+  Manager Concern (Interpersonal / Workplace)
+</option>
+
+<option value="Harassment Complaint">
+  Harassment Complaint (POSH / Safety / Whistleblower)
+</option>
+
+<option value="IT Support">
+  IT Support (Access, Hardware, VPN, Credentials)
+</option>
+
+<option value="Infrastructure">
+  Infrastructure (Facilities, Desk, Equipment)
+</option>
+
+<option value="Policy Query">
+  Policy Query (HR Policies, Benefits, Insurance)
+</option>
+
+<option value="Recruitment">
+  Recruitment (Recruitment Support)
+</option>
+
+<option value="Employee Referral">
+  Employee Referral
+</option>
+
+<option value="Complaint">
+  Complaint (Employee Grievance)
+</option>
+
+<option value="Other">
+  Other Concern
+</option>
             </select>
 
             {/* POSH / Harassment Special Protection Notice */}
@@ -439,10 +471,21 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
               }}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
             >
-              <option value="CRITICAL">🚨 Critical (1 Hour SLA — Safety, POSH, System Down)</option>
-              <option value="HIGH">High (4 Hours SLA — Payroll Discrepancy, Blocker)</option>
-              <option value="MEDIUM">Medium (24 Hours / 1 Day SLA — Standard Request)</option>
-              <option value="LOW">Low (72 Hours / 3 Days SLA — General Inquiry)</option>
+              <option value="CRITICAL">
+  Critical – Safety, POSH, System Down
+</option>
+
+<option value="HIGH">
+  High – Payroll Discrepancy, Blocker
+</option>
+
+<option value="MEDIUM">
+  Medium – Standard Request
+</option>
+
+<option value="LOW">
+  Low – General Inquiry
+</option>
             </select>
 
             {/* Suggested priority mismatch helper */}

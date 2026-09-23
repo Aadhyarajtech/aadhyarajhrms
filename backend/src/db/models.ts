@@ -4497,16 +4497,23 @@ export interface TicketDoc {
   employeeId: string;
 
   category:
+  | "Payroll Issue"
+  | "Leave Issue"
+  | "Manager Concern"
+  | "Harassment Complaint"
+  | "IT Support"
+  | "Infrastructure"
+  | "Policy Query"
+  | "Other"
   | "HR"
   | "Payroll"
   | "Leave"
   | "Attendance"
   | "Recruitment"
   | "Employee Referral"
-  | "IT Support"
   | "Complaint";
 
-  priority: "LOW" | "MEDIUM" | "HIGH";
+  priority: "CRITICAL" | "LOW" | "MEDIUM" | "HIGH";
 
   subject: string;
   description: string;
@@ -4573,21 +4580,28 @@ const ticketSchema = new Schema<TicketDoc>(
     category: {
       type: String,
       enum: [
-        "HR",
-        "Payroll",
-        "Leave",
-        "Attendance",
-        "Recruitment",
-        "Employee Referral",
-        "IT Support",
-        "Complaint",
-      ],
+  "Payroll Issue",
+  "Leave Issue",
+  "Manager Concern",
+  "Harassment Complaint",
+  "IT Support",
+  "Infrastructure",
+  "Policy Query",
+  "Other",
+  "HR",
+  "Payroll",
+  "Leave",
+  "Attendance",
+  "Recruitment",
+  "Employee Referral",
+  "Complaint",
+],
       required: true,
     },
 
     priority: {
       type: String,
-      enum: ["LOW", "MEDIUM", "HIGH"],
+      enum: ["CRITICAL", "LOW", "MEDIUM", "HIGH"],
       default: "MEDIUM",
     },
 
@@ -4717,7 +4731,7 @@ const ticketSchema = new Schema<TicketDoc>(
 
     aiPriority: {
       type: String,
-      enum: ["LOW", "MEDIUM", "HIGH", null],
+      enum: ["CRITICAL", "LOW", "MEDIUM", "HIGH", null],
       default: null,
     },
 
