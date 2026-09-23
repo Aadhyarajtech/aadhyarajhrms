@@ -541,7 +541,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
             />
           </div>
 
-          {/* Expiry date */}
+          {/* Expiry date
           <div>
             <label className="mb-2 block text-sm font-medium">
               Expiry Date <span className="font-normal text-gray-500">(Optional)</span>
@@ -557,7 +557,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
             <p className="mt-1 text-xs text-gray-500">
               Leave blank to use the default 3-day ticket expiry.
             </p>
-          </div>
+          </div> */}
 
           {/* Attachment */}
           <div>

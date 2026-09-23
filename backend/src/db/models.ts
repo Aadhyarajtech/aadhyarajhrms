@@ -346,6 +346,7 @@ export interface EmployeeDoc {
   departmentId: string;
   designationId: string;
   managerId: string | null;
+  isManager: boolean;
   shiftId: string | null;
 
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
@@ -610,6 +611,7 @@ const employeeSchema = new Schema<EmployeeDoc>(
     departmentId: { type: String, required: true },
     designationId: { type: String, required: true },
     managerId: { type: String, default: null },
+    isManager: { type: Boolean, default: false },
     shiftId: { type: String, default: null },
 
     employmentType: {
@@ -1318,8 +1320,8 @@ export interface LeaveRequestDoc {
   _id: string;
   employeeId: string;
   leaveTypeId: string;
-  startDate: string;
-  endDate: string;
+  startDate: string | null;
+  endDate: string | null;
   totalDays: number;
   reason: string;
 
@@ -3549,6 +3551,8 @@ export interface PayrollRunDoc {
 
   month: number;
   year: number;
+  startDate: string;
+  endDate: string;
 
   status:
   | "DRAFT"
@@ -3560,6 +3564,7 @@ export interface PayrollRunDoc {
 
   processedAt: string | null;
   attendanceLockedAt: string | null;
+  attendanceLockedDepartmentIds: string[];
   reviewedAt: string | null;
   reviewedByUserId: string | null;
   approvedAt: string | null;
@@ -3590,6 +3595,9 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
       required: true,
     },
 
+    startDate: { type: String, default: null },
+    endDate: { type: String, default: null },
+
     status: {
       type: String,
       enum: [
@@ -3608,6 +3616,7 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
       default: null,
     },
     attendanceLockedAt: { type: String, default: null },
+    attendanceLockedDepartmentIds: { type: [String], default: [] },
     reviewedAt: { type: String, default: null },
     reviewedByUserId: { type: String, default: null },
     approvedAt: { type: String, default: null },
@@ -3640,14 +3649,10 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
   baseOptions,
 );
 
+payrollRunSchema.index({ month: 1, year: 1 });
 payrollRunSchema.index(
-  {
-    month: 1,
-    year: 1,
-  },
-  {
-    unique: true,
-  },
+  { startDate: 1, endDate: 1 },
+  { unique: true, sparse: true },
 );
 
 export const PayrollRun = model<PayrollRunDoc>("PayrollRun", payrollRunSchema);
@@ -4530,7 +4535,6 @@ export interface TicketDoc {
   | "RESOLVED"
   | "CLOSED"
   | "EXPIRED";
-
   // Ticket lifecycle / expiry
   expiryDays: number;
   expiresAt: string | null;

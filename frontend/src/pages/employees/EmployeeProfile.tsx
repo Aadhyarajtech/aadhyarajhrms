@@ -103,7 +103,8 @@ export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, hasPermission } = useAuth();
-  const canViewEmployees = hasPermission("employees.view");
+  const canViewEmployees =
+    hasPermission("employees.view") && user?.role !== "EMPLOYEE";
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [tab, setTab] = useState("overview");
@@ -664,10 +665,21 @@ export default function EmployeeProfile() {
         </div>
         {employee.managerFirstName && (
           <div className="mt-5 flex items-center gap-2 border-t border-line/70 pt-4 text-[13px] text-ink-faint">
-            <Briefcase size={14} /> Reports to{" "}
-            <span className="font-medium text-ink">
-              {employee.managerFirstName} {employee.managerLastName}
-            </span>
+            <Briefcase size={14} />
+            <span>Reports to</span>{" "}
+            {employee.managerId ? (
+              <button
+                type="button"
+                onClick={() => navigate(`/app/employees/${employee.managerId}`)}
+                className="font-medium text-ink underline-offset-2 transition-colors hover:text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+              >
+                {employee.managerFirstName} {employee.managerLastName}
+              </button>
+            ) : (
+              <span className="font-medium text-ink">
+                {employee.managerFirstName} {employee.managerLastName}
+              </span>
+            )}
           </div>
         )}
       </Card>
@@ -2722,6 +2734,7 @@ type EmployeeForm = {
   departmentId: string;
   designationId: string;
   managerId: string;
+  isManager: boolean;
 
   gender: string;
   maritalStatus: string;
@@ -2802,6 +2815,7 @@ function EditEmployeeModal({
         departmentId: employee.departmentId ?? "",
         designationId: employee.designationId ?? "",
         managerId: employee.managerId ?? "",
+        isManager: employee.isManager === true,
         gender: employee.gender ?? "",
         maritalStatus: employee.maritalStatus ?? "",
         dateOfBirth: employee.dateOfBirth ?? "",
@@ -2853,6 +2867,7 @@ function EditEmployeeModal({
       departmentId: employee.departmentId ?? "",
       designationId: employee.designationId ?? "",
       managerId: employee.managerId ?? "",
+      isManager: employee.isManager === true,
 
       gender: employee.gender ?? "",
       maritalStatus: employee.maritalStatus ?? "",
@@ -2967,6 +2982,9 @@ function EditEmployeeModal({
       const updatedPayload = {
         ...payload,
         avatarUrl,
+        // Reporting manager is optional. An empty selection explicitly clears
+        // the manager so top-level employees (such as Admin) can be saved.
+        managerId: payload.managerId || null,
         dateOfBirth: payload.dateOfBirth || null,
         state: payload.state || null,
         emergencyContactRelationship:
@@ -3092,6 +3110,23 @@ function EditEmployeeModal({
                 {errors.designationId && <p className="mt-1 text-xs text-danger-500">{errors.designationId.message}</p>}
               </div>
 
+              {/* Manager Status */}
+              <div className="sm:col-span-2 rounded-xl border border-line/60 bg-surface/40 px-4 py-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    {...register("isManager")}
+                    className="mt-0.5 h-4 w-4 rounded border-line text-primary-600 focus:ring-primary-500"
+                  />
+                  <span>
+                    <span className="block text-[13px] font-medium text-ink">Is Manager</span>
+                    <span className="block text-[11px] text-ink-faint">
+                      When enabled, this employee becomes available in Reporting Manager selections.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
               {/* Reporting Manager */}
               <div className="sm:col-span-2">
                 <label className="text-[13px] font-medium text-ink-soft">
@@ -3099,9 +3134,7 @@ function EditEmployeeModal({
                 </label>
 
                 <select
-{...register("managerId", {
-                    required: "Reporting Manager is required",
-                  })}
+                  {...register("managerId")}
                   className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${
                     errors.managerId ? "border-danger-500" : "border-line"
                   }`}

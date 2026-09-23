@@ -10,6 +10,7 @@ import { env } from "@/config/env";
 import { notFoundHandler, errorHandler } from "@/middleware/errorHandler";
 
 import { UPLOAD_DIR_ABSOLUTE } from "@/middleware/upload";
+import { hrCopilotRouter } from "@/modules/ai/hr-copilot/hr-copilot.routes";
 
 // =========================================================
 // ROUTES
@@ -250,6 +251,12 @@ export function createApp() {
   // =======================================================
 
   app.use("/api/dashboard", dashboardRouter);
+
+  // =======================================================
+  // HR COPILOT
+  // =======================================================
+
+  app.use("/api/ai", hrCopilotRouter);
 
   // =======================================================
   // 404 HANDLER

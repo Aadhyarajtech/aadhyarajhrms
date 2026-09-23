@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import RaiseTicketModal from "@/components/ui/RaiseTicketModal";
+import { HrCopilot } from "@/components/ai/HrCopilot";
 
 export function AppShell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -24,7 +25,10 @@ export function AppShell() {
             } as any)}
           />
 
-          <main className="flex-1 overflow-y-auto py-6" style={{ scrollbarGutter: "stable" }}>
+          <main
+            className="flex-1 overflow-y-auto py-6"
+            style={{ scrollbarGutter: "stable" }}
+          >
             <div className="mx-auto w-full max-w-[1400px] animate-fade-up px-4 sm:px-6 lg:px-8">
               <Outlet />
             </div>
@@ -36,6 +40,9 @@ export function AppShell() {
         open={ticketOpen}
         onClose={() => setTicketOpen(false)}
       />
+
+      {/* Global website-wide AI HR Copilot. */}
+      <HrCopilot />
     </>
   );
 }

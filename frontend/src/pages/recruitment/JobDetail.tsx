@@ -50,8 +50,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/EmptyState";
 
 import { formatDate, formatCurrencyINR, cx } from "@/lib/format";
-import type { Candidate } from "@/types";
-
+import type { Candidate, Interview } from "@/types";
 /* =========================================================
    CANDIDATE PIPELINE
 ========================================================= */
@@ -230,6 +229,8 @@ export default function JobDetail() {
   const [screeningStage, setScreeningStage] = useState<
     "ALL" | Candidate["stage"]
   >("ALL");
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [showCandidateComparison, setShowCandidateComparison] = useState(false);
   const [aiDetailsCandidate, setAiDetailsCandidate] =
     useState<ScreeningCandidate | null>(null);
   const [interviewCopilotFor, setInterviewCopilotFor] =
@@ -260,7 +261,12 @@ export default function JobDetail() {
     queryFn: () => RecruitmentApi.candidates(jobId!),
     enabled: !!jobId,
   });
-
+  const { data: rankedCandidates, isLoading: rankedCandidatesLoading } =
+    useQuery({
+      queryKey: ["ranked-candidates", jobId],
+      queryFn: () => RecruitmentApi.rankedCandidates(jobId!),
+      enabled: !!jobId,
+    });
   const stageMutation = useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: string }) =>
       RecruitmentApi.moveStage(id, stage),
@@ -451,6 +457,23 @@ export default function JobDetail() {
       });
 
       showToast("AI candidate screening completed.");
+    },
+
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+  const parseResumeMutation = useMutation({
+    mutationFn: (id: string) => RecruitmentApi.parseResume(id),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["candidates", jobId],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["candidate"],
+      });
+
+      showToast("Resume parsed successfully.");
     },
 
     onError: (err) => showToast(getErrorMessage(err), "error"),
@@ -858,7 +881,189 @@ export default function JobDetail() {
             )}
           </div>
         </div>
+        {selectedCandidateIds.length > 0 && (
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <span className="text-xs text-ink-faint">
+              {selectedCandidateIds.length} candidate
+              {selectedCandidateIds.length !== 1 ? "s" : ""} selected
+            </span>
 
+            <button
+              type="button"
+              disabled={selectedCandidateIds.length < 2}
+              onClick={() => setShowCandidateComparison(true)}
+              className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Compare Selected
+            </button>
+          </div>
+        )}
+        {showCandidateComparison && (
+          <div className="mt-4 rounded-2xl border border-line/60 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  Candidate Comparison
+                </p>
+                <p className="mt-1 text-xs text-ink-faint">
+                  Compare the selected candidates using their existing screening data.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCandidateComparison(false)}
+                className="rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-surface"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 overflow-x-auto">
+              <div
+                className="grid min-w-[600px] gap-3"
+                style={{
+                  gridTemplateColumns: `repeat(${selectedCandidateIds.length}, minmax(0, 1fr))`,
+                }}
+              >
+                {selectedCandidateIds.map((candidateId) => {
+                  const candidate = candidates?.find(
+                    (item) => item.id === candidateId,
+                  ) as ScreeningCandidate | undefined;
+
+                  if (!candidate) return null;
+
+                  const screening = candidate.screening;
+
+                  const fitScore =
+                    candidate.jobFitScore ??
+                    screening?.score ??
+                    null;
+
+                  return (
+                    <div
+                      key={candidate.id}
+                      className="rounded-xl border border-line/60 p-3"
+                    >
+                      <p className="text-sm font-semibold text-ink">
+                        {candidate.firstName} {candidate.lastName}
+                      </p>
+
+                      <p className="mt-1 truncate text-[11px] text-ink-faint">
+                        {candidate.email}
+                      </p>
+
+                      <div className="mt-4 space-y-3">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                            AI Score
+                          </p>
+                          <p className="mt-1 text-lg font-semibold text-ink">
+                            {fitScore !== null ? `${fitScore}/100` : "—"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                            Experience
+                          </p>
+                          <p className="mt-1 text-xs text-ink">
+                            {Array.isArray(candidate.extractedExperience) &&
+                              candidate.extractedExperience.length > 0
+                              ? candidate.extractedExperience[0]?.description ?? "—"
+                              : "—"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                            Stage
+                          </p>
+                          <p className="mt-1 text-xs text-ink">
+                            {candidate.stage}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                            Recommendation
+                          </p>
+                          <p className="mt-1 text-xs text-ink">
+                            {screening?.recommendation ?? "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="mt-4 rounded-2xl border border-line/60 bg-canvas p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-ink">
+                AI Candidate Ranking
+              </p>
+              <p className="mt-1 text-xs text-ink-faint">
+                Candidates ranked by their existing AI screening score.
+              </p>
+            </div>
+
+            {rankedCandidatesLoading && (
+              <span className="text-xs text-ink-faint">
+                Loading ranking...
+              </span>
+            )}
+          </div>
+
+          {!rankedCandidatesLoading && rankedCandidates?.length ? (
+            <div className="mt-3 space-y-2">
+              {rankedCandidates.slice(0, 5).map((candidate: any) => {
+                const score =
+                  candidate.screening?.score ??
+                  candidate.jobFitScore ??
+                  0;
+
+                return (
+                  <div
+                    key={candidate.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-line/60 px-3 py-2.5"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-semibold text-brand-700">
+                        {candidate.rank}
+                      </span>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">
+                          {candidate.firstName} {candidate.lastName}
+                        </p>
+                        <p className="truncate text-[11px] text-ink-faint">
+                          {candidate.email}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-semibold text-ink">
+                        {score}/100
+                      </p>
+                      <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                        AI Score
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : !rankedCandidatesLoading ? (
+            <p className="mt-3 text-xs text-ink-faint">
+              No screened candidates available for ranking.
+            </p>
+          ) : null}
+        </div>
         <div className="mt-4 rounded-2xl border border-line/60 bg-ink/[0.015] p-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12">
             <div className="relative xl:col-span-4">
@@ -1161,10 +1366,31 @@ export default function JobDetail() {
                               : "Drag to move candidate"}
                           </span>
                         </div>
+                        <div className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedCandidateIds.includes(candidate.id)}
+                            onChange={(event) => {
+                              event.stopPropagation();
+                              setSelectedCandidateIds((current) => {
+                                if (event.target.checked) {
+                                  if (current.length >= 3) {
+                                    return current;
+                                  }
 
-                        <p className="text-[13px] font-medium text-ink">
-                          {candidate.firstName} {candidate.lastName}
-                        </p>
+                                  return [...current, candidate.id];
+                                }
+
+                                return current.filter((id) => id !== candidate.id);
+                              });
+                            }}
+                            className="mt-0.5 h-3.5 w-3.5 rounded border-line"
+                          />
+
+                          <p className="text-[13px] font-medium text-ink">
+                            {candidate.firstName} {candidate.lastName}
+                          </p>
+                        </div>
 
                         <p className="truncate text-[11.5px] text-ink-faint">
                           {candidate.email}
@@ -1489,9 +1715,16 @@ export default function JobDetail() {
                                   size="sm"
                                   variant="outline"
                                   className="mt-2 w-full"
-                                  onClick={() => setAiDetailsCandidate(screeningCandidate)}
+                                  leftIcon={<FileText size={12} />}
+                                  isLoading={
+                                    parseResumeMutation.isPending &&
+                                    parseResumeMutation.variables === candidate.id
+                                  }
+                                  onClick={() => parseResumeMutation.mutate(candidate.id)}
                                 >
-                                  View AI Details
+                                  {candidate.resumeParsingStatus === "PARSED"
+                                    ? "Re-parse Resume"
+                                    : "Parse Resume"}
                                 </Button>
                               )}
 
@@ -1577,7 +1810,7 @@ export default function JobDetail() {
 
                             {candidate.stage === "INTERVIEW" &&
                               (screeningCandidate.finalResult ?? "PENDING") ===
-                                "PENDING" && (
+                              "PENDING" && (
                                 <button
                                   type="button"
                                   disabled={selectCandidateMutation.isPending}
@@ -1641,16 +1874,18 @@ export default function JobDetail() {
                     );
                   })}
 
-                  {!stageCandidates.length && (
-                    <p className="px-1 text-[11.5px] text-ink-faint">
-                      No candidates
-                    </p>
-                  )}
-                </div>
-              </div>
+                  {
+                    !stageCandidates.length && (
+                      <p className="px-1 text-[11.5px] text-ink-faint">
+                        No candidates
+                      </p>
+                    )
+                  }
+                </div >
+              </div >
             );
           })}
-        </div>
+        </div >
       )}
 
       <AddCandidateModal
@@ -1659,246 +1894,260 @@ export default function JobDetail() {
         jobId={jobId!}
       />
 
-      {scheduleFor && (
-        <ScheduleInterviewModal
-          candidate={scheduleFor}
-          onClose={() => setScheduleFor(null)}
-        />
-      )}
+      {
+        scheduleFor && (
+          <ScheduleInterviewModal
+            candidate={scheduleFor}
+            onClose={() => setScheduleFor(null)}
+          />
+        )
+      }
 
-      {offerLetterFor && (
-        <OfferLetterModal
-          candidate={offerLetterFor}
-          job={job}
-          onClose={() => setOfferLetterFor(null)}
-        />
-      )}
+      {
+        offerLetterFor && (
+          <OfferLetterModal
+            candidate={offerLetterFor}
+            job={job}
+            onClose={() => setOfferLetterFor(null)}
+          />
+        )
+      }
 
-      {lifecycleFor && (
-        <CandidateLifecycleModal
-          candidate={lifecycleFor}
-          onClose={() => setLifecycleFor(null)}
-          job={job}
-        />
-      )}
+      {
+        lifecycleFor && (
+          <CandidateLifecycleModal
+            candidate={lifecycleFor}
+            onClose={() => setLifecycleFor(null)}
+            job={job}
+          />
+        )
+      }
 
-      {editCandidateFor && (
-        <EditCandidateModal
-          candidate={editCandidateFor}
-          isLoading={updateCandidateMutation.isPending}
-          onClose={() => {
-            if (!updateCandidateMutation.isPending) setEditCandidateFor(null);
-          }}
-          onSubmit={(values) =>
-            updateCandidateMutation.mutate({
-              id: editCandidateFor.id,
-              values,
-            })
-          }
-        />
-      )}
+      {
+        editCandidateFor && (
+          <EditCandidateModal
+            candidate={editCandidateFor}
+            isLoading={updateCandidateMutation.isPending}
+            onClose={() => {
+              if (!updateCandidateMutation.isPending) setEditCandidateFor(null);
+            }}
+            onSubmit={(values) =>
+              updateCandidateMutation.mutate({
+                id: editCandidateFor.id,
+                values,
+              })
+            }
+          />
+        )
+      }
 
-      {deleteCandidateFor && (
-        <DeleteCandidateModal
-          candidate={deleteCandidateFor}
-          isLoading={deleteCandidateMutation.isPending}
-          onClose={() => {
-            if (!deleteCandidateMutation.isPending) setDeleteCandidateFor(null);
-          }}
-          onConfirm={() =>
-            deleteCandidateMutation.mutate(deleteCandidateFor.id)
-          }
-        />
-      )}
-      {aiDetailsCandidate && (
-        <Modal
-          open={true}
-          onClose={() => setAiDetailsCandidate(null)}
-          title={`AI Resume Screening — ${aiDetailsCandidate.firstName} ${aiDetailsCandidate.lastName}`}
-          size="lg"
-        >
-          <div className="space-y-4">
-            {aiDetailsCandidate.screening && (
-              <>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="text-[10.5px] font-medium text-ink-faint">
-                      Job Fit Score
-                    </p>
+      {
+        deleteCandidateFor && (
+          <DeleteCandidateModal
+            candidate={deleteCandidateFor}
+            isLoading={deleteCandidateMutation.isPending}
+            onClose={() => {
+              if (!deleteCandidateMutation.isPending) setDeleteCandidateFor(null);
+            }}
+            onConfirm={() =>
+              deleteCandidateMutation.mutate(deleteCandidateFor.id)
+            }
+          />
+        )
+      }
 
-                    <p className="mt-1 text-lg font-semibold text-ink">
-                      {aiDetailsCandidate.screening.score}%
-                    </p>
-                  </div>
+      {
+        aiDetailsCandidate && (
+          <Modal
+            open={true}
+            onClose={() => setAiDetailsCandidate(null)}
+            title={`AI Resume Screening — ${aiDetailsCandidate.firstName} ${aiDetailsCandidate.lastName}`}
+            size="lg"
+          >
+            <div className="space-y-4">
+              {aiDetailsCandidate.screening && (
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="text-[10.5px] font-medium text-ink-faint">
+                        Job Fit Score
+                      </p>
 
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="text-[10.5px] font-medium text-ink-faint">
-                      AI Recommendation
-                    </p>
+                      <p className="mt-1 text-lg font-semibold text-ink">
+                        {aiDetailsCandidate.screening.score}%
+                      </p>
+                    </div>
 
-                    <div className="mt-1">
-                      <Badge
-                        tone={
-                          aiDetailsCandidate.screening.recommendation === "YES"
-                            ? "success"
-                            : aiDetailsCandidate.screening.recommendation === "NO"
-                              ? "warning"
-                              : "neutral"
-                        }
-                      >
-                        {aiDetailsCandidate.screening.recommendation}
-                      </Badge>
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="text-[10.5px] font-medium text-ink-faint">
+                        AI Recommendation
+                      </p>
+
+                      <div className="mt-1">
+                        <Badge
+                          tone={
+                            aiDetailsCandidate.screening.recommendation === "YES"
+                              ? "success"
+                              : aiDetailsCandidate.screening.recommendation === "NO"
+                                ? "warning"
+                                : "neutral"
+                          }
+                        >
+                          {aiDetailsCandidate.screening.recommendation}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="text-[10.5px] font-medium text-ink-faint">
+                        AI Confidence
+                      </p>
+
+                      <div className="mt-1">
+                        <Badge
+                          tone={
+                            aiDetailsCandidate.screening.confidence === "HIGH"
+                              ? "success"
+                              : aiDetailsCandidate.screening.confidence === "MEDIUM"
+                                ? "neutral"
+                                : "warning"
+                          }
+                        >
+                          {aiDetailsCandidate.screening.confidence}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="text-[10.5px] font-medium text-ink-faint">
-                      AI Confidence
-                    </p>
+                  {aiDetailsCandidate.screening.strengths?.length ? (
+                    <div>
+                      <p className="mb-2 text-[12px] font-semibold text-ink">
+                        Key strengths
+                      </p>
 
-                    <div className="mt-1">
-                      <Badge
-                        tone={
-                          aiDetailsCandidate.screening.confidence === "HIGH"
-                            ? "success"
-                            : aiDetailsCandidate.screening.confidence === "MEDIUM"
-                              ? "neutral"
-                              : "warning"
-                        }
-                      >
-                        {aiDetailsCandidate.screening.confidence}
-                      </Badge>
+                      <div className="space-y-1.5">
+                        {aiDetailsCandidate.screening.strengths.map(
+                          (strength, index) => (
+                            <div
+                              key={`strength-${index}`}
+                              className="flex items-start gap-2 text-[12px] text-ink-soft"
+                            >
+                              <span className="font-semibold text-emerald-600">
+                                ✓
+                              </span>
+
+                              <span>{strength}</span>
+                            </div>
+                          ),
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  ) : null}
 
-                {aiDetailsCandidate.screening.strengths?.length ? (
-                  <div>
-                    <p className="mb-2 text-[12px] font-semibold text-ink">
-                      Key strengths
-                    </p>
+                  {aiDetailsCandidate.screening.concerns?.length ? (
+                    <div>
+                      <p className="mb-2 text-[12px] font-semibold text-ink">
+                        Potential concerns
+                      </p>
 
-                    <div className="space-y-1.5">
-                      {aiDetailsCandidate.screening.strengths.map(
-                        (strength, index) => (
-                          <div
-                            key={`strength-${index}`}
-                            className="flex items-start gap-2 text-[12px] text-ink-soft"
-                          >
-                            <span className="font-semibold text-emerald-600">
-                              ✓
-                            </span>
+                      <div className="space-y-1.5">
+                        {aiDetailsCandidate.screening.concerns.map(
+                          (concern, index) => (
+                            <div
+                              key={`concern-${index}`}
+                              className="flex items-start gap-2 text-[12px] text-ink-soft"
+                            >
+                              <span className="font-semibold text-amber-600">
+                                ⚠
+                              </span>
 
-                            <span>{strength}</span>
-                          </div>
-                        ),
-                      )}
+                              <span>{concern}</span>
+                            </div>
+                          ),
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                {aiDetailsCandidate.screening.concerns?.length ? (
-                  <div>
-                    <p className="mb-2 text-[12px] font-semibold text-ink">
-                      Potential concerns
-                    </p>
+                  {aiDetailsCandidate.screening.experienceRelevance && (
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="mb-1 text-[12px] font-semibold text-ink">
+                        Experience relevance
+                      </p>
 
-                    <div className="space-y-1.5">
-                      {aiDetailsCandidate.screening.concerns.map(
-                        (concern, index) => (
-                          <div
-                            key={`concern-${index}`}
-                            className="flex items-start gap-2 text-[12px] text-ink-soft"
-                          >
-                            <span className="font-semibold text-amber-600">
-                              ⚠
-                            </span>
-
-                            <span>{concern}</span>
-                          </div>
-                        ),
-                      )}
+                      <p className="text-[12px] leading-5 text-ink-soft">
+                        {aiDetailsCandidate.screening.experienceRelevance}
+                      </p>
                     </div>
-                  </div>
-                ) : null}
+                  )}
 
-                {aiDetailsCandidate.screening.experienceRelevance && (
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="mb-1 text-[12px] font-semibold text-ink">
-                      Experience relevance
-                    </p>
+                  {aiDetailsCandidate.screening.educationRelevance && (
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="mb-1 text-[12px] font-semibold text-ink">
+                        Education relevance
+                      </p>
 
-                    <p className="text-[12px] leading-5 text-ink-soft">
-                      {aiDetailsCandidate.screening.experienceRelevance}
-                    </p>
-                  </div>
-                )}
-
-                {aiDetailsCandidate.screening.educationRelevance && (
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="mb-1 text-[12px] font-semibold text-ink">
-                      Education relevance
-                    </p>
-
-                    <p className="text-[12px] leading-5 text-ink-soft">
-                      {aiDetailsCandidate.screening.educationRelevance}
-                    </p>
-                  </div>
-                )}
-
-                {aiDetailsCandidate.screening.interviewFocus?.length ? (
-                  <div>
-                    <p className="mb-2 text-[12px] font-semibold text-ink">
-                      Interview focus
-                    </p>
-
-                    <div className="space-y-1.5">
-                      {aiDetailsCandidate.screening.interviewFocus.map(
-                        (focus, index) => (
-                          <div
-                            key={`focus-${index}`}
-                            className="flex items-start gap-2 text-[12px] text-ink-soft"
-                          >
-                            <span className="font-semibold text-ink-faint">
-                              •
-                            </span>
-
-                            <span>{focus}</span>
-                          </div>
-                        ),
-                      )}
+                      <p className="text-[12px] leading-5 text-ink-soft">
+                        {aiDetailsCandidate.screening.educationRelevance}
+                      </p>
                     </div>
-                  </div>
-                ) : null}
+                  )}
 
-                {aiDetailsCandidate.screening.summary && (
-                  <div className="rounded-xl border border-line bg-surface p-3">
-                    <p className="mb-1 text-[12px] font-semibold text-ink">
-                      Screening summary
+                  {aiDetailsCandidate.screening.interviewFocus?.length ? (
+                    <div>
+                      <p className="mb-2 text-[12px] font-semibold text-ink">
+                        Interview focus
+                      </p>
+
+                      <div className="space-y-1.5">
+                        {aiDetailsCandidate.screening.interviewFocus.map(
+                          (focus, index) => (
+                            <div
+                              key={`focus-${index}`}
+                              className="flex items-start gap-2 text-[12px] text-ink-soft"
+                            >
+                              <span className="font-semibold text-ink-faint">
+                                •
+                              </span>
+
+                              <span>{focus}</span>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {aiDetailsCandidate.screening.summary && (
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <p className="mb-1 text-[12px] font-semibold text-ink">
+                        Screening summary
+                      </p>
+
+                      <p className="text-[12px] leading-5 text-ink-soft">
+                        {aiDetailsCandidate.screening.summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {aiDetailsCandidate.screening.evaluatedAt && (
+                    <p className="text-[10.5px] text-ink-faint">
+                      Evaluated{" "}
+                      {formatDate(aiDetailsCandidate.screening.evaluatedAt)}
                     </p>
+                  )}
 
-                    <p className="text-[12px] leading-5 text-ink-soft">
-                      {aiDetailsCandidate.screening.summary}
-                    </p>
-                  </div>
-                )}
-
-                {aiDetailsCandidate.screening.evaluatedAt && (
-                  <p className="text-[10.5px] text-ink-faint">
-                    Evaluated{" "}
-                    {formatDate(aiDetailsCandidate.screening.evaluatedAt)}
+                  <p className="border-t border-line pt-3 text-[10px] leading-4 text-ink-faint">
+                    AI screening is assistive only. Final hiring decisions should be
+                    made by the recruiter.
                   </p>
-                )}
+                </>
+              )}
+            </div>
+          </Modal>
+        )
+      }
 
-                <p className="border-t border-line pt-3 text-[10px] leading-4 text-ink-faint">
-                  AI screening is assistive only. Final hiring decisions should be
-                  made by the recruiter.
-                </p>
-              </>
-            )}
-          </div>
-        </Modal>
-      )}
       {interviewCopilotFor && interviewCopilotData && (
         <Modal
           open={true}
@@ -1952,9 +2201,11 @@ export default function JobDetail() {
                           </p>
 
                           <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                            {item.followUps.map((followUp, followUpIndex) => (
-                              <li key={followUpIndex}>{followUp}</li>
-                            ))}
+                            {item.followUps.map(
+                              (followUp, followUpIndex) => (
+                                <li key={followUpIndex}>{followUp}</li>
+                              ),
+                            )}
                           </ul>
                         </div>
                       )}
@@ -1988,9 +2239,11 @@ export default function JobDetail() {
                           </p>
 
                           <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                            {item.followUps.map((followUp, followUpIndex) => (
-                              <li key={followUpIndex}>{followUp}</li>
-                            ))}
+                            {item.followUps.map(
+                              (followUp, followUpIndex) => (
+                                <li key={followUpIndex}>{followUp}</li>
+                              ),
+                            )}
                           </ul>
                         </div>
                       )}
@@ -2024,9 +2277,11 @@ export default function JobDetail() {
                           </p>
 
                           <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                            {item.followUps.map((followUp, followUpIndex) => (
-                              <li key={followUpIndex}>{followUp}</li>
-                            ))}
+                            {item.followUps.map(
+                              (followUp, followUpIndex) => (
+                                <li key={followUpIndex}>{followUp}</li>
+                              ),
+                            )}
                           </ul>
                         </div>
                       )}
@@ -2060,9 +2315,11 @@ export default function JobDetail() {
                           </p>
 
                           <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                            {item.followUps.map((followUp, followUpIndex) => (
-                              <li key={followUpIndex}>{followUp}</li>
-                            ))}
+                            {item.followUps.map(
+                              (followUp, followUpIndex) => (
+                                <li key={followUpIndex}>{followUp}</li>
+                              ),
+                            )}
                           </ul>
                         </div>
                       )}
@@ -2084,6 +2341,7 @@ export default function JobDetail() {
           </div>
         </Modal>
       )}
+
       {job && (
         <EditJobModal
           job={job}
@@ -2112,6 +2370,7 @@ export default function JobDetail() {
     </div>
   );
 }
+
 
 /* =========================================================
    REQUISITION PANEL
@@ -3196,6 +3455,25 @@ function ScheduleInterviewModal({
 
   const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
 
+  const [interviewEvaluationFor, setInterviewEvaluationFor] =
+    useState<Interview | null>(null);
+
+  const [interviewEvaluationData, setInterviewEvaluationData] =
+    useState<{
+      overallAssessment: string;
+      technicalAssessment: string;
+      communicationAssessment: string;
+      strengths: string[];
+      weaknesses: string[];
+      concerns: string[];
+      recommendation:
+      | "PROCEED"
+      | "HOLD"
+      | "REJECT"
+      | "REVIEW_REQUIRED";
+      suggestedNextStep: string;
+    } | null>(null);
+
   const [feedbackText, setFeedbackText] = useState("");
 
   const [recommendation, setRecommendation] = useState<
@@ -3280,7 +3558,16 @@ function ScheduleInterviewModal({
 
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
+  const interviewEvaluationMutation = useMutation({
+    mutationFn: (id: string) => RecruitmentApi.evaluateInterview(id),
 
+    onSuccess: (data) => {
+      setInterviewEvaluationData(data);
+      showToast("AI interview evaluation generated.");
+    },
+
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
   return (
     <Modal
       open
@@ -3317,7 +3604,6 @@ function ScheduleInterviewModal({
                       </a>
                     )}
                   </div>
-
                   {interview.completed ? (
                     <Badge tone="success">
                       {interview.recommendation?.replace("_", " ") ||
@@ -3327,6 +3613,25 @@ function ScheduleInterviewModal({
                     <Badge tone="warning">Scheduled</Badge>
                   )}
                 </div>
+
+                {interview.completed && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    leftIcon={<Sparkles size={12} />}
+                    isLoading={
+                      interviewEvaluationMutation.isPending &&
+                      interviewEvaluationMutation.variables === interview.id
+                    }
+                    onClick={() => {
+                      setInterviewEvaluationFor(interview);
+                      setInterviewEvaluationData(null);
+                      interviewEvaluationMutation.mutate(interview.id);
+                    }}
+                  >
+                    AI Interview Evaluation
+                  </Button>
+                )}
 
                 {interview.feedback && (
                   <div className="mt-2 rounded-lg bg-ink/[0.025] p-2.5">
@@ -3339,7 +3644,97 @@ function ScheduleInterviewModal({
                     </p>
                   </div>
                 )}
+                {interviewEvaluationFor?.id === interview.id &&
+                  interviewEvaluationData && (
+                    <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/40 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[12px] font-semibold text-ink">
+                          AI Interview Evaluation
+                        </p>
 
+                        <Badge tone="success">
+                          {interviewEvaluationData.recommendation.replaceAll("_", " ")}
+                        </Badge>
+                      </div>
+
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                            Overall Assessment
+                          </p>
+                          <p className="mt-1 text-[12px] text-ink-soft">
+                            {interviewEvaluationData.overallAssessment}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                            Technical Assessment
+                          </p>
+                          <p className="mt-1 text-[12px] text-ink-soft">
+                            {interviewEvaluationData.technicalAssessment}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                            Communication Assessment
+                          </p>
+                          <p className="mt-1 text-[12px] text-ink-soft">
+                            {interviewEvaluationData.communicationAssessment}
+                          </p>
+                        </div>
+
+                        {interviewEvaluationData.strengths.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                              Strengths
+                            </p>
+                            <ul className="mt-1 list-disc space-y-1 pl-4 text-[12px] text-ink-soft">
+                              {interviewEvaluationData.strengths.map((item, index) => (
+                                <li key={index}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {interviewEvaluationData.weaknesses.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                              Weaknesses
+                            </p>
+                            <ul className="mt-1 list-disc space-y-1 pl-4 text-[12px] text-ink-soft">
+                              {interviewEvaluationData.weaknesses.map((item, index) => (
+                                <li key={index}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {interviewEvaluationData.concerns.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                              Concerns
+                            </p>
+                            <ul className="mt-1 list-disc space-y-1 pl-4 text-[12px] text-ink-soft">
+                              {interviewEvaluationData.concerns.map((item, index) => (
+                                <li key={index}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                            Suggested Next Step
+                          </p>
+                          <p className="mt-1 text-[12px] text-ink-soft">
+                            {interviewEvaluationData.suggestedNextStep}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 {interview.recordingUrl && (
                   <a
                     href={interview.recordingUrl}
@@ -3659,78 +4054,78 @@ function OfferLetterModal({
             <p className="text-[12px] text-ink-faint">{current.email}</p>
           </div>
           {current.offer?.offerUrl ? (
-  <div className="rounded-2xl border border-line/70 p-4">
-    <p className="text-[13px] font-semibold text-ink">
-      Offer letter generated
-    </p>
+            <div className="rounded-2xl border border-line/70 p-4">
+              <p className="text-[13px] font-semibold text-ink">
+                Offer letter generated
+              </p>
 
-    <p className="mt-1 text-[12px] text-ink-faint">
-      CTC:{" "}
-      {current.offer?.annualCtc != null
-        ? formatCurrencyINR(current.offer.annualCtc)
-        : "—"}
-      {" • "}
-      Joining: {current.offer?.joiningDate ?? "—"}
-    </p>
+              <p className="mt-1 text-[12px] text-ink-faint">
+                CTC:{" "}
+                {current.offer?.annualCtc != null
+                  ? formatCurrencyINR(current.offer.annualCtc)
+                  : "—"}
+                {" • "}
+                Joining: {current.offer?.joiningDate ?? "—"}
+              </p>
 
-    <div className="mt-3 flex flex-wrap items-center gap-3">
-      <a
-        href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex text-[12px] font-medium text-brand-600 hover:underline"
-      >
-        Open generated offer letter
-      </a>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <a
+                  href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex text-[12px] font-medium text-brand-600 hover:underline"
+                >
+                  Open generated offer letter
+                </a>
 
-      <Button
-        size="sm"
-        variant="secondary"
-        isLoading={offerMutation.isPending}
-        disabled={!joiningDate || Number(annualCtc) <= 0}
-        onClick={() => offerMutation.mutate()}
-      >
-        Regenerate Offer Letter
-      </Button>
-    </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  isLoading={offerMutation.isPending}
+                  disabled={!joiningDate || Number(annualCtc) <= 0}
+                  onClick={() => offerMutation.mutate()}
+                >
+                  Regenerate Offer Letter
+                </Button>
+              </div>
 
-    <p className="mt-2 text-[11px] text-ink-faint">
-      Regenerating creates a new offer document and replaces the previous
-      offer document link.
-    </p>
-  </div>
-) : (
-  <div className="grid gap-3 sm:grid-cols-2">
-    <TextField
-      label="Annual CTC"
-      type="number"
-      value={annualCtc}
-      onChange={(e) => setAnnualCtc(e.target.value)}
-    />
+              <p className="mt-2 text-[11px] text-ink-faint">
+                Regenerating creates a new offer document and replaces the previous
+                offer document link.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextField
+                label="Annual CTC"
+                type="number"
+                value={annualCtc}
+                onChange={(e) => setAnnualCtc(e.target.value)}
+              />
 
-    <TextField
-      label="Joining date"
-      type="date"
-      value={joiningDate}
-      onChange={(e) => setJoiningDate(e.target.value)}
-    />
+              <TextField
+                label="Joining date"
+                type="date"
+                value={joiningDate}
+                onChange={(e) => setJoiningDate(e.target.value)}
+              />
 
-    <div className="sm:col-span-2 flex items-center justify-between gap-3">
-      <p className="text-[11.5px] text-ink-faint">
-        Status: {offerStatus.replaceAll("_", " ")}
-      </p>
+              <div className="sm:col-span-2 flex items-center justify-between gap-3">
+                <p className="text-[11.5px] text-ink-faint">
+                  Status: {offerStatus.replaceAll("_", " ")}
+                </p>
 
-      <Button
-        size="sm"
-        isLoading={offerMutation.isPending}
-        disabled={!joiningDate || Number(annualCtc) <= 0}
-        onClick={() => offerMutation.mutate()}
-      >
-        Generate Offer Letter
-      </Button>
-    </div>
-  </div>
-)}
+                <Button
+                  size="sm"
+                  isLoading={offerMutation.isPending}
+                  disabled={!joiningDate || Number(annualCtc) <= 0}
+                  onClick={() => offerMutation.mutate()}
+                >
+                  Generate Offer Letter
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Modal>
