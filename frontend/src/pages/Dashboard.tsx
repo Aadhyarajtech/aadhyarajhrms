@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ResponsiveContainer,
@@ -59,6 +60,8 @@ export default function Dashboard() {
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard", "overview"],
     queryFn: DashboardApi.overview,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   });
 
   /* =========================================================
@@ -71,6 +74,18 @@ export default function Dashboard() {
     refetchInterval: 30000,
     staleTime: 15000,
   });
+
+  /* =========================================================
+     EMPLOYEE LIFECYCLE
+  ========================================================= */
+
+  const [lifecycleDepartment, setLifecycleDepartment] = useState("ALL");
+
+  // Lifecycle counts are calculated by the backend directly from Employee.status.
+  // Refresh periodically so changes made in Employee Management are reflected
+  // on an already-open Dashboard without requiring a manual page refresh.
+  const employeeLifecycle = data?.employeeLifecycle;
+
 
   /* Show at most two published banner announcements.
      Pinned announcements come first, then newest published. */
@@ -116,6 +131,62 @@ export default function Dashboard() {
   ========================================================= */
 
   const { kpis } = data;
+
+  const lifecycleDepartments = Array.from(
+    new Set(
+      (employeeLifecycle?.byDepartment ?? [])
+        .map((item) => item.department)
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => String(a).localeCompare(String(b)));
+
+  const selectedLifecycle =
+    lifecycleDepartment === "ALL"
+      ? employeeLifecycle?.overall
+      : employeeLifecycle?.byDepartment?.find(
+          (item) => item.department === lifecycleDepartment,
+        );
+
+  const lifecycleCounts = [
+    {
+      key: "ACTIVE",
+      label: "Active",
+      count: Number(selectedLifecycle?.active ?? 0),
+    },
+    {
+      key: "ONBOARDING",
+      label: "Onboarding",
+      count: Number(selectedLifecycle?.onboarding ?? 0),
+    },
+    {
+      key: "ON_PROBATION",
+      label: "Probation",
+      count: Number(selectedLifecycle?.probation ?? 0),
+    },
+    {
+      key: "NOTICE_PERIOD",
+      label: "Notice Period",
+      count: Number(selectedLifecycle?.noticePeriod ?? 0),
+    },
+    {
+      key: "OFFBOARDING",
+      label: "Offboarding",
+      count: Number(selectedLifecycle?.offboarding ?? 0),
+    },
+  ];
+
+  const lifecycleTotal = Number(
+    selectedLifecycle?.total ??
+      lifecycleCounts.reduce((sum, item) => sum + item.count, 0),
+  );
+
+  const lifecycleColors = [
+    "bg-success-500",
+    "bg-blue-500",
+    "bg-brand-500",
+    "bg-gold-500",
+    "bg-red-400",
+  ];
 
   const firstName = user?.employee?.firstName ?? "there";
 
@@ -342,10 +413,13 @@ export default function Dashboard() {
           </Card>
 
           {/* =================================================
-              HEADCOUNT / GENDER
+              HEADCOUNT / EMPLOYEE LIFECYCLE
           ================================================= */}
 
           <div className="grid gap-6 sm:grid-cols-2">
+            {/* =================================================
+                HEADCOUNT BY DEPARTMENT
+            ================================================= */}
             <Card>
               <CardHeader title="Headcount by department" />
 
@@ -353,7 +427,7 @@ export default function Dashboard() {
                 <BarChart
                   data={data.headcountByDepartment}
                   layout="vertical"
-                  margin={{ left: 8 }}
+                  margin={{ left: 8, right: 8 }}
                 >
                   <XAxis type="number" hide />
 
@@ -386,54 +460,99 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </Card>
 
-            {/* <Card>
-              <CardHeader title="Gender diversity" />
+            {/* =================================================
+                EMPLOYEE LIFECYCLE
+            ================================================= */}
+            <Card>
+              <div className="flex items-start justify-between gap-3">
+                <CardHeader
+                  title="Employee Lifecycle"
+                  subtitle="Current distribution across lifecycle stages"
+                />
 
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={data.genderDiversity}
-                    dataKey="count"
-                    nameKey="gender"
-                    innerRadius={50}
-                    outerRadius={78}
-                    paddingAngle={3}
-                  >
-                    {data.genderDiversity.map((_, i) => (
-                      <Cell
-                        key={i}
-                        fill={GENDER_COLORS[i % GENDER_COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: 12,
-                      border: "1px solid #E7E5E0",
-                      fontSize: 13,
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-
-              <div className="mt-2 flex flex-wrap justify-center gap-3">
-                {data.genderDiversity.map((g, i) => (
-                  <span
-                    key={g.gender}
-                    className="flex items-center gap-1.5 text-[12px] text-ink-faint"
-                  >
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{
-                        background: GENDER_COLORS[i % GENDER_COLORS.length],
-                      }}
-                    />
-                    {g.gender} · {g.count}
-                  </span>
-                ))}
+                <select
+                  value={lifecycleDepartment}
+                  onChange={(event) =>
+                    setLifecycleDepartment(event.target.value)
+                  }
+                  className="mt-1 rounded-xl border border-line/60 bg-white px-2.5 py-1.5 text-[11px] font-medium text-ink outline-none transition focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
+                >
+                  <option value="ALL">All Departments</option>
+                  {lifecycleDepartments.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </Card> */}
+
+              <div className="mt-2">
+                {/* Horizontal stacked lifecycle status chart */}
+                <div className="flex h-8 w-full overflow-hidden rounded-xl bg-canvas">
+                  {lifecycleTotal > 0 ? (
+                    lifecycleCounts.map((item, index) => {
+                      const percentage = (item.count / lifecycleTotal) * 100;
+
+                      return (
+                        <div
+                          key={item.key}
+                          className={`${lifecycleColors[index]} flex min-w-0 items-center justify-center px-1 text-[11px] font-semibold text-white transition-all duration-300`}
+                          style={{ width: `${percentage}%` }}
+                          title={`${item.label}: ${item.count} (${Math.round(percentage)}%)`}
+                        >
+                          {percentage >= 7 ? `${Math.round(percentage)}%` : ""}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="flex w-full items-center justify-center text-[11px] text-ink-faint">
+                      No lifecycle data available
+                    </div>
+                  )}
+                </div>
+
+                {/* Lifecycle legend / counts */}
+                <div className="mt-4 space-y-0">
+                  {lifecycleCounts.map((item, index) => {
+                    const percentage =
+                      lifecycleTotal > 0
+                        ? Math.round((item.count / lifecycleTotal) * 100)
+                        : 0;
+
+                    return (
+                      <div
+                        key={item.key}
+                        className="flex items-center gap-2 border-b border-line/50 py-2 last:border-b-0"
+                      >
+                        <span
+                          className={`h-2.5 w-2.5 shrink-0 rounded-full ${lifecycleColors[index]}`}
+                        />
+
+                        <p className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                          {item.label}
+                        </p>
+
+                        <span className="text-[13px] font-semibold text-ink">
+                          {item.count}
+                        </span>
+
+                        <span className="w-8 text-right text-[10px] text-ink-faint">
+                          {percentage}%
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <Link
+                  to="/app/employees"
+                  className="mt-3 flex items-center justify-between rounded-xl bg-brand-50 px-3 py-2.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-100 hover:text-brand-700"
+                >
+                  <span>View employee lifecycle</span>
+                  <ArrowRight size={14} />
+                </Link>
+              </div>
+            </Card>
           </div>
 
           {/* =================================================
