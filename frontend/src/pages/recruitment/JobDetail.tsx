@@ -36,6 +36,17 @@ import {
   Copy,
   AlertTriangle,
   X,
+  Mail,
+  History,
+  ClipboardCheck,
+  Tags,
+  UserRoundPlus,
+  BarChart3,
+  GitCompare,
+  Video,
+  PlusCircle,
+  Save,
+  ExternalLink,
 } from "lucide-react";
 
 import { RecruitmentApi, EmployeesApi } from "@/lib/endpoints";
@@ -224,6 +235,7 @@ export default function JobDetail() {
     useState<Candidate | null>(null);
   const [editJobOpen, setEditJobOpen] = useState(false);
   const [deleteJobOpen, setDeleteJobOpen] = useState(false);
+  const [atsToolsFor, setAtsToolsFor] = useState<Candidate | null>(null);
 
   const [screeningSearch, setScreeningSearch] = useState("");
   const [screeningStage, setScreeningStage] = useState<
@@ -247,6 +259,12 @@ export default function JobDetail() {
   const [shortlistFilter, setShortlistFilter] = useState("ALL");
   const [hideDuplicates, setHideDuplicates] = useState(false);
   const [hideSpam, setHideSpam] = useState(false);
+
+  // ATS workspace view. This is additive: the existing pipeline, AI screening,
+  // drag/drop, lifecycle, interview, offer and requisition functionality remain.
+  const [activeCandidateTab, setActiveCandidateTab] = useState<
+    "CANDIDATES" | "PIPELINE"
+  >("CANDIDATES");
 
   const { data: rawJob, isLoading: jobLoading } = useQuery({
     queryKey: ["job", jobId],
@@ -843,6 +861,54 @@ export default function JobDetail() {
         onSubmit={(reason) => rejectMutation.mutate(reason)}
       />
 
+      {job && (
+        <CandidateRecruitmentWorkspace
+          job={job}
+          candidates={candidates ?? []}
+          isLoading={candidatesLoading}
+          activeTab={activeCandidateTab}
+          onTabChange={setActiveCandidateTab}
+          onAddCandidate={() => setAddOpen(true)}
+          onScheduleInterview={setScheduleFor}
+          onLifecycle={setLifecycleFor}
+          onOffer={setOfferLetterFor}
+          onEditCandidate={setEditCandidateFor}
+          onDeleteCandidate={setDeleteCandidateFor}
+          onOpenAtsTools={setAtsToolsFor}
+          onRunAiScreen={(candidate) => screenMutation.mutate({ id: candidate.id })}
+          onRunAiInterviewCopilot={(candidate) => {
+            setInterviewCopilotData(null);
+            interviewCopilotMutation.mutate(candidate.id);
+          }}
+          onViewAiDetails={(candidate) => setAiDetailsCandidate(candidate)}
+          onMoveStage={(candidate, stage) => {
+            if (!canMoveCandidateToStage(candidate, stage)) {
+              showToast(
+                stage === "HIRED"
+                  ? "Use the hiring workflow to move a candidate to Hired."
+                  : stage === "REJECTED"
+                    ? "Use the rejection workflow to reject a candidate."
+                    : "This candidate cannot be moved to that stage.",
+                "error",
+              );
+              return;
+            }
+
+            stageMutation.mutate({
+              id: candidate.id,
+              stage,
+            });
+          }}
+          stageMutationPending={stageMutation.isPending}
+          selectCandidatePending={selectCandidateMutation.isPending}
+          onSelectCandidate={(candidate) =>
+            selectCandidateMutation.mutate(candidate.id)
+          }
+        />
+      )}
+
+      {activeCandidateTab === "PIPELINE" && (
+      <>
       <div className="mb-3 mt-7 flex items-center justify-between">
         <div>
           <h2 className="font-display text-[17px] font-medium text-ink">
@@ -1282,341 +1348,275 @@ export default function JobDetail() {
       </Card>
 
       {candidatesLoading ? (
-        <div className="grid gap-4 lg:grid-cols-6">
+        <div className="grid grid-cols-6 gap-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-72 rounded-3xl" />
+            <Skeleton key={i} className="h-96 rounded-2xl" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-          {STAGES.map((stage) => {
-            const stageCandidates = filteredCandidates.filter(
-              (candidate) => candidate.stage === stage.key,
-            );
+        <div className="w-full overflow-visible">
+          <div className="grid w-full grid-cols-6 gap-2">
+            {STAGES.map((stage) => {
+              const stageCandidates = filteredCandidates.filter(
+                (candidate) => candidate.stage === stage.key,
+              );
 
-            return (
-              <div
-                key={stage.key}
-                onDragOver={(event) =>
-                  handleStageDragOver(event, stage.key)
-                }
-                onDragLeave={(event) =>
-                  handleStageDragLeave(event, stage.key)
-                }
-                onDrop={(event) =>
-                  handleStageDrop(event, stage.key)
-                }
-                className={cx(
-                  "min-w-0 rounded-3xl p-3 transition-all duration-200",
-                  dragOverStage === stage.key
-                    ? "bg-brand-50 ring-2 ring-brand-300 ring-inset"
-                    : "bg-ink/[0.03]",
-                )}
-              >
-                <div className="mb-3 flex items-center justify-between px-1">
-                  <div>
-                    <p className="text-[13px] font-semibold text-ink-soft">
-                      {stage.label}
-                    </p>
+              const stageStyles: Record<Candidate["stage"], string> = {
+                APPLIED: "bg-slate-50 border-slate-200",
+                SCREENING: "bg-blue-50/60 border-blue-100",
+                INTERVIEW: "bg-violet-50/60 border-violet-100",
+                OFFER: "bg-emerald-50/60 border-emerald-100",
+                HIRED: "bg-teal-50/60 border-teal-100",
+                REJECTED: "bg-rose-50/60 border-rose-100",
+              };
 
-                    {draggedCandidateId && dragOverStage === stage.key && (
-                      <p className="mt-0.5 text-[10px] font-medium text-brand-600">
-                        Drop candidate here
-                      </p>
+              const stageHeaderStyles: Record<Candidate["stage"], string> = {
+                APPLIED: "bg-white text-slate-700",
+                SCREENING: "bg-blue-100/70 text-blue-700",
+                INTERVIEW: "bg-violet-100/70 text-violet-700",
+                OFFER: "bg-emerald-100/70 text-emerald-700",
+                HIRED: "bg-teal-100/70 text-teal-700",
+                REJECTED: "bg-rose-100/70 text-rose-700",
+              };
+
+              return (
+                <div
+                  key={stage.key}
+                  onDragOver={(event) => handleStageDragOver(event, stage.key)}
+                  onDragLeave={(event) => handleStageDragLeave(event, stage.key)}
+                  onDrop={(event) => handleStageDrop(event, stage.key)}
+                  className={cx(
+                    "min-w-0 rounded-2xl border p-1.5 transition-all duration-200",
+                    stageStyles[stage.key],
+                    dragOverStage === stage.key &&
+                      "ring-2 ring-brand-300 ring-inset",
+                  )}
+                >
+                  <div
+                    className={cx(
+                      "mb-1.5 flex min-h-8 items-center justify-between rounded-xl px-2 py-1.5",
+                      stageHeaderStyles[stage.key],
                     )}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-bold">
+                        {stage.label}
+                      </p>
+                      {draggedCandidateId && dragOverStage === stage.key && (
+                        <p className="truncate text-[8px] font-medium text-brand-600">
+                          Drop here
+                        </p>
+                      )}
+                    </div>
+                    <span className="ml-1 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border border-current/10 bg-white/80 px-1 text-[9px] font-bold">
+                      {stageCandidates.length}
+                    </span>
                   </div>
 
-                  <Badge tone="neutral">{stageCandidates.length}</Badge>
-                </div>
+                  <div className="space-y-1.5">
+                    {stageCandidates.map((candidate) => {
+                      const screeningCandidate = candidate as ScreeningCandidate;
+                      const screening = screeningCandidate.screening;
+                      const fitScore =
+                        screeningCandidate.jobFitScore ??
+                        screening?.score ??
+                        null;
+                      const matchedSkills = Array.from(
+                        new Set(
+                          [
+                            ...(screeningCandidate.extractedSkills ?? []),
+                            ...(screening?.matchedSkills ?? []),
+                          ].filter(Boolean),
+                        ),
+                      );
+                      const missingSkills = Array.from(
+                        new Set((screening?.missingSkills ?? []).filter(Boolean)),
+                      );
+                      const recommendation =
+                        screening?.recommendation ??
+                        (screeningCandidate.shortlistingResult === "SHORTLISTED"
+                          ? "YES"
+                          : screeningCandidate.shortlistingResult ===
+                              "NOT_SHORTLISTED"
+                            ? "NO"
+                            : null);
+                      const screeningStatus =
+                        fitScore != null || screeningCandidate.screeningSummary
+                          ? "SCREENED"
+                          : "NOT_SCREENED";
+                      const shortlistStatus =
+                        screeningCandidate.shortlistingResult ??
+                        (screeningCandidate.autoShortlisted
+                          ? "SHORTLISTED"
+                          : "NOT_CONFIGURED");
+                      const shortlistDisplayStatus =
+                        shortlistStatus === "PENDING" &&
+                        (screeningCandidate.finalResult === "SELECTED" ||
+                          screeningCandidate.stage === "OFFER" ||
+                          screeningCandidate.stage === "HIRED")
+                          ? "NOT_CONFIGURED"
+                          : shortlistStatus;
 
-                <div className="space-y-2.5">
-                  {stageCandidates.map((candidate) => {
-                    const screeningCandidate = candidate as ScreeningCandidate;
-
-                    const screening = screeningCandidate.screening;
-
-
-
-                    return (
-
-                      <Card
-                        key={candidate.id}
-                        padded={false}
-                        draggable={
-                          candidate.stage !== "HIRED" &&
-                          candidate.stage !== "REJECTED"
-                        }
-                        onDragStart={(event) =>
-                          handleCandidateDragStart(event, candidate.id)
-                        }
-                        onDragEnd={handleCandidateDragEnd}
-                        className={cx(
-                          "cursor-grab p-3.5 transition-all duration-200",
-                          draggedCandidateId === candidate.id
-                            ? "scale-[0.98] opacity-50"
-                            : "hover:-translate-y-0.5 hover:shadow-md",
-                          draggedCandidateId === candidate.id && "cursor-grabbing",
-                        )}
-                      >
-                        <div className="mb-2 flex items-center gap-1.5 text-[10px] text-ink-faint">
-                          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-ink/30" />
-                          <span>
-                            {candidate.stage === "HIRED" || candidate.stage === "REJECTED"
-                              ? "Final pipeline stage"
-                              : "Drag to move candidate"}
-                          </span>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedCandidateIds.includes(candidate.id)}
-                            onChange={(event) => {
-                              event.stopPropagation();
-                              setSelectedCandidateIds((current) => {
-                                if (event.target.checked) {
-                                  if (current.length >= 3) {
-                                    return current;
+                      return (
+                        <Card
+                          key={candidate.id}
+                          padded={false}
+                          draggable={
+                            candidate.stage !== "HIRED" &&
+                            candidate.stage !== "REJECTED"
+                          }
+                          onDragStart={(event) =>
+                            handleCandidateDragStart(event, candidate.id)
+                          }
+                          onDragEnd={handleCandidateDragEnd}
+                          className={cx(
+                            "min-w-0 cursor-grab rounded-xl border border-white/80 bg-white p-2 shadow-sm transition-all duration-150",
+                            "hover:-translate-y-0.5 hover:shadow-md",
+                            draggedCandidateId === candidate.id &&
+                              "scale-[0.98] opacity-50 cursor-grabbing",
+                          )}
+                        >
+                          <div className="flex items-start gap-1.5">
+                            <input
+                              type="checkbox"
+                              checked={selectedCandidateIds.includes(candidate.id)}
+                              onChange={(event) => {
+                                event.stopPropagation();
+                                setSelectedCandidateIds((current) => {
+                                  if (event.target.checked) {
+                                    if (current.length >= 3) return current;
+                                    return [...current, candidate.id];
                                   }
+                                  return current.filter((id) => id !== candidate.id);
+                                });
+                              }}
+                              className="mt-0.5 h-3 w-3 shrink-0 rounded border-line"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-1">
+                                <p className="min-w-0 truncate text-[11px] font-bold text-ink">
+                                  {candidate.firstName} {candidate.lastName}
+                                </p>
+                                <Badge
+                                  tone={
+                                    candidate.stage === "REJECTED"
+                                      ? "danger"
+                                      : candidate.stage === "HIRED"
+                                        ? "success"
+                                        : candidate.stage === "OFFER"
+                                          ? "success"
+                                          : "neutral"
+                                  }
+                                >
+                                  {stage.label}
+                                </Badge>
+                              </div>
+                              <p className="mt-0.5 truncate text-[8.5px] text-ink-faint">
+                                {candidate.email}
+                              </p>
+                              {candidate.expectedCtc ? (
+                                <p className="mt-0.5 truncate text-[8.5px] text-ink-faint">
+                                  Expects {formatCurrencyINR(candidate.expectedCtc)}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
 
-                                  return [...current, candidate.id];
-                                }
+                          <div className="mt-1.5 flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-0.5">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <button
+                                  type="button"
+                                  key={i}
+                                  aria-label={`Rate ${i + 1} stars`}
+                                  onClick={() =>
+                                    rateMutation.mutate({
+                                      id: candidate.id,
+                                      rating: i + 1,
+                                    })
+                                  }
+                                >
+                                  <Star
+                                    size={9}
+                                    className={cx(
+                                      i < (candidate.rating ?? 0)
+                                        ? "fill-gold-500 text-gold-500"
+                                        : "text-line",
+                                    )}
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                            <span className="truncate text-[7.5px] text-ink-faint">
+                              {formatDate(candidate.appliedAt)} • {candidate.source}
+                            </span>
+                          </div>
 
-                                return current.filter((id) => id !== candidate.id);
-                              });
-                            }}
-                            className="mt-0.5 h-3.5 w-3.5 rounded border-line"
-                          />
-
-                          <p className="text-[13px] font-medium text-ink">
-                            {candidate.firstName} {candidate.lastName}
-                          </p>
-                        </div>
-
-                        <p className="truncate text-[11.5px] text-ink-faint">
-                          {candidate.email}
-                        </p>
-
-                        {candidate.expectedCtc ? (
-                          <p className="mt-1 text-[11.5px] text-ink-faint">
-                            Expects {formatCurrencyINR(candidate.expectedCtc)}
-                          </p>
-                        ) : null}
-
-                        <div className="mt-2 flex items-center gap-0.5">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <button
-                              type="button"
-                              key={i}
-                              onClick={() =>
-                                rateMutation.mutate({
-                                  id: candidate.id,
-                                  rating: i + 1,
-                                })
-                              }
-                            >
-                              <Star
-                                size={13}
-                                className={cx(
-                                  i < (candidate.rating ?? 0)
-                                    ? "fill-gold-500 text-gold-500"
-                                    : "text-line",
-                                )}
-                              />
-                            </button>
-                          ))}
-                        </div>
-
-                        <p className="mt-2 text-[10.5px] text-ink-faint">
-                          Applied {formatDate(candidate.appliedAt)} •{" "}
-                          {candidate.source}
-                        </p>
-
-                        {(duplicateIds.has(candidate.id) ||
-                          isSpamCandidate(candidate)) && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
+                          {(duplicateIds.has(candidate.id) ||
+                            isSpamCandidate(candidate)) && (
+                            <div className="mt-1 flex flex-wrap gap-1">
                               {duplicateIds.has(candidate.id) && (
                                 <Badge tone="warning">
-                                  <span className="flex items-center gap-1">
-                                    <Copy size={10} /> Duplicate
+                                  <span className="flex items-center gap-0.5 text-[7px]">
+                                    <Copy size={8} /> Duplicate
                                   </span>
                                 </Badge>
                               )}
                               {isSpamCandidate(candidate) && (
                                 <Badge tone="warning">
-                                  <span className="flex items-center gap-1">
-                                    <AlertTriangle size={10} /> Suspicious
+                                  <span className="flex items-center gap-0.5 text-[7px]">
+                                    <AlertTriangle size={8} /> Suspicious
                                   </span>
                                 </Badge>
                               )}
                             </div>
                           )}
 
-                        <div className="mt-3 flex items-center justify-end gap-2 border-t border-line/60 pt-3">
-                          <button
-                            type="button"
-                            onClick={() => setEditCandidateFor(candidate)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-line bg-white px-2.5 py-1.5 text-[11px] font-medium text-ink transition hover:bg-surface"
-                          >
-                            <Pencil size={12} />
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteCandidateFor(candidate)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-600 transition hover:bg-red-50"
-                          >
-                            <Trash2 size={12} />
-                            Delete
-                          </button>
-                        </div>
-
-                        {(() => {
-                          const fitScore =
-                            screeningCandidate.jobFitScore ??
-                            screening?.score ??
-                            null;
-                          const matchedSkills = Array.from(
-                            new Set(
-                              [
-                                ...(screeningCandidate.extractedSkills ?? []),
-                                ...(screening?.matchedSkills ?? []),
-                              ].filter(Boolean),
-                            ),
-                          );
-                          const missingSkills = Array.from(
-                            new Set(
-                              (screening?.missingSkills ?? []).filter(Boolean),
-                            ),
-                          );
-                          const recommendation =
-                            screening?.recommendation ??
-                            (screeningCandidate.shortlistingResult ===
-                              "SHORTLISTED"
-                              ? "YES"
-                              : screeningCandidate.shortlistingResult ===
-                                "NOT_SHORTLISTED"
-                                ? "NO"
-                                : null);
-                          const screeningStatus =
-                            fitScore != null ||
-                              screeningCandidate.screeningSummary
-                              ? "SCREENED"
-                              : "NOT_SCREENED";
-                          const statusTone =
-                            screeningStatus === "SCREENED"
-                              ? "success"
-                              : "neutral";
-                          const shortlistStatus =
-                            screeningCandidate.shortlistingResult ??
-                            (screeningCandidate.autoShortlisted
-                              ? "SHORTLISTED"
-                              : "NOT_CONFIGURED");
-                          const shortlistDisplayStatus =
-                            shortlistStatus === "PENDING" &&
-                              (screeningCandidate.finalResult === "SELECTED" ||
-                                screeningCandidate.stage === "OFFER" ||
-                                screeningCandidate.stage === "HIRED")
-                              ? "NOT_CONFIGURED"
-                              : shortlistStatus;
-
-                          return (
-                            <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/40 p-2.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-1.5">
-                                  <Sparkles
-                                    size={13}
-                                    className="text-brand-600"
-                                  />
-                                  <span className="text-[11px] font-semibold text-ink">
-                                    AI Screening
-                                  </span>
-                                </div>
-
-                                <Badge tone={statusTone}>
-                                  {screeningStatus === "SCREENED"
-                                    ? "Screened"
-                                    : "Not screened"}
-                                </Badge>
+                          <div className="mt-1.5 rounded-lg border border-brand-100 bg-brand-50/40 p-1.5">
+                            <div className="flex items-center justify-between gap-1">
+                              <div className="flex min-w-0 items-center gap-1">
+                                <Sparkles size={9} className="shrink-0 text-brand-600" />
+                                <span className="truncate text-[8.5px] font-bold text-ink">
+                                  AI Screening
+                                </span>
                               </div>
+                              <Badge
+                                tone={screeningStatus === "SCREENED" ? "success" : "neutral"}
+                              >
+                                {screeningStatus === "SCREENED" ? "Screened" : "Pending"}
+                              </Badge>
+                            </div>
 
-                              {fitScore != null ? (
-                                <div className="mt-2">
-                                  <div className="flex items-center justify-between text-[10.5px]">
-                                    <span className="font-medium text-ink-soft">
-                                      Job fit score
-                                    </span>
-                                    <span className="font-semibold text-ink">
-                                      {fitScore}%
-                                    </span>
-                                  </div>
-                                  {recommendation && (
-                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                      <span className="text-xs font-medium text-slate-500">
-                                        AI Recommendation:
-                                      </span>
-
-                                      <Badge
-                                        tone={
-                                          recommendation === "YES"
-                                            ? "success"
-                                            : recommendation === "NO"
-                                              ? "warning"
-                                              : "neutral"
-                                        }
-                                      >
-                                        {recommendation}
-                                      </Badge>
-                                    </div>
-                                  )}
-
-                                  {screening?.confidence && (
-                                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                                      <span className="text-xs font-medium text-slate-500">
-                                        AI Confidence:
-                                      </span>
-
-                                      <Badge
-                                        tone={
-                                          screening.confidence === "HIGH"
-                                            ? "success"
-                                            : screening.confidence === "MEDIUM"
-                                              ? "neutral"
-                                              : "warning"
-                                        }
-                                      >
-                                        {screening.confidence}
-                                      </Badge>
-                                    </div>
-                                  )}
-                                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white">
-                                    <div
-                                      className="h-full rounded-full bg-brand-500 transition-all"
-                                      style={{
-                                        width: `${Math.max(
-                                          0,
-                                          Math.min(100, fitScore),
-                                        )}%`,
-                                      }}
-                                    />
-                                  </div>
+                            {fitScore != null ? (
+                              <div className="mt-1">
+                                <div className="flex items-center justify-between text-[8px]">
+                                  <span className="text-ink-faint">Job fit score</span>
+                                  <span className="font-bold text-ink">{fitScore}%</span>
                                 </div>
-                              ) : (
-                                <p className="mt-2 text-[10.5px] text-ink-faint">
-                                  Run AI screening to evaluate this candidate
-                                  against the job requirements.
-                                </p>
-                              )}
+                                <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-white">
+                                  <div
+                                    className="h-full rounded-full bg-brand-500"
+                                    style={{
+                                      width: `${Math.max(0, Math.min(100, fitScore))}%`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="mt-1 text-[7.5px] text-ink-faint">
+                                Run AI screening to evaluate this candidate.
+                              </p>
+                            )}
 
+                            <div className="mt-1 space-y-0.5 text-[7.5px]">
                               {recommendation && (
-                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                  <span className="text-[10.5px] text-ink-faint">
-                                    Recommendation:
-                                  </span>
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-ink-faint">AI Recommendation</span>
                                   <Badge
                                     tone={
-                                      recommendation.includes("YES")
+                                      recommendation === "YES"
                                         ? "success"
-                                        : recommendation.includes("NO")
+                                        : recommendation === "NO"
                                           ? "warning"
                                           : "neutral"
                                     }
@@ -1625,159 +1625,173 @@ export default function JobDetail() {
                                   </Badge>
                                 </div>
                               )}
-
+                              {screening?.confidence && (
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-ink-faint">AI Confidence</span>
+                                  <Badge
+                                    tone={
+                                      screening.confidence === "HIGH"
+                                        ? "success"
+                                        : screening.confidence === "MEDIUM"
+                                          ? "neutral"
+                                          : "warning"
+                                    }
+                                  >
+                                    {screening.confidence}
+                                  </Badge>
+                                </div>
+                              )}
                               {screeningStatus === "SCREENED" && (
-                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                  <span className="text-[10.5px] text-ink-faint">
-                                    AI Shortlisting Result:
-                                  </span>
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-ink-faint">Shortlisting</span>
                                   <Badge
                                     tone={
                                       shortlistDisplayStatus === "SHORTLISTED"
                                         ? "success"
-                                        : shortlistDisplayStatus ===
-                                          "NOT_SHORTLISTED"
+                                        : shortlistDisplayStatus === "NOT_SHORTLISTED"
                                           ? "warning"
                                           : "neutral"
                                     }
                                   >
                                     {shortlistDisplayStatus === "NOT_CONFIGURED"
                                       ? "MANUAL REVIEW"
-                                      : shortlistDisplayStatus.replaceAll(
-                                        "_",
-                                        " ",
-                                      )}
+                                      : shortlistDisplayStatus.replaceAll("_", " ")}
                                   </Badge>
                                 </div>
                               )}
-
                               {screeningCandidate.finalResult && (
-                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                  <span className="text-[10.5px] text-ink-faint">
-                                    Final Result:
-                                  </span>
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-ink-faint">Final Result</span>
                                   <Badge
                                     tone={
-                                      screeningCandidate.finalResult ===
-                                        "SELECTED"
+                                      screeningCandidate.finalResult === "SELECTED"
                                         ? "success"
-                                        : screeningCandidate.finalResult ===
-                                          "REJECTED"
+                                        : screeningCandidate.finalResult === "REJECTED"
                                           ? "warning"
                                           : "neutral"
                                     }
                                   >
-                                    {screeningCandidate.finalResult.replaceAll(
-                                      "_",
-                                      " ",
-                                    )}
+                                    {screeningCandidate.finalResult}
                                   </Badge>
                                 </div>
                               )}
-
-                              {matchedSkills.length > 0 && (
-                                <div className="mt-2">
-                                  <p className="mb-1 text-[10.5px] font-medium text-ink-soft">
-                                    Matched skills
-                                  </p>
-                                  <div className="flex flex-wrap gap-1">
-                                    {matchedSkills.map((skill) => (
-                                      <Badge
-                                        key={`matched-${skill}`}
-                                        tone="success"
-                                      >
-                                        {skill}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {missingSkills.length > 0 && (
-                                <div className="mt-2">
-                                  <p className="mb-1 text-[10.5px] font-medium text-ink-soft">
-                                    Missing skills
-                                  </p>
-                                  <div className="flex flex-wrap gap-1">
-                                    {missingSkills.map((skill) => (
-                                      <Badge
-                                        key={`missing-${skill}`}
-                                        tone="warning"
-                                      >
-                                        {skill}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {screeningCandidate.screening && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="mt-2 w-full"
-                                  leftIcon={<FileText size={12} />}
-                                  isLoading={
-                                    parseResumeMutation.isPending &&
-                                    parseResumeMutation.variables === candidate.id
-                                  }
-                                  onClick={() => parseResumeMutation.mutate(candidate.id)}
-                                >
-                                  {candidate.resumeParsingStatus === "PARSED"
-                                    ? "Re-parse Resume"
-                                    : "Parse Resume"}
-                                </Button>
-                              )}
-
-
-
-
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="mt-2 w-full"
-                                leftIcon={<Sparkles size={12} />}
-                                isLoading={
-                                  screenMutation.isPending &&
-                                  screenMutation.variables?.id === candidate.id
-                                }
-                                onClick={() =>
-                                  screenMutation.mutate({
-                                    id: candidate.id,
-                                  })
-                                }
-                              >
-                                {screeningStatus === "SCREENED"
-                                  ? "Re-screen with AI"
-                                  : "AI Screen Candidate"}
-                              </Button>
-
-                              {(candidate.finalResult === "SELECTED" ||
-                                candidate.stage === "OFFER") && (
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    className="mt-2 w-full"
-                                    leftIcon={<FileText size={12} />}
-                                    onClick={() => setOfferLetterFor(candidate)}
-                                  >
-                                    {candidate.offer?.offerUrl
-                                      ? "View / Manage Offer Letter"
-                                      : "Generate Offer Letter"}
-                                  </Button>
-                                )}
                             </div>
-                          );
-                        })()}
 
-                        <div className="mt-2.5">
-                          <div className="grid grid-cols-2 gap-2">
+                            {matchedSkills.length > 0 && (
+                              <div className="mt-1">
+                                <p className="text-[7.5px] font-semibold text-ink-faint">
+                                  Matched skills
+                                </p>
+                                <div className="mt-0.5 flex flex-wrap gap-0.5">
+                                  {matchedSkills.slice(0, 4).map((skill) => (
+                                    <span
+                                      key={skill}
+                                      className="rounded-full bg-emerald-50 px-1 py-0.5 text-[7px] font-medium text-emerald-700"
+                                    >
+                                      {skill}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {missingSkills.length > 0 && (
+                              <div className="mt-1">
+                                <p className="text-[7.5px] font-semibold text-ink-faint">
+                                  Missing skills
+                                </p>
+                                <div className="mt-0.5 flex flex-wrap gap-0.5">
+                                  {missingSkills.slice(0, 4).map((skill) => (
+                                    <span
+                                      key={skill}
+                                      className="rounded-full bg-amber-50 px-1 py-0.5 text-[7px] font-medium text-amber-700"
+                                    >
+                                      {skill}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mt-1.5 grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditCandidateFor(candidate)}
+                              className="inline-flex min-w-0 items-center justify-center gap-0.5 rounded-md border border-line bg-white px-1 py-1 text-[8px] font-semibold text-ink hover:bg-surface"
+                            >
+                              <Pencil size={9} /> Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteCandidateFor(candidate)}
+                              className="inline-flex min-w-0 items-center justify-center gap-0.5 rounded-md border border-red-200 bg-white px-1 py-1 text-[8px] font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 size={9} /> Delete
+                            </button>
+                          </div>
+
+                          {candidate.resumeParsingStatus !== "PARSED" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mt-1 w-full !min-h-0 !px-1 !py-1 text-[8px]"
+                              isLoading={
+                                parseResumeMutation.isPending &&
+                                parseResumeMutation.variables === candidate.id
+                              }
+                              onClick={() => parseResumeMutation.mutate(candidate.id)}
+                            >
+                              Parse Resume
+                            </Button>
+                          )}
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-1 w-full !min-h-0 !px-1 !py-1 text-[8px]"
+                            leftIcon={<Sparkles size={9} />}
+                            isLoading={
+                              screenMutation.isPending &&
+                              screenMutation.variables?.id === candidate.id
+                            }
+                            onClick={() => screenMutation.mutate({ id: candidate.id })}
+                          >
+                            {screeningStatus === "SCREENED"
+                              ? "Re-screen with AI"
+                              : "AI Screen Candidate"}
+                          </Button>
+
+                          {(candidate.finalResult === "SELECTED" ||
+                            candidate.stage === "OFFER") && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="mt-1 w-full !min-h-0 !px-1 !py-1 text-[8px]"
+                              leftIcon={<FileText size={9} />}
+                              onClick={() => setOfferLetterFor(candidate)}
+                            >
+                              {candidate.offer?.offerUrl
+                                ? "View / Manage Offer"
+                                : "Generate Offer"}
+                            </Button>
+                          )}
+
+                          <div className="mt-1 grid grid-cols-2 gap-1">
                             <button
                               type="button"
                               onClick={() => setScheduleFor(candidate)}
-                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-50"
+                              className="flex min-w-0 items-center justify-center gap-0.5 rounded-md border border-line bg-white px-1 py-1 text-[8px] font-semibold text-brand-600 hover:bg-brand-50"
                             >
-                              <Calendar size={12} className="shrink-0" />
-                              <span>Interview</span>
+                              <Calendar size={9} /> Interview
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setLifecycleFor(candidate)}
+                              className="flex min-w-0 items-center justify-center gap-0.5 rounded-md border border-line bg-white px-1 py-1 text-[8px] font-semibold text-brand-600 hover:bg-brand-50"
+                            >
+                              <FileText size={9} /> Lifecycle
                             </button>
 
                             {candidate.stage === "INTERVIEW" && (
@@ -1788,105 +1802,86 @@ export default function JobDetail() {
                                   interviewCopilotMutation.mutate(candidate.id);
                                 }}
                                 disabled={interviewCopilotMutation.isPending}
-                                className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-brand-200 bg-brand-50 px-2 py-1.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-100 disabled:opacity-50"
+                                className="col-span-2 flex min-w-0 items-center justify-center gap-0.5 rounded-md border border-brand-200 bg-brand-50 px-1 py-1 text-[8px] font-semibold text-brand-600 hover:bg-brand-100 disabled:opacity-50"
                               >
-                                <Sparkles size={12} />
-                                <span>
-                                  {interviewCopilotMutation.isPending
-                                    ? "Generating..."
-                                    : "AI Interview Copilot"}
-                                </span>
+                                <Sparkles size={9} />
+                                {interviewCopilotMutation.isPending
+                                  ? "Generating..."
+                                  : "AI Interview Copilot"}
                               </button>
                             )}
 
-                            <button
-                              type="button"
-                              onClick={() => setLifecycleFor(candidate)}
-                              className="flex min-w-0 items-center justify-center gap-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-50"
-                            >
-                              <FileText size={12} className="shrink-0" />
-                              <span>Lifecycle</span>
-                            </button>
-
                             {candidate.stage === "INTERVIEW" &&
                               (screeningCandidate.finalResult ?? "PENDING") ===
-                              "PENDING" && (
+                                "PENDING" && (
                                 <button
                                   type="button"
                                   disabled={selectCandidateMutation.isPending}
-                                  onClick={() =>
-                                    selectCandidateMutation.mutate(candidate.id)
-                                  }
-                                  className="col-span-2 flex items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                                  onClick={() => selectCandidateMutation.mutate(candidate.id)}
+                                  className="col-span-2 flex items-center justify-center gap-0.5 rounded-md border border-emerald-200 bg-emerald-50 px-1 py-1 text-[8px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
                                 >
-                                  <UserCheck size={12} />
-                                  <span>
-                                    {selectCandidateMutation.isPending
-                                      ? "Selecting..."
-                                      : "Select Candidate"}
-                                  </span>
+                                  <UserCheck size={9} />
+                                  {selectCandidateMutation.isPending
+                                    ? "Selecting..."
+                                    : "Select Candidate"}
                                 </button>
                               )}
 
-                            {stage.key !== "HIRED" &&
-                              stage.key !== "REJECTED" && (
-                                <select
-                                  value={candidate.stage}
-                                  onChange={(event) => {
-                                    const targetStage =
-                                      event.target.value as Candidate["stage"];
+                            {stage.key !== "HIRED" && stage.key !== "REJECTED" && (
+                              <select
+                                value={candidate.stage}
+                                onChange={(event) => {
+                                  const targetStage =
+                                    event.target.value as Candidate["stage"];
 
-                                    if (
-                                      !canMoveCandidateToStage(
-                                        candidate,
-                                        targetStage,
-                                      )
-                                    ) {
-                                      showToast(
-                                        targetStage === "HIRED"
-                                          ? "Use the hiring workflow to move a candidate to Hired."
-                                          : targetStage === "REJECTED"
-                                            ? "Use the rejection workflow to reject a candidate."
-                                            : "This candidate cannot be moved to that stage.",
-                                        "error",
-                                      );
-                                      return;
-                                    }
+                                  if (!canMoveCandidateToStage(candidate, targetStage)) {
+                                    showToast(
+                                      targetStage === "HIRED"
+                                        ? "Use the hiring workflow to move a candidate to Hired."
+                                        : targetStage === "REJECTED"
+                                          ? "Use the rejection workflow to reject a candidate."
+                                          : "This candidate cannot be moved to that stage.",
+                                      "error",
+                                    );
+                                    return;
+                                  }
 
-                                    stageMutation.mutate({
-                                      id: candidate.id,
-                                      stage: targetStage,
-                                    });
-                                  }}
-                                  aria-label={`Move ${candidate.firstName} ${candidate.lastName} to another stage`}
-                                  className="col-span-2 w-full rounded-lg border border-line bg-white px-2 py-1.5 text-center text-[11px] font-medium text-ink shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-                                >
-                                  {STAGES.map((s) => (
-                                    <option key={s.key} value={s.key}>
-                                      {s.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
+                                  stageMutation.mutate({
+                                    id: candidate.id,
+                                    stage: targetStage,
+                                  });
+                                }}
+                                aria-label={`Move ${candidate.firstName} ${candidate.lastName} to another stage`}
+                                className="col-span-2 w-full rounded-md border border-line bg-white px-1 py-1 text-center text-[8px] font-semibold text-ink shadow-sm outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-100"
+                              >
+                                {STAGES.map((s) => (
+                                  <option key={s.key} value={s.key}>
+                                    Move to {s.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                           </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
+                        </Card>
+                      );
+                    })}
 
-                  {
-                    !stageCandidates.length && (
-                      <p className="px-1 text-[11.5px] text-ink-faint">
-                        No candidates
-                      </p>
-                    )
-                  }
-                </div >
-              </div >
-            );
-          })}
-        </div >
+                    {!stageCandidates.length && (
+                      <div className="flex min-h-28 items-center justify-center rounded-xl border border-dashed border-current/10 bg-white/40 px-2 text-center">
+                        <p className="text-[8.5px] text-ink-faint">
+                          No candidates in this stage
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
+
+      </>)}
 
       <AddCandidateModal
         open={addOpen}
@@ -1955,6 +1950,22 @@ export default function JobDetail() {
           />
         )
       }
+
+      {atsToolsFor && job && (
+        <RecruitmentAtsToolsModal
+          open
+          candidate={atsToolsFor}
+          job={job}
+          candidates={candidates ?? []}
+          onClose={() => setAtsToolsFor(null)}
+          onScheduleInterview={() => setScheduleFor(atsToolsFor)}
+          onSelectCandidate={(candidate) => setAtsToolsFor(candidate)}
+          onOpenPipelineCompare={() => {
+            setAtsToolsFor(null);
+            setActiveCandidateTab("PIPELINE");
+          }}
+        />
+      )}
 
       {
         aiDetailsCandidate && (
@@ -2371,6 +2382,1035 @@ export default function JobDetail() {
   );
 }
 
+
+/* =========================================================
+   RECRUITMENT CANDIDATE WORKSPACE
+   Additive ATS-style view inspired by the job/candidate workspace
+   pattern: application KPIs, candidate table, pipeline summary and
+   a selected-candidate profile panel. Existing pipeline remains below.
+========================================================= */
+
+type CandidateWorkspaceProps = {
+  job: RecruitmentJob;
+  candidates: Candidate[];
+  isLoading: boolean;
+  activeTab: "CANDIDATES" | "PIPELINE";
+  onTabChange: (tab: "CANDIDATES" | "PIPELINE") => void;
+  onAddCandidate: () => void;
+  onScheduleInterview: (candidate: Candidate) => void;
+  onLifecycle: (candidate: Candidate) => void;
+  onOffer: (candidate: Candidate) => void;
+  onEditCandidate: (candidate: Candidate) => void;
+  onDeleteCandidate: (candidate: Candidate) => void;
+  onOpenAtsTools: (candidate: Candidate) => void;
+  onRunAiScreen: (candidate: Candidate) => void;
+  onRunAiInterviewCopilot: (candidate: Candidate) => void;
+  onViewAiDetails: (candidate: ScreeningCandidate) => void;
+  onMoveStage: (candidate: Candidate, stage: Candidate["stage"]) => void;
+  stageMutationPending: boolean;
+  selectCandidatePending: boolean;
+  onSelectCandidate: (candidate: Candidate) => void;
+};
+
+function CandidateRecruitmentWorkspace({
+  job,
+  candidates,
+  isLoading,
+  activeTab,
+  onTabChange,
+  onAddCandidate,
+  onScheduleInterview,
+  onLifecycle,
+  onOffer,
+  onEditCandidate,
+  onDeleteCandidate,
+  onOpenAtsTools,
+  onRunAiScreen,
+  onRunAiInterviewCopilot,
+  onViewAiDetails,
+  onMoveStage,
+  stageMutationPending,
+  selectCandidatePending,
+  onSelectCandidate,
+}: CandidateWorkspaceProps) {
+  const [search, setSearch] = useState("");
+  const [stageFilter, setStageFilter] = useState<"ALL" | Candidate["stage"]>("ALL");
+  const [sourceFilter, setSourceFilter] = useState("ALL");
+  const [selectedId, setSelectedId] = useState<string | null>(
+    candidates[0]?.id ?? null,
+  );
+
+  useEffect(() => {
+    if (!candidates.length) {
+      setSelectedId(null);
+      return;
+    }
+
+    setSelectedId((current) => {
+      if (current && candidates.some((candidate) => candidate.id === current)) {
+        return current;
+      }
+      return candidates[0].id;
+    });
+  }, [candidates]);
+
+  const counts = STAGES.reduce<Record<Candidate["stage"], number>>(
+    (accumulator, stage) => {
+      accumulator[stage.key] = candidates.filter(
+        (candidate) => candidate.stage === stage.key,
+      ).length;
+      return accumulator;
+    },
+    {
+      APPLIED: 0,
+      SCREENING: 0,
+      INTERVIEW: 0,
+      OFFER: 0,
+      HIRED: 0,
+      REJECTED: 0,
+    },
+  );
+
+  const screenedCount = candidates.filter((candidate) => {
+    const item = candidate as ScreeningCandidate;
+    return item.jobFitScore != null || item.screening?.score != null;
+  }).length;
+
+  const newCandidateCount = candidates.filter((candidate) => {
+    const item = candidate as ScreeningCandidate;
+    return (
+      candidate.stage === "APPLIED" &&
+      item.jobFitScore == null &&
+      item.screening?.score == null
+    );
+  }).length;
+
+  const strongFitCount = candidates.filter((candidate) => {
+    const item = candidate as ScreeningCandidate;
+    return (item.jobFitScore ?? item.screening?.score ?? 0) >= 80;
+  }).length;
+
+  const sources = Array.from(
+    new Set(candidates.map((candidate) => candidate.source).filter(Boolean)),
+  ).sort();
+
+  const filtered = candidates.filter((candidate) => {
+    const normalizedSearch = search.trim().toLowerCase();
+    const name =
+      `${candidate.firstName} ${candidate.lastName}`.toLowerCase();
+    const email = String(candidate.email ?? "").toLowerCase();
+    const source = String(candidate.source ?? "").toLowerCase();
+
+    return (
+      (!normalizedSearch ||
+        name.includes(normalizedSearch) ||
+        email.includes(normalizedSearch) ||
+        source.includes(normalizedSearch)) &&
+      (stageFilter === "ALL" || candidate.stage === stageFilter) &&
+      (sourceFilter === "ALL" || candidate.source === sourceFilter)
+    );
+  });
+
+  const selectedCandidate =
+    candidates.find((candidate) => candidate.id === selectedId) ??
+    filtered[0] ??
+    candidates[0] ??
+    null;
+
+  const candidateResume = selectedCandidate
+    ? (selectedCandidate as ScreeningCandidate & {
+        resumeUrl?: string | null;
+        resumePath?: string | null;
+      })
+    : null;
+
+  const resumeUrl = candidateResume?.resumeUrl ?? candidateResume?.resumePath;
+  const selectedScreening = selectedCandidate
+    ? (selectedCandidate as ScreeningCandidate)
+    : null;
+  const selectedFitScore = selectedScreening
+    ? selectedScreening.jobFitScore ?? selectedScreening.screening?.score ?? null
+    : null;
+
+  const getStageLabel = (stage: Candidate["stage"]) =>
+    STAGES.find((item) => item.key === stage)?.label ?? stage;
+
+  const nextStage = selectedCandidate
+    ? STAGES[
+        Math.min(
+          STAGES.findIndex((item) => item.key === selectedCandidate.stage) + 1,
+          STAGES.length - 1,
+        )
+      ]?.key
+    : null;
+
+  const nextStageAllowed =
+    selectedCandidate && nextStage
+      ? nextStage !== "REJECTED" &&
+        nextStage !== "HIRED" &&
+        nextStage !== selectedCandidate.stage &&
+        selectedCandidate.stage !== "HIRED" &&
+        selectedCandidate.stage !== "REJECTED"
+      : false;
+
+  const stageTone = (stage: Candidate["stage"]) => {
+    switch (stage) {
+      case "APPLIED":
+        return "neutral" as const;
+      case "SCREENING":
+        return "neutral" as const;
+      case "INTERVIEW":
+        return "neutral" as const;
+      case "OFFER":
+      case "HIRED":
+        return "success" as const;
+      case "REJECTED":
+        return "danger" as const;
+      default:
+        return "neutral" as const;
+    }
+  };
+
+  return (
+    <section className="mt-7">
+      {/* ATS header + KPIs */}
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-display text-[19px] font-semibold text-ink">
+            Candidate Workspace
+          </h2>
+          <p className="mt-1 text-[12px] text-ink-faint">
+            Manage applications, review candidates and move hiring decisions
+            forward from one place.
+          </p>
+        </div>
+
+        <Button leftIcon={<Plus size={15} />} onClick={onAddCandidate}>
+          Add candidate
+        </Button>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <WorkspaceMetric
+          label="Applications"
+          value={candidates.length}
+          icon={<Users size={16} />}
+        />
+        <WorkspaceMetric
+          label="New"
+          value={newCandidateCount}
+          icon={<FileText size={16} />}
+        />
+        <WorkspaceMetric
+          label="Screening"
+          value={counts.SCREENING}
+          icon={<Sparkles size={16} />}
+        />
+        <WorkspaceMetric
+          label="Interview"
+          value={counts.INTERVIEW}
+          icon={<Calendar size={16} />}
+        />
+        <WorkspaceMetric
+          label="Offer"
+          value={counts.OFFER}
+          icon={<Send size={16} />}
+        />
+        <WorkspaceMetric
+          label="Hired"
+          value={counts.HIRED}
+          icon={<UserCheck size={16} />}
+        />
+        <WorkspaceMetric
+          label="Rejected"
+          value={counts.REJECTED}
+          icon={<XCircle size={16} />}
+        />
+      </div>
+
+      {/* View tabs */}
+      <Card className="mt-3 overflow-hidden" padded={false}>
+        <div className="flex items-center justify-between border-b border-line/70 px-4">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onTabChange("CANDIDATES")}
+              className={cx(
+                "border-b-2 px-3 py-3 text-[12.5px] font-semibold transition",
+                activeTab === "CANDIDATES"
+                  ? "border-brand-600 text-brand-700"
+                  : "border-transparent text-ink-faint hover:text-ink",
+              )}
+            >
+              Candidates ({candidates.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onTabChange("PIPELINE")}
+              className={cx(
+                "border-b-2 px-3 py-3 text-[12.5px] font-semibold transition",
+                activeTab === "PIPELINE"
+                  ? "border-brand-600 text-brand-700"
+                  : "border-transparent text-ink-faint hover:text-ink",
+              )}
+            >
+              Pipeline
+            </button>
+          </div>
+
+          <div className="hidden items-center gap-2 py-2 md:flex">
+            <Badge tone="success">{screenedCount} Screened</Badge>
+            <Badge tone="success">{strongFitCount} Strong Fit</Badge>
+          </div>
+        </div>
+
+        {activeTab === "CANDIDATES" && (
+          <div className="grid min-w-0 lg:grid-cols-[minmax(0,1fr)_360px]">
+            {/* Candidate table */}
+            <div className="min-w-0 border-r border-line/70">
+              <div className="border-b border-line/70 p-3">
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_150px_150px_auto]">
+                  <div className="relative">
+                    <Search
+                      size={15}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint"
+                    />
+                    <input
+                      type="search"
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Search candidates..."
+                      className="h-9 w-full rounded-xl border border-line bg-white pl-9 pr-3 text-[12px] outline-none focus:border-brand-500"
+                    />
+                  </div>
+
+                  <SelectField
+                    label=""
+                    value={stageFilter}
+                    onChange={(event) =>
+                      setStageFilter(
+                        event.target.value as "ALL" | Candidate["stage"],
+                      )
+                    }
+                  >
+                    <option value="ALL">All stages</option>
+                    {STAGES.map((stage) => (
+                      <option key={stage.key} value={stage.key}>
+                        {stage.label}
+                      </option>
+                    ))}
+                  </SelectField>
+
+                  <SelectField
+                    label=""
+                    value={sourceFilter}
+                    onChange={(event) => setSourceFilter(event.target.value)}
+                  >
+                    <option value="ALL">All sources</option>
+                    {sources.map((source) => (
+                      <option key={source} value={source}>
+                        {source}
+                      </option>
+                    ))}
+                  </SelectField>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearch("");
+                      setStageFilter("ALL");
+                      setSourceFilter("ALL");
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <div className="min-w-[820px]">
+                  <div className="grid grid-cols-[28px_minmax(220px,1.5fr)_90px_90px_120px_110px_90px_46px] gap-2 border-b border-line/60 bg-ink/[0.018] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                    <span />
+                    <span>Candidate</span>
+                    <span>Match</span>
+                    <span>Experience</span>
+                    <span>Source</span>
+                    <span>Applied</span>
+                    <span>Status</span>
+                    <span />
+                  </div>
+
+                  {isLoading ? (
+                    <div className="space-y-2 p-3">
+                      {Array.from({ length: 6 }).map((_, index) => (
+                        <Skeleton
+                          key={index}
+                          className="h-14 rounded-xl"
+                        />
+                      ))}
+                    </div>
+                  ) : filtered.length ? (
+                    filtered.map((candidate) => {
+                      const item = candidate as ScreeningCandidate;
+                      const fit =
+                        item.jobFitScore ?? item.screening?.score ?? null;
+
+                      return (
+                        <button
+                          type="button"
+                          key={candidate.id}
+                          onClick={() => setSelectedId(candidate.id)}
+                          className={cx(
+                            "grid w-full grid-cols-[28px_minmax(220px,1.5fr)_90px_90px_120px_110px_90px_46px] gap-2 border-b border-line/50 px-3 py-2.5 text-left transition hover:bg-brand-50/40",
+                            selectedCandidate?.id === candidate.id &&
+                              "bg-brand-50/60",
+                          )}
+                        >
+                          <span className="flex items-center justify-center">
+                            <span
+                              className={cx(
+                                "h-2.5 w-2.5 rounded-full",
+                                candidate.stage === "HIRED"
+                                  ? "bg-emerald-500"
+                                  : candidate.stage === "REJECTED"
+                                    ? "bg-red-500"
+                                    : candidate.stage === "OFFER"
+                                      ? "bg-emerald-400"
+                                      : "bg-brand-500",
+                              )}
+                            />
+                          </span>
+
+                          <span className="min-w-0">
+                            <span className="block truncate text-[12px] font-semibold text-ink">
+                              {candidate.firstName} {candidate.lastName}
+                            </span>
+                            <span className="mt-0.5 block truncate text-[10.5px] text-ink-faint">
+                              {candidate.email}
+                            </span>
+                          </span>
+
+                          <span className="flex items-center">
+                            {fit != null ? (
+                              <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                                {fit}%
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-ink-faint">
+                                —
+                              </span>
+                            )}
+                          </span>
+
+                          <span className="flex items-center text-[10.5px] text-ink-soft">
+                            {item.experience
+                              ? `${item.experience} yrs`
+                              : Array.isArray(candidate.extractedExperience) &&
+                                  candidate.extractedExperience.length
+                                ? "Parsed"
+                                : "—"}
+                          </span>
+
+                          <span className="flex min-w-0 items-center text-[10.5px] text-ink-soft">
+                            <span className="truncate">
+                              {candidate.source || "Direct"}
+                            </span>
+                          </span>
+
+                          <span className="flex items-center text-[10.5px] text-ink-faint">
+                            {formatDate(candidate.appliedAt)}
+                          </span>
+
+                          <span className="flex items-center">
+                            <Badge tone={stageTone(candidate.stage)}>
+                              {getStageLabel(candidate.stage)}
+                            </Badge>
+                          </span>
+
+                          <span className="flex items-center justify-end">
+                            <ChevronRight
+                              size={14}
+                              className="text-ink-faint"
+                            />
+                          </span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="px-4 py-12 text-center">
+                      <Users
+                        size={22}
+                        className="mx-auto text-ink-faint"
+                      />
+                      <p className="mt-2 text-[12px] font-medium text-ink">
+                        No candidates found
+                      </p>
+                      <p className="mt-1 text-[11px] text-ink-faint">
+                        Try changing the search or filters.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line/70 px-3 py-2.5 text-[10.5px] text-ink-faint">
+                <span>
+                  Showing {filtered.length} of {candidates.length} candidates
+                </span>
+                <span>
+                  {job.openings ?? 0} opening
+                  {Number(job.openings ?? 0) === 1 ? "" : "s"}
+                </span>
+              </div>
+            </div>
+
+            {/* Candidate profile */}
+            <div className="min-w-0 bg-white">
+              {selectedCandidate ? (
+                <div className="h-full">
+                  <div className="border-b border-line/70 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-50 text-sm font-bold text-brand-700">
+                            {`${selectedCandidate.firstName?.[0] ?? ""}${selectedCandidate.lastName?.[0] ?? ""}`.toUpperCase()}
+                          </div>
+
+                          <div className="min-w-0">
+                            <h3 className="truncate text-[15px] font-semibold text-ink">
+                              {selectedCandidate.firstName}{" "}
+                              {selectedCandidate.lastName}
+                            </h3>
+                            <p className="truncate text-[10.5px] text-ink-faint">
+                              {selectedCandidate.email}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <Badge tone={stageTone(selectedCandidate.stage)}>
+                            {getStageLabel(selectedCandidate.stage)}
+                          </Badge>
+
+                          {selectedFitScore != null && (
+                            <Badge tone="success">
+                              {selectedFitScore}% Match
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => onEditCandidate(selectedCandidate)}
+                        className="rounded-lg border border-line px-2 py-1.5 text-[10px] font-semibold text-ink hover:bg-surface"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2 text-[10.5px]">
+                      <div className="rounded-xl bg-ink/[0.025] p-2.5">
+                        <p className="text-ink-faint">Phone</p>
+                        <p className="mt-0.5 truncate font-medium text-ink">
+                          {selectedCandidate.phone || "Not provided"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-ink/[0.025] p-2.5">
+                        <p className="text-ink-faint">Source</p>
+                        <p className="mt-0.5 truncate font-medium text-ink">
+                          {selectedCandidate.source || "Direct"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 p-4">
+                    {selectedScreening?.screening?.summary && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                          AI Summary
+                        </p>
+                        <p className="mt-1.5 text-[11.5px] leading-5 text-ink-soft">
+                          {selectedScreening.screening.summary}
+                        </p>
+                      </div>
+                    )}
+
+                    {selectedScreening?.screening?.matchedSkills?.length ? (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                          Key Skills
+                        </p>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {selectedScreening.screening.matchedSkills
+                            .slice(0, 10)
+                            .map((skill) => (
+                              <span
+                                key={skill}
+                                className="rounded-full bg-brand-50 px-2 py-1 text-[9.5px] font-medium text-brand-700"
+                              >
+                                {skill}
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                        Application
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-[10.5px]">
+                        <div>
+                          <span className="text-ink-faint">Applied</span>
+                          <p className="font-medium text-ink">
+                            {formatDate(selectedCandidate.appliedAt)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-ink-faint">Expected CTC</span>
+                          <p className="font-medium text-ink">
+                            {selectedCandidate.expectedCtc
+                              ? formatCurrencyINR(selectedCandidate.expectedCtc)
+                              : "—"}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-ink-faint">Rating</span>
+                          <p className="font-medium text-ink">
+                            {selectedCandidate.rating ?? 0}/5
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-ink-faint">Experience</span>
+                          <p className="font-medium text-ink">
+                            {selectedScreening?.experience
+                              ? `${selectedScreening.experience} yrs`
+                              : "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {resumeUrl && (
+                      <a
+                        href={resolveAssetUrl(resumeUrl) ?? "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-[11px] font-semibold text-brand-700 hover:bg-brand-100"
+                      >
+                        <FileText size={13} />
+                        View Resume
+                      </a>
+                    )}
+
+                    <div>
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                        Pipeline
+                      </p>
+                      <div className="space-y-1">
+                        {STAGES.map((stage, index) => {
+                          const isCurrent = selectedCandidate.stage === stage.key;
+                          const isPassed =
+                            STAGES.findIndex(
+                              (item) => item.key === selectedCandidate.stage,
+                            ) >= index;
+
+                          return (
+                            <div
+                              key={stage.key}
+                              className={cx(
+                                "flex items-center justify-between rounded-lg px-2.5 py-2",
+                                isCurrent
+                                  ? "bg-brand-50 text-brand-700"
+                                  : isPassed
+                                    ? "bg-emerald-50/60 text-emerald-700"
+                                    : "bg-ink/[0.02] text-ink-faint",
+                              )}
+                            >
+                              <span className="flex items-center gap-2 text-[10.5px] font-medium">
+                                <span
+                                  className={cx(
+                                    "h-2 w-2 rounded-full",
+                                    isCurrent
+                                      ? "bg-brand-500"
+                                      : isPassed
+                                        ? "bg-emerald-500"
+                                        : "bg-line",
+                                  )}
+                                />
+                                {stage.label}
+                              </span>
+
+                              {isCurrent && (
+                                <Badge tone="neutral">Current</Badge>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {nextStageAllowed && nextStage && (
+                        <Button
+                          size="sm"
+                          isLoading={stageMutationPending}
+                          onClick={() =>
+                            onMoveStage(selectedCandidate, nextStage)
+                          }
+                          className="col-span-2"
+                        >
+                          Move to {getStageLabel(nextStage)}
+                        </Button>
+                      )}
+
+                      {selectedCandidate.stage === "INTERVIEW" &&
+                        (selectedCandidate.finalResult ?? "PENDING") ===
+                          "PENDING" && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            isLoading={selectCandidatePending}
+                            onClick={() => onSelectCandidate(selectedCandidate)}
+                            leftIcon={<UserCheck size={12} />}
+                            className="col-span-2"
+                          >
+                            Select Candidate
+                          </Button>
+                        )}
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onScheduleInterview(selectedCandidate)}
+                        leftIcon={<Calendar size={12} />}
+                      >
+                        Interview
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onOpenAtsTools(selectedCandidate)}
+                        leftIcon={<ClipboardCheck size={12} />}
+                      >
+                        ATS Tools
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onLifecycle(selectedCandidate)}
+                        leftIcon={<FileText size={12} />}
+                      >
+                        Lifecycle
+                      </Button>
+
+                      {(selectedCandidate.finalResult === "SELECTED" ||
+                        selectedCandidate.stage === "OFFER") && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => onOffer(selectedCandidate)}
+                          leftIcon={<Send size={12} />}
+                          className="col-span-2"
+                        >
+                          {(
+                            selectedCandidate as Candidate & {
+                              offer?: { offerUrl?: string | null };
+                            }
+                          ).offer?.offerUrl
+                            ? "View / Manage Offer"
+                            : "Generate Offer"}
+                        </Button>
+                      )}
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onRunAiScreen(selectedCandidate)}
+                        isLoading={false}
+                        leftIcon={<Sparkles size={12} />}
+                        className="col-span-2"
+                      >
+                        {selectedFitScore != null
+                          ? "Re-screen with AI"
+                          : "AI Screen Candidate"}
+                      </Button>
+
+                      {selectedScreening?.screening && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onViewAiDetails(selectedScreening)}
+                          className="col-span-2"
+                        >
+                          View AI Screening Details
+                        </Button>
+                      )}
+
+                      {selectedCandidate.stage === "INTERVIEW" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            onRunAiInterviewCopilot(selectedCandidate)
+                          }
+                          leftIcon={<Sparkles size={12} />}
+                          className="col-span-2 border-brand-200 text-brand-700"
+                        >
+                          AI Interview Copilot
+                        </Button>
+                      )}
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onEditCandidate(selectedCandidate)}
+                      >
+                        Edit
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onDeleteCandidate(selectedCandidate)}
+                        className="border-red-200 text-red-600 hover:bg-red-50"
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex min-h-[520px] items-center justify-center p-8 text-center">
+                  <div>
+                    <Users size={28} className="mx-auto text-ink-faint" />
+                    <p className="mt-2 text-[13px] font-medium text-ink">
+                      No candidate selected
+                    </p>
+                    <p className="mt-1 text-[11px] text-ink-faint">
+                      Add a candidate or select one from the list.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {activeTab === "PIPELINE" && (
+        <div className="rounded-2xl border border-line/70 bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 px-4 py-3">
+            <div>
+              <p className="text-[13px] font-semibold text-ink">
+                Pipeline Summary
+              </p>
+              <p className="mt-0.5 text-[10.5px] text-ink-faint">
+                {counts.APPLIED} Applied · {counts.SCREENING} Screening ·{" "}
+                {counts.INTERVIEW} Interview · {counts.OFFER} Offer ·{" "}
+                {counts.HIRED} Hired · {counts.REJECTED} Rejected
+              </p>
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onTabChange("CANDIDATES")}
+            >
+              View Candidates
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-6">
+            {STAGES.map((stage) => (
+              <button
+                key={stage.key}
+                type="button"
+                onClick={() => {
+                  onTabChange("CANDIDATES");
+                }}
+                className="rounded-xl border border-line/70 bg-ink/[0.015] p-3 text-left transition hover:border-brand-200 hover:bg-brand-50/30"
+              >
+                <p className="text-[10px] text-ink-faint">{stage.label}</p>
+                <p className="mt-1 text-lg font-semibold text-ink">
+                  {counts[stage.key]}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+
+type AtsCommunication = {
+  id: string; channel: "EMAIL" | "PHONE" | "NOTE"; subject: string; message: string; createdAt: string;
+};
+type AtsAssessment = {
+  id: string; name: string; score: number; maxScore: number; status: "COMPLETED" | "PENDING"; notes: string; createdAt: string;
+};
+type AtsTimelineItem = { id: string; title: string; description?: string; createdAt: string };
+type AtsLocalData = {
+  communications: AtsCommunication[]; assessments: AtsAssessment[]; tags: string[]; talentPool: boolean; timeline: AtsTimelineItem[];
+};
+const atsEmpty = (): AtsLocalData => ({ communications: [], assessments: [], tags: [], talentPool: false, timeline: [] });
+const atsKey = (id: string) => `aadhyaraj-hrms:recruitment:ats:${id}`;
+function readAtsData(id: string): AtsLocalData {
+  if (typeof window === "undefined") return atsEmpty();
+  try {
+    const raw = window.localStorage.getItem(atsKey(id));
+    if (!raw) return atsEmpty();
+    const value = JSON.parse(raw) as Partial<AtsLocalData>;
+    return {
+      communications: Array.isArray(value.communications) ? value.communications : [],
+      assessments: Array.isArray(value.assessments) ? value.assessments : [],
+      tags: Array.isArray(value.tags) ? value.tags : [],
+      talentPool: value.talentPool === true,
+      timeline: Array.isArray(value.timeline) ? value.timeline : [],
+    };
+  } catch { return atsEmpty(); }
+}
+function writeAtsData(id: string, value: AtsLocalData) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(atsKey(id), JSON.stringify(value)); } catch { /* ignore */ }
+}
+
+type RecruitmentAtsToolsModalProps = {
+  open: boolean; candidate: Candidate; job: RecruitmentJob; candidates: Candidate[];
+  onClose: () => void; onScheduleInterview: () => void;
+  onSelectCandidate: (candidate: Candidate) => void; onOpenPipelineCompare: () => void;
+};
+
+function RecruitmentAtsToolsModal({
+  open, candidate, job, candidates, onClose, onScheduleInterview, onSelectCandidate, onOpenPipelineCompare,
+}: RecruitmentAtsToolsModalProps) {
+  type Tab = "SCORECARD" | "TIMELINE" | "SCHEDULING" | "COMMUNICATION" | "DUPLICATES" | "COMPARE" | "ASSESSMENTS" | "TAGS" | "TALENT_POOL" | "ANALYTICS";
+  const [tab, setTab] = useState<Tab>("SCORECARD");
+  const [data, setData] = useState<AtsLocalData>(() => readAtsData(candidate.id));
+  const [channel, setChannel] = useState<AtsCommunication["channel"]>("EMAIL");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [assessmentName, setAssessmentName] = useState("");
+  const [assessmentScore, setAssessmentScore] = useState("");
+  const [assessmentMax, setAssessmentMax] = useState("100");
+  const [assessmentStatus, setAssessmentStatus] = useState<AtsAssessment["status"]>("COMPLETED");
+  const [assessmentNotes, setAssessmentNotes] = useState("");
+  const [tag, setTag] = useState("");
+  const [compareIds, setCompareIds] = useState<string[]>([candidate.id]);
+
+  const { data: interviews = [], isLoading: interviewsLoading } = useQuery({
+    queryKey: ["ats-tools-interviews", candidate.id],
+    queryFn: () => RecruitmentApi.interviews(candidate.id),
+    enabled: open,
+  });
+
+  useEffect(() => {
+    setData(readAtsData(candidate.id)); setTab("SCORECARD"); setCompareIds([candidate.id]);
+  }, [candidate.id]);
+  useEffect(() => { writeAtsData(candidate.id, data); }, [candidate.id, data]);
+
+  const c = candidate as ScreeningCandidate;
+  const fit = c.jobFitScore ?? c.screening?.score ?? null;
+  const duplicateIds = getDuplicateCandidateIds(candidates);
+  const duplicates = candidates.filter((x) => x.id !== candidate.id && duplicateIds.has(x.id));
+  const saveCommunication = () => {
+    if (!message.trim()) return;
+    const now = new Date().toISOString();
+    const item: AtsCommunication = { id: String(Date.now()), channel, subject: subject.trim(), message: message.trim(), createdAt: now };
+    setData((x) => ({ ...x, communications: [item, ...x.communications], timeline: [{ id: `${item.id}-t`, title: `${channel} communication logged`, description: item.subject || item.message.slice(0, 100), createdAt: now }, ...x.timeline].slice(0, 100) }));
+    setSubject(""); setMessage("");
+  };
+  const addAssessment = () => {
+    const score = Number(assessmentScore), maxScore = Number(assessmentMax);
+    if (!assessmentName.trim() || !Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0) return;
+    const now = new Date().toISOString();
+    const item: AtsAssessment = { id: String(Date.now()), name: assessmentName.trim(), score, maxScore, status: assessmentStatus, notes: assessmentNotes.trim(), createdAt: now };
+    setData((x) => ({ ...x, assessments: [item, ...x.assessments], timeline: [{ id: `${item.id}-t`, title: `Assessment added: ${item.name}`, description: `${item.score}/${item.maxScore}`, createdAt: now }, ...x.timeline].slice(0, 100) }));
+    setAssessmentName(""); setAssessmentScore(""); setAssessmentMax("100"); setAssessmentNotes("");
+  };
+  const addTag = () => {
+    const value = tag.trim();
+    if (!value || data.tags.some((x) => x.toLowerCase() === value.toLowerCase())) return;
+    setData((x) => ({ ...x, tags: [...x.tags, value], timeline: [{ id: `${Date.now()}-tag`, title: `Tag added: ${value}`, createdAt: new Date().toISOString() }, ...x.timeline].slice(0, 100) }));
+    setTag("");
+  };
+  const toggleTalentPool = () => {
+    const next = !data.talentPool;
+    setData((x) => ({ ...x, talentPool: next, timeline: [{ id: `${Date.now()}-pool`, title: next ? "Added to Talent Pool" : "Removed from Talent Pool", createdAt: new Date().toISOString() }, ...x.timeline].slice(0, 100) }));
+  };
+  const toggleCompare = (id: string) => setCompareIds((x) => x.includes(id) ? x.filter((v) => v !== id) : x.length < 3 ? [...x, id] : x);
+  const compare = candidates.filter((x) => compareIds.includes(x.id));
+  const counts = Object.fromEntries(STAGES.map((s) => [s.key, candidates.filter((x) => x.stage === s.key).length])) as Record<Candidate["stage"], number>;
+  const screened = candidates.filter((x) => { const y = x as ScreeningCandidate; return y.jobFitScore != null || y.screening?.score != null; }).length;
+  const avgFit = candidates.length ? Math.round(candidates.reduce((sum,x) => { const y=x as ScreeningCandidate; return sum+(y.jobFitScore??y.screening?.score??0); },0)/candidates.length) : 0;
+  const hireRate = candidates.length ? Math.round((counts.HIRED/candidates.length)*100) : 0;
+  const avgAge = candidates.length ? Math.round(candidates.reduce((sum,x)=>{const t=new Date(x.appliedAt).getTime();return sum+(Number.isFinite(t)?Math.max(0,Date.now()-t):0)},0)/candidates.length/86400000) : 0;
+  const sourceCounts = Array.from(candidates.reduce((m,x)=>{const k=x.source||"Direct";m.set(k,(m.get(k)??0)+1);return m;},new Map<string,number>())).sort((a,b)=>b[1]-a[1]);
+  const timeline: AtsTimelineItem[] = [
+    { id:"application", title:"Application received", description:`${candidate.source||"Direct"} • ${job.title}`, createdAt:candidate.appliedAt },
+    ...(c.screening?.evaluatedAt ? [{id:"screening",title:"AI screening completed",description:fit!=null?`Fit score ${fit}%`:undefined,createdAt:c.screening.evaluatedAt}] : []),
+    ...interviews.map(x=>({id:`i-${x.id}`,title:x.completed?`${x.round} completed`:`${x.round} scheduled`,description:x.meetingLink?"Video interview available":undefined,createdAt:x.scheduledAt})),
+    ...data.timeline,
+  ].sort((a,b)=>new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime());
+
+  const tabs: Array<[Tab,string,ReactNode]> = [
+    ["SCORECARD","Scorecard",<ClipboardCheck size={14}/>],["TIMELINE","Timeline",<History size={14}/>],["SCHEDULING","Scheduling",<Calendar size={14}/>],
+    ["COMMUNICATION","Communication",<Mail size={14}/>],["DUPLICATES","Duplicates",<Copy size={14}/>],["COMPARE","Compare",<GitCompare size={14}/>],
+    ["ASSESSMENTS","Assessments",<ClipboardCheck size={14}/>],["TAGS","Tags",<Tags size={14}/>],["TALENT_POOL","Talent Pool",<UserRoundPlus size={14}/>],["ANALYTICS","Analytics",<BarChart3 size={14}/>],
+  ];
+
+  let content: ReactNode = null;
+  if (tab === "SCORECARD") content = <div className="space-y-3">
+    <div className="rounded-xl border border-brand-100 bg-brand-50/50 p-3"><p className="text-[12px] font-semibold text-ink">Structured Interview Scorecards</p><p className="mt-1 text-[10.5px] text-ink-faint">Interview feedback now supports structured 1–5 criteria.</p></div>
+    {interviewsLoading ? <Skeleton className="h-20 rounded-xl"/> : interviews.length ? interviews.map(x=>{const y=x as Interview & {scorecard?:Array<{criterion:string;score:number;comment?:string}>};return <div key={x.id} className="rounded-xl border border-line/70 p-3"><div className="flex justify-between gap-2"><div><p className="text-[12px] font-semibold">{x.round}</p><p className="text-[10px] text-ink-faint">{formatDate(x.scheduledAt)}</p></div><Badge tone={x.completed?"success":"warning"}>{x.completed?"Completed":"Scheduled"}</Badge></div>{y.scorecard?.length?<div className="mt-2 grid gap-2 sm:grid-cols-2">{y.scorecard.map(s=><div key={s.criterion} className="rounded-lg bg-surface p-2"><span className="text-[10.5px]">{s.criterion}</span><Badge tone={s.score>=4?"success":s.score<=2?"warning":"neutral"}>{s.score}/5</Badge>{s.comment&&<p className="mt-1 text-[10px] text-ink-faint">{s.comment}</p>}</div>)}</div>:<p className="mt-2 text-[10.5px] text-ink-faint">No scorecard submitted.</p>}{!x.completed&&<Button size="sm" className="mt-2" onClick={onScheduleInterview}>Open interview feedback</Button>}</div>}) : <div className="rounded-xl border border-dashed border-line p-5 text-center"><p className="text-[12px] font-semibold">No interview yet</p><Button size="sm" className="mt-2" onClick={onScheduleInterview}>Schedule interview</Button></div>}
+  </div>;
+  else if (tab === "TIMELINE") content = <div className="space-y-2">{timeline.map(x=><div key={x.id} className="flex gap-3 rounded-xl border border-line/60 p-3"><span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-brand-500"/><div className="flex-1"><div className="flex justify-between gap-2"><p className="text-[11.5px] font-semibold">{x.title}</p><span className="text-[10px] text-ink-faint">{formatDate(x.createdAt)}</span></div>{x.description&&<p className="mt-1 text-[10.5px] text-ink-faint">{x.description}</p>}</div></div>)}</div>;
+  else if (tab === "SCHEDULING") content = <div className="space-y-3"><div className="flex justify-between gap-2"><div><p className="text-[12px] font-semibold">Interview Calendar</p><p className="text-[10.5px] text-ink-faint">Uses the existing HRMS interview scheduling API.</p></div><Button size="sm" onClick={onScheduleInterview} leftIcon={<Calendar size={12}/>}>Schedule interview</Button></div>{interviews.map(x=><div key={x.id} className="rounded-xl border border-line/70 p-3"><div className="flex justify-between"><span className="text-[11.5px] font-semibold">{x.round}</span><Badge tone={x.completed?"success":"warning"}>{x.completed?"Completed":"Upcoming"}</Badge></div><p className="mt-1 text-[10.5px] text-ink-faint">{formatDate(x.scheduledAt)}</p>{x.meetingLink&&<a href={x.meetingLink} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10.5px] text-brand-600"><Video size={12}/>Join meeting<ExternalLink size={10}/></a>}</div>)}</div>;
+  else if (tab === "COMMUNICATION") content = <div className="space-y-3"><div className="grid gap-2 sm:grid-cols-[130px_1fr]"><SelectField label="Channel" value={channel} onChange={e=>setChannel(e.target.value as AtsCommunication["channel"])}><option value="EMAIL">Email</option><option value="PHONE">Phone</option><option value="NOTE">Internal Note</option></SelectField><TextField label="Subject" value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Interview invitation"/></div><textarea value={message} onChange={e=>setMessage(e.target.value)} rows={4} placeholder="Log communication..." className="w-full rounded-xl border border-line px-3 py-2.5 text-[12px]"/><div className="flex gap-2"><Button size="sm" onClick={saveCommunication} disabled={!message.trim()} leftIcon={<Save size={12}/>}>Save log</Button>{candidate.email&&<a className="inline-flex h-9 items-center gap-1 rounded-lg border border-line px-3 text-[11px]" href={`mailto:${candidate.email}`}><Mail size={12}/>Open email</a>}</div>{data.communications.map(x=><div key={x.id} className="rounded-xl border border-line/60 p-3"><div className="flex justify-between"><Badge tone="neutral">{x.channel}</Badge><span className="text-[10px] text-ink-faint">{formatDate(x.createdAt)}</span></div>{x.subject&&<p className="mt-2 text-[11.5px] font-semibold">{x.subject}</p>}<p className="mt-1 whitespace-pre-wrap text-[10.5px] text-ink-soft">{x.message}</p></div>)}</div>;
+  else if (tab === "DUPLICATES") content = <div className="space-y-3"><div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><p className="text-[12px] font-semibold text-amber-900">Duplicate Detection</p><p className="mt-1 text-[10.5px] text-amber-800">Uses existing duplicate logic. Merge is not triggered because no merge endpoint exists in the current API.</p></div>{duplicates.length?duplicates.map(x=><div key={x.id} className="flex items-center justify-between rounded-xl border p-3"><div><p className="text-[12px] font-semibold">{x.firstName} {x.lastName}</p><p className="text-[10.5px] text-ink-faint">{x.email} • {x.source||"Direct"}</p></div><Button size="sm" variant="outline" onClick={()=>onSelectCandidate(x)}>View</Button></div>):<div className="p-6 text-center"><CheckCircle2 size={22} className="mx-auto text-emerald-600"/><p className="mt-2 text-[12px] font-semibold">No duplicate match found</p></div>}</div>;
+  else if (tab === "COMPARE") content = <div className="space-y-3"><div className="flex justify-between gap-2"><p className="text-[12px] font-semibold">Candidate Comparison</p><Button size="sm" variant="outline" onClick={onOpenPipelineCompare} leftIcon={<GitCompare size={12}/>}>Pipeline compare</Button></div><div className="grid gap-2 sm:grid-cols-2">{candidates.map(x=><label key={x.id} className="flex items-center gap-2 rounded-lg border p-2"><input type="checkbox" checked={compareIds.includes(x.id)} onChange={()=>toggleCompare(x.id)} className="h-4 w-4 accent-brand-600"/><span className="text-[11px]">{x.firstName} {x.lastName}</span></label>)}</div><div className="overflow-x-auto"><table className="w-full min-w-[600px] text-[11px]"><thead><tr className="border-b"><th className="p-2 text-left">Metric</th>{compare.map(x=><th key={x.id} className="p-2 text-left">{x.firstName} {x.lastName}</th>)}</tr></thead><tbody>{[["Stage",(x:Candidate)=>x.stage],["AI Match",(x:Candidate)=>{const y=x as ScreeningCandidate;return y.jobFitScore??y.screening?.score??"—";}],["Experience",(x:Candidate)=>(x as ScreeningCandidate).experience??"—"],["Rating",(x:Candidate)=>x.rating??0],["Source",(x:Candidate)=>x.source||"Direct"]].map(([label,get])=><tr key={String(label)} className="border-b border-line/50"><td className="p-2 text-ink-faint">{String(label)}</td>{compare.map(x=><td key={x.id} className="p-2 font-medium">{String((get as (x:Candidate)=>unknown)(x))}</td>)}</tr>)}</tbody></table></div></div>;
+  else if (tab === "ASSESSMENTS") content = <div className="space-y-3"><div className="grid gap-2 sm:grid-cols-2"><TextField label="Assessment" value={assessmentName} onChange={e=>setAssessmentName(e.target.value)} placeholder="Coding test"/><SelectField label="Status" value={assessmentStatus} onChange={e=>setAssessmentStatus(e.target.value as AtsAssessment["status"])}><option value="COMPLETED">Completed</option><option value="PENDING">Pending</option></SelectField><TextField label="Score" type="number" value={assessmentScore} onChange={e=>setAssessmentScore(e.target.value)}/><TextField label="Max score" type="number" value={assessmentMax} onChange={e=>setAssessmentMax(e.target.value)}/></div><textarea value={assessmentNotes} onChange={e=>setAssessmentNotes(e.target.value)} rows={3} placeholder="Assessment notes..." className="w-full rounded-xl border border-line px-3 py-2.5 text-[12px]"/><Button size="sm" onClick={addAssessment} leftIcon={<PlusCircle size={12}/>}>Add assessment</Button>{data.assessments.map(x=><div key={x.id} className="rounded-xl border border-line/60 p-3"><div className="flex justify-between"><span className="text-[11.5px] font-semibold">{x.name}</span><Badge tone={x.status==="COMPLETED"?"success":"warning"}>{x.status==="COMPLETED"?`${x.score}/${x.maxScore}`:"Pending"}</Badge></div>{x.notes&&<p className="mt-1 text-[10.5px] text-ink-faint">{x.notes}</p>}</div>)}</div>;
+  else if (tab === "TAGS") content = <div className="space-y-3"><div className="flex flex-wrap gap-2">{data.tags.map(x=><span key={x} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-[10.5px] font-semibold text-brand-700">{x}<button type="button" onClick={()=>setData(d=>({...d,tags:d.tags.filter(t=>t!==x)}))}><X size={10}/></button></span>)}</div><div className="flex gap-2"><input value={tag} onChange={e=>setTag(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addTag();}}} placeholder="Immediate Joiner, Python..." className="h-9 flex-1 rounded-lg border px-3 text-[11px]"/><Button size="sm" onClick={addTag}>Add tag</Button></div></div>;
+  else if (tab === "TALENT_POOL") content = <div className="space-y-4"><div className="rounded-xl border p-4"><div className="flex justify-between gap-3"><div><p className="text-[13px] font-semibold">Talent Pool</p><p className="mt-1 text-[11px] text-ink-faint">Keep strong candidates available for future roles.</p></div><Badge tone={data.talentPool?"success":"neutral"}>{data.talentPool?"In Talent Pool":"Not Added"}</Badge></div><Button size="sm" className="mt-4" onClick={toggleTalentPool} leftIcon={<UserRoundPlus size={12}/>}>{data.talentPool?"Remove from Talent Pool":"Add to Talent Pool"}</Button></div><div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3"><p className="text-[11px] font-semibold">Role skills</p><div className="mt-2 flex flex-wrap gap-1.5">{(job.skills??[]).map(x=><Badge key={x} tone="neutral">{x}</Badge>)}</div></div></div>;
+  else { content = <div className="space-y-4"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{[["Applications",candidates.length],["Screened",screened],["Interviews",counts.INTERVIEW],["Hired",counts.HIRED]].map(([k,v])=><div key={String(k)} className="rounded-xl border p-3"><p className="text-[10px] text-ink-faint">{String(k)}</p><p className="mt-1 text-lg font-semibold">{String(v)}</p></div>)}</div><div className="grid gap-2 sm:grid-cols-3"><div className="rounded-xl border p-3"><p className="text-[10px] text-ink-faint">Hire conversion</p><p className="text-lg font-semibold">{hireRate}%</p></div><div className="rounded-xl border p-3"><p className="text-[10px] text-ink-faint">Average AI fit</p><p className="text-lg font-semibold">{avgFit}%</p></div><div className="rounded-xl border p-3"><p className="text-[10px] text-ink-faint">Avg application age</p><p className="text-lg font-semibold">{avgAge} days</p></div></div><div className="rounded-xl border p-3"><p className="text-[12px] font-semibold">Source mix</p>{sourceCounts.map(([k,v])=><div key={k} className="mt-2 flex justify-between text-[10.5px]"><span>{k}</span><span className="font-semibold">{v}</span></div>)}</div><div className="rounded-xl border p-3"><p className="text-[12px] font-semibold">Pipeline</p><div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">{STAGES.map(s=><div key={s.key} className="rounded-lg bg-surface p-2"><span className="text-[10px] text-ink-faint">{s.label}</span><p className="font-semibold">{counts[s.key]}</p></div>)}</div></div><p className="text-[10px] text-ink-faint">Analytics are calculated from the current job candidate dataset.</p></div>; }
+
+  return <Modal open={open} onClose={onClose} title={`ATS Toolkit — ${candidate.firstName} ${candidate.lastName}`} size="lg">
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-1.5 rounded-xl border border-line/70 bg-surface/40 p-2">{tabs.map(([key,label,icon])=><button key={key} type="button" onClick={()=>setTab(key)} className={cx("inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[10.5px] font-semibold",tab===key?"bg-brand-600 text-white":"text-ink-faint hover:bg-white hover:text-ink")}>{icon}{label}</button>)}</div>
+      <div className="max-h-[68vh] overflow-y-auto pr-1">{content}</div>
+    </div>
+  </Modal>;
+}
+
+function WorkspaceMetric({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-line/70 bg-white px-3 py-3 shadow-sm">
+      <div className="flex items-center gap-2 text-ink-faint">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+          {icon}
+        </span>
+        <span className="text-[10.5px] font-medium">{label}</span>
+      </div>
+      <p className="mt-2 text-lg font-semibold text-ink">{value}</p>
+    </div>
+  );
+}
 
 /* =========================================================
    REQUISITION PANEL
@@ -3475,6 +4515,13 @@ function ScheduleInterviewModal({
     } | null>(null);
 
   const [feedbackText, setFeedbackText] = useState("");
+  const [scorecard, setScorecard] = useState<Array<{ criterion: string; score: number; comment: string }>>([
+    { criterion: "Technical Skills", score: 0, comment: "" },
+    { criterion: "Problem Solving", score: 0, comment: "" },
+    { criterion: "Communication", score: 0, comment: "" },
+    { criterion: "Role Knowledge", score: 0, comment: "" },
+    { criterion: "Culture / Team Fit", score: 0, comment: "" },
+  ]);
 
   const [recommendation, setRecommendation] = useState<
     "STRONG_YES" | "YES" | "NO" | "STRONG_NO"
@@ -3534,11 +4581,17 @@ function ScheduleInterviewModal({
       id: string;
       feedback: string;
       recommendation: "STRONG_YES" | "YES" | "NO" | "STRONG_NO";
+      scorecard?: Array<{
+        criterion: string;
+        score: number;
+        comment?: string;
+      }>;
     }) =>
       RecruitmentApi.submitFeedback(
         input.id,
         input.feedback,
         input.recommendation,
+        input.scorecard ?? [],
       ),
 
     onSuccess: () => {
@@ -3815,6 +4868,23 @@ function ScheduleInterviewModal({
                           <option value="STRONG_NO">Strong No</option>
                         </SelectField>
 
+                        <div className="rounded-xl border border-line/70 bg-surface/40 p-3">
+                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Interview Scorecard</p>
+                          <div className="space-y-2">
+                            {scorecard.map((item, index) => (
+                              <div key={item.criterion} className="rounded-lg border border-line/60 bg-white p-2.5">
+                                <div className="grid gap-2 md:grid-cols-[1.2fr_105px_1.4fr] md:items-center">
+                                  <span className="text-[11px] font-medium text-ink">{item.criterion}</span>
+                                  <SelectField label="" value={String(item.score)} onChange={(event) => setScorecard((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, score: Number(event.target.value) } : entry))}>
+                                    <option value="0">Not rated</option><option value="1">1 / 5</option><option value="2">2 / 5</option><option value="3">3 / 5</option><option value="4">4 / 5</option><option value="5">5 / 5</option>
+                                  </SelectField>
+                                  <input value={item.comment} onChange={(event) => setScorecard((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, comment: event.target.value } : entry))} placeholder="Optional comment" className="h-9 w-full rounded-lg border border-line bg-white px-2.5 text-[11px] outline-none focus:border-brand-500" />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
                         <div className="flex gap-2">
                           <Button
                             size="sm"
@@ -3843,6 +4913,11 @@ function ScheduleInterviewModal({
                                 id: interview.id,
                                 feedback: feedbackText.trim(),
                                 recommendation,
+                                scorecard: scorecard.filter((item) => item.score > 0).map((item) => ({
+                                  criterion: item.criterion,
+                                  score: item.score,
+                                  comment: item.comment.trim() || undefined,
+                                })),
                               });
                             }}
                           >
