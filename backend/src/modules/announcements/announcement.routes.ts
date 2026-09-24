@@ -7,7 +7,10 @@ import {
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
+import {
+  upload,
+  UPLOADS_PUBLIC_PATH,
+} from "@/middleware/upload";
 
 import type { AuthUser } from "@/types/express";
 
@@ -34,7 +37,10 @@ announcementRouter.use(authenticate);
    CONSTANTS
 ========================================================= */
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"] as const;
+const ADMIN_ROLES = [
+  "SUPER_ADMIN",
+  "HR_ADMIN",
+] as const;
 
 const ANNOUNCEMENT_TYPES = [
   "HOLIDAY_NOTICE",
@@ -70,19 +76,31 @@ const ANNOUNCEMENT_CHANNELS = [
    HELPERS
 ========================================================= */
 
-function parseBoolean(value: unknown): boolean | undefined {
-  if (value === true || value === "true" || value === "1") {
+function parseBoolean(
+  value: unknown,
+): boolean | undefined {
+  if (
+    value === true ||
+    value === "true" ||
+    value === "1"
+  ) {
     return true;
   }
 
-  if (value === false || value === "false" || value === "0") {
+  if (
+    value === false ||
+    value === "false" ||
+    value === "0"
+  ) {
     return false;
   }
 
   return undefined;
 }
 
-function parseStringArray(value: unknown): string[] {
+function parseStringArray(
+  value: unknown,
+): string[] {
   if (Array.isArray(value)) {
     return value
       .map(String)
@@ -117,16 +135,23 @@ function parseStringArray(value: unknown): string[] {
   return [];
 }
 
-function hasAdminAccess(user: AuthUser) {
+function hasAdminAccess(
+  user: AuthUser,
+) {
   const role = String(user.role);
-  return ADMIN_ROLES.includes(role as (typeof ADMIN_ROLES)[number]);
+
+  return ADMIN_ROLES.includes(
+    role as (typeof ADMIN_ROLES)[number],
+  );
 }
 
 /* =========================================================
    DATE VALIDATION HELPERS
 ========================================================= */
 
-function isValidDateString(value?: string): boolean {
+function isValidDateString(
+  value?: string,
+): boolean {
   if (!value) {
     return false;
   }
@@ -145,15 +170,24 @@ function validateCalendarDates(
     return "Calendar events require an event start date and time.";
   }
 
-  if (eventStartAt && !isValidDateString(eventStartAt)) {
+  if (
+    eventStartAt &&
+    !isValidDateString(eventStartAt)
+  ) {
     return "Invalid calendar event start date and time.";
   }
 
-  if (eventEndAt && !isValidDateString(eventEndAt)) {
+  if (
+    eventEndAt &&
+    !isValidDateString(eventEndAt)
+  ) {
     return "Invalid calendar event end date and time.";
   }
 
-  if (eventStartAt && eventEndAt) {
+  if (
+    eventStartAt &&
+    eventEndAt
+  ) {
     const start = new Date(eventStartAt).getTime();
     const end = new Date(eventEndAt).getTime();
 
@@ -165,7 +199,9 @@ function validateCalendarDates(
   return null;
 }
 
-function validateFutureScheduledAt(scheduledAt?: string): string | null {
+function validateFutureScheduledAt(
+  scheduledAt?: string,
+): string | null {
   if (!scheduledAt) {
     return null;
   }
@@ -183,44 +219,81 @@ function validateFutureScheduledAt(scheduledAt?: string): string | null {
   return null;
 }
 
+
 /* =========================================================
    CREATE SCHEMA
 ========================================================= */
 
-const createAnnouncementSchema = z.object({
-  title: z.string().trim().min(3).max(200),
+const createAnnouncementSchema =
+  z.object({
+    title: z
+      .string()
+      .trim()
+      .min(3)
+      .max(200),
 
-  body: z.string().trim().min(5).max(10000),
+    body: z
+      .string()
+      .trim()
+      .min(5)
+      .max(10000),
 
-  type: z.enum(ANNOUNCEMENT_TYPES),
+    type: z.enum(
+      ANNOUNCEMENT_TYPES,
+    ),
 
-  audience: z.enum(ANNOUNCEMENT_AUDIENCES),
+    audience: z.enum(
+      ANNOUNCEMENT_AUDIENCES,
+    ),
 
-  pinned: z.boolean().optional(),
+    pinned:
+      z.boolean().optional(),
 
-  scheduledAt: z.string().optional(),
+    scheduledAt:
+      z.string().optional(),
 
-  showBanner: z.boolean().optional(),
+    showBanner:
+      z.boolean().optional(),
 
-  requiresAcknowledgement: z.boolean().optional(),
+    requiresAcknowledgement:
+      z.boolean().optional(),
 
-  channels: z.array(z.enum(ANNOUNCEMENT_CHANNELS)).optional(),
+    channels:
+      z
+        .array(
+          z.enum(
+            ANNOUNCEMENT_CHANNELS,
+          ),
+        )
+        .optional(),
 
-  departments: z.array(z.string()).optional(),
+    departments:
+      z
+        .array(z.string())
+        .optional(),
 
-  locations: z.array(z.string()).optional(),
+    locations:
+      z
+        .array(z.string())
+        .optional(),
 
-  targetRoles: z.array(z.string()).optional(),
+    targetRoles:
+      z
+        .array(z.string())
+        .optional(),
 
-  calendarEnabled: z.boolean().optional(),
+    calendarEnabled:
+      z.boolean().optional(),
 
-  eventStartAt: z.string().optional(),
+    eventStartAt:
+      z.string().optional(),
 
-  eventEndAt: z.string().optional(),
+    eventEndAt:
+      z.string().optional(),
 
-  eventLocation: z.string().max(500).optional(),
-  expiryDays: z.coerce.number().int().min(1).max(365).optional(),
-});
+    eventLocation:
+      z.string().max(500).optional(),
+  });
 
 /* =========================================================
    CREATE ANNOUNCEMENT
@@ -230,7 +303,11 @@ announcementRouter.post(
   "/",
   upload.single("attachment"),
 
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       /* ---------------------------------------------------
          AUTHENTICATION
@@ -239,7 +316,8 @@ announcementRouter.post(
       if (!req.user) {
         return res.status(401).json({
           error: {
-            message: "Unauthorized",
+            message:
+              "Unauthorized",
           },
         });
       }
@@ -248,10 +326,15 @@ announcementRouter.post(
          ADMIN CHECK
       --------------------------------------------------- */
 
-      if (!(await hasAdminAccess(req.user))) {
+      if (
+        !hasAdminAccess(
+          req.user,
+        )
+      ) {
         return res.status(403).json({
           error: {
-            message: "You are not authorized to create announcements",
+            message:
+              "You are not authorized to create announcements",
           },
         });
       }
@@ -263,7 +346,8 @@ announcementRouter.post(
       if (!req.user.employeeId) {
         return res.status(401).json({
           error: {
-            message: "Employee not found",
+            message:
+              "Employee not found",
           },
         });
       }
@@ -272,13 +356,21 @@ announcementRouter.post(
          PARSE FORM DATA
       --------------------------------------------------- */
 
-      const pinned = parseBoolean(req.body.pinned);
+      const pinned =
+        parseBoolean(
+          req.body.pinned,
+        );
 
-      const showBanner = parseBoolean(req.body.showBanner);
+      const showBanner =
+        parseBoolean(
+          req.body.showBanner,
+        );
 
-      const requiresAcknowledgement = parseBoolean(
-        req.body.requiresAcknowledgement,
-      );
+      const requiresAcknowledgement =
+        parseBoolean(
+          req.body
+            .requiresAcknowledgement,
+        );
 
       /* ---------------------------------------------------
          NOTIFICATION CHANNELS
@@ -290,27 +382,18 @@ announcementRouter.post(
          Normalize both.
       --------------------------------------------------- */
 
-      const requestedChannels = parseStringArray(
-        req.body.channels ?? req.body.notificationMethods,
-      );
+      const requestedChannels =
+        parseStringArray(
+          req.body.channels ??
+            req.body.notificationMethods,
+        );
 
       // IN_APP is the safe default when no channel is selected.
       // Never allow an empty channel array to silently disable delivery.
-      const channels = Array.from(
-        new Set(
-          (requestedChannels.length > 0 ? requestedChannels : ["IN_APP"])
-            .map((channel) => String(channel).trim().toUpperCase())
-            .filter(Boolean),
-        ),
-      );
-
-      if (channels.length === 0) {
-        return res.status(400).json({
-          error: {
-            message: "At least one notification channel is required.",
-          },
-        });
-      }
+      const channels =
+        requestedChannels.length > 0
+          ? requestedChannels
+          : ["IN_APP"];
 
       /* ---------------------------------------------------
          CALENDAR
@@ -323,35 +406,51 @@ announcementRouter.post(
          CALENDAR in channels will enable it.
       --------------------------------------------------- */
 
-      const requestedCalendarEnabled = parseBoolean(req.body.calendarEnabled);
+      const requestedCalendarEnabled =
+        parseBoolean(
+          req.body.calendarEnabled,
+        );
 
-      const calendarEnabled = channels.includes("CALENDAR");
+      const calendarEnabled =
+        requestedCalendarEnabled === true ||
+        channels.includes("CALENDAR");
 
-      // BANNER is controlled by the selected notification channel.
-      const normalizedShowBanner = channels.includes("BANNER");
+      // Selecting BANNER also enables the dashboard banner.
+      const normalizedShowBanner =
+        showBanner === true ||
+        channels.includes("BANNER");
 
       const eventStartAt =
-        String(req.body.eventStartAt ?? "").trim() || undefined;
+        String(
+          req.body.eventStartAt ?? "",
+        ).trim() || undefined;
 
-      const eventEndAt = String(req.body.eventEndAt ?? "").trim() || undefined;
+      const eventEndAt =
+        String(
+          req.body.eventEndAt ?? "",
+        ).trim() || undefined;
 
       const eventLocation =
-        String(req.body.eventLocation ?? "").trim() || undefined;
+        String(
+          req.body.eventLocation ?? "",
+        ).trim() || undefined;
 
       /* ---------------------------------------------------
          CALENDAR DATE VALIDATION
       --------------------------------------------------- */
 
-      const calendarDateError = validateCalendarDates(
-        calendarEnabled,
-        eventStartAt,
-        eventEndAt,
-      );
+      const calendarDateError =
+        validateCalendarDates(
+          calendarEnabled,
+          eventStartAt,
+          eventEndAt,
+        );
 
       if (calendarDateError) {
         return res.status(400).json({
           error: {
-            message: calendarDateError,
+            message:
+              calendarDateError,
           },
         });
       }
@@ -363,20 +462,28 @@ announcementRouter.post(
          SCHEDULED -> scheduledAt required
       --------------------------------------------------- */
 
-      const publishMode = String(req.body.publishMode ?? "NOW").toUpperCase();
+      const publishMode =
+        String(
+          req.body.publishMode ?? "NOW",
+        ).toUpperCase();
 
-      if (publishMode === "SCHEDULED" && !req.body.scheduledAt) {
+      if (
+        publishMode === "SCHEDULED" &&
+        !req.body.scheduledAt
+      ) {
         return res.status(400).json({
           error: {
-            message: "Scheduled publish date and time are required.",
+            message:
+              "Scheduled publish date and time are required.",
           },
         });
       }
 
       if (publishMode === "SCHEDULED") {
-        const scheduledDateError = validateFutureScheduledAt(
-          String(req.body.scheduledAt),
-        );
+        const scheduledDateError =
+          validateFutureScheduledAt(
+            String(req.body.scheduledAt),
+          );
 
         if (scheduledDateError) {
           return res.status(400).json({
@@ -391,53 +498,72 @@ announcementRouter.post(
          TARGETING
       --------------------------------------------------- */
 
-      const departments = parseStringArray(req.body.departments);
+      const departments =
+        parseStringArray(
+          req.body.departments,
+        );
 
-      const locations = parseStringArray(req.body.locations);
+      const locations =
+        parseStringArray(
+          req.body.locations,
+        );
 
-      const targetRoles = parseStringArray(req.body.targetRoles);
+      const targetRoles =
+        parseStringArray(
+          req.body.targetRoles,
+        );
 
       /* ---------------------------------------------------
          VALIDATION
       --------------------------------------------------- */
 
-      const parsed = createAnnouncementSchema.safeParse({
-        ...req.body,
+      const parsed =
+        createAnnouncementSchema.safeParse(
+          {
+            ...req.body,
 
-        pinned,
+            pinned,
 
-        showBanner: normalizedShowBanner,
+            showBanner: normalizedShowBanner,
 
-        requiresAcknowledgement,
+            requiresAcknowledgement,
 
-        calendarEnabled,
+            calendarEnabled,
 
-        channels,
+            channels,
 
-        departments,
 
-        locations,
+            departments,
 
-        targetRoles,
+            locations,
 
-        eventStartAt,
+            targetRoles,
 
-        eventEndAt,
+            eventStartAt,
 
-        eventLocation,
-      });
+            eventEndAt,
+
+            eventLocation,
+          },
+        );
 
       if (!parsed.success) {
         console.error(
           "[Announcements] Validation failed:",
-          JSON.stringify(parsed.error.flatten(), null, 2),
+          JSON.stringify(
+            parsed.error.flatten(),
+            null,
+            2,
+          ),
         );
 
         return res.status(400).json({
           error: {
-            message: "Invalid announcement information",
+            message:
+              "Invalid announcement information",
 
-            details: parsed.error.flatten(),
+            details:
+              parsed.error.flatten(),
           },
         });
       }
@@ -446,123 +572,186 @@ announcementRouter.post(
          ATTACHMENT
       --------------------------------------------------- */
 
-      const attachment = req.file
-        ? `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`
-        : "";
+      const attachment =
+        req.file
+          ? `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`
+          : "";
 
       /* ---------------------------------------------------
          CREATE
       --------------------------------------------------- */
 
-      const announcement = await repo.createAnnouncement({
-        title: parsed.data.title,
+      const announcement =
+        await repo.createAnnouncement({
+          title:
+            parsed.data.title,
 
-        body: parsed.data.body,
+          body:
+            parsed.data.body,
 
-        type: parsed.data.type,
+          type:
+            parsed.data.type,
 
-        audience: parsed.data.audience,
+          audience:
+            parsed.data.audience,
 
-        departments: parsed.data.departments ?? [],
+          departments:
+            parsed.data
+              .departments ?? [],
 
-        locations: parsed.data.locations ?? [],
+          locations:
+            parsed.data
+              .locations ?? [],
 
-        targetRoles: parsed.data.targetRoles ?? [],
+          targetRoles:
+            parsed.data
+              .targetRoles ?? [],
 
-        pinned: parsed.data.pinned ?? false,
+          pinned:
+            parsed.data
+              .pinned ?? false,
 
-        attachment,
+          attachment,
 
-        createdBy: req.user.userId,
+          createdBy:
+            req.user.employeeId,
 
-        scheduledAt: parsed.data.scheduledAt,
+          scheduledAt:
+            parsed.data
+              .scheduledAt,
 
-        showBanner: parsed.data.showBanner ?? normalizedShowBanner,
+          showBanner:
+            parsed.data
+              .showBanner ?? normalizedShowBanner,
 
-        requiresAcknowledgement:
-          parsed.data.requiresAcknowledgement ??
-          parsed.data.type === "POLICY_UPDATE",
+          requiresAcknowledgement:
+            parsed.data
+              .requiresAcknowledgement ??
+            parsed.data.type ===
+              "POLICY_UPDATE",
 
-        channels: parsed.data.channels?.length
-          ? parsed.data.channels
-          : ["IN_APP"],
+          channels:
+  parsed.data.channels?.length
+    ? parsed.data.channels
+    : ["IN_APP"],
 
-        calendarEnabled: calendarEnabled,
+          calendarEnabled:
+            calendarEnabled,
 
-        eventStartAt: eventStartAt,
+          eventStartAt:
+            eventStartAt,
 
-        eventEndAt: eventEndAt,
+          eventEndAt:
+            eventEndAt,
 
-        eventLocation: eventLocation,
-      });
+          eventLocation:
+            eventLocation,
+        });
 
       /* ---------------------------------------------------
          NOTIFICATION FOR PUBLISHED ANNOUNCEMENT
       --------------------------------------------------- */
 
-      if (announcement && announcement.status === "PUBLISHED") {
-        const effectiveChannels = announcement.channels?.length
-          ? announcement.channels
-          : ["IN_APP"];
+      if (
+        announcement &&
+        announcement.status ===
+          "PUBLISHED"
+      ) {
+        const effectiveChannels =
+          announcement.channels?.length
+            ? announcement.channels
+            : ["IN_APP"];
 
-        console.log("[Announcements] Immediate broadcast:", {
-          title: announcement.title,
+        console.log(
+          "[Announcements] Immediate broadcast:",
+          {
+            title:
+              announcement.title,
 
-          audience: announcement.audience,
+            audience:
+              announcement.audience,
 
-          departments: announcement.departments ?? [],
+            departments:
+              announcement.departments ?? [],
 
-          locations: announcement.locations ?? [],
+            locations:
+              announcement.locations ?? [],
 
-          targetRoles: announcement.targetRoles ?? [],
+            targetRoles:
+              announcement.targetRoles ?? [],
 
-          channels: effectiveChannels,
+            channels:
+              effectiveChannels,
 
-          showBanner: announcement.showBanner ?? false,
+            showBanner:
+              announcement.showBanner ?? false,
 
-          calendarEnabled: announcement.calendarEnabled ?? false,
-        });
+            calendarEnabled:
+              announcement.calendarEnabled ?? false,
+          },
+        );
 
         /* -----------------------------------------------
            IN-APP NOTIFICATION
         ----------------------------------------------- */
 
-        if (effectiveChannels.includes("IN_APP")) {
-          await notificationRepo.broadcastAnnouncementNotification({
-            title: announcement.title,
+        if (
+          effectiveChannels.includes("IN_APP")
+        ) {
+          await notificationRepo
+            .broadcastAnnouncementNotification(
+              {
+                title:
+                  announcement.title,
 
-            body: announcement.body,
+                body:
+                  announcement.body,
 
-            audience: announcement.audience,
+                audience:
+                  announcement.audience,
 
-            departments: announcement.departments ?? [],
+                departments:
+                  announcement.departments ?? [],
 
-            locations: announcement.locations ?? [],
+                locations:
+                  announcement.locations ?? [],
 
-            targetRoles: announcement.targetRoles ?? [],
-          });
+                targetRoles:
+                  announcement.targetRoles ?? [],
+              },
+            );
         }
 
         /* -----------------------------------------------
            EMAIL NOTIFICATION
         ----------------------------------------------- */
 
-        if (effectiveChannels.includes("EMAIL")) {
-          const emailResult = await notificationRepo.broadcastAnnouncementEmail(
-            {
-              title: announcement.title,
+        if (
+          effectiveChannels.includes("EMAIL")
+        ) {
+          const emailResult =
+            await notificationRepo
+              .broadcastAnnouncementEmail(
+                {
+                  title:
+                    announcement.title,
 
-              body: announcement.body,
+                  body:
+                    announcement.body,
 
-              audience: announcement.audience,
+                  audience:
+                    announcement.audience,
 
-              departments: announcement.departments ?? [],
+                  departments:
+                    announcement.departments ?? [],
 
-              locations: announcement.locations ?? [],
+                  locations:
+                    announcement.locations ?? [],
 
-              targetRoles: announcement.targetRoles ?? [],
-            },
-          );
+                  targetRoles:
+                    announcement.targetRoles ?? [],
+                },
+              );
 
           console.log(
             `[Announcements] Immediate email broadcast completed: ${announcement.title}. Sent: ${emailResult?.sent ?? 0}, Failed: ${emailResult?.failed ?? 0}`,
@@ -597,33 +786,30 @@ announcementRouter.post(
 
 announcementRouter.get(
   "/",
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+
+  async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       if (!req.user) {
         return res.status(401).json({
           error: {
-            message: "Unauthorized",
+            message:
+              "Unauthorized",
           },
         });
       }
 
-      // IMPORTANT:
-      // AnnouncementReceipt.userId stores the authenticated USER ID,
-      // not Employee._id.
-      const userId = (req.user as any).id ?? (req.user as any).userId;
-
-      if (!userId) {
-        return res.status(401).json({
-          error: {
-            message: "Authenticated user ID not found",
-          },
-        });
-      }
-
-      const announcements = await repo.getAnnouncements(
-        String(req.user.role),
-        String(userId),
-      );
+      const announcements =
+        await repo.getAnnouncements(
+          String(
+            req.user.role,
+          ),
+          req.user
+            .employeeId ?? "",
+        );
 
       return res.json({
         announcements,
@@ -633,45 +819,163 @@ announcementRouter.get(
     }
   },
 );
+
 /* =========================================================
-   READ STATUS
+   GOOGLE CALENDAR — INDIA HOLIDAYS / FESTIVALS
+
+   Reads the public Google Calendar India holiday feed.
+   No Google OAuth is required because this is a public
+   holiday calendar. The HRMS only reads the feed.
 ========================================================= */
 
-announcementRouter.get(
-  "/:id/status",
+const GOOGLE_INDIA_HOLIDAY_ICS_URL =
+  "https://calendar.google.com/calendar/ical/en.indian%23holiday%40group.v.calendar.google.com/public/basic.ics";
 
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+function unfoldIcsLines(text: string): string[] {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .reduce<string[]>((lines, line) => {
+      if ((line.startsWith(" ") || line.startsWith("\t")) && lines.length) {
+        lines[lines.length - 1] += line.slice(1);
+      } else {
+        lines.push(line);
+      }
+      return lines;
+    }, []);
+}
+
+function unescapeIcsValue(value: string): string {
+  return value
+    .replace(/\\n/gi, "\n")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\")
+    .trim();
+}
+
+function parseGoogleHolidayIcs(
+  ics: string,
+  year: number,
+) {
+  const lines = unfoldIcsLines(ics);
+  const holidays: Array<{
+    id: string;
+    title: string;
+    date: string;
+    endDate: string;
+    allDay: true;
+    source: "GOOGLE_CALENDAR";
+    calendarName: string;
+  }> = [];
+
+  let current: Record<string, string> | null = null;
+
+  for (const line of lines) {
+    if (line === "BEGIN:VEVENT") {
+      current = {};
+      continue;
+    }
+
+    if (line === "END:VEVENT") {
+      if (current) {
+        const rawStart = current.DTSTART ?? "";
+        const rawEnd = current.DTEND ?? "";
+        const title = unescapeIcsValue(current.SUMMARY ?? "Holiday");
+        const startDate = rawStart.slice(0, 8);
+        const endDateExclusive = rawEnd.slice(0, 8);
+
+        if (
+          /^\d{8}$/.test(startDate) &&
+          startDate.startsWith(String(year))
+        ) {
+          const date = `${startDate.slice(0, 4)}-${startDate.slice(4, 6)}-${startDate.slice(6, 8)}`;
+          const endDate =
+            /^\d{8}$/.test(endDateExclusive) && endDateExclusive
+              ? `${endDateExclusive.slice(0, 4)}-${endDateExclusive.slice(4, 6)}-${endDateExclusive.slice(6, 8)}`
+              : date;
+
+          holidays.push({
+            id: `google-india-${startDate}-${title
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-|-$/g, "")}`,
+            title,
+            date,
+            endDate,
+            allDay: true,
+            source: "GOOGLE_CALENDAR",
+            calendarName: "Google Calendar — India Holidays",
+          });
+        }
+      }
+
+      current = null;
+      continue;
+    }
+
+    if (!current) continue;
+
+    const separator = line.indexOf(":");
+    if (separator === -1) continue;
+
+    const property = line.slice(0, separator);
+    const value = line.slice(separator + 1);
+    const propertyName = property.split(";")[0].toUpperCase();
+
+    if (propertyName === "SUMMARY" || propertyName === "DTSTART" || propertyName === "DTEND") {
+      current[propertyName] = value;
+    }
+  }
+
+  return holidays.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+announcementRouter.get(
+  "/google-holidays",
+  async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       if (!req.user) {
         return res.status(401).json({
-          error: {
-            message: "Unauthorized",
-          },
+          error: { message: "Unauthorized" },
         });
       }
 
-      if (!(await hasAdminAccess(req.user))) {
-        return res.status(403).json({
-          error: {
-            message: "You are not authorized to view read receipts",
-          },
-        });
+      const requestedYear = Number(req.query.year ?? new Date().getFullYear());
+      const year =
+        Number.isInteger(requestedYear) &&
+        requestedYear >= 2020 &&
+        requestedYear <= 2100
+          ? requestedYear
+          : new Date().getFullYear();
+
+      const response = await fetch(GOOGLE_INDIA_HOLIDAY_ICS_URL, {
+        headers: {
+          Accept: "text/calendar,text/plain;q=0.9,*/*;q=0.8",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Google Calendar holiday feed returned HTTP ${response.status}`,
+        );
       }
 
-      const announcement = await repo.getAnnouncement(req.params.id);
-
-      if (!announcement) {
-        return res.status(404).json({
-          error: {
-            message: "Announcement not found",
-          },
-        });
-      }
-
-      const status = await repo.listAnnouncementReadStatus(req.params.id);
+      const ics = await response.text();
+      const holidays = parseGoogleHolidayIcs(ics, year);
 
       return res.json({
-        status,
+        holidays,
+        source: "GOOGLE_CALENDAR",
+        calendarName: "Google Calendar — India Holidays",
+        calendarId: "en.indian#holiday@group.v.calendar.google.com",
+        year,
+        syncedAt: new Date().toISOString(),
       });
     } catch (err) {
       next(err);
@@ -686,32 +990,107 @@ announcementRouter.get(
 announcementRouter.get(
   "/:id",
 
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       if (!req.user) {
         return res.status(401).json({
           error: {
-            message: "Unauthorized",
+            message:
+              "Unauthorized",
           },
         });
       }
 
-      const userId = (req.user as any).id ?? (req.user as any).userId;
+      const announcement =
+        await repo.getAnnouncementWithReceipt(
+          req.params.id,
+          req.user
+            .employeeId ?? "",
+        );
 
-      const announcement = await repo.getAnnouncementWithReceipt(
-        req.params.id,
-        String(userId ?? ""),
-      );
       if (!announcement) {
         return res.status(404).json({
           error: {
-            message: "Announcement not found",
+            message:
+              "Announcement not found",
           },
         });
       }
 
-      // GET is read-only. Notification delivery happens only when an announcement
-      // is created/published or explicitly rescheduled. Never broadcast from a read endpoint.
+      // If an edit publishes the announcement immediately, deliver the
+      // selected channels now instead of waiting for the scheduler.
+      if (announcement.status === "PUBLISHED") {
+        const effectiveChannels =
+          announcement.channels?.length
+            ? announcement.channels
+            : ["IN_APP"];
+
+        console.log(
+          "[Announcements] Post-update broadcast:",
+          {
+            title: announcement.title,
+            audience: announcement.audience,
+            departments: announcement.departments ?? [],
+            locations: announcement.locations ?? [],
+            targetRoles: announcement.targetRoles ?? [],
+            channels: effectiveChannels,
+          },
+        );
+
+        if (effectiveChannels.includes("IN_APP")) {
+          const result =
+            await notificationRepo.broadcastAnnouncementNotification({
+              title: announcement.title,
+              body: announcement.body,
+              audience: announcement.audience,
+              departments: announcement.departments ?? [],
+              locations: announcement.locations ?? [],
+              targetRoles: announcement.targetRoles ?? [],
+            });
+
+          console.log(
+            `[Announcements] Post-update in-app broadcast completed: ${announcement.title}. Sent: ${result?.sent ?? 0}`,
+          );
+        }
+
+        if (effectiveChannels.includes("EMAIL")) {
+          if (process.env.NODE_ENV !== "production") {
+            console.log(
+              `[Announcements] Post-update email skipped in development: ${announcement.title}`,
+            );
+          } else {
+            const emailResult =
+              await notificationRepo.broadcastAnnouncementEmail({
+                title: announcement.title,
+                body: announcement.body,
+                audience: announcement.audience,
+                departments: announcement.departments ?? [],
+                locations: announcement.locations ?? [],
+                targetRoles: announcement.targetRoles ?? [],
+              });
+
+            console.log(
+              `[Announcements] Post-update email broadcast completed: ${announcement.title}. Sent: ${emailResult?.sent ?? 0}, Failed: ${emailResult?.failed ?? 0}`,
+            );
+          }
+        }
+
+        if (effectiveChannels.includes("BANNER")) {
+          console.log(
+            `[Announcements] Dashboard banner enabled after update: ${announcement.title}`,
+          );
+        }
+
+        if (effectiveChannels.includes("CALENDAR")) {
+          console.log(
+            `[Announcements] Calendar event enabled after update: ${announcement.title}`,
+          );
+        }
+      }
 
       return res.json({
         announcement,
@@ -729,12 +1108,17 @@ announcementRouter.get(
 announcementRouter.post(
   "/:id/read",
 
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       if (!req.user) {
         return res.status(401).json({
           error: {
-            message: "Unauthorized",
+            message:
+              "Unauthorized",
           },
         });
       }
@@ -742,15 +1126,20 @@ announcementRouter.post(
       if (!req.user.employeeId) {
         return res.status(401).json({
           error: {
-            message: "Employee not found",
+            message:
+              "Employee not found",
           },
         });
       }
 
-      await repo.markAnnouncementRead(req.params.id, req.user.userId);
+      await repo.markAnnouncementRead(
+        req.params.id,
+        req.user.employeeId,
+      );
 
       return res.json({
-        message: "Announcement marked as read.",
+        message:
+          "Announcement marked as read.",
       });
     } catch (err) {
       next(err);
@@ -765,7 +1154,11 @@ announcementRouter.post(
 announcementRouter.post(
   "/:id/acknowledge",
 
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       /* ---------------------------------------------
          AUTHENTICATION
@@ -774,7 +1167,8 @@ announcementRouter.post(
       if (!req.user) {
         return res.status(401).json({
           error: {
-            message: "Unauthorized",
+            message:
+              "Unauthorized",
           },
         });
       }
@@ -786,7 +1180,8 @@ announcementRouter.post(
       if (!req.user.employeeId) {
         return res.status(401).json({
           error: {
-            message: "Employee not found",
+            message:
+              "Employee not found",
           },
         });
       }
@@ -795,12 +1190,16 @@ announcementRouter.post(
          GET ANNOUNCEMENT
       --------------------------------------------- */
 
-      const announcement = await repo.getAnnouncement(req.params.id);
+      const announcement =
+        await repo.getAnnouncement(
+          req.params.id,
+        );
 
       if (!announcement) {
         return res.status(404).json({
           error: {
-            message: "Announcement not found",
+            message:
+              "Announcement not found",
           },
         });
       }
@@ -816,13 +1215,16 @@ announcementRouter.post(
       --------------------------------------------- */
 
       const acknowledgementRequired =
-        announcement.requiresAcknowledgement === true ||
-        announcement.type === "POLICY_UPDATE";
+        announcement.requiresAcknowledgement ===
+          true ||
+        announcement.type ===
+          "POLICY_UPDATE";
 
       if (!acknowledgementRequired) {
         return res.status(403).json({
           error: {
-            message: "Acknowledgement is not required for this announcement.",
+            message:
+              "Acknowledgement is not required for this announcement.",
           },
         });
       }
@@ -831,10 +1233,63 @@ announcementRouter.post(
          ACKNOWLEDGE
       --------------------------------------------- */
 
-      await repo.acknowledgePolicyAnnouncement(req.params.id, req.user.userId);
+      await repo.acknowledgePolicyAnnouncement(
+        req.params.id,
+        req.user.employeeId,
+      );
 
       return res.json({
-        message: "Announcement acknowledged successfully.",
+        message:
+          "Announcement acknowledged successfully.",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   READ STATUS
+========================================================= */
+
+announcementRouter.get(
+  "/:id/status",
+
+  async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message:
+              "Unauthorized",
+          },
+        });
+      }
+
+      if (
+        !hasAdminAccess(
+          req.user,
+        )
+      ) {
+        return res.status(403).json({
+          error: {
+            message:
+              "Only HR and Super Admin can view read status.",
+          },
+        });
+      }
+
+      const status =
+        await repo.listAnnouncementReadStatus(
+          req.params.id,
+        );
+
+      return res.json({
+        status,
       });
     } catch (err) {
       next(err);
@@ -846,42 +1301,85 @@ announcementRouter.post(
    UPDATE SCHEMA
 ========================================================= */
 
-const updateAnnouncementSchema = z.object({
-  title: z.string().trim().min(3).max(200).optional(),
+const updateAnnouncementSchema =
+  z.object({
+    title: z
+      .string()
+      .trim()
+      .min(3)
+      .max(200)
+      .optional(),
 
-  body: z.string().trim().min(5).max(10000).optional(),
+    body: z
+      .string()
+      .trim()
+      .min(5)
+      .max(10000)
+      .optional(),
 
-  type: z.enum(ANNOUNCEMENT_TYPES).optional(),
+    type: z
+      .enum(
+        ANNOUNCEMENT_TYPES,
+      )
+      .optional(),
 
-  audience: z.enum(ANNOUNCEMENT_AUDIENCES).optional(),
+    audience: z
+      .enum(
+        ANNOUNCEMENT_AUDIENCES,
+      )
+      .optional(),
 
-  pinned: z.boolean().optional(),
+    pinned:
+      z.boolean().optional(),
 
-  attachment: z.string().optional(),
+    attachment:
+      z.string().optional(),
 
-  departments: z.array(z.string()).optional(),
+    departments:
+      z
+        .array(z.string())
+        .optional(),
 
-  locations: z.array(z.string()).optional(),
+    locations:
+      z
+        .array(z.string())
+        .optional(),
 
-  targetRoles: z.array(z.string()).optional(),
+    targetRoles:
+      z
+        .array(z.string())
+        .optional(),
 
-  channels: z.array(z.enum(ANNOUNCEMENT_CHANNELS)).optional(),
+    channels:
+      z
+        .array(
+          z.enum(
+            ANNOUNCEMENT_CHANNELS,
+          ),
+        )
+        .optional(),
 
-  showBanner: z.boolean().optional(),
+    showBanner:
+      z.boolean().optional(),
 
-  requiresAcknowledgement: z.boolean().optional(),
+    requiresAcknowledgement:
+      z.boolean().optional(),
 
-  scheduledAt: z.string().optional(),
+    scheduledAt:
+      z.string().optional(),
 
-  calendarEnabled: z.boolean().optional(),
+    calendarEnabled:
+      z.boolean().optional(),
 
-  eventStartAt: z.string().optional(),
+    eventStartAt:
+      z.string().optional(),
 
-  eventEndAt: z.string().optional(),
+    eventEndAt:
+      z.string().optional(),
 
-  eventLocation: z.string().max(500).optional(),
-  expiryDays: z.coerce.number().int().min(1).max(365).optional(),
-});
+    eventLocation:
+      z.string().max(500).optional(),
+  });
 
 /* =========================================================
    UPDATE ANNOUNCEMENT
@@ -891,7 +1389,11 @@ announcementRouter.patch(
   "/:id",
   upload.single("attachment"),
 
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       /* ---------------------------------------------------
          AUTHENTICATION
@@ -900,7 +1402,8 @@ announcementRouter.patch(
       if (!req.user) {
         return res.status(401).json({
           error: {
-            message: "Unauthorized",
+            message:
+              "Unauthorized",
           },
         });
       }
@@ -909,10 +1412,15 @@ announcementRouter.patch(
          ADMIN CHECK
       --------------------------------------------------- */
 
-      if (!(await hasAdminAccess(req.user))) {
+      if (
+        !hasAdminAccess(
+          req.user,
+        )
+      ) {
         return res.status(403).json({
           error: {
-            message: "You are not authorized to update announcements",
+            message:
+              "You are not authorized to update announcements",
           },
         });
       }
@@ -921,37 +1429,36 @@ announcementRouter.patch(
          PARSE VALUES
       --------------------------------------------------- */
 
-      const pinned = parseBoolean(req.body.pinned);
+      const pinned =
+        parseBoolean(
+          req.body.pinned,
+        );
 
-      const showBanner = parseBoolean(req.body.showBanner);
+      const showBanner =
+        parseBoolean(
+          req.body.showBanner,
+        );
 
-      const requiresAcknowledgement = parseBoolean(
-        req.body.requiresAcknowledgement,
-      );
+      const requiresAcknowledgement =
+        parseBoolean(
+          req.body
+            .requiresAcknowledgement,
+        );
 
       /* ---------------------------------------------------
          NOTIFICATION CHANNELS
       --------------------------------------------------- */
 
-      const requestedChannels = parseStringArray(
-        req.body.channels ?? req.body.notificationMethods,
-      );
+      const requestedChannels =
+        parseStringArray(
+          req.body.channels ??
+            req.body.notificationMethods,
+        );
 
-      const channels = Array.from(
-        new Set(
-          (requestedChannels.length > 0 ? requestedChannels : ["IN_APP"])
-            .map((channel) => String(channel).trim().toUpperCase())
-            .filter(Boolean),
-        ),
-      );
-
-      if (channels.length === 0) {
-        return res.status(400).json({
-          error: {
-            message: "At least one notification channel is required.",
-          },
-        });
-      }
+      const channels =
+        requestedChannels.length > 0
+          ? requestedChannels
+          : ["IN_APP"];
 
       /* ---------------------------------------------------
          CALENDAR
@@ -960,35 +1467,51 @@ announcementRouter.patch(
          calendarEnabled.
       --------------------------------------------------- */
 
-      const requestedCalendarEnabled = parseBoolean(req.body.calendarEnabled);
+      const requestedCalendarEnabled =
+        parseBoolean(
+          req.body.calendarEnabled,
+        );
 
-      const calendarEnabled = channels.includes("CALENDAR");
+      const calendarEnabled =
+        requestedCalendarEnabled === true ||
+        channels.includes("CALENDAR");
 
-      // BANNER is controlled by the selected notification channel.
-      const normalizedShowBanner = channels.includes("BANNER");
+      // Selecting BANNER also enables the dashboard banner.
+      const normalizedShowBanner =
+        showBanner === true ||
+        channels.includes("BANNER");
 
       const eventStartAt =
-        String(req.body.eventStartAt ?? "").trim() || undefined;
+        String(
+          req.body.eventStartAt ?? "",
+        ).trim() || undefined;
 
-      const eventEndAt = String(req.body.eventEndAt ?? "").trim() || undefined;
+      const eventEndAt =
+        String(
+          req.body.eventEndAt ?? "",
+        ).trim() || undefined;
 
       const eventLocation =
-        String(req.body.eventLocation ?? "").trim() || undefined;
+        String(
+          req.body.eventLocation ?? "",
+        ).trim() || undefined;
 
       /* ---------------------------------------------------
          CALENDAR DATE VALIDATION
       --------------------------------------------------- */
 
-      const calendarDateError = validateCalendarDates(
-        calendarEnabled,
-        eventStartAt,
-        eventEndAt,
-      );
+      const calendarDateError =
+        validateCalendarDates(
+          calendarEnabled,
+          eventStartAt,
+          eventEndAt,
+        );
 
       if (calendarDateError) {
         return res.status(400).json({
           error: {
-            message: calendarDateError,
+            message:
+              calendarDateError,
           },
         });
       }
@@ -997,12 +1520,19 @@ announcementRouter.patch(
          PUBLISH MODE
       --------------------------------------------------- */
 
-      const publishMode = String(req.body.publishMode ?? "NOW").toUpperCase();
+      const publishMode =
+        String(
+          req.body.publishMode ?? "NOW",
+        ).toUpperCase();
 
-      if (publishMode === "SCHEDULED" && !req.body.scheduledAt) {
+      if (
+        publishMode === "SCHEDULED" &&
+        !req.body.scheduledAt
+      ) {
         return res.status(400).json({
           error: {
-            message: "Scheduled publish date and time are required.",
+            message:
+              "Scheduled publish date and time are required.",
           },
         });
       }
@@ -1011,9 +1541,10 @@ announcementRouter.patch(
       // This prevents editing an announcement into a past schedule that would
       // otherwise be published immediately by the repository.
       if (req.body.scheduledAt) {
-        const scheduledDateError = validateFutureScheduledAt(
-          String(req.body.scheduledAt),
-        );
+        const scheduledDateError =
+          validateFutureScheduledAt(
+            String(req.body.scheduledAt),
+          );
 
         if (scheduledDateError) {
           return res.status(400).json({
@@ -1028,54 +1559,74 @@ announcementRouter.patch(
          TARGETING
       --------------------------------------------------- */
 
-      const departments = parseStringArray(req.body.departments);
+      const departments =
+        parseStringArray(
+          req.body.departments,
+        );
 
-      const locations = parseStringArray(req.body.locations);
+      const locations =
+        parseStringArray(
+          req.body.locations,
+        );
 
-      const targetRoles = parseStringArray(req.body.targetRoles);
+      const targetRoles =
+        parseStringArray(
+          req.body.targetRoles,
+        );
 
       /* ---------------------------------------------------
          VALIDATION
       --------------------------------------------------- */
 
-      const parsed = updateAnnouncementSchema.safeParse({
-        ...req.body,
+      const parsed =
+        updateAnnouncementSchema.safeParse(
+          {
+            ...req.body,
 
-        pinned,
+            pinned,
 
-        showBanner: normalizedShowBanner,
+            showBanner: normalizedShowBanner,
 
-        requiresAcknowledgement,
+            requiresAcknowledgement,
 
-        calendarEnabled,
+            calendarEnabled,
 
-        channels: channels.length > 0 ? channels : undefined,
+            channels:
+              channels.length > 0
+                ? channels
+                : undefined,
 
-        departments,
+            departments,
 
-        locations,
+            locations,
 
-        targetRoles,
+            targetRoles,
 
-        eventStartAt,
+            eventStartAt,
 
-        eventEndAt,
+            eventEndAt,
 
-        eventLocation,
-        expiryDays: req.body.expiryDays ? Number(req.body.expiryDays) : undefined,
-      });
+            eventLocation,
+          },
+        );
 
       if (!parsed.success) {
         console.error(
           "[Announcements] Update validation failed:",
-          JSON.stringify(parsed.error.flatten(), null, 2),
+          JSON.stringify(
+            parsed.error.flatten(),
+            null,
+            2,
+          ),
         );
 
         return res.status(400).json({
           error: {
-            message: "Invalid announcement information",
+            message:
+              "Invalid announcement information",
 
-            details: parsed.error.flatten(),
+            details:
+              parsed.error.flatten(),
           },
         });
       }
@@ -1093,30 +1644,33 @@ announcementRouter.patch(
 
         calendarEnabled,
 
-        eventStartAt: calendarEnabled ? eventStartAt : undefined,
+        eventStartAt,
 
-        eventEndAt: calendarEnabled ? eventEndAt : undefined,
+        eventEndAt,
 
-        eventLocation: calendarEnabled ? eventLocation : undefined,
+        eventLocation,
       };
 
       if (req.file) {
-        updateData.attachment = `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`;
+        updateData.attachment =
+          `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`;
       }
 
       /* ---------------------------------------------------
          UPDATE
       --------------------------------------------------- */
 
-      const announcement = await repo.updateAnnouncement(
-        req.params.id,
-        updateData,
-      );
+      const announcement =
+        await repo.updateAnnouncement(
+          req.params.id,
+          updateData,
+        );
 
       if (!announcement) {
         return res.status(404).json({
           error: {
-            message: "Announcement not found",
+            message:
+              "Announcement not found",
           },
         });
       }
@@ -1137,36 +1691,51 @@ announcementRouter.patch(
 announcementRouter.delete(
   "/:id",
 
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       if (!req.user) {
         return res.status(401).json({
           error: {
-            message: "Unauthorized",
+            message:
+              "Unauthorized",
           },
         });
       }
 
-      if (!(await hasAdminAccess(req.user))) {
+      if (
+        !hasAdminAccess(
+          req.user,
+        )
+      ) {
         return res.status(403).json({
           error: {
-            message: "You are not authorized to delete announcements",
+            message:
+              "You are not authorized to delete announcements",
           },
         });
       }
 
-      const announcement = await repo.deleteAnnouncement(req.params.id);
+      const announcement =
+        await repo.deleteAnnouncement(
+          req.params.id,
+        );
 
       if (!announcement) {
         return res.status(404).json({
           error: {
-            message: "Announcement not found",
+            message:
+              "Announcement not found",
           },
         });
       }
 
       return res.json({
-        message: "Announcement deleted successfully",
+        message:
+          "Announcement deleted successfully",
       });
     } catch (err) {
       next(err);
