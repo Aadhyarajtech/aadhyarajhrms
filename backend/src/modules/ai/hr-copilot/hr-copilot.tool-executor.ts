@@ -3,24 +3,73 @@ import * as employeeRepo from "@/modules/employees/employees.repository";
 import * as leaveRepo from "@/modules/leave/leave.repository";
 import * as performanceRepo from "@/modules/performance/performance.repository";
 import * as organizationRepo from "@/modules/organization/organization.repository";
-
 import * as calendarRepo from "@/modules/calendar/calendar.repository";
 import * as payrollRepo from "@/modules/payroll/payroll.repository";
 import * as documentsRepo from "@/modules/documents/documents.repository";
 import * as ticketRepo from "@/modules/tickets/ticket.repository";
 import * as announcementRepo from "@/modules/announcements/announcement.repository";
+import * as recruitmentRepo from "@/modules/recruitment/recruitment.repository";
+import * as reportsRepo from "@/modules/reports/reports.repository";
+import * as dashboardRepo from "@/modules/dashboard/dashboard.repository";
 
-import {
+import type {
   HrCopilotUserContext,
   HrCopilotSource,
 } from "./hr-copilot.types";
 
-import { HrCopilotPlan } from "./hr-copilot.planner";
+import type {
+  HrCopilotPlan,
+} from "./hr-copilot.planner";
+
+/**
+ * ============================================================================
+ * TYPES
+ * ============================================================================
+ */
+
+type ExecutorResult = {
+  data: Record<string, any>;
+  sources: HrCopilotSource[];
+};
+
+type EmployeeTarget = {
+  employee: any | null;
+  employeeId: string | null;
+  message?: string;
+};
+
+type DateRange = {
+  start: string;
+  end: string;
+};
+
+/**
+ * Executor scope may include internal scope values used by the executor
+ * itself. The planner exposes MY_TEAM, while the executor's existing team
+ * execution paths use TEAM.
+ */
+type HrCopilotExecutorScope =
+  HrCopilotPlan["scope"] |
+  "TEAM";
 
 /**
  * ============================================================================
  * PERMISSIONS
  * ============================================================================
+ *
+ * IMPORTANT:
+ *
+ * Role/data scope is intentionally separate from normal UI permissions.
+ *
+ * SUPER_ADMIN -> ALL
+ * HR_ADMIN    -> ALL
+ * MANAGER     -> SELF + DIRECT REPORTS
+ * EMPLOYEE    -> SELF
+ * FINANCE     -> SELF
+ * IT_SUPPORT  -> SELF
+ * RECRUITER   -> SELF
+ *
+ * Groq can NEVER grant itself permission.
  */
 
 function hasPermission(
@@ -28,15 +77,14 @@ function hasPermission(
   permission: string,
 ): boolean {
   if (
-    user.role === "SUPER_ADMIN"
+    user.role === "SUPER_ADMIN" ||
+    user.role === "HR_ADMIN"
   ) {
     return true;
   }
 
   if (
-    user.permissions.includes(
-      permission,
-    )
+    user.permissions.includes(permission)
   ) {
     return true;
   }
@@ -52,9 +100,110 @@ function hasPermission(
   return false;
 }
 
+function getRoleScope(
+  user: HrCopilotUserContext,
+): "ALL" | "TEAM" | "SELF" {
+  if (
+    user.role === "SUPER_ADMIN" ||
+    user.role === "HR_ADMIN"
+  ) {
+    return "ALL";
+  }
+
+  if (
+    user.role === "MANAGER"
+  ) {
+    return "TEAM";
+  }
+
+  return "SELF";
+}
+
 /**
  * ============================================================================
- * SAFE REPOSITORY EXECUTION
+ * AUTHORIZED REQUEST SCOPE
+ * ============================================================================
+ *
+ * The planner's scope describes what the user is asking for. It is NOT an
+ * authorization grant. The authenticated user's role remains the security
+ * boundary.
+ *
+ * This helper preserves the existing supported planner scopes while ensuring
+ * that a planner/LLM response can never expand the authenticated user's data
+ * scope. Named-employee requests (EMPLOYEE) remain available so the existing
+ * resolveEmployeeTarget() authorization flow can enforce self/direct-report
+ * access.
+ */
+function getAuthorizedRequestScope(
+  user: HrCopilotUserContext,
+  requestedScope: HrCopilotPlan["scope"] | undefined,
+): HrCopilotExecutorScope {
+  const requested = String(
+    requestedScope ?? "SELF",
+  ).toUpperCase();
+
+  const roleScope = getRoleScope(user);
+
+  /**
+   * Organization-wide roles may keep the planner's requested scope.
+   * MY_TEAM is normalized to the executor's existing TEAM scope so the
+   * established team execution paths continue to work.
+   */
+  if (roleScope === "ALL") {
+    if (requested === "MY_TEAM") {
+      return "TEAM";
+    }
+
+    return requested as HrCopilotPlan["scope"];
+  }
+
+  /**
+   * Managers may work with their own team or their own employee record, but
+   * they cannot expand the request to department/organization/all employees.
+   * EMPLOYEE is intentionally preserved because resolveEmployeeTarget()
+   * verifies that the named employee is a direct report or the manager.
+   */
+  if (roleScope === "TEAM") {
+    switch (requested) {
+      case "SELF":
+      case "EMPLOYEE":
+        return requested as HrCopilotPlan["scope"];
+
+      case "MY_TEAM":
+        return "TEAM";
+
+      case "DEPARTMENT":
+      case "ORGANIZATION":
+      case "AUTHORIZED_EMPLOYEES":
+      case "UNKNOWN":
+      default:
+        return "TEAM";
+    }
+  }
+
+  /**
+   * SELF-scoped roles can never be expanded by planner output. A named
+   * employee request remains EMPLOYEE so the existing employee-target
+   * authorization path can return the appropriate denial when necessary.
+   */
+  switch (requested) {
+    case "EMPLOYEE":
+      return "EMPLOYEE";
+
+    case "SELF":
+    case "MY_TEAM":
+    case "DEPARTMENT":
+    case "ORGANIZATION":
+    case "AUTHORIZED_EMPLOYEES":
+    case "UNKNOWN":
+    default:
+      return "SELF";
+  }
+}
+
+/**
+ * ============================================================================
+ * SAFE REPOSITORY CALL
  * ============================================================================
  */
 
@@ -77,11 +226,41 @@ async function safe<T>(
 
 /**
  * ============================================================================
- * EMPLOYEE SANITIZATION
+ * EMPLOYEE HELPERS
  * ============================================================================
- *
- * Never send the complete employee Mongo document to the LLM.
  */
+
+function displayName(
+  employee: any,
+): string {
+  return String(
+    employee?.fullName ??
+      employee?.name ??
+      [
+        employee?.firstName,
+        employee?.lastName,
+      ]
+        .filter(Boolean)
+        .join(" ") ??
+      "",
+  ).trim();
+}
+
+function normalizeName(
+  value: string,
+): string {
+  return value
+    .toLowerCase()
+    .replace(
+      /[^a-z0-9]+/g,
+      " ",
+    )
+    .replace(
+      /\s+/g,
+      " ",
+    )
+    .trim();
+}
 
 function sanitizeEmployee(
   employee: any,
@@ -90,34 +269,22 @@ function sanitizeEmployee(
     return null;
   }
 
-  const name =
-    employee.fullName ??
-    employee.name ??
-    [
-      employee.firstName,
-      employee.lastName,
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-  const manager =
-    employee.manager?.name ??
-    employee.managerName ??
-    [
-      employee.managerFirstName,
-      employee.managerLastName,
-    ]
-      .filter(Boolean)
-      .join(" ");
-
   return {
     id:
-      employee._id ??
-      employee.id ??
-      employee.employeeId ??
-      null,
+      employee.id !== undefined &&
+      employee.id !== null
+        ? String(employee.id)
+        : employee._id !== undefined &&
+            employee._id !== null
+          ? String(employee._id)
+          : employee.employeeId !== undefined &&
+              employee.employeeId !== null
+            ? String(employee.employeeId)
+            : null,
 
-    name: name || null,
+    name:
+      displayName(employee) ||
+      "Employee",
 
     employeeCode:
       employee.employeeCode ??
@@ -154,7 +321,15 @@ function sanitizeEmployee(
       null,
 
     manager:
-      manager || null,
+      employee.manager?.name ??
+      employee.managerName ??
+      ([
+        employee.managerFirstName,
+        employee.managerLastName,
+      ]
+        .filter(Boolean)
+        .join(" ") ||
+        null),
 
     skills:
       Array.isArray(
@@ -162,211 +337,20 @@ function sanitizeEmployee(
       )
         ? employee.skills
             .slice(0, 30)
-            .map((skill: any) => ({
-              name:
-                skill.name ??
-                null,
-
-              category:
-                skill.category ??
-                null,
-
-              competencyLevel:
-                skill.competencyLevel ??
-                null,
-            }))
+            .map(
+              (skill: any) => ({
+                name:
+                  skill.name ??
+                  skill,
+                category:
+                  skill.category ??
+                  null,
+                competencyLevel:
+                  skill.competencyLevel ??
+                  null,
+              }),
+            )
         : [],
-  };
-}
-
-/**
- * ============================================================================
- * DATE RANGE
- * ============================================================================
- */
-
-function resolveDateRange(
-  plan: HrCopilotPlan,
-): {
-  start: string;
-  end: string;
-} {
-  const now = new Date();
-
-  if (
-    plan.timeRange === "TODAY"
-  ) {
-    const start = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-
-    return {
-      start:
-        start
-          .toISOString()
-          .slice(0, 10),
-
-      end:
-        now
-          .toISOString()
-          .slice(0, 10),
-    };
-  }
-
-  if (
-    plan.timeRange === "LAST_MONTH"
-  ) {
-    const start = new Date(
-      now.getFullYear(),
-      now.getMonth() - 1,
-      1,
-    );
-
-    const end = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      0,
-    );
-
-    return {
-      start:
-        start
-          .toISOString()
-          .slice(0, 10),
-
-      end:
-        end
-          .toISOString()
-          .slice(0, 10),
-    };
-  }
-
-  if (
-    plan.timeRange === "THIS_YEAR"
-  ) {
-    const start = new Date(
-      now.getFullYear(),
-      0,
-      1,
-    );
-
-    return {
-      start:
-        start
-          .toISOString()
-          .slice(0, 10),
-
-      end:
-        now
-          .toISOString()
-          .slice(0, 10),
-    };
-  }
-
-  if (
-    plan.timeRange === "LAST_30_DAYS"
-  ) {
-    const start = new Date(
-      now.getTime() -
-        30 *
-          24 *
-          60 *
-          60 *
-          1000,
-    );
-
-    return {
-      start:
-        start
-          .toISOString()
-          .slice(0, 10),
-
-      end:
-        now
-          .toISOString()
-          .slice(0, 10),
-    };
-  }
-
-  if (
-    plan.timeRange === "LAST_90_DAYS"
-  ) {
-    const start = new Date(
-      now.getTime() -
-        90 *
-          24 *
-          60 *
-          60 *
-          1000,
-    );
-
-    return {
-      start:
-        start
-          .toISOString()
-          .slice(0, 10),
-
-      end:
-        now
-          .toISOString()
-          .slice(0, 10),
-    };
-  }
-
-  if (
-    plan.timeRange === "THIS_WEEK"
-  ) {
-    const day =
-      now.getDay();
-
-    const diff =
-      day === 0
-        ? 6
-        : day - 1;
-
-    const start = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() - diff,
-    );
-
-    return {
-      start:
-        start
-          .toISOString()
-          .slice(0, 10),
-
-      end:
-        now
-          .toISOString()
-          .slice(0, 10),
-    };
-  }
-
-  /**
-   * CURRENT / UNKNOWN
-   *
-   * Attendance AI currently works best with
-   * the current month.
-   */
-  const start = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    1,
-  );
-
-  return {
-    start:
-      start
-        .toISOString()
-        .slice(0, 10),
-
-    end:
-      now
-        .toISOString()
-        .slice(0, 10),
   };
 }
 
@@ -374,139 +358,159 @@ function resolveDateRange(
  * ============================================================================
  * EMPLOYEE SEARCH
  * ============================================================================
- *
- * Supports:
- * - Full name
- * - Partial name
- * - EMP0001-style employee code
- * - emp_xxxxx-style employee code
  */
 
 async function findEmployeeMatches(
   searchText: string,
 ): Promise<any[]> {
   const cleaned = searchText.trim();
+  if (!cleaned) return [];
 
-  if (!cleaned) {
-    return [];
-  }
-
-  // 1. Existing organization full-name resolver.
-  const nameMatches =
-    (await safe(
-      organizationRepo.findEmployeesByName(cleaned),
-    )) ?? [];
-
-  if (nameMatches.length > 0) {
-    return nameMatches;
-  }
-
-  // 2. Existing employee repository search.
-  const directSearch =
-    await safe(
-      employeeRepo.listEmployees({
-        search: cleaned,
-        page: 1,
-        pageSize: 20,
-      }),
-    );
-
-  const directMatches =
-    directSearch?.employees ?? [];
-
-  const normalizeName = (value: unknown) =>
-    String(value ?? "")
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .trim();
-
-  const displayName = (employee: any) =>
-    String(
-      employee?.fullName ??
-        employee?.name ??
-        [employee?.firstName, employee?.lastName]
-          .filter(Boolean)
-          .join(" ") ??
-        "",
-    ).trim();
-
-  const normalizedSearch =
-    normalizeName(cleaned);
-
-  const exactDirectMatches =
-    directMatches.filter(
-      (employee: any) =>
-        normalizeName(displayName(employee)) ===
-        normalizedSearch,
-    );
-
-  if (exactDirectMatches.length > 0) {
-    return exactDirectMatches;
-  }
-
-  if (directMatches.length === 1) {
-    return directMatches;
-  }
-
-  // 3. Full-name fallback. Search each token and then match the
-  // complete normalized employee name. This handles names such as
-  // "Dosa Damodar" when listEmployees searches individual fields.
-  const tokens = cleaned
-    .split(/\s+/)
+  const normalizedSearch = normalizeName(cleaned);
+  const tokens = normalizedSearch
+    .split(" ")
     .filter((token) => token.length >= 2);
-
-  if (tokens.length < 2) {
-    return directMatches;
-  }
 
   const candidateMap = new Map<string, any>();
 
-  for (const token of tokens) {
-    const result =
-      await safe(
-        employeeRepo.listEmployees({
-          search: token,
-          page: 1,
-          pageSize: 20,
-        }),
-      );
-
-    for (const employee of result?.employees ?? []) {
+  const addCandidates = (rows: any[]) => {
+    for (const employee of rows) {
       const id = String(
         employee?.id ??
           employee?._id ??
           employee?.employeeId ??
           "",
-      );
+      ).trim();
+      if (id) candidateMap.set(id, employee);
+    }
+  };
 
-      if (id) {
-        candidateMap.set(id, employee);
-      }
+  // Search both repositories instead of returning from the first partial match.
+  // The organization search is useful for names, while employee search also
+  // supports employee codes and email addresses.
+  const [nameMatches, directSearch] = await Promise.all([
+    safe<any[]>(organizationRepo.findEmployeesByName(cleaned)),
+    safe<any>(
+      employeeRepo.listEmployees({
+        search: cleaned,
+        page: 1,
+        pageSize: 50,
+      }),
+    ),
+  ]);
+
+  addCandidates(Array.isArray(nameMatches) ? nameMatches : []);
+  addCandidates(
+    Array.isArray(directSearch?.employees)
+      ? directSearch.employees
+      : [],
+  );
+
+  // For multi-token names, search each token as a fallback because repository
+  // search implementations may match only firstName or lastName individually.
+  if (tokens.length >= 2) {
+    const tokenResults = await Promise.all(
+      tokens.map((token) =>
+        safe<any>(
+          employeeRepo.listEmployees({
+            search: token,
+            page: 1,
+            pageSize: 50,
+          }),
+        ),
+      ),
+    );
+
+    for (const result of tokenResults) {
+      addCandidates(
+        Array.isArray(result?.employees)
+          ? result.employees
+          : [],
+      );
     }
   }
 
-  const candidates =
-    Array.from(candidateMap.values());
+  const candidates = Array.from(candidateMap.values());
+  if (!candidates.length) return [];
 
-  const exactMatches =
-    candidates.filter(
-      (employee: any) =>
-        normalizeName(displayName(employee)) ===
-        normalizedSearch,
-    );
+  const exactNameMatches = candidates.filter(
+    (employee: any) =>
+      normalizeName(displayName(employee)) === normalizedSearch,
+  );
+  if (exactNameMatches.length) return exactNameMatches;
 
-  if (exactMatches.length > 0) {
-    return exactMatches;
+  const exactCodeMatches = candidates.filter(
+    (employee: any) =>
+      String(employee?.employeeCode ?? "").trim().toLowerCase() ===
+      cleaned.toLowerCase(),
+  );
+  if (exactCodeMatches.length) return exactCodeMatches;
+
+  const tokenMatches =
+    tokens.length >= 2
+      ? candidates.filter((employee: any) => {
+          const fullName = normalizeName(displayName(employee));
+          return tokens.every((token) => fullName.includes(token));
+        })
+      : [];
+
+  if (tokenMatches.length) return tokenMatches;
+
+  // A single unambiguous candidate is safe to use; otherwise preserve all
+  // candidates so resolveEmployeeTarget can ask for clarification.
+  return candidates;
+}
+
+/**
+ * ============================================================================
+ * DIRECT REPORT CHECK
+ * ============================================================================
+ */
+
+async function isDirectReport(
+  user: HrCopilotUserContext,
+  employeeId: string,
+): Promise<boolean> {
+  if (
+    !user.employeeId
+  ) {
+    return false;
   }
 
-  return candidates.filter((employee: any) => {
-    const fullName =
-      normalizeName(displayName(employee));
+  if (
+    String(
+      user.employeeId,
+    ) ===
+    String(employeeId)
+  ) {
+    return true;
+  }
 
-    return tokens.every((token) =>
-      fullName.includes(normalizeName(token)),
+  const reports =
+    await safe<any[]>(
+      employeeRepo.listDirectReports(
+        String(
+          user.employeeId,
+        ),
+      ),
     );
-  });
+
+  if (
+    !Array.isArray(reports)
+  ) {
+    return false;
+  }
+
+  return reports.some(
+    (employee: any) =>
+      String(
+        employee?.id ??
+          employee?._id ??
+          employee?.employeeId ??
+          "",
+      ) ===
+      String(employeeId),
+  );
 }
 
 /**
@@ -514,20 +518,70 @@ async function findEmployeeMatches(
  * EMPLOYEE TARGET RESOLUTION
  * ============================================================================
  *
- * This is the central authorization boundary for named employees.
+ * THIS FUNCTION IS THE CENTRAL DATA SECURITY BOUNDARY.
  *
- * Rules:
- * - SUPER_ADMIN -> authorized
- * - HR_ADMIN -> authorized
- * - Employee asking about self -> authorized
- * - MANAGER -> only direct reports
- * - Other users -> only self
+ * Groq cannot bypass this function.
  */
 
 async function resolveEmployeeTarget(
   user: HrCopilotUserContext,
   plan: HrCopilotPlan,
-) {
+): Promise<EmployeeTarget> {
+  /**
+   * SELF always means authenticated employee.
+   *
+   * Never search the database using the words "my", "me", etc.
+   */
+
+  if (
+    plan.scope === "SELF"
+  ) {
+    if (
+      !user.employeeId
+    ) {
+      return {
+        employee: null,
+        employeeId: null,
+        message:
+          "Your account is not linked to an employee profile.",
+      };
+    }
+
+    const employee =
+      await safe<any>(
+        employeeRepo.getEmployeeById(
+          String(
+            user.employeeId,
+          ),
+        ),
+      );
+
+    if (!employee) {
+      return {
+        employee: null,
+        employeeId: null,
+        message:
+          "Your employee profile could not be found.",
+      };
+    }
+
+    return {
+      employee:
+        sanitizeEmployee(
+          employee,
+        ),
+      employeeId:
+        String(
+          user.employeeId,
+        ),
+    };
+  }
+
+  /**
+   * If no employee was explicitly identified,
+   * use self when appropriate.
+   */
+
   if (
     !plan.targetEmployeeName
   ) {
@@ -535,9 +589,13 @@ async function resolveEmployeeTarget(
       employee: null,
       employeeId: null,
       message:
-        "No specific employee was identified.",
+        "No specific employee was identified for this request.",
     };
   }
+
+  /**
+   * Employee lookup requires employee-view permission.
+   */
 
   if (
     !hasPermission(
@@ -554,11 +612,14 @@ async function resolveEmployeeTarget(
   }
 
   let searchText =
-    plan.targetEmployeeName
-      .trim();
+    plan.targetEmployeeName.trim();
+
+  /**
+   * "me", "my", "myself"
+   */
 
   if (
-    /^(me|myself|my)$/i.test(
+    /^(me|my|myself)$/i.test(
       searchText,
     )
   ) {
@@ -573,8 +634,8 @@ async function resolveEmployeeTarget(
       };
     }
 
-    const ownEmployee =
-      await safe(
+    const own =
+      await safe<any>(
         employeeRepo.getEmployeeById(
           String(
             user.employeeId,
@@ -582,21 +643,11 @@ async function resolveEmployeeTarget(
         ),
       );
 
-    if (!ownEmployee) {
-      return {
-        employee: null,
-        employeeId: null,
-        message:
-          "Your employee profile could not be found.",
-      };
-    }
-
     return {
       employee:
         sanitizeEmployee(
-          ownEmployee,
+          own,
         ),
-
       employeeId:
         String(
           user.employeeId,
@@ -604,19 +655,23 @@ async function resolveEmployeeTarget(
     };
   }
 
+  /**
+   * Search employee.
+   */
+
   const matches =
     await findEmployeeMatches(
       searchText,
     );
 
   if (
-    matches.length === 0
+    !matches.length
   ) {
     return {
       employee: null,
       employeeId: null,
       message:
-        `No employee named or identified as ${searchText} was found.`,
+        `No employee matching "${searchText}" was found.`,
     };
   }
 
@@ -627,321 +682,239 @@ async function resolveEmployeeTarget(
       employee: null,
       employeeId: null,
       message:
-        `Multiple employees matched ${searchText}. Please provide the employee's full name or employee code.`,
+        `More than one employee matches "${searchText}". Please provide the employee's full name or employee code.`,
     };
   }
 
-  const matched =
+  const candidate =
     matches[0];
 
-  const employeeId =
+  const candidateId =
     String(
-      matched._id ??
-        matched.id ??
-        matched.employeeId ??
+      candidate?.id ??
+        candidate?._id ??
+        candidate?.employeeId ??
         "",
     );
 
-  if (!employeeId) {
+  if (!candidateId) {
     return {
       employee: null,
       employeeId: null,
       message:
-        "The employee was found, but their employee ID could not be resolved.",
+        "The employee record could not be resolved.",
     };
   }
 
   /**
-   * Get the fully enriched record.
+   * Fetch enriched employee record.
    */
-  const enrichedEmployee =
-    await safe(
+
+  const enriched =
+    await safe<any>(
       employeeRepo.getEmployeeById(
-        employeeId,
+        candidateId,
       ),
     );
 
-  if (!enrichedEmployee) {
+  if (!enriched) {
     return {
       employee: null,
       employeeId: null,
       message:
-        `Employee ${searchText} was found, but their profile information could not be retrieved.`,
+        "The employee profile could not be retrieved.",
     };
   }
 
   /**
-   * Authorization.
+   * ========================================================================
+   * AUTHORIZATION
+   * ========================================================================
    */
-  const currentEmployeeId =
-    user.employeeId
-      ? String(
-          user.employeeId,
-        )
-      : null;
 
-  const isSelf =
-    employeeId ===
-    currentEmployeeId;
-
-  const isAdmin =
-    user.role ===
-      "SUPER_ADMIN" ||
-    user.role ===
-      "HR_ADMIN";
-
-  const isDirectReport =
-    user.role ===
-      "MANAGER" &&
+  const role =
     String(
-      enrichedEmployee.managerId ??
-        matched.managerId ??
-        "",
-    ) ===
-      String(
-        user.employeeId ??
-          "",
+      user.role,
+    ).toUpperCase();
+
+  /**
+   * SUPER_ADMIN / HR_ADMIN
+   *
+   * Organization-wide access.
+   */
+
+  if (
+    role === "SUPER_ADMIN" ||
+    role === "HR_ADMIN"
+  ) {
+    return {
+      employee:
+        sanitizeEmployee(
+          enriched,
+        ),
+      employeeId:
+        candidateId,
+    };
+  }
+
+  /**
+   * SELF
+   */
+
+  if (
+    user.employeeId &&
+    String(
+      user.employeeId,
+    ) === candidateId
+  ) {
+    return {
+      employee:
+        sanitizeEmployee(
+          enriched,
+        ),
+      employeeId:
+        candidateId,
+    };
+  }
+
+  /**
+   * MANAGER
+   *
+   * Only direct reports.
+   */
+
+  if (
+    role === "MANAGER"
+  ) {
+    const allowed =
+      await isDirectReport(
+        user,
+        candidateId,
       );
 
-  if (
-    !isSelf &&
-    !isAdmin &&
-    !isDirectReport
-  ) {
+    if (!allowed) {
+      return {
+        employee: null,
+        employeeId: null,
+        message:
+          "You are only authorized to view your own information and information belonging to your direct reports.",
+      };
+    }
+
     return {
-      employee: null,
-      employeeId: null,
-      message:
-        "You do not have permission to view this employee's HR information.",
-    };
-  }
-
-  return {
-    employee:
-      sanitizeEmployee(
-        enrichedEmployee,
-      ),
-
-    employeeId,
-  };
-}
-
-/**
- * ============================================================================
- * MY TEAM
- * ============================================================================
- */
-
-async function getMyTeam(
-  user: HrCopilotUserContext,
-) {
-  if (
-    !user.employeeId
-  ) {
-    return {
-      employees: [],
-      message:
-        "The authenticated user is not linked to an employee profile.",
-    };
-  }
-
-  if (
-    !hasPermission(
-      user,
-      "employees.view",
-    )
-  ) {
-    return {
-      employees: [],
-      message:
-        "You do not have permission to view employee information.",
+      employee:
+        sanitizeEmployee(
+          enriched,
+        ),
+      employeeId:
+        candidateId,
     };
   }
 
   /**
-   * Use the dedicated repository method.
+   * EMPLOYEE / FINANCE / IT_SUPPORT / RECRUITER
    *
-   * This is safer than asking the LLM to determine
-   * who belongs to the team.
+   * Self only.
    */
-  const employees =
-    await safe(
-      employeeRepo.listDirectReports(
-        String(
-          user.employeeId,
-        ),
-      ),
-    );
-
-  if (!employees) {
-    return {
-      employees: [],
-      message:
-        "The team information could not be retrieved right now.",
-    };
-  }
 
   return {
-    employees:
-      employees.map(
-        sanitizeEmployee,
-      ),
-
-    total:
-      employees.length,
+    employee: null,
+    employeeId: null,
+    message:
+      "You are only authorized to view your own HR information.",
   };
 }
 
 /**
  * ============================================================================
- * TEAM ORGANIZATION LIST
+ * DATE RANGE
  * ============================================================================
  */
 
-async function executeMyTeamOrganization(
-  user: HrCopilotUserContext,
-) {
-  const team =
-    await getMyTeam(
-      user,
-    );
-
-  if (
-    team.message
-  ) {
-    return team;
-  }
-
-  return {
-    scope: "MY_TEAM",
-
-    total:
-      team.total ?? 0,
-
-    employees:
-      team.employees,
-  };
-}
-
-/**
- * ============================================================================
- * TEAM ATTENDANCE
- * ============================================================================
- */
-
-async function executeTeamAttendance(
-  user: HrCopilotUserContext,
+function resolveDateRange(
   plan: HrCopilotPlan,
-) {
-  if (
-    !hasPermission(
-      user,
-      "attendance.view",
-    )
-  ) {
-    return {
-      message:
-        "You do not have permission to view attendance information.",
-    };
+): DateRange {
+  const IST_TIME_ZONE = "Asia/Kolkata";
+  const now = new Date();
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: IST_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+  const base = new Date(`${today}T00:00:00.000Z`);
+  const toDateString = (date: Date) => date.toISOString().slice(0, 10);
+
+  if (plan.timeRange === "TODAY") {
+    return { start: today, end: today };
   }
 
-  const team =
-    await getMyTeam(
-      user,
-    );
-
-  if (
-    team.message
-  ) {
-    return team;
+  if (plan.timeRange === "YESTERDAY") {
+    const date = new Date(base);
+    date.setUTCDate(date.getUTCDate() - 1);
+    const value = toDateString(date);
+    return { start: value, end: value };
   }
 
-  const employees =
-    team.employees ?? [];
-
-  if (
-    employees.length === 0
-  ) {
-    return {
-      teamSize: 0,
-      employees: [],
-      message:
-        "No direct reports were found for your team.",
-    };
+  if (plan.timeRange === "THIS_WEEK") {
+    const date = new Date(base);
+    const day = date.getUTCDay();
+    const diff = day === 0 ? 6 : day - 1;
+    date.setUTCDate(date.getUTCDate() - diff);
+    return { start: toDateString(date), end: today };
   }
 
-  const range =
-    resolveDateRange(
-      plan,
-    );
+  if (plan.timeRange === "LAST_WEEK") {
+    const end = new Date(base);
+    const day = end.getUTCDay();
+    const diff = day === 0 ? 6 : day - 1;
+    end.setUTCDate(end.getUTCDate() - diff - 1);
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - 6);
+    return { start: toDateString(start), end: toDateString(end) };
+  }
 
-  const attendanceResults =
-    await Promise.all(
-      employees.map(
-        async (
-          employee: any,
-        ) => {
-          const employeeId =
-            String(
-              employee.id,
-            );
+  if (plan.timeRange === "THIS_MONTH") {
+    const start = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), 1));
+    return { start: toDateString(start), end: today };
+  }
 
-          const attendance =
-            await safe(
-              attendanceRepo.getAiAttendanceInsights(
-                employeeId,
-                range.start,
-                range.end,
-              ),
-            );
+  if (plan.timeRange === "THIS_YEAR") {
+    const start = new Date(Date.UTC(base.getUTCFullYear(), 0, 1));
+    return { start: toDateString(start), end: today };
+  }
 
-          return {
-            employee: {
-              id:
-                employee.id,
+  if (plan.timeRange === "LAST_MONTH") {
+    const start = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - 1, 1));
+    const end = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), 0));
+    return { start: toDateString(start), end: toDateString(end) };
+  }
 
-              name:
-                employee.name,
+  if (plan.timeRange === "LAST_30_DAYS") {
+    const start = new Date(base);
+    start.setUTCDate(start.getUTCDate() - 30);
+    return { start: toDateString(start), end: today };
+  }
 
-              employeeCode:
-                employee.employeeCode,
+  if (plan.timeRange === "LAST_90_DAYS") {
+    const start = new Date(base);
+    start.setUTCDate(start.getUTCDate() - 90);
+    return { start: toDateString(start), end: today };
+  }
 
-              department:
-                employee.department,
-
-              designation:
-                employee.designation,
-            },
-
-            attendance:
-              attendance ??
-              null,
-          };
-        },
-      ),
-    );
-
-  return {
-    scope: "MY_TEAM",
-
-    period:
-      range,
-
-    teamSize:
-      employees.length,
-
-    employees:
-      attendanceResults,
-  };
+  // Preserve the existing default behavior for CURRENT/UNKNOWN: current month.
+  const start = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), 1));
+  return { start: toDateString(start), end: today };
 }
 
 /**
  * ============================================================================
- * INDIVIDUAL ATTENDANCE
+ * ATTENDANCE
  * ============================================================================
  */
 
-async function executeEmployeeAttendance(
+async function executeAttendance(
   user: HrCopilotUserContext,
   plan: HrCopilotPlan,
 ) {
@@ -964,7 +937,8 @@ async function executeEmployeeAttendance(
     );
 
   if (
-    target.message
+    target.message &&
+    !target.employeeId
   ) {
     return target;
   }
@@ -974,7 +948,7 @@ async function executeEmployeeAttendance(
   ) {
     return {
       message:
-        "No employee could be resolved for this request.",
+        "No employee could be resolved for this attendance request.",
     };
   }
 
@@ -984,7 +958,7 @@ async function executeEmployeeAttendance(
     );
 
   const attendance =
-    await safe(
+    await safe<any>(
       attendanceRepo.getAiAttendanceInsights(
         target.employeeId,
         range.start,
@@ -1000,13 +974,14 @@ async function executeEmployeeAttendance(
       range,
 
     attendance:
-      attendance ?? null,
+      attendance ??
+      null,
   };
 }
 
 /**
  * ============================================================================
- * PERFORMANCE
+ * PERFORMANCE / GOALS
  * ============================================================================
  */
 
@@ -1033,7 +1008,8 @@ async function executePerformance(
     );
 
   if (
-    target.message
+    target.message &&
+    !target.employeeId
   ) {
     return target;
   }
@@ -1043,12 +1019,12 @@ async function executePerformance(
   ) {
     return {
       message:
-        "No employee could be resolved for this request.",
+        "No employee could be resolved for this performance request.",
     };
   }
 
   const performance =
-    await safe(
+    await safe<any>(
       performanceRepo.getPerformanceScorecard(
         target.employeeId,
       ),
@@ -1093,7 +1069,8 @@ async function executeLeave(
     );
 
   if (
-    target.message
+    target.message &&
+    !target.employeeId
   ) {
     return target;
   }
@@ -1103,16 +1080,67 @@ async function executeLeave(
   ) {
     return {
       message:
-        "No employee could be resolved for this request.",
+        "No employee could be resolved for this leave request.",
     };
   }
 
   const leave =
-    await safe(
+    await safe<any>(
       leaveRepo.listBalancesForEmployee(
         target.employeeId,
         new Date().getFullYear(),
       ),
+    );
+
+  const requests =
+    await safe<any[]>(
+      leaveRepo.listRequests({
+        employeeId:
+          target.employeeId,
+      }),
+    );
+
+  const year =
+    new Date().getFullYear();
+
+  const yearStart =
+    `${year}-01-01`;
+
+  const yearEnd =
+    `${year}-12-31`;
+
+  const approvedRequests =
+    Array.isArray(requests)
+      ? requests.filter(
+          (request: any) =>
+            String(
+              request?.status ??
+                "",
+            ).toUpperCase() ===
+              "APPROVED" &&
+            String(
+              request?.startDate ??
+                "",
+            ) <= yearEnd &&
+            String(
+              request?.endDate ??
+                "",
+            ) >= yearStart,
+        )
+      : [];
+
+  const leavesTakenThisYear =
+    approvedRequests.reduce(
+      (
+        total: number,
+        request: any,
+      ) =>
+        total +
+        Number(
+          request?.totalDays ??
+            0,
+        ),
+      0,
     );
 
   return {
@@ -1121,17 +1149,287 @@ async function executeLeave(
 
     leave:
       leave ??
-      null,
+      [],
+
+    leaveRequests:
+      requests ??
+      [],
+
+    leaveSummary: {
+      year,
+      leavesTakenThisYear,
+      approvedRequestCount:
+        approvedRequests.length,
+    },
   };
 }
 
 /**
  * ============================================================================
- * ORGANIZATION / DIRECT REPORTS
+ * CALENDAR
  * ============================================================================
  */
 
-async function executeOrganizationQuery(
+async function executeCalendar(
+  user: HrCopilotUserContext,
+  plan: HrCopilotPlan,
+) {
+  if (
+    !hasPermission(
+      user,
+      "employees.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view calendar information.",
+    };
+  }
+
+  const target =
+    await resolveEmployeeTarget(
+      user,
+      plan,
+    );
+
+  if (
+    target.message &&
+    !target.employeeId
+  ) {
+    return target;
+  }
+
+  if (
+    !target.employeeId
+  ) {
+    return {
+      message:
+        "No employee could be resolved for this calendar request.",
+    };
+  }
+
+  const now =
+    new Date();
+
+  const until =
+    new Date(
+      now.getTime() +
+        14 *
+          24 *
+          60 *
+          60 *
+          1000,
+    );
+
+  const events =
+    await safe<any[]>(
+      calendarRepo.getUpcomingEvents(
+        target.employeeId,
+        now.toISOString(),
+        until.toISOString(),
+      ),
+    );
+
+  return {
+    employee:
+      target.employee,
+
+    calendar:
+      events ??
+      [],
+  };
+}
+
+/**
+ * ============================================================================
+ * PAYROLL
+ * ============================================================================
+ */
+
+async function executePayroll(
+  user: HrCopilotUserContext,
+  plan: HrCopilotPlan,
+) {
+  if (
+    !hasPermission(
+      user,
+      "payroll.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view payroll information.",
+    };
+  }
+
+  const target =
+    await resolveEmployeeTarget(
+      user,
+      plan,
+    );
+
+  if (
+    target.message &&
+    !target.employeeId
+  ) {
+    return target;
+  }
+
+  if (
+    !target.employeeId
+  ) {
+    return {
+      message:
+        "No employee could be resolved for this payroll request.",
+    };
+  }
+
+  const payslips =
+    await safe<any[]>(
+      payrollRepo.listPayslipsForEmployee(
+        target.employeeId,
+      ),
+    );
+
+  return {
+    employee:
+      target.employee,
+
+    payroll:
+      payslips ??
+      [],
+  };
+}
+
+/**
+ * ============================================================================
+ * DOCUMENTS
+ * ============================================================================
+ */
+
+async function executeDocuments(
+  user: HrCopilotUserContext,
+  plan: HrCopilotPlan,
+) {
+  if (
+    !hasPermission(
+      user,
+      "documents.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view document information.",
+    };
+  }
+
+  const target =
+    await resolveEmployeeTarget(
+      user,
+      plan,
+    );
+
+  if (
+    target.message &&
+    !target.employeeId
+  ) {
+    return target;
+  }
+
+  if (
+    !target.employeeId
+  ) {
+    return {
+      message:
+        "No employee could be resolved for this document request.",
+    };
+  }
+
+  const documents =
+    await safe<any[]>(
+      documentsRepo.listDocuments(
+        target.employeeId,
+      ),
+    );
+
+  return {
+    employee:
+      target.employee,
+
+    documents:
+      documents ??
+      [],
+  };
+}
+
+/**
+ * ============================================================================
+ * TICKETS
+ * ============================================================================
+ */
+
+async function executeTickets(
+  user: HrCopilotUserContext,
+  plan: HrCopilotPlan,
+) {
+  if (
+    !hasPermission(
+      user,
+      "tickets.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view ticket information.",
+    };
+  }
+
+  const target =
+    await resolveEmployeeTarget(
+      user,
+      plan,
+    );
+
+  if (
+    target.message &&
+    !target.employeeId
+  ) {
+    return target;
+  }
+
+  if (
+    !target.employeeId
+  ) {
+    return {
+      message:
+        "No employee could be resolved for this ticket request.",
+    };
+  }
+
+  const tickets =
+    await safe<any[]>(
+      ticketRepo.getMyTickets(
+        target.employeeId,
+      ),
+    );
+
+  return {
+    employee:
+      target.employee,
+
+    tickets:
+      tickets ??
+      [],
+  };
+}
+
+/**
+ * ============================================================================
+ * ORGANIZATION / MANAGER / TEAM
+ * ============================================================================
+ */
+
+async function executeOrganization(
   user: HrCopilotUserContext,
   plan: HrCopilotPlan,
 ) {
@@ -1154,7 +1452,8 @@ async function executeOrganizationQuery(
     );
 
   if (
-    target.message
+    target.message &&
+    !target.employeeId
   ) {
     return target;
   }
@@ -1164,54 +1463,1094 @@ async function executeOrganizationQuery(
   ) {
     return {
       message:
-        "No employee could be resolved for this organization query.",
+        "No employee could be resolved for this organization request.",
     };
   }
 
+  /**
+   * Manager lookup.
+   */
+
+  const asksManager =
+    [
+      ...(plan.conditions ??
+        []),
+      ...(plan.requestedFields ??
+        []),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes("manager");
+
+  if (
+    asksManager
+  ) {
+    const employee =
+      await safe<any>(
+        employeeRepo.getEmployeeById(
+          target.employeeId,
+        ),
+      );
+
+    const managerId =
+      employee?.managerId ??
+      employee?.manager?.id ??
+      employee?.manager?._id ??
+      null;
+
+    if (
+      managerId
+    ) {
+      const manager =
+        await safe<any>(
+          employeeRepo.getEmployeeById(
+            String(
+              managerId,
+            ),
+          ),
+        );
+
+      return {
+        relation:
+          "MANAGER",
+
+        employee:
+          target.employee,
+
+        manager:
+          sanitizeEmployee(
+            manager,
+          ),
+      };
+    }
+
+    /**
+     * Organization repository can sometimes resolve
+     * the manager even when the enriched employee object
+     * does not contain managerId.
+     */
+
+    const organizationManager =
+      await safe<any>(
+        (
+          organizationRepo as any
+        ).getEmployeeManager
+          ? (
+              organizationRepo as any
+            ).getEmployeeManager(
+              target.employeeId,
+            )
+          : Promise.resolve(
+              null,
+            ),
+      );
+
+    if (
+      organizationManager
+    ) {
+      return {
+        relation:
+          "MANAGER",
+
+        employee:
+          target.employee,
+
+        manager:
+          sanitizeEmployee(
+            organizationManager,
+          ),
+      };
+    }
+
+    return {
+      relation:
+        "MANAGER",
+
+      employee:
+        target.employee,
+
+      manager:
+        null,
+
+      message:
+        "The manager information is not available in the authorized HRMS data.",
+    };
+  }
+
+  /**
+   * Direct reports.
+   */
+
   const directReports =
-    await safe(
+    await safe<any[]>(
       employeeRepo.listDirectReports(
         target.employeeId,
       ),
     );
 
-  if (
-    !directReports
-  ) {
-    return {
-      message:
-        "The organization information could not be retrieved right now.",
-    };
-  }
-
   const employees =
-    directReports.map(
-      (
-        employee: any,
-      ) =>
-        sanitizeEmployee(
-          employee,
-        ),
-    );
+    Array.isArray(
+      directReports,
+    )
+      ? directReports.map(
+          sanitizeEmployee,
+        )
+      : [];
 
   return {
-    targetEmployee:
-      target.employee?.name ??
-      plan.targetEmployeeName,
+    relation:
+      "DIRECT_REPORTS",
 
-    relationship:
-      "Direct reports",
+    manager:
+      target.employee,
+
+    employees,
 
     total:
       employees.length,
-
-    employees,
   };
 }
 
 /**
  * ============================================================================
- * EMPLOYEE PROFILE LOOKUP
+ * RECRUITMENT
+ * ============================================================================
+ */
+
+async function executeRecruitment(
+  user: HrCopilotUserContext,
+) {
+  if (
+    !hasPermission(
+      user,
+      "recruitment.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view recruitment information.",
+    };
+  }
+
+  /**
+   * Keep the repository call isolated because recruitment
+   * implementations can differ between HRMS versions.
+   */
+
+  const repository =
+    recruitmentRepo as any;
+
+  let result:
+    any = null;
+
+  if (
+    typeof repository.listJobPostings ===
+    "function"
+  ) {
+    result =
+      await safe<any>(
+        repository.listJobPostings(
+          "OPEN",
+        ),
+      );
+  } else if (
+    typeof repository.listJobs ===
+    "function"
+  ) {
+    result =
+      await safe<any>(
+        repository.listJobs(),
+      );
+  } else if (
+    typeof repository.getOpenPositions ===
+    "function"
+  ) {
+    result =
+      await safe<any>(
+        repository.getOpenPositions(),
+      );
+  }
+
+  return {
+    recruitment:
+      result ??
+      [],
+  };
+}
+
+/**
+ * ============================================================================
+ * ANNOUNCEMENTS
+ * ============================================================================
+ */
+
+async function executeAnnouncements(
+  user: HrCopilotUserContext,
+) {
+  if (
+    !hasPermission(
+      user,
+      "announcements.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view announcements.",
+    };
+  }
+
+  const announcements =
+    await safe<any>(
+      announcementRepo.getAnnouncements(
+        user.role,
+        user.userId,
+      ),
+    );
+
+  return {
+    announcements:
+      Array.isArray(
+        announcements,
+      )
+        ? announcements
+        : announcements?.announcements ??
+          [],
+  };
+}
+
+/**
+ * ============================================================================
+ * ORGANIZATION ATTENDANCE
+ * ============================================================================
+ *
+ * Organization-wide attendance is allowed only for SUPER_ADMIN / HR_ADMIN.
+ * Managers must use the TEAM scope, and other roles remain SELF-only.
+ *
+ * The attendance repository performs the actual attendance calculation.
+ * The Copilot executor only resolves the authorized employee population.
+ */
+
+async function executeOrganizationAttendance(
+  user: HrCopilotUserContext,
+  plan: HrCopilotPlan,
+) {
+  if (
+    user.role !==
+      "SUPER_ADMIN" &&
+    user.role !==
+      "HR_ADMIN"
+  ) {
+    return {
+      message:
+        "Organization-wide attendance information is available only within an authorized HR administration scope.",
+    };
+  }
+
+  if (
+    !hasPermission(
+      user,
+      "attendance.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view organization-wide attendance information.",
+    };
+  }
+
+  const repository =
+    employeeRepo as any;
+
+  if (
+    typeof repository.listEmployees !==
+    "function"
+  ) {
+    return {
+      message:
+        "Employee data required for the attendance calculation is not available.",
+    };
+  }
+
+  /**
+   * Retrieve the full active employee population without assuming
+   * a fixed page size. listEmployees() exposes total/page/pageSize.
+   */
+  const pageSize = 100;
+  let page = 1;
+  let total = 0;
+  const employeeIds: string[] = [];
+
+  do {
+    const result =
+      await safe<any>(
+        repository.listEmployees({
+          status: "ACTIVE",
+          page,
+          pageSize,
+        }),
+      );
+
+    const employees =
+      Array.isArray(
+        result?.employees,
+      )
+        ? result.employees
+        : [];
+
+    for (
+      const employee of employees
+    ) {
+      const id =
+        employee?.id ??
+        employee?._id ??
+        employee?.employeeId;
+
+      if (id) {
+        employeeIds.push(
+          String(id),
+        );
+      }
+    }
+
+    total =
+      Number(
+        result?.total ??
+          0,
+      );
+
+    if (
+      employees.length ===
+        0
+    ) {
+      break;
+    }
+
+    page += 1;
+  } while (
+    employeeIds.length <
+      total &&
+    page <= 1000
+  );
+
+  const uniqueEmployeeIds =
+    Array.from(
+      new Set(
+        employeeIds,
+      ),
+    );
+
+  const range =
+    resolveDateRange(
+      plan,
+    );
+
+  const repositoryAttendance =
+    attendanceRepo as any;
+
+  if (
+    typeof repositoryAttendance.getAiAttendanceInsightsForEmployees !==
+    "function"
+  ) {
+    return {
+      message:
+        "Organization-wide attendance analysis is not available in the current attendance repository.",
+    };
+  }
+
+  const attendance =
+    await safe<any>(
+      repositoryAttendance.getAiAttendanceInsightsForEmployees(
+        uniqueEmployeeIds,
+        range.start,
+        range.end,
+      ),
+    );
+
+  if (
+    !attendance
+  ) {
+    return {
+      scope:
+        "ORGANIZATION",
+
+      period:
+        range,
+
+      employeeCount:
+        uniqueEmployeeIds.length,
+
+      attendance:
+        null,
+
+      message:
+        "No attendance analysis data was returned for the authorized employee population.",
+    };
+  }
+
+  return {
+    scope:
+      "ORGANIZATION",
+
+    period:
+      range,
+
+    employeeCount:
+      uniqueEmployeeIds.length,
+
+    attendance,
+  };
+}
+
+/**
+ * ============================================================================
+ * REPORTS
+ * ============================================================================
+ */
+
+async function executeReports(
+  user: HrCopilotUserContext,
+) {
+  if (!hasPermission(user, "reports.view")) {
+    return {
+      message: "You do not have permission to view reports.",
+    };
+  }
+
+  const repository = reportsRepo as any;
+
+  if (typeof repository.workforce === "function") {
+    // The reports repository accepts ReportFilters plus an optional employee-ID
+    // scope. It does not accept a role string. Build the scope here so the
+    // Copilot cannot accidentally expose organization-wide reports to a
+    // manager or self-scoped role.
+    let employeeIds: string[] | undefined;
+
+    if (user.role === "MANAGER") {
+      const reports = await safe<any[]>(
+        employeeRepo.listDirectReports(String(user.employeeId ?? "")),
+      );
+      employeeIds = Array.isArray(reports)
+        ? reports
+            .map((employee: any) =>
+              String(employee?.id ?? employee?._id ?? employee?.employeeId ?? ""),
+            )
+            .filter(Boolean)
+        : [];
+    } else if (user.role !== "SUPER_ADMIN" && user.role !== "HR_ADMIN") {
+      employeeIds = user.employeeId ? [String(user.employeeId)] : [];
+    }
+
+    const report = await safe<any>(
+      repository.workforce({}, employeeIds),
+    );
+
+    return {
+      reports: report ?? null,
+    };
+  }
+
+  if (typeof repository.getWorkforceReport === "function") {
+    // Keep compatibility with older repository versions that expose a legacy
+    // method. Prefer the repository's existing method signature when present.
+    const report = await safe<any>(
+      repository.getWorkforceReport(user.role, user.employeeId),
+    );
+
+    return {
+      reports: report ?? null,
+    };
+  }
+
+  return {
+    reports: null,
+    message: "The requested report is not available.",
+  };
+}
+
+/**
+ * ============================================================================
+ * DASHBOARD
+ * ============================================================================
+ */
+
+async function executeDashboard(
+  user: HrCopilotUserContext,
+) {
+  if (
+    !hasPermission(
+      user,
+      "reports.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view dashboard information.",
+    };
+  }
+
+  const repository =
+    dashboardRepo as any;
+
+  let dashboard:
+    any = null;
+
+  if (
+    typeof repository.getKpis ===
+    "function"
+  ) {
+    dashboard =
+      await safe<any>(
+        repository.getKpis(
+          user.role,
+          user.employeeId,
+        ),
+      );
+  } else if (
+    typeof repository.getDashboardKpis ===
+    "function"
+  ) {
+    dashboard =
+      await safe<any>(
+        repository.getDashboardKpis(
+          user.role,
+          user.employeeId,
+        ),
+      );
+  } else if (
+    typeof repository.getDashboard ===
+    "function"
+  ) {
+    dashboard =
+      await safe<any>(
+        repository.getDashboard(
+          user.role,
+          user.employeeId,
+        ),
+      );
+  }
+
+  return {
+    dashboard:
+      dashboard ??
+      null,
+  };
+}
+
+/**
+ * ============================================================================
+ * SELF / EMPLOYEE SUMMARY
+ * ============================================================================
+ *
+ * This is intentionally cross-module.
+ *
+ * "Give me an overall summary of my work status"
+ *
+ * can retrieve:
+ *
+ * Employee
+ * Attendance
+ * Leave
+ * Performance
+ * Calendar
+ * Payroll
+ * Documents
+ * Tickets
+ * Announcements
+ *
+ * depending on authorization and available repositories.
+ */
+
+async function executeSummary(
+  user: HrCopilotUserContext,
+  plan: HrCopilotPlan,
+) {
+  const target =
+    await resolveEmployeeTarget(
+      user,
+      plan,
+    );
+
+  if (
+    target.message &&
+    !target.employeeId
+  ) {
+    return target;
+  }
+
+  if (
+    !target.employeeId
+  ) {
+    return {
+      message:
+        "The employee profile could not be resolved.",
+    };
+  }
+
+  const employeeId =
+    target.employeeId;
+
+  const employee =
+    target.employee;
+
+  const result:
+    Record<string, any> = {};
+
+  /**
+   * Employee
+   */
+
+  if (
+    hasPermission(
+      user,
+      "employees.view",
+    )
+  ) {
+    result.employee =
+      employee;
+  }
+
+  /**
+   * Attendance
+   */
+
+  if (
+    hasPermission(
+      user,
+      "attendance.view",
+    )
+  ) {
+    const range =
+      resolveDateRange(
+        plan,
+      );
+
+    const attendance =
+      await safe<any>(
+        attendanceRepo.getAiAttendanceInsights(
+          employeeId,
+          range.start,
+          range.end,
+        ),
+      );
+
+    result.attendance =
+      attendance ??
+      null;
+  }
+
+  /**
+   * Leave
+   */
+
+  if (
+    hasPermission(
+      user,
+      "leave.view",
+    )
+  ) {
+    const leave =
+      await safe<any>(
+        leaveRepo.listBalancesForEmployee(
+          employeeId,
+          new Date().getFullYear(),
+        ),
+      );
+
+    result.leave =
+      leave ??
+      [];
+
+    const requests =
+      await safe<any[]>(
+        leaveRepo.listRequests({
+          employeeId,
+        }),
+      );
+
+    result.leaveRequests =
+      requests ??
+      [];
+  }
+
+  /**
+   * Performance / Goals
+   */
+
+  if (
+    hasPermission(
+      user,
+      "performance.view",
+    )
+  ) {
+    const performance =
+      await safe<any>(
+        performanceRepo.getPerformanceScorecard(
+          employeeId,
+        ),
+      );
+
+    result.performance =
+      performance ??
+      null;
+  }
+
+  /**
+   * Calendar
+   */
+
+  if (
+    hasPermission(
+      user,
+      "employees.view",
+    )
+  ) {
+    const now =
+      new Date();
+
+    const until =
+      new Date(
+        now.getTime() +
+          14 *
+            24 *
+            60 *
+            60 *
+            1000,
+      );
+
+    const events =
+      await safe<any[]>(
+        calendarRepo.getUpcomingEvents(
+          employeeId,
+          now.toISOString(),
+          until.toISOString(),
+        ),
+      );
+
+    result.calendar =
+      events ??
+      [];
+  }
+
+  /**
+   * Payroll
+   */
+
+  if (
+    hasPermission(
+      user,
+      "payroll.view",
+    )
+  ) {
+    const payroll =
+      await safe<any[]>(
+        payrollRepo.listPayslipsForEmployee(
+          employeeId,
+        ),
+      );
+
+    result.payroll =
+      payroll ??
+      [];
+  }
+
+  /**
+   * Documents
+   */
+
+  if (
+    hasPermission(
+      user,
+      "documents.view",
+    )
+  ) {
+    const documents =
+      await safe<any[]>(
+        documentsRepo.listDocuments(
+          employeeId,
+        ),
+      );
+
+    result.documents =
+      documents ??
+      [];
+  }
+
+  /**
+   * Tickets
+   */
+
+  if (
+    hasPermission(
+      user,
+      "tickets.view",
+    )
+  ) {
+    const tickets =
+      await safe<any[]>(
+        ticketRepo.getMyTickets(
+          employeeId,
+        ),
+      );
+
+    result.tickets =
+      tickets ??
+      [];
+  }
+
+  /**
+   * Announcements
+   *
+   * Only include announcements for self summaries.
+   */
+
+  if (
+    hasPermission(
+      user,
+      "announcements.view",
+    )
+  ) {
+    const announcements =
+      await safe<any>(
+        announcementRepo.getAnnouncements(
+          user.role,
+          user.userId,
+        ),
+      );
+
+    result.announcements =
+      Array.isArray(
+        announcements,
+      )
+        ? announcements
+        : announcements?.announcements ??
+          [];
+  }
+
+  return {
+    selfSummary:
+      result,
+  };
+}
+
+/**
+ * ============================================================================
+ * TEAM ATTENDANCE
+ * ============================================================================
+ */
+
+async function executeTeamAttendance(
+  user: HrCopilotUserContext,
+  plan: HrCopilotPlan,
+) {
+  if (
+    user.role !==
+    "MANAGER"
+  ) {
+    return {
+      message:
+        "Team attendance information is available only within an authorized manager scope.",
+    };
+  }
+
+  if (
+    !user.employeeId
+  ) {
+    return {
+      message:
+        "Your manager employee profile could not be resolved.",
+    };
+  }
+
+  if (
+    !hasPermission(
+      user,
+      "attendance.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view attendance information.",
+    };
+  }
+
+  const reports =
+    await safe<any[]>(
+      employeeRepo.listDirectReports(
+        String(
+          user.employeeId,
+        ),
+      ),
+    );
+
+  const employees =
+    Array.isArray(
+      reports,
+    )
+      ? [
+          ...reports,
+        ]
+      : [];
+
+  const selfEmployee =
+    await safe<any>(
+      employeeRepo.getEmployeeById(
+        String(
+          user.employeeId,
+        ),
+      ),
+    );
+
+  if (
+    selfEmployee
+  ) {
+    employees.unshift(
+      selfEmployee,
+    );
+  }
+
+  const uniqueEmployees =
+    Array.from(
+      new Map(
+        employees.map(
+          (employee: any) => [
+            String(
+              employee?.id ??
+                employee?._id ??
+                employee?.employeeId ??
+                "",
+            ),
+            employee,
+          ],
+        ),
+      ).values(),
+    );
+
+  const range =
+    resolveDateRange(
+      plan,
+    );
+
+  const attendance =
+    await Promise.all(
+      uniqueEmployees.map(
+        async (
+          employee: any,
+        ) => {
+          const employeeId =
+            String(
+              employee?.id ??
+                employee?._id ??
+                employee?.employeeId ??
+                "",
+            );
+
+          const result =
+            employeeId
+              ? await safe<any>(
+                  attendanceRepo.getAiAttendanceInsights(
+                    employeeId,
+                    range.start,
+                    range.end,
+                  ),
+                )
+              : null;
+
+          return {
+            employee:
+              sanitizeEmployee(
+                employee,
+              ),
+
+            attendance:
+              result ??
+              null,
+          };
+        },
+      ),
+    );
+
+  return {
+    scope:
+      "TEAM",
+
+    period:
+      range,
+
+    teamSize:
+      uniqueEmployees.length,
+
+    employees:
+      attendance,
+  };
+}
+
+/**
+ * ============================================================================
+ * TEAM ORGANIZATION
+ * ============================================================================
+ */
+
+async function executeMyTeam(
+  user: HrCopilotUserContext,
+) {
+  if (
+    !user.employeeId
+  ) {
+    return {
+      message:
+        "Your employee profile could not be resolved.",
+    };
+  }
+
+  if (
+    !hasPermission(
+      user,
+      "employees.view",
+    )
+  ) {
+    return {
+      message:
+        "You do not have permission to view team information.",
+    };
+  }
+
+  const reports =
+    await safe<any[]>(
+      employeeRepo.listDirectReports(
+        String(
+          user.employeeId,
+        ),
+      ),
+    );
+
+  const employees =
+    Array.isArray(
+      reports,
+    )
+      ? reports.map(
+          sanitizeEmployee,
+        )
+      : [];
+
+  return {
+    scope:
+      "TEAM",
+
+    managerEmployeeId:
+      String(
+        user.employeeId,
+      ),
+
+    employees,
+
+    total:
+      employees.length,
+  };
+}
+
+/**
+ * ============================================================================
+ * EMPLOYEE DIRECTORY / PROFILE
  * ============================================================================
  */
 
@@ -1238,12 +2577,10 @@ async function executeEmployeeLookup(
     );
 
   if (
-    target.message
+    target.message &&
+    !target.employeeId
   ) {
-    return {
-      message:
-        target.message,
-    };
+    return target;
   }
 
   if (
@@ -1251,27 +2588,13 @@ async function executeEmployeeLookup(
   ) {
     return {
       message:
-        "No employee could be resolved for this request.",
+        "No authorized employee profile was found.",
     };
   }
 
-  /**
-   * IMPORTANT:
-   *
-   * Return the employee fields directly.
-   *
-   * Previous implementation returned:
-   *
-   * data.employee.employee.designation
-   *
-   * which made simple fallback answers miss the designation.
-   *
-   * This implementation returns:
-   *
-   * data.employee.designation
-   */
   return {
-    ...target.employee,
+    employee:
+      target.employee,
 
     requestedField:
       plan.requestedFields?.[0] ??
@@ -1281,1121 +2604,872 @@ async function executeEmployeeLookup(
 
 /**
  * ============================================================================
- * SELF / EMPLOYEE CROSS-MODULE SUMMARY
- * ============================================================================
- */
-
-async function executeWorkSummary(
-  user: HrCopilotUserContext,
-  employeeId: string,
-  employee: any,
-  includeAnnouncements: boolean,
-) {
-  const now =
-    new Date();
-
-  const startDate =
-    new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1,
-    )
-      .toISOString()
-      .slice(0, 10);
-
-  const endDate =
-    now
-      .toISOString()
-      .slice(0, 10);
-
-  const calendarEnd =
-    new Date(
-      now.getTime() +
-        14 *
-          24 *
-          60 *
-          60 *
-          1000,
-    ).toISOString();
-
-  const tasks: Promise<unknown>[] =
-    [];
-
-  const labels: string[] =
-    [];
-
-  /**
-   * Employee profile
-   */
-  if (
-    hasPermission(
-      user,
-      "employees.view",
-    )
-  ) {
-    tasks.push(
-      Promise.resolve(
-        sanitizeEmployee(
-          employee,
-        ),
-      ),
-    );
-
-    labels.push(
-      "employee",
-    );
-  }
-
-  /**
-   * Attendance
-   */
-  if (
-    hasPermission(
-      user,
-      "attendance.view",
-    )
-  ) {
-    tasks.push(
-      attendanceRepo.getAiAttendanceInsights(
-        employeeId,
-        startDate,
-        endDate,
-      ),
-    );
-
-    labels.push(
-      "attendance",
-    );
-  }
-
-  /**
-   * Leave
-   */
-  if (
-    hasPermission(
-      user,
-      "leave.view",
-    )
-  ) {
-    tasks.push(
-      leaveRepo.listBalancesForEmployee(
-        employeeId,
-        now.getFullYear(),
-      ),
-    );
-
-    labels.push(
-      "leave",
-    );
-  }
-
-  /**
-   * Performance
-   */
-  if (
-    hasPermission(
-      user,
-      "performance.view",
-    )
-  ) {
-    tasks.push(
-      performanceRepo.getPerformanceScorecard(
-        employeeId,
-      ),
-    );
-
-    labels.push(
-      "performance",
-    );
-  }
-
-  /**
-   * Calendar
-   *
-   * Existing calendar access is employee-scoped.
-   */
-  tasks.push(
-    calendarRepo.getUpcomingEvents(
-      employeeId,
-      now.toISOString(),
-      calendarEnd,
-    ),
-  );
-
-  labels.push(
-    "calendar",
-  );
-
-  /**
-   * Payroll
-   */
-  if (
-    hasPermission(
-      user,
-      "payroll.view",
-    )
-  ) {
-    tasks.push(
-      payrollRepo.listPayslipsForEmployee(
-        employeeId,
-      ),
-    );
-
-    labels.push(
-      "payroll",
-    );
-  }
-
-  /**
-   * Documents
-   */
-  if (
-    hasPermission(
-      user,
-      "documents.view",
-    )
-  ) {
-    tasks.push(
-      documentsRepo.listDocuments(
-        employeeId,
-      ),
-    );
-
-    labels.push(
-      "documents",
-    );
-  }
-
-  /**
-   * Tickets
-   */
-  if (
-    hasPermission(
-      user,
-      "tickets.view",
-    )
-  ) {
-    tasks.push(
-      ticketRepo.getMyTickets(
-        employeeId,
-      ),
-    );
-
-    labels.push(
-      "tickets",
-    );
-  }
-
-  /**
-   * Announcements
-   *
-   * Only included for the authenticated user's own summary.
-   */
-  if (
-    includeAnnouncements &&
-    hasPermission(
-      user,
-      "announcements.view",
-    )
-  ) {
-    tasks.push(
-      announcementRepo.getAnnouncements(
-        user.role,
-        user.userId,
-      ),
-    );
-
-    labels.push(
-      "announcements",
-    );
-  }
-
-  const results =
-    await Promise.allSettled(
-      tasks,
-    );
-
-  const data:
-    Record<string, any> =
-    {};
-
-  let index = 0;
-
-  for (
-    const label of labels
-  ) {
-    const result =
-      results[index];
-
-    if (
-      result?.status ===
-      "fulfilled"
-    ) {
-      data[label] =
-        result.value;
-    } else {
-      data[label] =
-        null;
-    }
-
-    index += 1;
-  }
-
-  return {
-    employee:
-      sanitizeEmployee(
-        employee,
-      ),
-
-    period: {
-      startDate,
-      endDate,
-    },
-
-    ...data,
-
-    dataAvailability:
-      Object.fromEntries(
-        labels.map(
-          (
-            label,
-            position,
-          ) => [
-            label,
-            results[position]
-              ?.status ===
-              "fulfilled",
-          ],
-        ),
-      ),
-  };
-}
-
-/**
- * ============================================================================
- * SELF SUMMARY
- * ============================================================================
- */
-
-async function executeSelfSummary(
-  user: HrCopilotUserContext,
-) {
-  if (
-    !user.employeeId
-  ) {
-    return {
-      message:
-        "The authenticated user is not linked to an employee profile.",
-    };
-  }
-
-  if (
-    !hasPermission(
-      user,
-      "employees.view",
-    )
-  ) {
-    return {
-      message:
-        "You do not have permission to view your employee information.",
-    };
-  }
-
-  const employee =
-    await safe(
-      employeeRepo.getEmployeeById(
-        String(
-          user.employeeId,
-        ),
-      ),
-    );
-
-  if (!employee) {
-    return {
-      message:
-        "Your employee profile could not be retrieved.",
-    };
-  }
-
-  return executeWorkSummary(
-    user,
-    String(
-      user.employeeId,
-    ),
-    employee,
-    true,
-  );
-}
-
-/**
- * ============================================================================
- * NAMED EMPLOYEE SUMMARY
- * ============================================================================
- */
-
-async function executeEmployeeSummary(
-  user: HrCopilotUserContext,
-  plan: HrCopilotPlan,
-) {
-  const target =
-    await resolveEmployeeTarget(
-      user,
-      plan,
-    );
-
-  if (
-    target.message
-  ) {
-    return target;
-  }
-
-  if (
-    !target.employeeId ||
-    !target.employee
-  ) {
-    return {
-      message:
-        "No employee could be resolved for this summary.",
-    };
-  }
-
-  const employee =
-    await safe(
-      employeeRepo.getEmployeeById(
-        target.employeeId,
-      ),
-    );
-
-  if (!employee) {
-    return {
-      message:
-        "The employee profile could not be retrieved.",
-    };
-  }
-
-  return executeWorkSummary(
-    user,
-    target.employeeId,
-    employee,
-    false,
-  );
-}
-
-/**
- * ============================================================================
- * GENERAL SELF ATTENDANCE
- * ============================================================================
- */
-
-async function executeTodayAttendance(
-  user: HrCopilotUserContext,
-) {
-  if (!user.employeeId) {
-    return {
-      message:
-        "The authenticated user is not linked to an employee profile.",
-    };
-  }
-
-  if (!hasPermission(user, "attendance.view")) {
-    return {
-      message:
-        "You do not have permission to view attendance information.",
-    };
-  }
-
-  const attendance =
-    await safe(
-      attendanceRepo.getTodayRecord(
-        String(user.employeeId),
-      ),
-    );
-
-  return {
-    employeeId: String(user.employeeId),
-    date: new Date().toISOString().slice(0, 10),
-    attendance: attendance ?? null,
-  };
-}
-
-async function executeSelfAttendance(
-  user: HrCopilotUserContext,
-  plan: HrCopilotPlan,
-) {
-  if (
-    !user.employeeId
-  ) {
-    return {
-      message:
-        "The authenticated user is not linked to an employee profile.",
-    };
-  }
-
-  if (
-    !hasPermission(
-      user,
-      "attendance.view",
-    )
-  ) {
-    return {
-      message:
-        "You do not have permission to view attendance information.",
-    };
-  }
-
-  if (plan.conditions.includes("TODAY_ATTENDANCE")) {
-    return executeTodayAttendance(user);
-  }
-
-  const range = resolveDateRange(plan);
-
-  const attendance = await safe(
-    attendanceRepo.getAiAttendanceInsights(
-      String(user.employeeId),
-      range.start,
-      range.end,
-    ),
-  );
-
-  return {
-    employeeId: user.employeeId,
-    period: range,
-    attendance: attendance ?? null,
-  };
-}
-
-/**
- * ============================================================================
- * GENERAL SELF PERFORMANCE
- * ============================================================================
- */
-
-async function executeSelfPerformance(
-  user: HrCopilotUserContext,
-) {
-  if (
-    !user.employeeId
-  ) {
-    return {
-      message:
-        "The authenticated user is not linked to an employee profile.",
-    };
-  }
-
-  if (
-    !hasPermission(
-      user,
-      "performance.view",
-    )
-  ) {
-    return {
-      message:
-        "You do not have permission to view performance information.",
-    };
-  }
-
-  const performance =
-    await safe(
-      performanceRepo.getPerformanceScorecard(
-        String(
-          user.employeeId,
-        ),
-      ),
-    );
-
-  return {
-    employeeId:
-      user.employeeId,
-
-    performance:
-      performance ?? null,
-  };
-}
-
-/**
- * ============================================================================
- * GENERAL SELF LEAVE
- * ============================================================================
- */
-
-async function executeSelfLeave(
-  user: HrCopilotUserContext,
-) {
-  if (
-    !user.employeeId
-  ) {
-    return {
-      message:
-        "The authenticated user is not linked to an employee profile.",
-    };
-  }
-
-  if (
-    !hasPermission(
-      user,
-      "leave.view",
-    )
-  ) {
-    return {
-      message:
-        "You do not have permission to view leave information.",
-    };
-  }
-
-  const leave =
-    await safe(
-      leaveRepo.listBalancesForEmployee(
-        String(
-          user.employeeId,
-        ),
-        new Date().getFullYear(),
-      ),
-    );
-
-  return {
-    employeeId:
-      user.employeeId,
-
-    leave:
-      leave ?? null,
-  };
-}
-
-/**
- * ============================================================================
- * MAIN TOOL EXECUTOR
+ * MAIN EXECUTOR
  * ============================================================================
  */
 
 export async function executeHrCopilotPlan(
   user: HrCopilotUserContext,
   plan: HrCopilotPlan,
-) {
+): Promise<ExecutorResult> {
   const data:
-    Record<string, unknown> =
-    {};
+    Record<string, any> = {};
 
   const sources:
-    HrCopilotSource[] =
-    [];
+    HrCopilotSource[] = [];
+
+  const domains =
+    Array.isArray(
+      plan.domains,
+    )
+      ? plan.domains.map(
+          (item) =>
+            String(
+              item,
+            ).toUpperCase(),
+        )
+      : [];
+
+  const requestedScope =
+    plan.scope;
+
+  const scope =
+    getAuthorizedRequestScope(
+      user,
+      requestedScope,
+    );
+
+  // From this point onward, every executor function receives the effective
+  // server-authorized scope rather than the raw planner scope.
+  // plan = {
+  //   ...plan,
+  //   // TEAM is an executor-internal scope. HrCopilotPlan uses MY_TEAM for the
+  //   // planner representation, so this assertion keeps the existing plan type
+  //   // intact while allowing the executor's established TEAM branches.
+  //   scope: scope as HrCopilotPlan["scope"],
+  // };
 
   /**
-   * --------------------------------------------------------------------------
-   * SELF CROSS-MODULE SUMMARY
-   * --------------------------------------------------------------------------
+   * ==========================================================================
+   * SECURITY: TEAM SCOPE
+   * ==========================================================================
+   *
+   * Only MANAGER can use TEAM scope.
    */
 
   if (
-    plan.scope === "SELF" &&
-    plan.task === "SUMMARY"
+    scope === "TEAM" &&
+    user.role !==
+      "MANAGER"
   ) {
-    data.selfSummary =
-      await executeSelfSummary(
-        user,
-      );
-
-    sources.push({
-      module: "employee",
-      description:
-        "Authenticated user's authorized employee profile and HRMS summary.",
-    });
-
-    if (
-      hasPermission(
-        user,
-        "attendance.view",
-      )
-    ) {
-      sources.push({
-        module: "attendance",
-        description:
-          "Authenticated user's authorized attendance information.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "leave.view",
-      )
-    ) {
-      sources.push({
-        module: "leave",
-        description:
-          "Authenticated user's authorized leave information.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "performance.view",
-      )
-    ) {
-      sources.push({
-        module: "performance",
-        description:
-          "Authenticated user's authorized performance information.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "payroll.view",
-      )
-    ) {
-      sources.push({
-        module: "payroll",
-        description:
-          "Authenticated user's authorized payroll information.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "documents.view",
-      )
-    ) {
-      sources.push({
-        module: "documents",
-        description:
-          "Authenticated user's authorized document information.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "tickets.view",
-      )
-    ) {
-      sources.push({
-        module: "tickets",
-        description:
-          "Authenticated user's authorized ticket information.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "announcements.view",
-      )
-    ) {
-      sources.push({
-        module: "announcements",
-        description:
-          "Announcements available to the authenticated user.",
-      });
-    }
-
-    sources.push({
-      module: "calendar",
-      description:
-        "Authenticated user's upcoming calendar information.",
-    });
-  }
-
-  /**
-   * --------------------------------------------------------------------------
-   * NAMED EMPLOYEE CROSS-MODULE SUMMARY
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    plan.scope === "EMPLOYEE" &&
-    plan.task === "SUMMARY"
-  ) {
-    data.employeeSummary =
-      await executeEmployeeSummary(
-        user,
-        plan,
-      );
-
-    sources.push({
-      module: "employee",
-      description:
-        "Authorized employee profile information.",
-    });
-
-    if (
-      hasPermission(
-        user,
-        "attendance.view",
-      )
-    ) {
-      sources.push({
-        module: "attendance",
-        description:
-          "Authorized attendance information for the requested employee.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "leave.view",
-      )
-    ) {
-      sources.push({
-        module: "leave",
-        description:
-          "Authorized leave information for the requested employee.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "performance.view",
-      )
-    ) {
-      sources.push({
-        module: "performance",
-        description:
-          "Authorized performance information for the requested employee.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "payroll.view",
-      )
-    ) {
-      sources.push({
-        module: "payroll",
-        description:
-          "Authorized payroll information for the requested employee.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "documents.view",
-      )
-    ) {
-      sources.push({
-        module: "documents",
-        description:
-          "Authorized document information for the requested employee.",
-      });
-    }
-
-    if (
-      hasPermission(
-        user,
-        "tickets.view",
-      )
-    ) {
-      sources.push({
-        module: "tickets",
-        description:
-          "Authorized ticket information for the requested employee.",
-      });
-    }
-
-    sources.push({
-      module: "calendar",
-      description:
-        "Authorized calendar information for the requested employee.",
-    });
-  }
-
-  /**
-   * --------------------------------------------------------------------------
-   * EMPLOYEE PROFILE LOOKUP
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    plan.domains.includes(
-      "EMPLOYEE",
-    ) &&
-    (
-      plan.scope ===
-        "EMPLOYEE" ||
-      plan.scope ===
-        "SELF"
-    ) &&
-    plan.task !== "SUMMARY"
-  ) {
-    const employeeResult =
-      await executeEmployeeLookup(
-        user,
-        plan,
-      );
-
-    /**
-     * New canonical shape:
-     *
-     * data.employee.designation
-     *
-     * Compatibility shape:
-     *
-     * data.employeeLookup.employee
-     *
-     * This allows older fallback code to continue working.
-     */
-    data.employee =
-      employeeResult;
-
-    data.employeeLookup = {
-      employee:
-        employeeResult,
+    return {
+      data: {
+        message:
+          "You are not authorized to access team-level HR information.",
+      },
+      sources: [],
     };
+  }
+
+  /**
+   * ==========================================================================
+   * SUMMARY
+   * ==========================================================================
+   *
+   * IMPORTANT:
+   *
+   * Do NOT check:
+   *
+   * plan.task !== "SUMMARY"
+   *
+   * here.
+   *
+   * A summary may contain multiple module domains.
+   */
+
+  if (
+    plan.task ===
+      "SUMMARY" &&
+    (
+      scope ===
+        "SELF" ||
+      scope ===
+        "EMPLOYEE"
+    )
+  ) {
+    const summary =
+      await executeSummary(
+        user,
+        plan,
+      );
+
+    Object.assign(
+      data,
+      summary,
+    );
 
     sources.push({
-      module: "employee",
+      module:
+        "employee",
       description:
         "Authorized employee profile information.",
     });
+
+    if (
+      domains.includes(
+        "ATTENDANCE",
+      ) ||
+      data.selfSummary?.attendance
+    ) {
+      sources.push({
+        module:
+          "attendance",
+        description:
+          "Authorized attendance information.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "LEAVE",
+      ) ||
+      data.selfSummary?.leave
+    ) {
+      sources.push({
+        module:
+          "leave",
+        description:
+          "Authorized leave information.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "PERFORMANCE",
+      ) ||
+      domains.includes(
+        "GOALS",
+      ) ||
+      data.selfSummary?.performance
+    ) {
+      sources.push({
+        module:
+          "performance",
+        description:
+          "Authorized performance and goal information.",
+      });
+    }
+
+    if (
+      data.selfSummary?.calendar
+    ) {
+      sources.push({
+        module:
+          "calendar",
+        description:
+          "Authorized calendar information.",
+      });
+    }
+
+    if (
+      data.selfSummary?.payroll
+    ) {
+      sources.push({
+        module:
+          "payroll",
+        description:
+          "Authorized payroll information.",
+      });
+    }
+
+    if (
+      data.selfSummary?.documents
+    ) {
+      sources.push({
+        module:
+          "documents",
+        description:
+          "Authorized employee document information.",
+      });
+    }
+
+    if (
+      data.selfSummary?.tickets
+    ) {
+      sources.push({
+        module:
+          "tickets",
+        description:
+          "Authorized employee support-ticket information.",
+      });
+    }
+
+    if (
+      data.selfSummary?.announcements
+    ) {
+      sources.push({
+        module:
+          "announcements",
+        description:
+          "Announcements visible to the authenticated user.",
+      });
+    }
+
+    return {
+      data,
+      sources,
+    };
   }
 
   /**
-   * --------------------------------------------------------------------------
-   * MY TEAM ORGANIZATION
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    plan.scope ===
-      "MY_TEAM" &&
-    plan.domains.includes(
-      "ORGANIZATION",
-    )
-  ) {
-    data.organization =
-      await executeMyTeamOrganization(
-        user,
-      );
-
-    sources.push({
-      module: "organization",
-      description:
-        "Authorized direct-team organization information.",
-    });
-  }
-
-  /**
-   * --------------------------------------------------------------------------
-   * MY TEAM ATTENDANCE
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    plan.scope ===
-      "MY_TEAM" &&
-    plan.domains.includes(
-      "ATTENDANCE",
-    )
-  ) {
-    data.teamAttendance =
-      await executeTeamAttendance(
-        user,
-        plan,
-      );
-
-    sources.push({
-      module: "attendance",
-      description:
-        "Authorized attendance information for the authenticated user's direct team.",
-    });
-  }
-
-  /**
-   * --------------------------------------------------------------------------
-   * NAMED EMPLOYEE ORGANIZATION
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    plan.scope ===
-      "EMPLOYEE" &&
-    plan.domains.includes(
-      "ORGANIZATION",
-    )
-  ) {
-    data.organization =
-      await executeOrganizationQuery(
-        user,
-        plan,
-      );
-
-    sources.push({
-      module: "organization",
-      description:
-        "Authorized organization reporting information.",
-    });
-  }
-
-  /**
-   * --------------------------------------------------------------------------
-   * INDIVIDUAL ATTENDANCE
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    plan.scope ===
-      "EMPLOYEE" &&
-    plan.domains.includes(
-      "ATTENDANCE",
-    ) &&
-    plan.task !== "SUMMARY"
-  ) {
-    data.attendance =
-      await executeEmployeeAttendance(
-        user,
-        plan,
-      );
-
-    sources.push({
-      module: "attendance",
-      description:
-        "Authorized attendance information for the requested employee.",
-    });
-  }
-
-  /**
-   * --------------------------------------------------------------------------
-   * INDIVIDUAL PERFORMANCE
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    plan.scope ===
-      "EMPLOYEE" &&
-    plan.domains.includes(
-      "PERFORMANCE",
-    ) &&
-    plan.task !== "SUMMARY"
-  ) {
-    data.performance =
-      await executePerformance(
-        user,
-        plan,
-      );
-
-    sources.push({
-      module: "performance",
-      description:
-        "Authorized performance information for the requested employee.",
-    });
-  }
-
-  /**
-   * --------------------------------------------------------------------------
-   * INDIVIDUAL LEAVE
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    plan.scope ===
-      "EMPLOYEE" &&
-    plan.domains.includes(
-      "LEAVE",
-    ) &&
-    plan.task !== "SUMMARY"
-  ) {
-    data.leave =
-      await executeLeave(
-        user,
-        plan,
-      );
-
-    sources.push({
-      module: "leave",
-      description:
-        "Authorized leave information for the requested employee.",
-    });
-  }
-
-  /**
-   * --------------------------------------------------------------------------
+   * ==========================================================================
    * SELF ATTENDANCE
-   * --------------------------------------------------------------------------
+   * ==========================================================================
    */
 
   if (
-    plan.scope ===
+    scope ===
       "SELF" &&
-    plan.domains.includes(
+    domains.includes(
       "ATTENDANCE",
-    ) &&
-    plan.task !== "SUMMARY"
+    )
   ) {
     data.attendance =
-      await executeSelfAttendance(
+      await executeAttendance(
         user,
-        plan,
+        {
+          ...plan,
+          scope:
+            "SELF",
+        },
       );
 
     sources.push({
-      module: "attendance",
+      module:
+        "attendance",
       description:
         "Authenticated user's authorized attendance information.",
     });
   }
 
   /**
-   * --------------------------------------------------------------------------
-   * SELF PERFORMANCE
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    plan.scope ===
-      "SELF" &&
-    plan.domains.includes(
-      "PERFORMANCE",
-    ) &&
-    plan.task !== "SUMMARY"
-  ) {
-    data.performance =
-      await executeSelfPerformance(
-        user,
-      );
-
-    sources.push({
-      module: "performance",
-      description:
-        "Authenticated user's authorized performance information.",
-    });
-  }
-
-  /**
-   * --------------------------------------------------------------------------
+   * ==========================================================================
    * SELF LEAVE
-   * --------------------------------------------------------------------------
+   * ==========================================================================
    */
 
   if (
-    plan.scope ===
+    scope ===
       "SELF" &&
-    plan.domains.includes(
+    domains.includes(
       "LEAVE",
-    ) &&
-    plan.task !== "SUMMARY"
+    )
   ) {
     data.leave =
-      await executeSelfLeave(
+      await executeLeave(
         user,
+        {
+          ...plan,
+          scope:
+            "SELF",
+        },
       );
 
     sources.push({
-      module: "leave",
+      module:
+        "leave",
       description:
         "Authenticated user's authorized leave information.",
     });
   }
 
   /**
-   * --------------------------------------------------------------------------
-   * SAFETY FALLBACK
-   * --------------------------------------------------------------------------
+   * ==========================================================================
+   * SELF PERFORMANCE / GOALS
+   * ==========================================================================
+   */
+
+  if (
+    scope ===
+      "SELF" &&
+    (
+      domains.includes(
+        "PERFORMANCE",
+      ) ||
+      domains.includes(
+        "GOALS",
+      )
+    )
+  ) {
+    data.performance =
+      await executePerformance(
+        user,
+        {
+          ...plan,
+          scope:
+            "SELF",
+        },
+      );
+
+    sources.push({
+      module:
+        "performance",
+      description:
+        "Authenticated user's authorized performance and goal information.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * SELF CALENDAR
+   * ==========================================================================
+   */
+
+  if (
+    scope ===
+      "SELF" &&
+    domains.includes(
+      "CALENDAR",
+    )
+  ) {
+    data.calendar =
+      await executeCalendar(
+        user,
+        {
+          ...plan,
+          scope:
+            "SELF",
+        },
+      );
+
+    sources.push({
+      module:
+        "calendar",
+      description:
+        "Authenticated user's authorized calendar information.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * SELF PAYROLL
+   * ==========================================================================
+   */
+
+  if (
+    scope ===
+      "SELF" &&
+    domains.includes(
+      "PAYROLL",
+    )
+  ) {
+    data.payroll =
+      await executePayroll(
+        user,
+        {
+          ...plan,
+          scope:
+            "SELF",
+        },
+      );
+
+    sources.push({
+      module:
+        "payroll",
+      description:
+        "Authenticated user's authorized payroll information.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * SELF DOCUMENTS
+   * ==========================================================================
+   */
+
+  if (
+    scope ===
+      "SELF" &&
+    domains.includes(
+      "DOCUMENTS",
+    )
+  ) {
+    data.documents =
+      await executeDocuments(
+        user,
+        {
+          ...plan,
+          scope:
+            "SELF",
+        },
+      );
+
+    sources.push({
+      module:
+        "documents",
+      description:
+        "Authenticated user's authorized document information.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * SELF TICKETS
+   * ==========================================================================
+   */
+
+  if (
+    scope ===
+      "SELF" &&
+    domains.includes(
+      "TICKETS",
+    )
+  ) {
+    data.tickets =
+      await executeTickets(
+        user,
+        {
+          ...plan,
+          scope:
+            "SELF",
+        },
+      );
+
+    sources.push({
+      module:
+        "tickets",
+      description:
+        "Authenticated user's authorized ticket information.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * MANAGER TEAM
+   * ==========================================================================
+   */
+
+  if (
+    scope ===
+      "TEAM" &&
+    domains.includes(
+      "ORGANIZATION",
+    )
+  ) {
+    data.organization =
+      await executeMyTeam(
+        user,
+      );
+
+    sources.push({
+      module:
+        "organization",
+      description:
+        "Direct reports within the authenticated manager's authorized team scope.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * MANAGER TEAM ATTENDANCE
+   * ==========================================================================
+   */
+
+  if (
+    scope ===
+      "TEAM" &&
+    domains.includes(
+      "ATTENDANCE",
+    )
+  ) {
+    data.attendance =
+      await executeTeamAttendance(
+        user,
+        plan,
+      );
+
+    sources.push({
+      module:
+        "attendance",
+      description:
+        "Attendance information limited to the manager's direct reports.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * NAMED EMPLOYEE
+   * ==========================================================================
+   *
+   * This handles:
+   *
+   * "What is Meghana's designation?"
+   * "What is Abid's attendance?"
+   * "Show me X's performance."
+   *
+   * Authorization is still performed by resolveEmployeeTarget().
+   */
+
+  if (
+    scope ===
+      "EMPLOYEE"
+  ) {
+    if (
+      domains.includes(
+        "EMPLOYEE",
+      )
+    ) {
+      data.employee =
+        await executeEmployeeLookup(
+          user,
+          plan,
+        );
+
+      sources.push({
+        module:
+          "employee",
+        description:
+          "Authorized employee profile information.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "ATTENDANCE",
+      )
+    ) {
+      data.attendance =
+        await executeAttendance(
+          user,
+          plan,
+        );
+
+      sources.push({
+        module:
+          "attendance",
+        description:
+          "Authorized attendance information for the requested employee.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "LEAVE",
+      )
+    ) {
+      data.leave =
+        await executeLeave(
+          user,
+          plan,
+        );
+
+      sources.push({
+        module:
+          "leave",
+        description:
+          "Authorized leave information for the requested employee.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "PERFORMANCE",
+      ) ||
+      domains.includes(
+        "GOALS",
+      )
+    ) {
+      data.performance =
+        await executePerformance(
+          user,
+          plan,
+        );
+
+      sources.push({
+        module:
+          "performance",
+        description:
+          "Authorized performance and goal information for the requested employee.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "CALENDAR",
+      )
+    ) {
+      data.calendar =
+        await executeCalendar(
+          user,
+          plan,
+        );
+
+      sources.push({
+        module:
+          "calendar",
+        description:
+          "Authorized calendar information for the requested employee.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "PAYROLL",
+      )
+    ) {
+      data.payroll =
+        await executePayroll(
+          user,
+          plan,
+        );
+
+      sources.push({
+        module:
+          "payroll",
+        description:
+          "Authorized payroll information for the requested employee.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "DOCUMENTS",
+      )
+    ) {
+      data.documents =
+        await executeDocuments(
+          user,
+          plan,
+        );
+
+      sources.push({
+        module:
+          "documents",
+        description:
+          "Authorized document information for the requested employee.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "TICKETS",
+      )
+    ) {
+      data.tickets =
+        await executeTickets(
+          user,
+          plan,
+        );
+
+      sources.push({
+        module:
+          "tickets",
+        description:
+          "Authorized ticket information for the requested employee.",
+      });
+    }
+
+    if (
+      domains.includes(
+        "ORGANIZATION",
+      )
+    ) {
+      data.organization =
+        await executeOrganization(
+          user,
+          plan,
+        );
+
+      sources.push({
+        module:
+          "organization",
+        description:
+          "Authorized organization relationship information.",
+      });
+    }
+  }
+
+  /**
+   * ==========================================================================
+   * ORGANIZATION
+   * ==========================================================================
+   */
+
+  if (
+    (
+      scope ===
+        "ORGANIZATION" ||
+      scope ===
+        "DEPARTMENT"
+    ) &&
+    domains.includes(
+      "ATTENDANCE",
+    )
+  ) {
+    data.organizationAttendance =
+      await executeOrganizationAttendance(
+        user,
+        plan,
+      );
+
+    sources.push({
+      module:
+        "attendance",
+      description:
+        "Organization-wide attendance calculation for the authorized employee population.",
+    });
+  }
+
+  if (
+    domains.includes(
+      "ORGANIZATION",
+    ) &&
+    (
+      scope ===
+        "ORGANIZATION" ||
+      scope ===
+        "DEPARTMENT"
+    )
+  ) {
+    /**
+     * Organization-wide employee data is only allowed
+     * for SUPER_ADMIN and HR_ADMIN.
+     */
+
+    if (
+      user.role ===
+        "SUPER_ADMIN" ||
+      user.role ===
+        "HR_ADMIN"
+    ) {
+      const repository =
+        organizationRepo as any;
+
+      if (
+        typeof repository.searchOrganization ===
+        "function"
+      ) {
+        const result =
+          await safe<any>(
+            repository.searchOrganization(
+              {},
+            ),
+          );
+
+        data.organizationOverview =
+          result ??
+          null;
+      }
+
+      sources.push({
+        module:
+          "organization",
+        description:
+          "Organization information within the authorized administrative scope.",
+      });
+    }
+  }
+
+  /**
+   * ==========================================================================
+   * ANNOUNCEMENTS
+   * ==========================================================================
+   */
+
+  if (
+    domains.includes(
+      "ANNOUNCEMENTS",
+    )
+  ) {
+    data.announcements =
+      await executeAnnouncements(
+        user,
+      );
+
+    sources.push({
+      module:
+        "announcements",
+      description:
+        "Announcements visible to the authenticated user.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * RECRUITMENT
+   * ==========================================================================
+   */
+
+  if (
+    domains.includes(
+      "RECRUITMENT",
+    )
+  ) {
+    data.recruitment =
+      await executeRecruitment(
+        user,
+      );
+
+    sources.push({
+      module:
+        "recruitment",
+      description:
+        "Authorized recruitment information.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * REPORTS
+   * ==========================================================================
+   */
+
+  if (
+    domains.includes(
+      "REPORTS",
+    )
+  ) {
+    data.reports =
+      await executeReports(
+        user,
+      );
+
+    sources.push({
+      module:
+        "reports",
+      description:
+        "Authorized HR report information.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * DASHBOARD
+   * ==========================================================================
+   */
+
+  if (
+    domains.includes(
+      "DASHBOARD",
+    )
+  ) {
+    data.dashboard =
+      await executeDashboard(
+        user,
+      );
+
+    sources.push({
+      module:
+        "dashboard",
+      description:
+        "Authorized HRMS dashboard information.",
+    });
+  }
+
+  /**
+   * ==========================================================================
+   * FALLBACK FOR EMPTY DATA
+   * ==========================================================================
    */
 
   if (

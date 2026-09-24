@@ -347,12 +347,16 @@ export async function listRequests(filters: {
     Employee.find({ _id: { $in: employeeIds } }).lean(),
     LeaveType.find({ _id: { $in: leaveTypeIds } }).lean(),
   ]);
-  const empMap = new Map(employees.map((e) => [e._id, e]));
-  const typeMap = new Map(leaveTypes.map((t) => [t._id, t]));
+  const empMap = new Map(
+    employees.map((e) => [String(e._id), e]),
+  );
+  const typeMap = new Map(
+    leaveTypes.map((t) => [String(t._id), t]),
+  );
 
   return rows.map((r) => {
-    const emp = empMap.get(r.employeeId);
-    const type = typeMap.get(r.leaveTypeId);
+    const emp = empMap.get(String(r.employeeId));
+    const type = typeMap.get(String(r.leaveTypeId));
     const { _id, ...rest } = r;
     return {
       id: _id,
@@ -1183,8 +1187,8 @@ export async function getLeaveCalendar(
   );
 
   const leaveEntries = rows.map((r) => {
-    const emp = empMap.get(r.employeeId);
-    const type = typeMap.get(r.leaveTypeId);
+    const emp = empMap.get(String(r.employeeId));
+    const type = typeMap.get(String(r.leaveTypeId));
 
     return {
       id: r._id,

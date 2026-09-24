@@ -424,21 +424,21 @@ export async function listJobPostings(
 
   const deptMap = new Map(
     (departments as AnyDoc[]).map((department: AnyDoc) => [
-      department._id,
+      String(department._id),
       department,
     ]),
   );
 
   const designationMap = new Map(
     (designations as AnyDoc[]).map((designation: AnyDoc) => [
-      designation._id,
+      String(designation._id),
       designation,
     ]),
   );
 
   const countMap = new Map(
     (candidateCounts as AnyDoc[]).map((candidate: AnyDoc) => [
-      candidate._id,
+      String(candidate._id),
       candidate.count,
     ]),
   );
@@ -446,9 +446,9 @@ export async function listJobPostings(
   return rows.map((row: AnyDoc) => ({
     id: row._id,
     ...row,
-    departmentName: deptMap.get(row.departmentId)?.name ?? null,
-    designationTitle: designationMap.get(row.designationId)?.title ?? null,
-    candidateCount: countMap.get(row._id) ?? 0,
+    departmentName: deptMap.get(String(row.departmentId))?.name ?? null,
+    designationTitle: designationMap.get(String(row.designationId))?.title ?? null,
+    candidateCount: countMap.get(String(row._id)) ?? 0,
   }));
 }
 

@@ -3,20 +3,23 @@ import { z } from "zod";
 import { generateOrganizationAI } from "@/services/ai.service";
 
 import {
-  HrCopilotPageContext,
-  HrCopilotUserContext,
-} from "./hr-copilot.types";
+  HR_COPILOT_PLANNER_PROMPT,
+  buildHrCopilotPlannerUserPrompt,
+} from "./hr-copilot.planner.prompts";
 
-import { buildHrCopilotPlannerPrompt } from "./hr-copilot.planner.prompts";
+/**
+ * The planner only forwards these contexts to the prompt builder.  Keep the
+ * input types local because the context module does not export these names.
+ */
+export type HrCopilotPageContext = object;
+export type HrCopilotUserContext = object;
 
 /**
  * ============================================================================
  * PLANNER SCHEMA
  * ============================================================================
- *
- * The planner only understands the user's request.
- * It does NOT access the database.
  */
+
 export const hrCopilotPlanSchema = z.object({
   task: z.enum([
     "LOOKUP",
@@ -57,16 +60,19 @@ export const hrCopilotPlanSchema = z.object({
         "RECRUITMENT",
         "ORGANIZATION",
         "REPORTS",
+        "DASHBOARD",
       ]),
     )
     .min(1)
-    .max(8),
+    .max(14),
 
   targetEmployeeName: z.string().nullable(),
 
   timeRange: z.enum([
     "TODAY",
+    "YESTERDAY",
     "THIS_WEEK",
+    "LAST_WEEK",
     "THIS_MONTH",
     "THIS_YEAR",
     "LAST_MONTH",
@@ -77,14 +83,28 @@ export const hrCopilotPlanSchema = z.object({
     "UNKNOWN",
   ]),
 
-  conditions: z.array(z.string()).max(8),
+  conditions: z
+    .array(z.string())
+    .max(10),
 
-  requestedFields: z.array(z.string()).max(12),
+  requestedFields: z
+    .array(z.string())
+    .max(15),
 
-  reasoning: z.string().max(500),
+  reasoning: z
+    .string()
+    .max(500),
 });
 
-export type HrCopilotPlan = z.infer<typeof hrCopilotPlanSchema>;
+export type HrCopilotPlan = z.infer<
+  typeof hrCopilotPlanSchema
+>;
+
+/**
+ * ============================================================================
+ * INPUT
+ * ============================================================================
+ */
 
 export interface BuildHrCopilotPlanInput {
   message: string;
@@ -101,7 +121,7 @@ export interface BuildHrCopilotPlanInput {
 
 /**
  * ============================================================================
- * CONSTANTS
+ * CROSS-MODULE PERSONAL DOMAINS
  * ============================================================================
  */
 
@@ -114,455 +134,9 @@ const CROSS_MODULE_SELF_DOMAINS: HrCopilotPlan["domains"] = [
   "CALENDAR",
   "PAYROLL",
   "DOCUMENTS",
+  "TICKETS",
+  "ANNOUNCEMENTS",
 ];
-
-const CROSS_MODULE_EMPLOYEE_DOMAINS: HrCopilotPlan["domains"] = [
-  "EMPLOYEE",
-  "ATTENDANCE",
-  "LEAVE",
-  "PERFORMANCE",
-  "GOALS",
-  "CALENDAR",
-  "PAYROLL",
-  "DOCUMENTS",
-];
-
-/**
- * ============================================================================
- * EMPLOYEE FIELD DETECTION
- * ============================================================================
- */
-
-function detectRequestedEmployeeField(
-  message: string,
-): string {
-  const text = message.toLowerCase();
-
-  if (
-    /\b(employee\s*code|employee\s*id|employee\s*number|staff\s*id|staff\s*code)\b/.test(
-      text,
-    )
-  ) {
-    return "employeeCode";
-  }
-
-  if (/\bdesignation\b|\bjob title\b|\bjob role\b/.test(text)) {
-    return "designation";
-  }
-
-  if (/\bdepartment\b/.test(text)) {
-    return "department";
-  }
-
-  if (
-    /\bmanager\b|\breporting manager\b|\breports to\b/.test(
-      text,
-    )
-  ) {
-    return "manager";
-  }
-
-  if (
-    /\bwork location\b|\boffice location\b|\blocation\b/.test(
-      text,
-    )
-  ) {
-    return "workLocation";
-  }
-
-  if (/\bemployment type\b/.test(text)) {
-    return "employmentType";
-  }
-
-  if (/\bstatus\b/.test(text)) {
-    return "status";
-  }
-
-  if (
-    /\bjoining date\b|\bdate of joining\b|\bjoined\b/.test(
-      text,
-    )
-  ) {
-    return "dateOfJoining";
-  }
-
-  if (/\bskills?\b|\bskill set\b/.test(text)) {
-    return "skills";
-  }
-
-  return "profile";
-}
-
-/**
- * ============================================================================
- * EMPLOYEE NAME EXTRACTION
- * ============================================================================
- */
-
-function cleanExtractedName(
-  value: string,
-): string {
-  return value
-    .trim()
-    .replace(/[?.!,;:]+$/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractEmployeeNameFromMessage(
-  message: string,
-): string | null {
-  const text = message.trim();
-
-  const patterns = [
-    /**
-     * What is the designation of Naga Chandana Sakala?
-     */
-    /\bwhat\s+(?:is|are)\s+(?:the\s+)?(?:designation|department|employee\s*code|employee\s*id|employee\s*number|manager|work\s*location|employment\s*type|status|joining\s*date|date\s*of\s*joining)\s+(?:of|for)\s+(.+?)[?.!]*$/i,
-
-    /**
-     * What is Naga Chandana Sakala's designation?
-     */
-    /\bwhat\s+(?:is|are)\s+(.+?)['’]s\s+(?:designation|department|employee\s*code|employee\s*id|employee\s*number|manager|work\s*location|employment\s*type|status|joining\s*date|date\s*of\s*joining)[?.!]*$/i,
-
-    /**
-     * Tell me about Naga Chandana Sakala.
-     */
-    /\b(?:tell|show)\s+me\s+(?:about\s+)?(.+?)(?:'s)?\s+(?:profile|details|information)[?.!]*$/i,
-
-    /**
-     * Give me Naga Chandana Sakala's profile.
-     */
-    /\b(?:give|show)\s+(?:me\s+)?(.+?)['’]s\s+(?:profile|details|information)[?.!]*$/i,
-
-    /**
-     * What is the designation for Naga Chandana Sakala?
-     */
-    /\b(?:designation|department|employee\s*code|employee\s*id|manager|work\s*location|employment\s*type|status)\s+(?:of|for)\s+(.+?)[?.!]*$/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-
-    if (match?.[1]) {
-      const candidate = cleanExtractedName(
-        match[1],
-      );
-
-      if (
-        candidate &&
-        !/^(my|me|mine|myself|my team|our team)$/i.test(
-          candidate,
-        )
-      ) {
-        return candidate;
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * ============================================================================
- * REPORTING / TEAM NAME EXTRACTION
- * ============================================================================
- */
-
-function extractReportingEmployeeName(
-  message: string,
-): string | null {
-  const patterns = [
-    /\bwho\s+will\s+report\s+to\s+(.+?)[?.!]*$/i,
-
-    /\bwho\s+reports?\s+to\s+(.+?)[?.!]*$/i,
-
-    /\bwho\s+is\s+reporting\s+to\s+(.+?)[?.!]*$/i,
-
-    /\bwho\s+reports?\s+directly\s+to\s+(.+?)[?.!]*$/i,
-
-    /\bwho\s+is\s+under\s+(.+?)[?.!]*$/i,
-
-    /\bwho\s+are\s+(.+?)['’]s\s+(?:team|direct\s+reports?)[?.!]*$/i,
-
-    /\b(?:show|list)\s+(.+?)['’]s\s+(?:team|direct\s+reports?)[?.!]*$/i,
-
-    /\b(?:show|list)\s+(?:the\s+)?(?:employees|people|members|team)\s+(?:under|reporting\s+to)\s+(.+?)[?.!]*$/i,
-
-    /\b(?:employees|people|team\s+members?)\s+(?:under|reporting\s+to)\s+(.+?)[?.!]*$/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = message.match(pattern);
-
-    if (match?.[1]) {
-      const candidate = cleanExtractedName(
-        match[1],
-      );
-
-      if (candidate) {
-        return candidate;
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * ============================================================================
- * SELF SUMMARY DETECTION
- * ============================================================================
- */
-
-function isOverallSelfSummary(
-  message: string,
-): boolean {
-  const text = message.toLowerCase();
-
-  const selfWords =
-    /\b(my|me|mine|myself|i)\b/.test(text);
-
-  const summaryWords =
-    /\b(overall|complete|full|entire|summary|overview|work status|employee status|hr status|current status|how am i doing|how am i|my status)\b/.test(
-      text,
-    );
-
-  return selfWords && summaryWords;
-}
-
-/**
- * ============================================================================
- * EMPLOYEE SUMMARY DETECTION
- * ============================================================================
- */
-
-function isEmployeeSummary(
-  message: string,
-): boolean {
-  const text = message.toLowerCase();
-
-  return (
-    /\b(overall|complete|full|entire|summary|overview)\b/.test(
-      text,
-    ) &&
-    extractEmployeeNameFromMessage(message) !== null
-  );
-}
-
-/**
- * ============================================================================
- * DOMAIN DETECTION
- * ============================================================================
- */
-
-function detectDomains(
-  message: string,
-): HrCopilotPlan["domains"] {
-  const text = message.toLowerCase();
-
-  const domains: HrCopilotPlan["domains"] = [];
-
-  const add = (
-    domain: HrCopilotPlan["domains"][number],
-  ) => {
-    if (!domains.includes(domain)) {
-      domains.push(domain);
-    }
-  };
-
-  if (
-    /\b(attendance|absent|absence|late|lateness|check.?in|check.?out|working hours|overtime|regularization)\b/.test(
-      text,
-    )
-  ) {
-    add("ATTENDANCE");
-  }
-
-  if (
-    /\b(leave|holiday|time off|comp.?off|leave balance|leave request)\b/.test(
-      text,
-    )
-  ) {
-    add("LEAVE");
-  }
-
-  if (
-    /\b(performance|rating|review|feedback|scorecard|pip|development)\b/.test(
-      text,
-    )
-  ) {
-    add("PERFORMANCE");
-  }
-
-  if (
-    /\b(goal|goals|progress|target|achievement|objective)\b/.test(
-      text,
-    )
-  ) {
-    add("GOALS");
-  }
-
-  if (
-    /\b(payroll|salary|payslip|payslip|ctc|compensation|deduction|net pay|gross pay)\b/.test(
-      text,
-    )
-  ) {
-    add("PAYROLL");
-  }
-
-  if (
-    /\b(document|documents|certificate|offer letter|appointment letter|expiry|compliance)\b/.test(
-      text,
-    )
-  ) {
-    add("DOCUMENTS");
-  }
-
-  if (
-    /\b(calendar|meeting|schedule|event|appointment|upcoming)\b/.test(
-      text,
-    )
-  ) {
-    add("CALENDAR");
-  }
-
-  if (
-    /\b(ticket|tickets|helpdesk|support)\b/.test(
-      text,
-    )
-  ) {
-    add("TICKETS");
-  }
-
-  if (
-    /\b(announcement|announcements|notice|notices|company update|updates)\b/.test(
-      text,
-    )
-  ) {
-    add("ANNOUNCEMENTS");
-  }
-
-  if (
-    /\b(recruitment|candidate|hiring|job opening|vacancy|applicant|open role)\b/.test(
-      text,
-    )
-  ) {
-    add("RECRUITMENT");
-  }
-
-  if (
-    /\b(employee|profile|designation|department|manager|employee code|employee id|work location)\b/.test(
-      text,
-    )
-  ) {
-    add("EMPLOYEE");
-  }
-
-  if (
-    /\b(organization|org chart|reporting structure|reporting|team hierarchy|direct reports|team members)\b/.test(
-      text,
-    )
-  ) {
-    add("ORGANIZATION");
-  }
-
-  if (
-    /\b(report|reports|analytics|metrics|headcount|attrition|workforce)\b/.test(
-      text,
-    )
-  ) {
-    add("REPORTS");
-  }
-
-  return domains;
-}
-
-/**
- * ============================================================================
- * TASK DETECTION
- * ============================================================================
- */
-
-function detectTask(
-  message: string,
-): HrCopilotPlan["task"] {
-  const text = message.toLowerCase();
-
-  if (
-    /\b(summary|overview|overall|complete summary|full summary)\b/.test(
-      text,
-    )
-  ) {
-    return "SUMMARY";
-  }
-
-  if (
-    /\b(compare|compared|versus|vs)\b/.test(
-      text,
-    )
-  ) {
-    return "COMPARE";
-  }
-
-  if (
-    /\b(analy[sz]e|analysis|why|reason)\b/.test(
-      text,
-    )
-  ) {
-    return "ANALYZE";
-  }
-
-  if (
-    /\b(issue|issues|problem|problems|anomal(?:y|ies)|concern|concerns)\b/.test(
-      text,
-    )
-  ) {
-    return "IDENTIFY_ISSUES";
-  }
-
-  if (
-    /\b(how many|count|number of)\b/.test(
-      text,
-    )
-  ) {
-    return "COUNT";
-  }
-
-  if (
-    /\b(who|which|list|show|team members|employees under|people under)\b/.test(
-      text,
-    )
-  ) {
-    return "LIST";
-  }
-
-  if (
-    /\b(status|state|how is|how are)\b/.test(
-      text,
-    )
-  ) {
-    return "STATUS";
-  }
-
-  if (
-    /\b(trend|trending|increasing|decreasing|improving|declining)\b/.test(
-      text,
-    )
-  ) {
-    return "TREND";
-  }
-
-  if (
-    /\b(what is|what's|tell me|show me|give me|find|lookup|look up)\b/.test(
-      text,
-    )
-  ) {
-    return "LOOKUP";
-  }
-
-  return "GENERAL";
-}
 
 /**
  * ============================================================================
@@ -573,60 +147,64 @@ function detectTask(
 function detectTimeRange(
   message: string,
 ): HrCopilotPlan["timeRange"] {
-  const text = message.toLowerCase();
+  const text = message
+    .toLowerCase()
+    .trim();
 
   if (
-    /\b(today|right now)\b/.test(text)
+    /\btoday\b|\bright now\b|\btoday's\b/.test(
+      text,
+    )
   ) {
     return "TODAY";
   }
 
-  if (
-    /\b(current|currently)\b/.test(text)
-  ) {
-    return "CURRENT";
+  if (/\byesterday\b/.test(text)) {
+    return "YESTERDAY";
   }
 
-  if (
-    /\bthis week|weekly\b/.test(text)
-  ) {
+  if (/\bthis week\b/.test(text)) {
     return "THIS_WEEK";
   }
 
-  if (
-    /\bthis month|monthly\b/.test(text)
-  ) {
+  if (/\blast week\b/.test(text)) {
+    return "LAST_WEEK";
+  }
+
+  if (/\bthis month\b/.test(text)) {
     return "THIS_MONTH";
   }
 
-  if (
-    /\bthis year|yearly|annual\b/.test(text)
-  ) {
+  if (/\bthis year\b/.test(text)) {
     return "THIS_YEAR";
   }
 
-  if (
-    /\blast month\b/.test(text)
-  ) {
+  if (/\blast month\b/.test(text)) {
     return "LAST_MONTH";
   }
 
-  if (
-    /\b(last|past) 30 days\b/.test(text)
-  ) {
+  if (/\blast 30 days\b/.test(text)) {
     return "LAST_30_DAYS";
   }
 
-  if (
-    /\b(last|past) 90 days\b/.test(text)
-  ) {
+  if (/\blast 90 days\b/.test(text)) {
     return "LAST_90_DAYS";
   }
 
   if (
-    /\b(upcoming|next)\b/.test(text)
+    /\b(upcoming|next|scheduled)\b/.test(
+      text,
+    )
   ) {
     return "UPCOMING";
+  }
+
+  if (
+    /\b(current|currently)\b/.test(
+      text,
+    )
+  ) {
+    return "CURRENT";
   }
 
   return "UNKNOWN";
@@ -634,75 +212,373 @@ function detectTimeRange(
 
 /**
  * ============================================================================
- * FALLBACK PLANNER
+ * SELF ATTENDANCE
  * ============================================================================
  */
 
-function isTodayAttendanceStatusQuestion(message: string): boolean {
-  const text = message.toLowerCase().trim();
+function isSelfAttendanceQuestion(
+  message: string,
+): boolean {
+  const text = message
+    .toLowerCase()
+    .trim();
 
-  const attendance = /\b(attendance|attendence|check.?in|check.?out|present|absent)\b/.test(text);
-  const status = /\b(status|today|currently|right now|present today|attendance today)\b/.test(text);
-  const self = /\b(my|me|mine|myself|i)\b/.test(text);
+  const self =
+    /\b(my|me|mine|myself|i)\b/.test(
+      text,
+    );
 
-  return self && attendance && status;
+  const attendance =
+    /\b(attendance|attendence|check.?in|check.?out|present|absent|late|lateness|working\s+hours?|work\s+hours?|overtime|regularization|regularisation|missing\s+check.?outs?|attendance\s+rate|attendance\s+percentage|attendance\s+status)\b/.test(text);
+
+  return self && attendance;
 }
 
-export function buildFallbackHrCopilotPlan(
-  input: BuildHrCopilotPlanInput,
-): HrCopilotPlan {
-  const originalMessage =
-    input.message.trim();
+/**
+ * ============================================================================
+ * OVERALL SELF SUMMARY
+ * ============================================================================
+ */
 
-  const message =
-    originalMessage.toLowerCase();
+function isOverallSelfSummary(
+  message: string,
+): boolean {
+  const text = message
+    .toLowerCase()
+    .trim();
 
-  /**
-   * --------------------------------------------------
-   * 0. Today's attendance status
-   * --------------------------------------------------
-   */
-  if (isTodayAttendanceStatusQuestion(originalMessage)) {
-    return {
-      task: "STATUS",
-      scope: "SELF",
-      domains: ["ATTENDANCE"],
-      targetEmployeeName: null,
-      timeRange: "TODAY",
-      conditions: ["TODAY_ATTENDANCE"],
-      requestedFields: [
-        "attendance status",
-        "check-in",
-        "check-out",
-        "work hours",
-      ],
-      reasoning:
-        "The user is asking for their attendance status for today.",
-    };
+  const self =
+    /\b(my|me|mine|myself|i)\b/.test(
+      text,
+    );
+
+  const summary =
+    /\b(overall|complete|full|entire|summary|summarize|work\s+status|overall\s+status|complete\s+status|full\s+status|hrms\s+summary|work\s+summary|current\s+status|current\s+work|how\s+am\s+i\s+doing|how\s+am\s+i\s+performing)\b/.test(text);
+
+  return self && summary;
+}
+
+/**
+ * ============================================================================
+ * SELF EMPLOYEE LOOKUP
+ * ============================================================================
+ */
+
+function isSelfEmployeeLookupQuestion(
+  message: string,
+): boolean {
+  const text =
+    message.toLowerCase();
+
+  const self =
+    /\b(my|me|mine|myself|i)\b/.test(
+      text,
+    );
+
+  const employeeField =
+    /\b(employee\s*(id|code|number)|staff\s*(id|code|number)|designation|job\s+title|department|manager|reporting\s+manager|work\s+location|office\s+location|employment\s+type|joining\s+date|date\s+of\s+joining|skills?)\b/.test(text);
+
+  return self && employeeField;
+}
+
+/**
+ * ============================================================================
+ * MANAGER LOOKUP
+ * ============================================================================
+ */
+
+function extractManagerLookupEmployeeName(
+  message: string,
+): string | null {
+  const patterns = [
+    /\bwho\s+does\s+(.+?)\s+report\s+to\s*\??$/i,
+
+    /\bwho\s+is\s+(.+?)['’]s\s+(?:manager|reporting\s+manager)\s*\??$/i,
+
+    /\bwhat\s+is\s+(.+?)['’]s\s+(?:manager|reporting\s+manager)\s*\??$/i,
+
+    /\b(?:manager|reporting\s+manager)\s+(?:of|for)\s+(.+?)\s*\??$/i,
+
+    /\bwho\s+manages\s+(.+?)\s*\??$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+
+    if (match?.[1]) {
+      return match[1]
+        .trim()
+        .replace(/\s+/g, " ");
+    }
+  }
+
+  return null;
+}
+
+/**
+ * ============================================================================
+ * NAMED EMPLOYEE EXTRACTION
+ * ============================================================================
+ */
+
+function extractNamedEmployee(
+  message: string,
+): string | null {
+  const text = message
+    .replace(/[?!.:,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const managerName =
+    extractManagerLookupEmployeeName(
+      message,
+    );
+
+  if (managerName) {
+    return managerName;
   }
 
   /**
-   * --------------------------------------------------
-   * 1. Overall self summary
-   * --------------------------------------------------
+   * Natural-language department/team questions:
+   *
+   * "Which department does Geetha Balachandran belong to?"
+   * "Which team does Damodar belong to?"
+   * "What department does Geetha work in?"
    */
+  const belongTo = text.match(
+    /\b(?:which|what)\s+(?:department|team)\s+(?:does|do)\s+(.+?)\s+(?:belong\s+to|work\s+in|work\s+for)\b/i,
+  );
+
+  if (belongTo?.[1]) {
+    return belongTo[1]
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  /**
+   * "Which department is Geetha Balachandran in?"
+   * "Which team is Damodar part of?"
+   */
+  const whichIs = text.match(
+    /\bwhich\s+(?:department|team)\s+(?:is|are)\s+(.+?)\s+(?:in|part\s+of)\b/i,
+  );
+
+  if (whichIs?.[1]) {
+    return whichIs[1]
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  /**
+   * Possessive:
+   *
+   * "Meghana's designation"
+   * "Meghana Sahithi's attendance"
+   */
+
+  const possessive = text.match(
+    /\b([A-Za-z][A-Za-z.'-]*(?:\s+[A-Za-z][A-Za-z.'-]*){0,4})['’]s\s+(?:designation|department|manager|reporting\s+manager|employee\s*(?:id|code|number)|attendance|leave|performance|goals?|calendar|payroll|salary|payslip|documents?|tickets?|status|profile|details|skills?)\b/i,
+  );
+
+  if (possessive?.[1]) {
+    return possessive[1].trim();
+  }
+
+  /**
+   * "attendance of Meghana"
+   * "performance for Meghana"
+   */
+
+  const ofFor = text.match(
+    /\b(?:of|for)\s+([A-Za-z][A-Za-z0-9_.'-]*(?:\s+[A-Za-z][A-Za-z0-9_.'-]*){0,4})\s*$/i,
+  );
+
+  if (ofFor?.[1]) {
+    const value = ofFor[1]
+      .replace(
+        /\b(my|me|mine|myself)\b/gi,
+        "",
+      )
+      .trim();
+
+    return value || null;
+  }
+
+  // Common short forms such as "designation Sreekanth" or
+  // "Sreekanth Dyapa designation". These are intentionally conservative so
+  // that normal self questions are not turned into named-employee requests.
+  const fieldFirst = text.match(
+    /\b(?:designation|department|manager|attendance|leave|performance|goals?|calendar|payroll|salary|payslip|documents?|tickets?|status|profile|skills?)\s+(?:of|for)?\s+([A-Za-z][A-Za-z0-9_.'-]*(?:\s+[A-Za-z][A-Za-z0-9_.'-]*){0,4})\s*$/i,
+  );
+
+  if (fieldFirst?.[1]) {
+    return fieldFirst[1].trim();
+  }
+
+  const nameFirst = text.match(
+    /^([A-Za-z][A-Za-z0-9_.'-]*(?:\s+[A-Za-z][A-Za-z0-9_.'-]*){0,4})\s+(?:designation|department|manager|attendance|leave|performance|goals?|calendar|payroll|salary|payslip|documents?|tickets?|status|profile|skills?)\s*$/i,
+  );
+
+  if (nameFirst?.[1]) {
+    return nameFirst[1].trim();
+  }
+
+  return null;
+}
+
+/**
+ * ============================================================================
+ * REQUESTED EMPLOYEE FIELD
+ * ============================================================================
+ */
+
+function detectRequestedEmployeeFields(
+  message: string,
+): string[] {
+  const text = message.toLowerCase();
+  const fields: string[] = [];
+
+  if (/\b(?:employee\s*(?:id|code|number)|staff\s*(?:id|code|number))\b/.test(text)) fields.push("employeeCode");
+  if (/\b(?:designation|job\s+title|job\s+role)\b/.test(text)) fields.push("designation");
+  if (/\bdepartment\b/.test(text)) fields.push("department");
+  if (/\b(?:manager|reporting\s+manager)\b/.test(text)) fields.push("manager");
+  if (/\b(?:work\s+location|office\s+location)\b/.test(text)) fields.push("workLocation");
+  if (/\bemployment\s+type\b/.test(text)) fields.push("employmentType");
+  if (/\b(?:joining\s+date|date\s+of\s+joining)\b/.test(text)) fields.push("dateOfJoining");
+  if (/\bstatus\b/.test(text)) fields.push("status");
+  if (/\bskills?\b/.test(text)) fields.push("skills");
+
+  return fields.length ? Array.from(new Set(fields)).slice(0, 15) : ["profile"];
+}
+
+
+/**
+ * ============================================================================
+ * DOMAIN DETECTION
+ * ============================================================================
+ */
+
+function detectDomains(
+  message: string,
+): HrCopilotPlan["domains"] {
+  const text =
+    message.toLowerCase();
+
+  const domains =
+    new Set<HrCopilotPlan["domains"][number]>();
+
   if (
-    isOverallSelfSummary(
-      originalMessage,
-    )
+    /\b(?:employee|employees|staff|designation|department|manager|profile|employee\s+id|employee\s+code)\b/.test(text)
   ) {
+    domains.add("EMPLOYEE");
+  }
+
+  if (
+    /\b(?:attendance|attendence|check.?in|check.?out|present|absent|late|lateness|working\s+hours?|work\s+hours?|overtime|regularization|regularisation|missing\s+check.?outs?|attendance\s+rate|attendance\s+percentage)\b/.test(text)
+  ) {
+    domains.add("ATTENDANCE");
+  }
+
+  if (/\b(?:leave|leaves|holiday|holidays|time\s+off|pto|vacation|leave\s+balance|leave\s+request)\b/.test(text)) {
+    domains.add("LEAVE");
+  }
+
+  if (/\b(?:performance|review|reviews|rating|ratings|appraisal|feedback|career|career\s+development|skill\s+gap)\b/.test(text)) {
+    domains.add("PERFORMANCE");
+  }
+
+  if (/\b(?:goal|goals|objective|objectives|okr|kpi|milestone)\b/.test(text)) {
+    domains.add("GOALS");
+  }
+
+  if (/\b(?:calendar|meeting|meetings|schedule|scheduled|event|events|appointment|appointments)\b/.test(text)) {
+    domains.add("CALENDAR");
+  }
+
+  if (/\b(?:payroll|salary|salaries|payslip|pay\s+slip|compensation|earnings|deductions?|net\s+pay|gross\s+pay|ctc)\b/.test(text)) {
+    domains.add("PAYROLL");
+  }
+
+  if (/\b(?:document|documents|certificate|certificates|expiry|expired|expiring|compliance|missing\s+documents?)\b/.test(text)) {
+    domains.add("DOCUMENTS");
+  }
+
+  if (/\b(?:ticket|tickets|support|helpdesk|help\s+desk|issue|issues|incident|incidents)\b/.test(text)) {
+    domains.add("TICKETS");
+  }
+
+  if (/\b(?:announcement|announcements|notice|notices|internal\s+news|broadcast|broadcasts)\b/.test(text)) {
+    domains.add("ANNOUNCEMENTS");
+  }
+
+  if (/\b(?:recruitment|recruiting|recruiter|job\s+opening|job\s+openings|job\s+posting|job\s+postings|open\s+roles|vacancies|candidates|applicants|interviews?)\b/.test(text)) {
+    domains.add("RECRUITMENT");
+  }
+
+  if (/\b(?:organization|organisation|organizational|organisational|org\s+chart|organization\s+chart|reporting\s+structure|reports\s+to|who\s+reports|direct\s+reports|indirect\s+reports|team\s+structure|hierarchy)\b/.test(text)) {
+    domains.add("ORGANIZATION");
+  }
+
+  if (/\b(?:report|reports|reporting|workforce|headcount|head\s+count|hr\s+metrics|analytics|analysis|statistics|trends?)\b/.test(text)) {
+    domains.add("REPORTS");
+  }
+
+  if (/\b(?:dashboard|dashboard\s+metrics?|dashboard\s+statistics?|kpi|key\s+performance\s+indicators?)\b/.test(text)) {
+    domains.add("DASHBOARD");
+  }
+
+  /**
+   * Never return an empty domain list because the schema requires
+   * at least one domain.
+   *
+   * EMPLOYEE is used only as the generic HR domain.
+   */
+  if (domains.size === 0) {
+    domains.add("EMPLOYEE");
+  }
+
+  return Array.from(domains);
+}
+
+/**
+ * ============================================================================
+ * FALLBACK PLAN
+ * ============================================================================
+ *
+ * This is NOT the normal route.
+ *
+ * Groq is called first.
+ *
+ * The fallback is used only when generateOrganizationAI cannot produce a
+ * valid plan.
+ */
+function buildFallbackHrCopilotPlan(
+  input: BuildHrCopilotPlanInput,
+): HrCopilotPlan {
+  const message =
+    input.message.trim();
+
+  /**
+   * 1. Overall self summary
+   */
+  if (isOverallSelfSummary(message)) {
     return {
       task: "SUMMARY",
       scope: "SELF",
+
       domains: [
         ...CROSS_MODULE_SELF_DOMAINS,
       ],
+
       targetEmployeeName: null,
+
       timeRange: "CURRENT",
+
       conditions: [
         "CROSS_MODULE",
         "SELF_SUMMARY",
       ],
+
       requestedFields: [
         "employee profile",
         "attendance",
@@ -712,278 +588,248 @@ export function buildFallbackHrCopilotPlan(
         "calendar",
         "payroll",
         "documents",
+        "tickets",
+        "announcements",
       ],
+
       reasoning:
-        "The user is requesting an overall summary of their own HRMS work status.",
+        "The user requested an overall cross-module summary of their HRMS status.",
     };
   }
 
   /**
-   * --------------------------------------------------
-   * 2. Direct-report / organization query
-   * --------------------------------------------------
-   */
-  const reportingEmployeeName =
-    extractReportingEmployeeName(
-      originalMessage,
-    );
-
-  if (reportingEmployeeName) {
-    return {
-      task: "LIST",
-      scope: "EMPLOYEE",
-      domains: ["ORGANIZATION"],
-      targetEmployeeName:
-        reportingEmployeeName,
-      timeRange: "CURRENT",
-      conditions: [
-        "DIRECT_REPORTS",
-      ],
-      requestedFields: [
-        "employee name",
-        "employee code",
-        "department",
-        "designation",
-        "work location",
-        "status",
-      ],
-      reasoning:
-        "The user is asking for employees who directly report to a specific employee.",
-    };
-  }
-
-  /**
-   * --------------------------------------------------
-   * 3. Overall summary of a named employee
-   * --------------------------------------------------
+   * 2. Self attendance
    */
   if (
-    isEmployeeSummary(
-      originalMessage,
+    isSelfAttendanceQuestion(
+      message,
     )
   ) {
-    const targetEmployeeName =
-      extractEmployeeNameFromMessage(
-        originalMessage,
-      );
+    const range =
+      detectTimeRange(message);
 
     return {
-      task: "SUMMARY",
-      scope: "EMPLOYEE",
-      domains: [
-        ...CROSS_MODULE_EMPLOYEE_DOMAINS,
-      ],
-      targetEmployeeName,
-      timeRange: "CURRENT",
+      task: "STATUS",
+      scope: "SELF",
+
+      domains: ["ATTENDANCE"],
+
+      targetEmployeeName: null,
+
+      timeRange:
+        range === "UNKNOWN"
+          ? "CURRENT"
+          : range,
+
       conditions: [
-        "CROSS_MODULE",
+        "SELF_ATTENDANCE",
       ],
+
       requestedFields: [
-        "employee profile",
-        "attendance",
-        "leave",
-        "performance",
-        "goals",
-        "calendar",
-        "payroll",
-        "documents",
+        "attendance status",
+        "attendance summary",
+        "check-in",
+        "check-out",
+        "missing check-outs",
+        "work hours",
       ],
+
       reasoning:
-        "The user is requesting a cross-module summary for a specific employee.",
+        "The user is asking about their own attendance.",
     };
   }
 
   /**
-   * --------------------------------------------------
-   * 4. Named employee profile lookup
-   * --------------------------------------------------
+   * 3. Manager lookup
    */
-  const employeeQuestionName =
-    extractEmployeeNameFromMessage(
-      originalMessage,
+  const managerName =
+    extractManagerLookupEmployeeName(
+      message,
     );
 
-  if (employeeQuestionName) {
-    const requestedField =
-      detectRequestedEmployeeField(
-        originalMessage,
-      );
-
-    const domain =
-      requestedField === "profile" ||
-      requestedField === "employeeCode" ||
-      requestedField === "department" ||
-      requestedField === "designation" ||
-      requestedField === "manager" ||
-      requestedField === "workLocation" ||
-      requestedField === "employmentType" ||
-      requestedField === "status" ||
-      requestedField === "dateOfJoining" ||
-      requestedField === "skills"
-        ? "EMPLOYEE"
-        : null;
-
+  if (managerName) {
     return {
       task: "LOOKUP",
       scope: "EMPLOYEE",
-      domains: domain
-        ? ["EMPLOYEE"]
-        : detectDomains(
-            originalMessage,
-          ),
-      targetEmployeeName:
-        employeeQuestionName,
-      timeRange: "CURRENT",
-      conditions: [],
-      requestedFields: [
-        requestedField,
-      ],
-      reasoning:
-        "The user is requesting information about a specific employee.",
-    };
-  }
 
-  /**
-   * --------------------------------------------------
-   * 5. My team
-   * --------------------------------------------------
-   */
-  if (
-    /\b(my team|our team|my direct reports|my teammates|my team members)\b/.test(
-      message,
-    )
-  ) {
-    const domains =
-      detectDomains(
-        originalMessage,
-      );
-
-    if (
-      domains.length === 0
-    ) {
-      domains.push(
+      domains: [
         "ORGANIZATION",
-      );
-    }
-
-    return {
-      task: message.includes("attendance")
-        ? "SUMMARY"
-        : "LIST",
-      scope: "MY_TEAM",
-      domains,
-      targetEmployeeName: null,
-      timeRange:
-        detectTimeRange(
-          originalMessage,
-        ),
-      conditions: [
-        "DIRECT_REPORTS",
+        "EMPLOYEE",
       ],
+
+      targetEmployeeName:
+        managerName,
+
+      timeRange: "CURRENT",
+
+      conditions: [
+        "MANAGER_LOOKUP",
+      ],
+
       requestedFields: [
         "employee name",
-        "employee code",
-        "department",
-        "designation",
-        "status",
+        "manager",
       ],
+
       reasoning:
-        "The user is asking about their direct team.",
+        "The user is asking for an employee's reporting manager.",
     };
   }
 
   /**
-   * --------------------------------------------------
-   * 6. Generic scope
-   * --------------------------------------------------
+   * 4. Named employee
    */
-  let scope: HrCopilotPlan["scope"] =
-    "UNKNOWN";
+  const namedEmployee =
+    extractNamedEmployee(message) ??
+    extractConversationEmployeeName(input);
 
   if (
-    /\b(my team|our team|my direct reports|my teammates)\b/.test(
-      message,
+    namedEmployee &&
+    !/\b(my|me|mine|myself)\b/i.test(
+      namedEmployee,
     )
   ) {
-    scope = "MY_TEAM";
-  } else if (
-    /\b(my|me|mine|myself|i)\b/.test(
-      message,
-    )
-  ) {
-    scope = "SELF";
-  } else if (
-    /\b(department|department-wise|team-wise)\b/.test(
-      message,
-    )
-  ) {
-    scope = "DEPARTMENT";
-  } else if (
-    /\b(company|organization|workforce|all employees|everyone|company-wide)\b/.test(
-      message,
-    )
-  ) {
-    scope = "ORGANIZATION";
-  }
+    return {
+      task: "LOOKUP",
+      scope: "EMPLOYEE",
 
-  let domains =
-    detectDomains(
-      originalMessage,
-    );
+      domains:
+        detectDomains(message),
 
-  if (
-    domains.length === 0
-  ) {
-    domains = ["EMPLOYEE"];
+      targetEmployeeName:
+        namedEmployee,
+
+      timeRange:
+        detectTimeRange(message),
+
+      conditions: [
+        "NAMED_EMPLOYEE",
+      ],
+
+      requestedFields:
+        detectRequestedEmployeeFields(message),
+
+      reasoning:
+        "The user is asking about a specific employee.",
+    };
   }
 
   /**
-   * For a self-summary that wasn't caught
-   * above, expand to cross-module data.
+   * 5. Self employee lookup
    */
-  const task =
-    detectTask(
-      originalMessage,
-    );
-
   if (
-    scope === "SELF" &&
-    task === "SUMMARY"
+    isSelfEmployeeLookupQuestion(
+      message,
+    )
   ) {
-    domains = [
-      ...CROSS_MODULE_SELF_DOMAINS,
-    ];
+    return {
+      task: "LOOKUP",
+      scope: "SELF",
+
+      domains: ["EMPLOYEE"],
+
+      targetEmployeeName: null,
+
+      timeRange: "CURRENT",
+
+      conditions: [
+        "SELF_EMPLOYEE_LOOKUP",
+      ],
+
+      requestedFields:
+        detectRequestedEmployeeFields(message),
+
+      reasoning:
+        "The user is asking for their own employee information.",
+    };
   }
 
   /**
-   * Prevent more than 8 domains.
+   * 6. My team
    */
-  domains = domains.slice(0, 8);
+  if (
+    /\bmy\s+team\b/i.test(message)
+  ) {
+    return {
+      task: "SUMMARY",
+      scope: "MY_TEAM",
 
+      domains: [
+        "ORGANIZATION",
+        ...detectDomains(message),
+      ].filter(
+        (value, index, array) =>
+          array.indexOf(value) === index,
+      ) as HrCopilotPlan["domains"],
+
+      targetEmployeeName: null,
+
+      timeRange:
+        detectTimeRange(message),
+
+      conditions: [
+        "MY_TEAM",
+      ],
+
+      requestedFields: [],
+
+      reasoning:
+        "The user is asking about their own team.",
+    };
+  }
+
+  /**
+   * 7. General request
+   */
   return {
-    task,
-    scope,
-    domains,
+    task: "GENERAL",
+    scope: "UNKNOWN",
+
+    domains:
+      detectDomains(message),
+
     targetEmployeeName: null,
+
     timeRange:
-      detectTimeRange(
-        originalMessage,
-      ),
+      detectTimeRange(message),
+
     conditions: [],
+
     requestedFields: [],
+
     reasoning:
-      "Fallback plan generated from the user's request.",
+      "The request requires general HRMS understanding.",
   };
 }
 
 /**
  * ============================================================================
- * NORMALIZATION OF AI PLAN
+ * GROQ OUTPUT NORMALIZATION
  * ============================================================================
  *
- * Even when Groq succeeds, deterministic HR-specific rules have priority for
- * identity-sensitive employee lookups.
+ * Groq remains PRIMARY.
+ *
+ * These rules only protect obvious user intent when the model returns an
+ * imperfect but schema-valid plan.
  */
+function extractConversationEmployeeName(
+  input: BuildHrCopilotPlanInput,
+): string | null {
+  const text = input.message.toLowerCase();
+  const needsContext = /\b(?:he|she|they|him|her|them|his|hers|their|that\s+employee|that\s+person|same\s+employee)\b/i.test(text);
+  if (!needsContext) return null;
+
+  for (const message of [...(input.conversation ?? [])].reverse()) {
+    if (message.role !== "user") continue;
+    const candidate = extractNamedEmployee(message.content);
+    if (candidate && !/\b(?:my|me|mine|myself)\b/i.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 function normalizeAiPlan(
   input: BuildHrCopilotPlanInput,
   aiPlan: HrCopilotPlan,
@@ -991,178 +837,307 @@ function normalizeAiPlan(
   const message =
     input.message.trim();
 
-  const selfSummary =
-    isOverallSelfSummary(
-      message,
-    );
-
-  if (selfSummary) {
+  /**
+   * 1. Overall self summary
+   */
+  if (
+    isOverallSelfSummary(message)
+  ) {
     return {
       ...aiPlan,
+
       task: "SUMMARY",
+
       scope: "SELF",
+
       domains: [
         ...CROSS_MODULE_SELF_DOMAINS,
       ],
+
       targetEmployeeName: null,
+
       timeRange: "CURRENT",
-     conditions: Array.from(
-    new Set([
-    ...(aiPlan.conditions ?? []),
-    "CROSS_MODULE",
-    "SELF_SUMMARY",
-  ]),
-).slice(0, 8),
-      requestedFields: [
-        ...CROSS_MODULE_SELF_DOMAINS,
-      ].slice(0, 8),
-    };
-  }
 
-  if (isTodayAttendanceStatusQuestion(message)) {
-    return {
-      ...aiPlan,
-      task: "STATUS",
-      scope: "SELF",
-      domains: ["ATTENDANCE"],
-      targetEmployeeName: null,
-      timeRange: "TODAY",
-      conditions: Array.from(
-        new Set([
-          ...(aiPlan.conditions ?? []),
-          "TODAY_ATTENDANCE",
-        ]),
-      ).slice(0, 8),
-      requestedFields: [
-        "attendance status",
-        "check-in",
-        "check-out",
-        "work hours",
-      ],
-    };
-  }
-
-  const reportingName =
-    extractReportingEmployeeName(
-      message,
-    );
-
-  if (reportingName) {
-    return {
-      ...aiPlan,
-      task: "LIST",
-      scope: "EMPLOYEE",
-      domains: ["ORGANIZATION"],
-      targetEmployeeName:
-        reportingName,
-      timeRange: "CURRENT",
-      conditions: [
-        "DIRECT_REPORTS",
-      ],
-      requestedFields: [
-        "employee name",
-        "employee code",
-        "department",
-        "designation",
-        "work location",
-        "status",
-      ],
-    };
-  }
-
-  const explicitEmployeeName =
-    extractEmployeeNameFromMessage(
-      message,
-    );
-
-  if (explicitEmployeeName) {
-    const requestedField =
-      detectRequestedEmployeeField(
-        message,
-      );
-
-    if (
-      isEmployeeSummary(message)
-    ) {
-      return {
-        ...aiPlan,
-        task: "SUMMARY",
-        scope: "EMPLOYEE",
-        domains: [
-          ...CROSS_MODULE_EMPLOYEE_DOMAINS,
-        ],
-        targetEmployeeName:
-          explicitEmployeeName,
-        timeRange: "CURRENT",
-        conditions: [
-          ...new Set([
-            ...(aiPlan.conditions ?? []),
+      conditions:
+        Array.from(
+          new Set([
+            ...(aiPlan.conditions ??
+              []),
             "CROSS_MODULE",
-          ]).values(),
-        ].slice(0, 8),
-        requestedFields: [
-          "employee profile",
-          "attendance",
-          "leave",
-          "performance",
-          "goals",
-          "calendar",
-          "payroll",
-          "documents",
-        ],
-      };
-    }
+            "SELF_SUMMARY",
+          ]),
+        ).slice(0, 10),
 
-    return {
-      ...aiPlan,
-      task: "LOOKUP",
-      scope: "EMPLOYEE",
-      domains: ["EMPLOYEE"],
-      targetEmployeeName:
-        explicitEmployeeName,
-      timeRange: "CURRENT",
       requestedFields: [
-        requestedField,
+        "employee profile",
+        "attendance",
+        "leave",
+        "performance",
+        "goals",
+        "calendar",
+        "payroll",
+        "documents",
+        "tickets",
+        "announcements",
       ],
     };
   }
 
   /**
-   * Keep the AI plan for normal requests,
-   * but guarantee valid domains.
+   * 2. Attendance before employee lookup
    */
-  let domains =
-    Array.from(
-      new Set(
-        aiPlan.domains,
-      ),
-    );
-
   if (
-    domains.length === 0
+    isSelfAttendanceQuestion(
+      message,
+    )
   ) {
-    domains = ["EMPLOYEE"];
+    const detectedRange =
+      detectTimeRange(message);
+
+    return {
+      ...aiPlan,
+
+      task: "STATUS",
+
+      scope: "SELF",
+
+      domains: ["ATTENDANCE"],
+
+      targetEmployeeName: null,
+
+      timeRange:
+        detectedRange === "UNKNOWN"
+          ? "CURRENT"
+          : detectedRange,
+
+      conditions:
+        Array.from(
+          new Set([
+            ...(aiPlan.conditions ??
+              []),
+            "SELF_ATTENDANCE",
+          ]),
+        ).slice(0, 10),
+
+      requestedFields: [
+        "attendance status",
+        "attendance summary",
+        "check-in",
+        "check-out",
+        "missing check-outs",
+        "work hours",
+      ],
+    };
   }
 
-  return {
-    ...aiPlan,
-    domains:
-      domains.slice(0, 8) as HrCopilotPlan["domains"],
-    requestedFields:
-      Array.from(
-        new Set(
-          aiPlan.requestedFields ?? [],
-        ),
-      ).slice(0, 12),
-  };
+  /**
+   * 3. Manager lookup
+   */
+  const managerName =
+    extractManagerLookupEmployeeName(
+      message,
+    );
+
+  if (managerName) {
+    return {
+      ...aiPlan,
+
+      task: "LOOKUP",
+
+      scope: "EMPLOYEE",
+
+      domains: [
+        "ORGANIZATION",
+        "EMPLOYEE",
+      ],
+
+      targetEmployeeName:
+        managerName,
+
+      timeRange: "CURRENT",
+
+      conditions:
+        Array.from(
+          new Set([
+            ...(aiPlan.conditions ??
+              []),
+            "MANAGER_LOOKUP",
+          ]),
+        ).slice(0, 10),
+
+      requestedFields: [
+        "employee name",
+        "manager",
+      ],
+    };
+  }
+
+  /**
+   * 4. Explicit named employee
+   */
+  const namedEmployee =
+    extractNamedEmployee(message) ??
+    extractConversationEmployeeName(input);
+
+  if (
+    namedEmployee &&
+    !/\b(my|me|mine|myself)\b/i.test(
+      namedEmployee,
+    )
+  ) {
+    const detectedDomains =
+      detectDomains(message);
+
+    return {
+      ...aiPlan,
+
+      task:
+        aiPlan.task === "GENERAL"
+          ? "LOOKUP"
+          : aiPlan.task,
+
+      scope: "EMPLOYEE",
+
+      domains: detectedDomains,
+
+      targetEmployeeName:
+        namedEmployee,
+
+      timeRange:
+        detectTimeRange(message),
+
+      conditions:
+        Array.from(
+          new Set([
+            ...(aiPlan.conditions ??
+              []),
+            "NAMED_EMPLOYEE",
+          ]),
+        ).slice(0, 10),
+
+      requestedFields:
+        detectRequestedEmployeeFields(message),
+    };
+  }
+
+  /**
+   * 5. Self employee lookup
+   */
+  if (
+    isSelfEmployeeLookupQuestion(
+      message,
+    )
+  ) {
+    return {
+      ...aiPlan,
+
+      task: "LOOKUP",
+
+      scope: "SELF",
+
+      domains: ["EMPLOYEE"],
+
+      targetEmployeeName: null,
+
+      timeRange: "CURRENT",
+
+      conditions:
+        Array.from(
+          new Set([
+            ...(aiPlan.conditions ??
+              []),
+            "SELF_EMPLOYEE_LOOKUP",
+          ]),
+        ).slice(0, 10),
+
+      requestedFields:
+        detectRequestedEmployeeFields(message),
+    };
+  }
+
+  /**
+   * 6. My team
+   */
+  if (
+    /\bmy\s+team\b/i.test(
+      message,
+    )
+  ) {
+    const domains = [
+      "ORGANIZATION",
+      ...aiPlan.domains,
+    ].filter(
+      (value, index, array) =>
+        array.indexOf(value) === index,
+    ) as HrCopilotPlan["domains"];
+
+    return {
+      ...aiPlan,
+
+      scope: "MY_TEAM",
+
+      domains: domains.slice(
+        0,
+        13,
+      ),
+
+      targetEmployeeName: null,
+
+      conditions:
+        Array.from(
+          new Set([
+            ...(aiPlan.conditions ??
+              []),
+            "MY_TEAM",
+          ]),
+        ).slice(0, 10),
+    };
+  }
+
+  /**
+   * 7. Explicit organization request
+   */
+  if (
+    /\b(organization|organization-wide|company-wide|entire\s+company|whole\s+company|workforce|headcount|all\s+employees|overall\s+attendance)\b/i.test(message)
+  ) {
+    const domains = [
+      "ORGANIZATION",
+      "REPORTS",
+      ...( /\b(attendance|attendence|present|absent|late|check.?in|check.?out|attendance\s+(?:rate|percentage))\b/i.test(message)
+        ? ["ATTENDANCE"]
+        : []),
+      ...aiPlan.domains,
+    ].filter(
+      (value, index, array) =>
+        array.indexOf(value) === index,
+    ) as HrCopilotPlan["domains"];
+
+    return {
+      ...aiPlan,
+
+      scope: "ORGANIZATION",
+
+      domains: domains.slice(
+        0,
+        13,
+      ),
+    };
+  }
+
+  return aiPlan;
 }
 
 /**
  * ============================================================================
- * AI PLANNER
+ * BUILD PLAN
  * ============================================================================
+ *
+ * GROQ IS ALWAYS THE PRIMARY ROUTE.
+ *
+ * We intentionally do NOT bypass Groq for simple questions.
+ *
+ * If Groq fails, generateOrganizationAI() uses the deterministic fallback.
  */
-
 export async function buildHrCopilotPlan(
   input: BuildHrCopilotPlanInput,
 ): Promise<HrCopilotPlan> {
@@ -1171,11 +1146,40 @@ export async function buildHrCopilotPlan(
       input,
     );
 
+  /**
+   * Groq planner prompt.
+   *
+   * The prompt contains:
+   * - current user request
+   * - authenticated user context
+   * - current page context
+   * - heuristic classification
+   */
   const systemPrompt =
-    buildHrCopilotPlannerPrompt(
-      input,
-    );
+    `${HR_COPILOT_PLANNER_PROMPT}\n\n${buildHrCopilotPlannerUserPrompt(
+      input.message,
+      {
+        user: input.user,
+        pageContext: input.page,
+      } as any,
+      input.conversation,
+    )}`;
 
+  /**
+   * IMPORTANT:
+   *
+   * Groq is the normal path.
+   *
+   * generateOrganizationAI handles:
+   * - missing API key
+   * - Groq errors
+   * - rate limits
+   * - timeout
+   * - malformed JSON
+   * - schema validation failure
+   *
+   * and returns the deterministic fallback.
+   */
   const result =
     await generateOrganizationAI(
       systemPrompt,
@@ -1185,14 +1189,17 @@ export async function buildHrCopilotPlan(
         userMessage:
           input.message,
 
-        temperature: 0.05,
+        temperature: 0,
 
-        maxTokens: 700,
+        maxTokens: 1200,
 
-        timeoutMs: 8000,
+        timeoutMs: 12000,
       },
     );
 
+  /**
+   * Groq result is still normalized only for obvious intent corrections.
+   */
   return normalizeAiPlan(
     input,
     result,

@@ -1182,14 +1182,21 @@ export async function generateCalendarAI<T>(
 
     clearTimeout(timeout);
 
-    if (!response.ok) {
-      console.warn(
-        `[AI] Groq API returned ${response.status} for Calendar AI. Using fallback.`,
-      );
+   if (!response.ok) {
+  const errorBody = await response.text();
 
-      return fallback;
-    }
+  console.error(
+    "[AI] Groq Organization AI request failed:",
+    {
+      status: response.status,
+      statusText: response.statusText,
+      model: env.groqModel,
+      body: errorBody,
+    },
+  );
 
+  return fallback;
+}
     const data: any =
       await response.json();
 
@@ -1274,35 +1281,38 @@ export async function generateOrganizationAI<T>(
         },
 
         body: JSON.stringify({
-          model: env.groqModel,
+  model: env.groqModel,
 
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt,
-            },
+  messages: [
+    {
+      role: "system",
+      content: systemPrompt,
+    },
 
-            ...(options?.userMessage
-              ? [
-                {
-                  role: "user",
-                  content: options.userMessage,
-                },
-              ]
-              : []),
-          ],
+    ...(options?.userMessage
+      ? [
+        {
+          role: "user",
+          content: options.userMessage,
+        },
+      ]
+      : []),
+  ],
 
-          temperature:
-            options?.temperature ?? 0.2,
+  temperature:
+    options?.temperature ?? 0.2,
 
-          max_tokens:
-            options?.maxTokens ?? 800,
+  max_tokens:
+    options?.maxTokens ?? 800,
 
-          response_format: {
-            type: "json_object",
-          },
-        }),
+  // GPT-OSS can return reasoning separately.
+  // Copilot only needs the final structured answer.
+  include_reasoning: false,
 
+  response_format: {
+    type: "json_object",
+  },
+}),
         signal: controller.signal,
       },
     );
@@ -1310,29 +1320,35 @@ export async function generateOrganizationAI<T>(
     clearTimeout(timeout);
 
     if (!response.ok) {
-      if (response.status === 429) {
-        const retryAfter = response.headers.get("retry-after");
-        const remainingRequests = response.headers.get("x-ratelimit-remaining-requests");
-        const remainingTokens = response.headers.get("x-ratelimit-remaining-tokens");
-        const resetRequests = response.headers.get("x-ratelimit-reset-requests");
-        const resetTokens = response.headers.get("x-ratelimit-reset-tokens");
+  const errorBody = await response.text();
 
-        console.warn(
-          `[AI] Groq Organization AI rate-limited (429). ` +
-          `retry-after=${retryAfter ?? "unknown"}, ` +
-          `remainingRequests=${remainingRequests ?? "unknown"}, ` +
-          `remainingTokens=${remainingTokens ?? "unknown"}, ` +
-          `resetRequests=${resetRequests ?? "unknown"}, ` +
-          `resetTokens=${resetTokens ?? "unknown"}. Using fallback.`,
-        );
-      } else {
-        console.warn(
-          `[AI] Groq API returned ${response.status} for Organization AI. Using fallback.`,
-        );
-      }
+  if (response.status === 429) {
+    const retryAfter =
+      response.headers.get("retry-after");
 
-      return fallback;
-    }
+    console.warn(
+      "[AI] Groq Organization AI rate limited:",
+      {
+        status: response.status,
+        retryAfter,
+        model: env.groqModel,
+        body: errorBody,
+      },
+    );
+  } else {
+    console.error(
+      "[AI] Groq Organization AI request failed:",
+      {
+        status: response.status,
+        statusText: response.statusText,
+        model: env.groqModel,
+        body: errorBody,
+      },
+    );
+  }
+
+  return fallback;
+}
 
     const data: any =
       await response.json();

@@ -117,22 +117,22 @@ export async function getRecentActivity(limit = 8) {
     JobPosting.find({ _id: { $in: jobIds } }).select("title").lean(),
   ]);
 
-  const empMap = new Map(employees.map((e) => [e._id, e]));
-  const typeMap = new Map(leaveTypes.map((t) => [t._id, t]));
-  const desMap = new Map(designations.map((d) => [d._id, d]));
-  const jobMap = new Map(jobs.map((j) => [j._id, j]));
+  const empMap = new Map(employees.map((e) => [String(e._id), e]));
+  const typeMap = new Map(leaveTypes.map((t) => [String(t._id), t]));
+  const desMap = new Map(designations.map((d) => [String(d._id), d]));
+  const jobMap = new Map(jobs.map((j) => [String(j._id), j]));
 
   const activity: { kind: string; at: string; firstName: string; lastName: string; detail: string; label: string | null }[] = [];
 
   for (const r of leaveRows) {
-    const emp = empMap.get(r.employeeId);
+    const emp = empMap.get(String(r.employeeId));
     activity.push({
       kind: "leave",
       at: r.appliedAt,
       firstName: emp?.firstName ?? "",
       lastName: emp?.lastName ?? "",
       detail: r.status,
-      label: typeMap.get(r.leaveTypeId)?.name ?? null,
+      label: typeMap.get(String(r.leaveTypeId))?.name ?? null,
     });
   }
   for (const r of hireRows) {
@@ -142,7 +142,7 @@ export async function getRecentActivity(limit = 8) {
       firstName: r.firstName,
       lastName: r.lastName,
       detail: r.status,
-      label: desMap.get(r.designationId)?.title ?? null,
+      label: desMap.get(String(r.designationId))?.title ?? null,
     });
   }
   for (const r of candidateRows) {
@@ -152,7 +152,7 @@ export async function getRecentActivity(limit = 8) {
       firstName: r.firstName,
       lastName: r.lastName,
       detail: r.stage,
-      label: jobMap.get(r.jobPostingId)?.title ?? null,
+      label: jobMap.get(String(r.jobPostingId))?.title ?? null,
     });
   }
 

@@ -44,22 +44,22 @@ export async function listDepartments() {
   ]);
 
   const countMap = new Map(
-    headcounts.map((c) => [c._id, c.count]),
+    headcounts.map((c) => [String(c._id), c.count]),
   );
 
   const headMap = new Map(
-    heads.map((h) => [h._id, h]),
+    heads.map((h) => [String(h._id), h]),
   );
 
   return departments.map((d) => {
     const head = d.headId
-      ? headMap.get(d.headId)
+      ? headMap.get(String(d.headId))
       : undefined;
 
     return {
       id: d._id,
       ...d,
-      headcount: countMap.get(d._id) ?? 0,
+      headcount: countMap.get(String(d._id)) ?? 0,
       headFirstName: head?.firstName ?? null,
       headLastName: head?.lastName ?? null,
     };
@@ -151,7 +151,7 @@ export async function listDesignations(
   }).lean();
 
   const deptMap = new Map(
-    departments.map((d) => [d._id, d]),
+    departments.map((d) => [String(d._id), d]),
   );
 
   return rows
@@ -159,7 +159,7 @@ export async function listDesignations(
       id: r._id,
       ...r,
       departmentName:
-        deptMap.get(r.departmentId)?.name ?? null,
+        deptMap.get(String(r.departmentId))?.name ?? null,
     }))
     .sort((a, b) => {
       const deptCompare =
@@ -330,14 +330,14 @@ async function getOrganizationEmployeeRows(
 
   const departmentMap = new Map(
     departments.map((d) => [
-      d._id,
+      String(d._id),
       d.name,
     ]),
   );
 
   const designationMap = new Map(
     designations.map((d) => [
-      d._id,
+      String(d._id),
       d.title,
     ]),
   );
@@ -348,9 +348,10 @@ async function getOrganizationEmployeeRows(
     ...new Set(
       employees
         .map((e) => e.managerId)
-        .filter(Boolean),
+        .filter(Boolean)
+        .map((id) => String(id)),
     ),
-  ] as string[];
+  ];
 
   const managers =
     managerIds.length > 0
@@ -362,8 +363,8 @@ async function getOrganizationEmployeeRows(
       : [];
 
   const employeeMap = new Map([
-    ...employees.map((e) => [e._id, e] as const),
-    ...managers.map((e) => [e._id, e] as const),
+    ...employees.map((e) => [String(e._id), e] as const),
+    ...managers.map((e) => [String(e._id), e] as const),
   ]);
 
   const directReportCounts = new Map<string, number>();
@@ -371,16 +372,17 @@ async function getOrganizationEmployeeRows(
   for (const employee of employees) {
     if (!employee.managerId) continue;
 
+    const managerId = String(employee.managerId);
     directReportCounts.set(
-      employee.managerId,
-      (directReportCounts.get(employee.managerId) ?? 0) +
+      managerId,
+      (directReportCounts.get(managerId) ?? 0) +
         1,
     );
   }
 
   return employees.map((employee) => {
     const manager = employee.managerId
-      ? employeeMap.get(employee.managerId)
+      ? employeeMap.get(String(employee.managerId))
       : undefined;
 
     return {
@@ -399,7 +401,7 @@ async function getOrganizationEmployeeRows(
 
       departmentName:
         departmentMap.get(
-          employee.departmentId,
+          String(employee.departmentId),
         ) ?? null,
 
       designationId:
@@ -407,7 +409,7 @@ async function getOrganizationEmployeeRows(
 
       designationTitle:
         designationMap.get(
-          employee.designationId,
+          String(employee.designationId),
         ) ?? null,
 
       managerId:
@@ -425,7 +427,7 @@ async function getOrganizationEmployeeRows(
 
       directReportCount:
         directReportCounts.get(
-          employee._id,
+          String(employee._id),
         ) ?? 0,
     } satisfies OrganizationSearchEmployee;
   });
@@ -509,14 +511,15 @@ export async function getIndirectReportIds(
   for (const employee of employees) {
     if (!employee.managerId) continue;
 
+    const managerId = String(employee.managerId);
     const children =
       childrenMap.get(
-        employee.managerId,
+        managerId,
       ) ?? [];
 
-    children.push(employee._id);
+    children.push(String(employee._id));
     childrenMap.set(
-      employee.managerId,
+      managerId,
       children,
     );
   }
@@ -915,14 +918,14 @@ export async function getSkillDependencyEmployees(
 
   const departmentMap = new Map(
     departments.map((d) => [
-      d._id,
+      String(d._id),
       d.name,
     ]),
   );
 
   const designationMap = new Map(
     designations.map((d) => [
-      d._id,
+      String(d._id),
       d.title,
     ]),
   );
@@ -930,17 +933,17 @@ export async function getSkillDependencyEmployees(
   return employees.map(
     (employee) =>
       ({
-        id: employee._id,
+        id: String(employee._id),
         name: `${employee.firstName} ${employee.lastName}`,
         departmentId:
           employee.departmentId,
         departmentName:
           departmentMap.get(
-            employee.departmentId,
+            String(employee.departmentId),
           ) ?? null,
         designationTitle:
           designationMap.get(
-            employee.designationId,
+            String(employee.designationId),
           ) ?? null,
         managerId:
           employee.managerId ?? null,

@@ -95,7 +95,7 @@ async function workforce(filters: ReportFilters, employeeIds?: string[]) {
   ]);
 
   const departments = await Department.find().select("_id name").lean();
-  const names = new Map(departments.map((d) => [d._id, d.name]));
+  const names = new Map(departments.map((d) => [String(d._id), d.name]));
 
   const trendStart =
     filters.from ??
@@ -145,7 +145,7 @@ async function workforce(filters: ReportFilters, employeeIds?: string[]) {
     headcountTrend,
     byStatus: byStatus.map((x) => ({ label: x._id, value: x.count })),
     byDepartment: byDepartment.map((x) => ({
-      label: names.get(x._id) ?? x._id,
+      label: names.get(String(x._id)) ?? x._id,
       value: x.count,
     })),
     byEmploymentType: byEmploymentType.map((x) => ({
@@ -557,10 +557,10 @@ async function payroll(filters: ReportFilters, employeeIds?: string[]) {
   ]);
 
   const departments = await Department.find().select("_id name").lean();
-  const names = new Map(departments.map((d) => [d._id, d.name]));
+  const names = new Map(departments.map((d) => [String(d._id), d.name]));
   const runMap = new Map(
     filteredRuns.map((r) => [
-      r._id,
+      String(r._id),
       `${String(r.month).padStart(2, "0")}/${r.year}`,
     ]),
   );
@@ -573,7 +573,7 @@ async function payroll(filters: ReportFilters, employeeIds?: string[]) {
     totalLop: aggregate[0]?.lop ?? 0,
     payslipCount: aggregate[0]?.count ?? 0,
     byRun: byRun.map((x) => ({
-      label: runMap.get(x._id) ?? x._id,
+      label: runMap.get(String(x._id)) ?? x._id,
       gross: x.gross,
       deductions: x.deductions,
       net: x.net,
@@ -581,7 +581,7 @@ async function payroll(filters: ReportFilters, employeeIds?: string[]) {
       headcount: x.headcount,
     })),
     byDepartment: byDepartment.map((x) => ({
-      label: names.get(x._id) ?? x._id ?? "Unassigned",
+      label: names.get(String(x._id)) ?? x._id ?? "Unassigned",
       value: x.net,
       gross: x.gross,
       deductions: x.deductions,

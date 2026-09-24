@@ -937,7 +937,9 @@ export async function listForDate(date: string, managerId?: string) {
     _id: { $in: attendanceEmployeeIds },
   }).lean();
 
-  const empMap = new Map(employees.map((e) => [e._id, e]));
+  const empMap = new Map(
+    employees.map((e) => [String(e._id), e]),
+  );
 
   const departmentIds = [
     ...new Set(employees.map((e) => e.departmentId).filter(Boolean)),
@@ -947,10 +949,12 @@ export async function listForDate(date: string, managerId?: string) {
     _id: { $in: departmentIds },
   }).lean();
 
-  const deptMap = new Map(departments.map((d) => [d._id, d]));
+  const deptMap = new Map(
+    departments.map((d) => [String(d._id), d]),
+  );
 
   return rows.map((r) => {
-    const emp = empMap.get(r.employeeId);
+    const emp = empMap.get(String(r.employeeId));
     const { _id, ...rest } = r;
 
     return {
@@ -960,7 +964,7 @@ export async function listForDate(date: string, managerId?: string) {
       lastName: emp?.lastName ?? null,
       employeeCode: emp?.employeeCode ?? null,
       departmentName: emp
-        ? (deptMap.get(emp.departmentId)?.name ?? null)
+        ? (deptMap.get(String(emp.departmentId))?.name ?? null)
         : null,
     };
   });
@@ -1009,17 +1013,21 @@ export async function listForMonth(
   const employees = await Employee.find({
     _id: { $in: attendanceEmployeeIds },
   }).lean();
-  const empMap = new Map(employees.map((e) => [e._id, e]));
+  const empMap = new Map(
+    employees.map((e) => [String(e._id), e]),
+  );
   const departmentIds = [
     ...new Set(employees.map((e) => e.departmentId).filter(Boolean)),
   ];
   const departments = await Department.find({
     _id: { $in: departmentIds },
   }).lean();
-  const deptMap = new Map(departments.map((d) => [d._id, d]));
+  const deptMap = new Map(
+    departments.map((d) => [String(d._id), d]),
+  );
 
   return rows.map((r) => {
-    const emp = empMap.get(r.employeeId);
+    const emp = empMap.get(String(r.employeeId));
     const { _id, ...rest } = r;
     return {
       id: _id,
@@ -1028,7 +1036,7 @@ export async function listForMonth(
       lastName: emp?.lastName ?? null,
       employeeCode: emp?.employeeCode ?? null,
       departmentName: emp
-        ? (deptMap.get(emp.departmentId)?.name ?? null)
+        ? (deptMap.get(String(emp.departmentId))?.name ?? null)
         : null,
     };
   });
@@ -1165,11 +1173,11 @@ export async function listTeamRegularizationRequests(
     .lean();
 
   const employeeMap = new Map(
-    employees.map((employee) => [employee._id, employee]),
+    employees.map((employee) => [String(employee._id), employee]),
   );
 
   return requests.map((request) => {
-    const employee = employeeMap.get(request.employeeId);
+    const employee = employeeMap.get(String(request.employeeId));
 
     return {
       ...toApiRecord(request),
@@ -2349,11 +2357,11 @@ export async function getAiAttendanceInsightsForEmployees(
   // -------------------------------------------------------------------------
 
   const employeeMap = new Map(
-    employees.map((employee) => [employee._id, employee]),
+    employees.map((employee) => [String(employee._id), employee]),
   );
 
   const validRecords = records.filter((record) => {
-    const employee = employeeMap.get(record.employeeId);
+    const employee = employeeMap.get(String(record.employeeId));
 
     if (!employee) {
       return false;

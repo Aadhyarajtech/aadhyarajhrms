@@ -680,12 +680,14 @@ export async function sendPayslipsForRun(id: string, userId: string) {
   const employees = await Employee.find({
     _id: { $in: payslips.map((p) => p.employeeId) },
   }).lean();
-  const employeeMap = new Map(employees.map((e) => [e._id, e]));
+  const employeeMap = new Map(
+    employees.map((e) => [String(e._id), e]),
+  );
   const sentAt = nowIso();
 
   await Promise.all(
     payslips.map(async (payslip) => {
-      const employee = employeeMap.get(payslip.employeeId);
+      const employee = employeeMap.get(String(payslip.employeeId));
       if (!employee) return;
       await notify({
         userId: employee.userId,
@@ -718,15 +720,19 @@ export async function listPayslipsForRun(runId: string) {
   if (!rows.length || !run) return [];
   const employeeIds = [...new Set(rows.map((r) => r.employeeId))];
   const employees = await Employee.find({ _id: { $in: employeeIds } }).lean();
-  const empMap = new Map(employees.map((e) => [e._id, e]));
+  const empMap = new Map(
+    employees.map((e) => [String(e._id), e]),
+  );
   const departmentIds = [...new Set(employees.map((e) => e.departmentId))];
   const departments = await Department.find({
     _id: { $in: departmentIds },
   }).lean();
-  const deptMap = new Map(departments.map((d) => [d._id, d]));
+  const deptMap = new Map(
+    departments.map((d) => [String(d._id), d]),
+  );
   return rows
     .map((r) => {
-      const emp = empMap.get(r.employeeId);
+      const emp = empMap.get(String(r.employeeId));
       const taxDetails = getPayslipTaxDetails(r, emp, run.month, run.year);
       return {
         id: r._id,
@@ -739,7 +745,7 @@ export async function listPayslipsForRun(runId: string) {
         lastName: emp?.lastName ?? null,
         employeeCode: emp?.employeeCode ?? null,
         departmentName: emp
-          ? (deptMap.get(emp.departmentId)?.name ?? null)
+          ? (deptMap.get(String(emp.departmentId))?.name ?? null)
           : null,
       };
     })
@@ -791,18 +797,22 @@ export async function listMyPayslipsForUser(input: {
 
   const runIds = [...new Set(rows.map((r) => r.payrollRunId))];
   const runs = await PayrollRun.find({ _id: { $in: runIds } }).lean();
-  const runMap = new Map(runs.map((r) => [r._id, r]));
+  const runMap = new Map(
+    runs.map((r) => [String(r._id), r]),
+  );
   const employees = await Employee.find({
     _id: { $in: [...employeeIds] },
   })
     .select("_id dateOfBirth firstName lastName employeeCode")
     .lean();
-  const employeeMap = new Map(employees.map((e) => [e._id, e]));
+  const employeeMap = new Map(
+    employees.map((e) => [String(e._id), e]),
+  );
 
   return rows
     .map((r) => {
-      const run = runMap.get(r.payrollRunId);
-      const employee = employeeMap.get(r.employeeId);
+      const run = runMap.get(String(r.payrollRunId));
+      const employee = employeeMap.get(String(r.employeeId));
       const taxDetails = run
         ? getPayslipTaxDetails(r, employee, run.month, run.year)
         : {
@@ -848,10 +858,12 @@ export async function listPayslipsForEmployee(employeeId: string) {
   if (!rows.length) return [];
   const runIds = [...new Set(rows.map((r) => r.payrollRunId))];
   const runs = await PayrollRun.find({ _id: { $in: runIds } }).lean();
-  const runMap = new Map(runs.map((r) => [r._id, r]));
+  const runMap = new Map(
+    runs.map((r) => [String(r._id), r]),
+  );
   return rows
     .map((r) => {
-      const run = runMap.get(r.payrollRunId);
+      const run = runMap.get(String(r.payrollRunId));
       const taxDetails = run
         ? getPayslipTaxDetails(r, employee, run.month, run.year)
         : {
@@ -1006,8 +1018,10 @@ export async function listPayslipRequests() {
   if (!rows.length) return [];
   const ids = [...new Set(rows.map((r) => r.employeeId))];
   const emps = await Employee.find({ _id: { $in: ids } }).lean();
-  const map = new Map(emps.map((e) => [e._id, e]));
-  return rows.map((r) => withEmployeeInfo(toApiDoc(r)!, map.get(r.employeeId)));
+  const map = new Map(
+    emps.map((e) => [String(e._id), e]),
+  );
+  return rows.map((r) => withEmployeeInfo(toApiDoc(r)!, map.get(String(r.employeeId))));
 }
 export async function getPayslipRequest(id: string) {
   const row = await PayslipRequest.findById(id).lean();
