@@ -281,6 +281,7 @@ export interface EmployeeSensitiveChangeRequest {
   requestedAt: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
   reviewedBy: string | null;
+  reviewedByRole: string | null;
   reviewedAt: string | null;
   reviewComment: string | null;
 }
@@ -297,7 +298,8 @@ export interface EmployeeOffboardingItem {
 export interface EmployeeDoc {
   _id: string;
   employeeCode: string;
-  userId: string;
+userId: string;
+employeeId: string;
 
   firstName: string;
   lastName: string;
@@ -558,6 +560,7 @@ const employeeSchema = new Schema<EmployeeDoc>(
     _id: idField("emp"),
     employeeCode: { type: String, required: true, unique: true, trim: true },
     userId: { type: String, required: true, unique: true },
+employeeId: { type: String, required: true, unique: true },
 
     firstName: { type: String, required: true, trim: true },
     lastName: { type: String, required: true, trim: true },
@@ -3948,6 +3951,7 @@ export interface DocumentRecordDoc {
   _id: string;
 
   employeeId: string;
+  reviewedByRole?: string | null;
 
   expiryDate: string | null;
 
@@ -4026,14 +4030,19 @@ const documentSchema = new Schema<DocumentRecordDoc>(
     },
 
     reviewedBy: {
-      type: String,
-      default: null,
-    },
+  type: String,
+  default: null,
+},
 
-    reviewedAt: {
-      type: String,
-      default: null,
-    },
+reviewedByRole: {
+  type: String,
+  default: null,
+},
+
+reviewedAt: {
+  type: String,
+  default: null,
+},
 
     rejectionReason: {
       type: String,

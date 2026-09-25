@@ -2333,6 +2333,22 @@ export const DocumentsApi = {
         documents: any[];
       }>(`/documents/employee/${employeeId}`)
       .then((r) => r.data.documents),
+      review: (
+  id: string,
+  status: "VERIFIED" | "REJECTED",
+  rejectionReason?: string,
+) =>
+  api
+    .patch(`/documents/${id}/review`, {
+      status,
+      rejectionReason,
+    })
+    .then((r) => r.data.document),
+    updateExpiryDate: (id: string, expiryDate: string | null) =>
+  api
+    .patch(`/documents/${id}/expiry-date`, { expiryDate })
+    .then((r) => r.data.document),
+
 
   upload: (
     employeeId: string,

@@ -223,7 +223,7 @@ documentsRouter.patch(
   validate(documentReviewSchema),
   async (req, res, next) => {
     try {
-      const isReviewer = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(
+      const isReviewer = ["SUPER_ADMIN", "HR_ADMIN"].includes(
         req.user!.role,
       );
       if (!isReviewer) {

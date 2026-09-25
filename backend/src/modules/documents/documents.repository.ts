@@ -36,7 +36,30 @@ export async function listDocuments(employeeId: string) {
   const rows = await DocumentRecord.find({ employeeId })
     .sort({ uploadedAt: -1 })
     .lean();
-  return rows.map(toApiDoc);
+
+  const reviewerIds = rows
+    .map((doc) => doc.reviewedBy)
+    .filter(Boolean);
+
+  const reviewers = await Employee.find({
+  userId: { $in: reviewerIds },
+})
+  .select("userId firstName lastName")
+  .lean();
+
+  const reviewerMap = new Map(
+    reviewers.map((user) => [
+      String(user.userId),
+      `${user.firstName} ${user.lastName}`.trim(),
+    ])
+  );
+
+  return rows.map((doc) => ({
+    ...toApiDoc(doc),
+    reviewedBy: doc.reviewedBy
+      ? reviewerMap.get(String(doc.reviewedBy)) ?? doc.reviewedBy
+      : null,
+  }));
 }
 
 export async function addDocument(input: {
