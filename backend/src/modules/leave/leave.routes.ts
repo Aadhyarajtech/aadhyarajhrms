@@ -271,13 +271,18 @@ leaveRouter.get("/requests", async (req, res, next) => {
  */
 leaveRouter.get("/calendar", async (req, res, next) => {
   try {
-    const now = new Date();
+    // Calendar dates are business dates in India time. Keep the default
+    // month/year aligned with the same timezone used by leave expiry.
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+    }).format(new Date());
+    const [todayYear, todayMonth] = today.split("-").map(Number);
 
     const month = req.query.month
       ? Number(req.query.month)
-      : now.getMonth() + 1;
+      : todayMonth;
 
-    const year = req.query.year ? Number(req.query.year) : now.getFullYear();
+    const year = req.query.year ? Number(req.query.year) : todayYear;
 
     if (!Number.isInteger(month) || month < 1 || month > 12) {
       throw AppError.badRequest("Invalid month.");

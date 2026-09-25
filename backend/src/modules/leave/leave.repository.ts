@@ -324,6 +324,7 @@ export async function listRequests(filters: {
   employeeId?: string;
   status?: string;
   approverId?: string;
+  excludeEmployeeId?: string;
 }) {
   const query: Record<string, any> = {};
   let employeeIdsForApprover: string[] | undefined;
@@ -334,8 +335,35 @@ export async function listRequests(filters: {
     const reports = await Employee.find({ managerId: filters.approverId })
       .select("_id")
       .lean();
+
     employeeIdsForApprover = reports.map((r) => r._id);
-    query.employeeId = { $in: employeeIdsForApprover };
+
+    query.employeeId = {
+      $in: employeeIdsForApprover,
+      ...(filters.excludeEmployeeId
+        ? { $ne: filters.excludeEmployeeId }
+        : {}),
+    };
+  } else if (filters.excludeEmployeeId) {
+    /*
+     * Preserve an explicit employeeId filter when an administrator
+     * also asks to exclude a specific employee (for example, HR_ADMIN
+     * viewing Team Approvals while excluding their own requests).
+     */
+    if (filters.employeeId) {
+      if (String(filters.employeeId) === String(filters.excludeEmployeeId)) {
+        // The requested employee is the excluded employee, so there
+        // can be no matching results.
+        query.employeeId = { $in: [] };
+      } else {
+        query.employeeId = {
+          $eq: filters.employeeId,
+          $ne: filters.excludeEmployeeId,
+        };
+      }
+    } else {
+      query.employeeId = { $ne: filters.excludeEmployeeId };
+    }
   }
 
   const rows = await LeaveRequest.find(query).sort({ appliedAt: -1 }).lean();
@@ -1085,11 +1113,29 @@ export async function getEmployeeCompOffBalance(employeeId: string) {
 }
 
 export async function cancelRequest(id: string, employeeId: string) {
-  await LeaveRequest.updateOne(
+  const updated = await LeaveRequest.findOneAndUpdate(
     { _id: id, employeeId, status: "PENDING" },
     { $set: { status: "CANCELLED", decidedAt: nowIso() } },
-  );
-  return getRequest(id);
+    { new: true },
+  ).lean();
+
+  if (!updated) {
+    const request = await getRequest(id);
+
+    if (!request) {
+      throw AppError.notFound("Leave request not found.");
+    }
+
+    if (String(request.employeeId) !== String(employeeId)) {
+      throw AppError.forbidden("You can only cancel your own leave requests.");
+    }
+
+    throw AppError.badRequest(
+      `Leave request cannot be cancelled because it is already ${String(request.status).toLowerCase()}.`,
+    );
+  }
+
+  return toApiDoc(updated);
 }
 
 export async function getLeaveCalendar(
@@ -1189,6 +1235,7 @@ export async function getLeaveCalendar(
     return {
       id: r._id,
       type: "LEAVE",
+      employeeId: r.employeeId,
       startDate: r.startDate,
       endDate: r.endDate,
       status: r.status,
@@ -1222,7 +1269,15 @@ export async function getLeaveCalendar(
 }
 
 export async function onLeaveToday() {
-  const today = new Date().toISOString().slice(0, 10);
+  /*
+   * HRMS uses India time for leave expiry/date handling. Use the same
+   * timezone here so the dashboard does not switch to the next/previous
+   * day around UTC midnight.
+   */
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+  }).format(new Date());
+
   return LeaveRequest.countDocuments({
     status: "APPROVED",
     startDate: { $lte: today },

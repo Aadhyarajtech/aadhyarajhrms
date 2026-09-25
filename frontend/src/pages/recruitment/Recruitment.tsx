@@ -15,6 +15,12 @@ import {
   UserPlus,
   CheckCircle2,
   Clock3,
+  Search,
+  X,
+  ChevronRight,
+  UserCheck,
+  Building2,
+  GraduationCap,
 } from "lucide-react";
 import { RecruitmentApi, OrganizationApi } from "@/lib/endpoints";
 import { api, getErrorMessage } from "@/lib/api";
@@ -239,6 +245,12 @@ export default function Recruitment() {
   const navigate = useNavigate();
   const [postOpen, setPostOpen] = useState(false);
 
+  // Frontend-only workspace filters. Existing recruitment APIs and workflows are unchanged.
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [hiringModeFilter, setHiringModeFilter] = useState("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState("ALL");
+
   const { data: jobs, isLoading } = useQuery({
     queryKey: ["recruitment", "jobs"],
     queryFn: () => RecruitmentApi.jobs(),
@@ -335,6 +347,85 @@ export default function Recruitment() {
 
   const hiredCount =
     pipeline?.find((item) => item.stage === "HIRED")?.count ?? 0;
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  const filteredJobs = (jobs ?? []).filter((job: any) => {
+    const matchesSearch =
+      !normalizedSearch ||
+      [
+        job.title,
+        job.departmentName,
+        job.designationTitle,
+        job.location,
+        job.status,
+        job.requisitionStatus,
+        job.hiringMode,
+      ]
+        .filter(Boolean)
+        .some((value) =>
+          String(value).toLowerCase().includes(normalizedSearch),
+        );
+
+    const matchesStatus =
+      statusFilter === "ALL" ||
+      String(job.status ?? "").toUpperCase() === statusFilter;
+
+    const matchesHiringMode =
+      hiringModeFilter === "ALL" ||
+      String(job.hiringMode ?? "STANDARD").toUpperCase() === hiringModeFilter;
+
+    const matchesDepartment =
+      departmentFilter === "ALL" ||
+      String(job.departmentName ?? "") === departmentFilter;
+
+    return matchesSearch && matchesStatus && matchesHiringMode && matchesDepartment;
+  });
+
+  const departmentOptions = Array.from(
+    new Set(
+      (jobs ?? [])
+        .map((job: any) => job.departmentName)
+        .filter(Boolean)
+        .map(String),
+    ),
+  ).sort();
+
+  const statusOptions = Array.from(
+    new Set(
+      (jobs ?? [])
+        .map((job: any) => job.status)
+        .filter(Boolean)
+        .map((value) => String(value).toUpperCase()),
+    ),
+  ).sort();
+
+  const pendingApprovalCount = (jobs ?? []).filter(
+    (job: any) =>
+      String(job.requisitionStatus ?? "").toUpperCase() === "PENDING_APPROVAL",
+  ).length;
+
+  const totalOpenings = (jobs ?? []).reduce(
+    (total, job: any) => total + Number(job.openings ?? job.headcount ?? 0),
+    0,
+  );
+
+  const averageCandidatesPerRole = jobs?.length
+    ? Math.round(totalCandidates / jobs.length)
+    : 0;
+
+  const hasActiveFilters =
+    Boolean(searchTerm.trim()) ||
+    statusFilter !== "ALL" ||
+    hiringModeFilter !== "ALL" ||
+    departmentFilter !== "ALL";
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setStatusFilter("ALL");
+    setHiringModeFilter("ALL");
+    setDepartmentFilter("ALL");
+  };
 
   return (
     <div className="premium-page space-y-5">
@@ -444,6 +535,60 @@ export default function Recruitment() {
             </span>
           </div>
           <p className="mt-2 text-[11px] text-slate-500">Employee referral volume</p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-[22px] border border-orange-100 bg-white p-4 shadow-[0_8px_24px_rgba(249,115,22,0.05)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">Pending approval</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{pendingApprovalCount}</p>
+            </div>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+              <Clock3 size={17} />
+            </span>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">Requisitions awaiting approval</p>
+        </div>
+
+        <div className="rounded-[22px] border border-cyan-100 bg-white p-4 shadow-[0_8px_24px_rgba(6,182,212,0.05)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-cyan-600">Total openings</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{totalOpenings}</p>
+            </div>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-50 text-cyan-600">
+              <Briefcase size={17} />
+            </span>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">Planned positions across requisitions</p>
+        </div>
+
+        <div className="rounded-[22px] border border-fuchsia-100 bg-white p-4 shadow-[0_8px_24px_rgba(217,70,239,0.05)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-fuchsia-600">Avg. candidates / role</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{averageCandidatesPerRole}</p>
+            </div>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-fuchsia-50 text-fuchsia-600">
+              <UserCheck size={17} />
+            </span>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">Average candidate volume per role</p>
+        </div>
+
+        <div className="rounded-[22px] border border-violet-100 bg-white p-4 shadow-[0_8px_24px_rgba(124,92,255,0.05)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Hiring mix</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{(jobs ?? []).filter((job: any) => String(job.hiringMode ?? "STANDARD") !== "STANDARD").length}</p>
+            </div>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+              <GraduationCap size={17} />
+            </span>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">Walk-in or campus requisitions</p>
         </div>
       </div>
 
@@ -605,9 +750,7 @@ export default function Recruitment() {
 
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({
-            length: 6,
-          }).map((_, index) => (
+          {Array.from({ length: 6 }).map((_, index) => (
             <Skeleton key={index} className="h-48 rounded-3xl" />
           ))}
         </div>
@@ -619,71 +762,130 @@ export default function Recruitment() {
         />
       ) : (
         <>
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">
-                Hiring workspace
-              </p>
-              <h3 className="mt-1 font-display text-lg font-semibold tracking-[-0.015em] text-slate-900">
-                Current requisitions
-              </h3>
+          <div className="mb-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.045)]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Hiring workspace</p>
+                <h3 className="mt-1 font-display text-lg font-semibold tracking-[-0.015em] text-slate-900">Current requisitions</h3>
+                <p className="mt-1 text-[11px] text-slate-500">Search and filter requisitions without changing the existing recruitment workflow.</p>
+              </div>
+              <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-semibold text-slate-500">
+                <Building2 size={13} />
+                {filteredJobs.length} of {jobs.length} roles shown
+              </div>
             </div>
-            <div className="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-slate-500 sm:flex">
-              <Clock3 size={13} />
-              Live pipeline
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {jobs.map((job) => (
-            <Card
-              key={job.id}
-              hoverable
-              className="cursor-pointer border-slate-200/70 bg-gradient-to-br from-white via-white to-[#FBFAFF] shadow-[0_8px_24px_rgba(15,23,42,0.045)] hover:border-indigo-200/80 hover:shadow-[0_16px_34px_rgba(79,70,229,0.10)]"
-              onClick={() => navigate(`/app/recruitment/${job.id}`)}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-display text-[16px] font-medium text-ink">
-                    {job.title}
-                  </p>
 
-                  <p className="mt-0.5 text-[12.5px] text-ink-faint">
-                    {job.departmentName} · {job.designationTitle}
-                  </p>
-                </div>
-
-                <StatusBadge status={job.status} />
+            <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(260px,1.6fr)_repeat(3,minmax(150px,0.7fr))_auto]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search title, department, designation, location..."
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                />
               </div>
 
-              <div className="mt-4 flex items-center gap-4 text-[12px] text-ink-faint">
-                <span className="flex items-center gap-1.5">
-                  <MapPin size={13} />
-                  {job.location}
-                </span>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              >
+                <option value="ALL">All statuses</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>{status.replace(/_/g, " ")}</option>
+                ))}
+              </select>
 
-                <span className="flex items-center gap-1.5">
-                  <Users size={13} />
-                  {job.candidateCount} candidates
-                </span>
-              </div>
+              <select
+                value={hiringModeFilter}
+                onChange={(event) => setHiringModeFilter(event.target.value)}
+                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              >
+                <option value="ALL">All hiring modes</option>
+                <option value="STANDARD">Standard</option>
+                <option value="WALK_IN">Walk-in</option>
+                <option value="CAMPUS">Campus</option>
+              </select>
 
-              <div className="mt-3 text-[12px] text-ink-faint">
-                {job.experienceMin}–{job.experienceMax} yrs exp · {job.openings}{" "}
-                opening(s)
-              </div>
+              <select
+                value={departmentFilter}
+                onChange={(event) => setDepartmentFilter(event.target.value)}
+                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              >
+                <option value="ALL">All departments</option>
+                {departmentOptions.map((department) => (
+                  <option key={department} value={department}>{department}</option>
+                ))}
+              </select>
 
-              {job.requisitionStatus && (
-                <div className="mt-3 flex items-center gap-1.5 text-[11px] text-ink-faint">
-                  <FileText size={12} />
-                  Requisition:{" "}
-                  {String(job.requisitionStatus)
-                    .replace(/_/g, " ")
-                    .toLowerCase()}
-                </div>
+              {hasActiveFilters && (
+                <Button variant="outline" onClick={clearFilters} leftIcon={<X size={15} />}>
+                  Clear
+                </Button>
               )}
-            </Card>
-          ))}
+            </div>
           </div>
+
+          {!filteredJobs.length ? (
+            <div className="rounded-[24px] border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+                <Search size={20} />
+              </div>
+              <h4 className="mt-4 font-display text-base font-semibold text-slate-900">No matching requisitions</h4>
+              <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">Try another search term or clear the filters to see all current requisitions.</p>
+              {hasActiveFilters && (
+                <Button variant="outline" className="mt-4" onClick={clearFilters}>Clear filters</Button>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredJobs.map((job: any) => (
+                <Card
+                  key={job.id}
+                  hoverable
+                  className="group cursor-pointer border-slate-200/70 bg-gradient-to-br from-white via-white to-[#FBFAFF] shadow-[0_8px_24px_rgba(15,23,42,0.045)] hover:border-indigo-200/80 hover:shadow-[0_16px_34px_rgba(79,70,229,0.10)]"
+                  onClick={() => navigate(`/app/recruitment/${job.id}`)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-display text-[16px] font-medium text-ink">{job.title}</p>
+                      <p className="mt-0.5 truncate text-[12.5px] text-ink-faint">{job.departmentName} · {job.designationTitle}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <StatusBadge status={job.status} />
+                      <ChevronRight size={15} className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-indigo-500" />
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"><MapPin size={12} /> Location</div>
+                      <p className="mt-1 truncate text-xs font-medium text-slate-700" title={job.location}>{job.location || "Not specified"}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"><Users size={12} /> Candidates</div>
+                      <p className="mt-1 text-xs font-medium text-slate-700">{job.candidateCount ?? 0}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">{job.experienceMin ?? 0}–{job.experienceMax ?? 0} yrs</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">{job.openings ?? job.headcount ?? 0} opening(s)</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">{String(job.hiringMode ?? "STANDARD").replace(/_/g, " ")}</span>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                    <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-500">
+                      <FileText size={12} className="shrink-0" />
+                      <span className="truncate">Requisition: {String(job.requisitionStatus ?? "NOT_SET").replace(/_/g, " ").toLowerCase()}</span>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-semibold text-indigo-600">Open role</span>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </>
       )}
 

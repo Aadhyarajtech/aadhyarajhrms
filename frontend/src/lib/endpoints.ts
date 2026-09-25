@@ -162,10 +162,33 @@ export const EmployeesApi = {
       .get<{ employee: Employee }>(`/employees/${id}`)
       .then((r) => r.data.employee),
 
-  directReports: (id: string) =>
-    api
-      .get<{ employees: Employee[] }>(`/employees/${id}/direct-reports`)
-      .then((r) => r.data.employees),
+  directReports: async (id: string) => {
+    if (!id?.trim()) {
+      throw new Error("Employee ID is required to load direct reports.");
+    }
+
+    const employeeId = encodeURIComponent(id.trim());
+
+    const response = await api.get<{ employees?: Employee[] }>(
+      `/employees/${employeeId}/direct-reports`,
+    );
+
+    const employees = response.data?.employees;
+
+    if (!Array.isArray(employees)) {
+      throw new Error(
+        "Invalid response from the direct reports API: employees list is missing.",
+      );
+    }
+
+    // Keep the API result limited to actual employees and remove any accidental
+    // duplicate employee records before the UI consumes the data.
+    const uniqueEmployees = Array.from(
+      new Map(employees.map((employee) => [employee.id, employee])).values(),
+    );
+
+    return uniqueEmployees;
+  },
 
   managers: () =>
     api
@@ -1249,6 +1272,33 @@ export interface LeavePatternDetectionResponse {
   explanation: string;
 }
 
+export interface LeaveCalendarLeaveEntry {
+  id: string;
+  type: "LEAVE";
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  firstName: string | null;
+  lastName: string | null;
+  employeeCode: string | null;
+  avatarUrl: string | null;
+  leaveTypeName: string | null;
+  leaveTypeColor: string | null;
+}
+
+export interface LeaveCalendarHolidayEntry {
+  id: string;
+  type: "HOLIDAY";
+  date: string;
+  name: string;
+  isOptional: boolean;
+}
+
+export type LeaveCalendarEntry =
+  | LeaveCalendarLeaveEntry
+  | LeaveCalendarHolidayEntry;
+
 export const LeaveApi = {
   types: () =>
     api
@@ -1313,7 +1363,9 @@ export const LeaveApi = {
 
   calendar: (month?: number, year?: number) =>
     api
-      .get<{ entries: any[] }>("/leave/calendar", { params: { month, year } })
+      .get<{ entries: LeaveCalendarEntry[] }>("/leave/calendar", {
+        params: { month, year },
+      })
       .then((r) => r.data.entries),
 
   generateReason: (reason: string) =>

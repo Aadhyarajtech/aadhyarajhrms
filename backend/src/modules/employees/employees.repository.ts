@@ -226,8 +226,27 @@ async function validateManagerAssignment(
 }
 
 export async function listDirectReports(managerId: string) {
+  const normalizedManagerId = String(managerId ?? "").trim();
+
+  if (!normalizedManagerId) {
+    throw AppError.badRequest("Manager employee ID is required.");
+  }
+
+  // Verify the manager profile exists before querying direct reports.
+  // This keeps invalid/stale employee IDs from producing confusing empty
+  // results and gives the route a consistent error to return.
+  const manager = await Employee.findById(normalizedManagerId)
+    .select("_id")
+    .lean();
+
+  if (!manager) {
+    throw AppError.notFound("Manager employee profile not found.");
+  }
+
+  // `managerId` is the canonical reporting relationship. Include every
+  // active employment state that can legitimately appear in My Team.
   const rows = await Employee.find({
-    managerId,
+    managerId: normalizedManagerId,
     status: {
       $in: [
         "ACTIVE",
@@ -238,10 +257,20 @@ export async function listDirectReports(managerId: string) {
       ],
     },
   })
-    .sort({ firstName: 1, lastName: 1 })
+    .sort({ firstName: 1, lastName: 1, _id: 1 })
     .lean();
 
-  return enrichEmployees(rows);
+  // A manager should never see the same employee twice even if legacy data
+  // contains duplicate/duplicated records returned by a future query change.
+  const uniqueRows = Array.from(
+    new Map(
+      rows
+        .filter((employee) => employee?._id)
+        .map((employee) => [String(employee._id), employee]),
+    ).values(),
+  );
+
+  return enrichEmployees(uniqueRows);
 }
 
 async function nextEmployeeCode(): Promise<string> {
