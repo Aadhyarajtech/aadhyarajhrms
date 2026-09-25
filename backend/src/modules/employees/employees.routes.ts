@@ -507,6 +507,11 @@ employeesRouter.get(
   async (req, res, next) => {
     try {
       const requester = req.user!;
+      const employeeId = req.params.id?.trim();
+
+      if (!employeeId) {
+        throw AppError.badRequest("Employee ID is required.");
+      }
 
       const isAdmin =
         requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
@@ -514,7 +519,7 @@ employeesRouter.get(
       // Managers may only request their own direct reports.
       if (
         requester.role === "MANAGER" &&
-        requester.employeeId !== req.params.id
+        requester.employeeId !== employeeId
       ) {
         throw AppError.forbidden();
       }
@@ -524,11 +529,31 @@ employeesRouter.get(
         throw AppError.forbidden();
       }
 
-      res.json({
-        employees: await repo.listDirectReports(req.params.id),
+      // Validate that the requested employee exists before querying the
+      // reporting relationship. This produces a clear 404 instead of
+      // allowing an invalid employee ID to reach the repository layer.
+      const manager = await repo.getEmployeeById(employeeId);
+
+      if (!manager) {
+        throw AppError.notFound("Manager employee profile not found.");
+      }
+
+      const employees = await repo.listDirectReports(employeeId);
+
+      // Ensure the API always returns a clean, predictable array.
+      const uniqueEmployees = Array.from(
+        new Map(
+          employees
+            .filter((employee) => employee && employee.id)
+            .map((employee) => [employee.id, employee]),
+        ).values(),
+      );
+
+      return res.json({
+        employees: uniqueEmployees,
       });
     } catch (err) {
-      next(err);
+      return next(err);
     }
   },
 );

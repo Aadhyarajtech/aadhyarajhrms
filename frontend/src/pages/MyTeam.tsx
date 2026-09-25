@@ -6,6 +6,7 @@ import {
   CalendarDays,
   Check,
   Clock3,
+  RefreshCw,
   Users,
   X,
 } from "lucide-react";
@@ -122,11 +123,17 @@ function TeamMembers({
   const {
     data: teamMembers,
     isLoading,
+    isFetching,
     isError,
+    error,
+    refetch,
   } = useQuery({
     queryKey: ["my-team", "members", managerId],
     queryFn: () => EmployeesApi.directReports(managerId),
     enabled: !!managerId,
+    retry: 2,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const [search, setSearch] = useState("");
@@ -134,11 +141,17 @@ function TeamMembers({
   const filteredTeamMembers = useMemo(() => {
     const query = search.trim().toLowerCase();
 
+    // A manager must never appear as their own direct report, even if the
+    // backend accidentally returns the current employee in the response.
+    const directReports = (teamMembers ?? []).filter(
+      (employee) => employee.id !== managerId,
+    );
+
     if (!query) {
-      return teamMembers ?? [];
+      return directReports;
     }
 
-    return (teamMembers ?? []).filter((employee) => {
+    return directReports.filter((employee) => {
       const name = `${employee.firstName} ${employee.lastName}`.toLowerCase();
       const code = employee.employeeCode?.toLowerCase() ?? "";
       const designation = employee.designationTitle?.toLowerCase() ?? "";
@@ -151,7 +164,7 @@ function TeamMembers({
         department.includes(query)
       );
     });
-  }, [teamMembers, search]);
+  }, [teamMembers, managerId, search]);
 
   return (
     <Card className="border-violet-100/80 shadow-[0_18px_45px_-32px_rgba(79,70,229,0.55)]">
@@ -179,11 +192,42 @@ function TeamMembers({
       )}
 
       {isError && (
-        <EmptyState
-          icon={AlertCircle}
-          title="Unable to load team"
-          description="We couldn't retrieve your direct team members."
-        />
+        <div className="rounded-2xl border border-red-200 bg-red-50/60 px-4 py-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-xl bg-white p-2 text-red-600 shadow-sm">
+                <AlertCircle size={18} />
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-red-900">
+                  Unable to load team
+                </p>
+                <p className="mt-1 text-xs text-red-700">
+                  We couldn't retrieve the direct reports for this manager.
+                  Please try again. If the problem continues, the manager's
+                  reporting relationship or team API needs to be checked.
+                </p>
+
+                {error && (
+                  <p className="mt-2 break-words text-[11px] text-red-600/80">
+                    {getErrorMessage(error)}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<RefreshCw size={14} />}
+              isLoading={isFetching}
+              onClick={() => refetch()}
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
       )}
 
       {!isLoading && !isError && (!teamMembers || teamMembers.length === 0) && (
