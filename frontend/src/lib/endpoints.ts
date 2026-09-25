@@ -225,6 +225,21 @@ export const EmployeesApi = {
       .post<{ employee: Employee }>(`/employees/${id}/complete-onboarding`)
       .then((r) => r.data.employee),
 
+  updateOnboardingStage: (
+    id: string,
+    stage: number,
+    remarks?: string | null,
+  ) =>
+    api
+      .patch<{ employee: Employee }>(
+        `/employees/${id}/onboarding/stage`,
+        {
+          stage,
+          remarks,
+        },
+      )
+      .then((r) => r.data.employee),
+
   startNoticePeriod: (id: string, noticeDays: number) =>
     api
       .post<{
@@ -1429,6 +1444,30 @@ export const LeaveApi = {
 
 
 // --- Recruitment ------------------------------------------------------------------
+export interface InterviewCopilotQuestion {
+  question: string;
+  followUps: string[];
+}
+
+export interface InterviewCopilotResponse {
+  focusAreas: string[];
+  technicalQuestions: InterviewCopilotQuestion[];
+  resumeQuestions: InterviewCopilotQuestion[];
+  skillGapQuestions: InterviewCopilotQuestion[];
+  behavioralQuestions: InterviewCopilotQuestion[];
+}
+
+export interface InterviewEvaluationResponse {
+  overallAssessment: string;
+  technicalAssessment: string;
+  communicationAssessment: string;
+  strengths: string[];
+  weaknesses: string[];
+  concerns: string[];
+  recommendation: "PROCEED" | "HOLD" | "REJECT" | "REVIEW_REQUIRED";
+  suggestedNextStep: string;
+}
+
 export const RecruitmentApi = {
   jobs: (status?: string) =>
     api
@@ -1732,6 +1771,57 @@ export const RecruitmentApi = {
         candidate: Candidate;
       }>(`/recruitment/candidates/${id}/referral-bonus`, { status })
       .then((r) => r.data.candidate),
+
+  generateJobDescription: (payload: {
+    jobTitle: string;
+    departmentId?: string;
+    designationId?: string;
+    roleCategory?: string;
+    employmentType?: string;
+    location?: string;
+    experienceMin?: number;
+    experienceMax?: number;
+    skills?: string;
+  }) =>
+    api
+      .post<{
+        departmentId: string;
+        designationId: string;
+        roleCategory: string;
+        employmentType: string;
+        location: string;
+        experienceMin: number;
+        experienceMax: number;
+        skills: string[];
+        screeningQuestions: string[];
+        description: string;
+      }>("/recruitment/ai/job-description", payload)
+      .then((r) => r.data),
+
+  rankedCandidates: (jobId: string) =>
+    api
+      .get<{
+        candidates: Candidate[];
+      }>(`/recruitment/jobs/${jobId}/ranked-candidates`)
+      .then((r) => r.data.candidates),
+
+  interviewCopilot: (interviewId: string) =>
+    api
+      .get<InterviewCopilotResponse>(
+        `/recruitment/interviews/${interviewId}/copilot`,
+      )
+      .then((r) => r.data),
+
+  evaluateInterview: (
+    interviewId: string,
+    payload?: Record<string, unknown>,
+  ) =>
+    api
+      .post<InterviewEvaluationResponse>(
+        `/recruitment/interviews/${interviewId}/evaluate`,
+        payload ?? {},
+      )
+      .then((r) => r.data),
 
   metrics: () =>
     api
@@ -2207,6 +2297,25 @@ export const PerformanceApi = {
 };
 
 // --- Payroll -----------------------------------------------------------------------
+function normalizePayrollPeriod(
+  monthOrStartDate: number | string,
+  yearOrEndDate: number | string,
+): { month: number; year: number } {
+  if (typeof monthOrStartDate === "number" && typeof yearOrEndDate === "number") {
+    return { month: monthOrStartDate, year: yearOrEndDate };
+  }
+
+  const start = new Date(String(monthOrStartDate));
+  if (Number.isNaN(start.getTime())) {
+    throw new Error("Invalid payroll start date.");
+  }
+
+  return {
+    month: start.getMonth() + 1,
+    year: start.getFullYear(),
+  };
+}
+
 export const PayrollApi = {
   getSalaryStructure: (employeeId: string) =>
     api
@@ -2254,25 +2363,44 @@ export const PayrollApi = {
     api
       .post<PayrollReadinessResult>("/payroll/validate-readiness", { month, year })
       .then((r) => r.data),
-  lockAttendance: (month: number, year: number) =>
-    api
+  lockAttendance: (
+    monthOrStartDate: number | string,
+    yearOrEndDate: number | string,
+    _departmentIds?: string[],
+  ) => {
+    const { month, year } = normalizePayrollPeriod(
+      monthOrStartDate,
+      yearOrEndDate,
+    );
+
+    return api
       .post<{
         run: PayrollRun;
       }>("/payroll/runs/lock-attendance", {
         month,
         year,
       })
-      .then((r) => r.data.run),
+      .then((r) => r.data.run);
+  },
 
-  process: (month: number, year: number) =>
-    api
+  process: (
+    monthOrStartDate: number | string,
+    yearOrEndDate: number | string,
+  ) => {
+    const { month, year } = normalizePayrollPeriod(
+      monthOrStartDate,
+      yearOrEndDate,
+    );
+
+    return api
       .post<{
         run: PayrollRun;
       }>("/payroll/runs/process", {
         month,
         year,
       })
-      .then((r) => r.data.run),
+      .then((r) => r.data.run);
+  },
 
   submitForReview: (id: string) =>
     api
@@ -2569,6 +2697,13 @@ export const DocumentsApi = {
       .then((r) => r.data.requests),
 
   delete: (id: string) => api.delete(`/documents/${id}`),
+
+  download: (id: string) =>
+    api
+      .get(`/documents/${id}/download`, {
+        responseType: "blob",
+      })
+      .then((r) => r.data as Blob),
 
   allAssets: () =>
     api
