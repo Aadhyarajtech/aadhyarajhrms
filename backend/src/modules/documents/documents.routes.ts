@@ -258,7 +258,21 @@ documentsRouter.delete("/:id", isAdmin, async (req, res, next) => {
     next(err);
   }
 });
+documentsRouter.patch(
+  "/:id/expiry-date",
+  async (req, res, next) => {
+    try {
+      const document = await repo.updateDocumentExpiryDate(
+        req.params.id,
+        req.body.expiryDate ?? null,
+      );
 
+      res.json({ document });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 documentsRouter.patch(
   "/:id/review",
   validate(documentReviewSchema),

@@ -3418,6 +3418,22 @@ export const DocumentsApi = {
       .then(
         (r) => r.data,
       ),
+        review: (
+    id: string,
+    status: "VERIFIED" | "REJECTED",
+    rejectionReason?: string,
+  ) =>
+    api
+      .patch(
+        `/documents/${id}/review`,
+        {
+          status,
+          rejectionReason,
+        },
+      )
+      .then(
+        (r) => r.data.document,
+      ),
 
   upload: (
     employeeId: string,
@@ -3567,6 +3583,20 @@ export const DocumentsApi = {
       .then(
         (r) => r.data.asset,
       ),
+      updateExpiryDate: (
+  id: string,
+  expiryDate: string | null,
+) =>
+  api
+    .patch<{
+      document: any;
+    }>(
+      `/documents/${id}/expiry-date`,
+      { expiryDate },
+    )
+    .then(
+      (r) => r.data.document,
+    ),
 
   updateAssetStatus: (
     id: string,

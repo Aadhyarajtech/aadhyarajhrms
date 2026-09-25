@@ -111,6 +111,22 @@ export async function setDocumentFileUrl(
   );
   return getDocument(id);
 }
+export async function updateDocumentExpiryDate(
+  id: string,
+  expiryDate: string | null,
+) {
+  const doc = await DocumentRecord.findByIdAndUpdate(
+    id,
+    { $set: { expiryDate } },
+    { new: true },
+  );
+
+  if (!doc) {
+    throw AppError.notFound("Document not found.");
+  }
+
+  return toApiDoc(doc);
+}
 
 function safePrivateDocumentPath(storageKey: string) {
   const safeKey = path.basename(storageKey);
