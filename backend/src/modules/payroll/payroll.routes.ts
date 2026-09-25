@@ -4,6 +4,7 @@ import { authenticate } from "@/middleware/auth";
 import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
+import { Employee } from "@/db/models";
 import * as repo from "./payroll.repository";
 import { explainPayslip, askPayslipQuestion } from "../../services/payslipExplainer.service";
 import { validatePayrollReadiness } from "../../services/payrollValidation.service";
@@ -111,17 +112,25 @@ payrollRouter.get(
 );
 
 const processSchema = z.object({
-  month: z.number().int().min(1).max(12),
-  year: z.number().int().min(2020),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+const lockAttendanceSchema = processSchema.extend({
+  departmentIds: z.array(z.string().min(1)).min(1, "Select at least one department to lock."),
 });
 payrollRouter.post(
   "/runs/lock-attendance",
   requirePermission("payroll.manage"),
-  validate(processSchema),
+  validate(lockAttendanceSchema),
   async (req, res, next) => {
     try {
       res.status(201).json({
-        run: await repo.lockAttendanceForPayroll(req.body.month, req.body.year),
+        run: await repo.lockAttendanceForPayroll(
+          req.body.startDate,
+          req.body.endDate,
+          req.body.departmentIds,
+        ),
       });
     } catch (err) {
       next(err);
@@ -136,7 +145,7 @@ payrollRouter.post(
   async (req, res, next) => {
     try {
       res.status(201).json({
-        run: await repo.processPayrollRun(req.body.month, req.body.year),
+        run: await repo.processPayrollRun(req.body.startDate, req.body.endDate),
       });
     } catch (err) {
       next(err);
@@ -263,9 +272,29 @@ payrollRouter.get(
 
 payrollRouter.get("/payslips/mine", async (req, res, next) => {
   try {
-    if (!req.user!.employeeId) throw AppError.forbidden();
+    let employeeId = req.user!.employeeId;
+
+    // Resolve the employee from the authenticated user as a safety net. This
+    // prevents a stale/missing employeeId in an old JWT from making a valid
+    // employee's payslips appear empty.
+    if (!employeeId) {
+      const employee = await Employee.findOne({
+        userId: req.user!.userId,
+      })
+        .select("_id")
+        .lean();
+
+      employeeId = employee?._id ? String(employee._id) : null;
+    }
+
+    if (!employeeId) throw AppError.forbidden("No employee profile is linked to this account.");
+
     res.json({
-      payslips: await repo.listPayslipsForEmployee(req.user!.employeeId),
+      payslips: await repo.listMyPayslipsForUser({
+        userId: req.user!.userId,
+        employeeId,
+        email: req.user!.email,
+      }),
     });
   } catch (err) {
     next(err);

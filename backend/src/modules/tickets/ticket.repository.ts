@@ -1,5 +1,4 @@
 import * as Models from "@/db/models";
-import { env } from "@/config/env";
 
 // Support different export styles from the models module
 const Ticket: any =
@@ -20,13 +19,14 @@ const TICKET_STATUSES = [
   "WAITING_FOR_EMPLOYEE",
   "RESOLVED",
   "CLOSED",
-  "EXPIRED",
 ] as const;
 
-type TicketStatus = (typeof TICKET_STATUSES)[number];
-
-function isTicketStatus(status: string): status is TicketStatus {
-  return (TICKET_STATUSES as readonly string[]).includes(status);
+export function isTicketStatus(
+  status: string,
+): status is (typeof TICKET_STATUSES)[number] {
+  return TICKET_STATUSES.includes(
+    status as (typeof TICKET_STATUSES)[number],
+  );
 }
 
 const TICKET_ESCALATION_TARGETS = ["HR_ADMIN", "SUPER_ADMIN"] as const;
@@ -40,16 +40,21 @@ function isTicketEscalationTarget(
 }
 
 function getSlaHours(priority: string) {
-  // These are the repository defaults. They can be replaced by a central
-  // configuration later without changing the ticket workflow.
+  // SmartHR Pro SLA Standards:
+  // CRITICAL: 1 Hour (Harassment, safety, legal, major business blocker)
+  // HIGH: 4 Hours (Payroll discrepancies, IT outage, urgent HR deadlines)
+  // MEDIUM: 24 Hours / 1 Business Day (Leave disputes, general policy queries)
+  // LOW: 72 Hours / 3 Business Days (Facilities, routine feedback)
   switch (priority) {
+    case "CRITICAL":
+      return 1;
     case "HIGH":
+      return 4;
+    case "MEDIUM":
       return 24;
     case "LOW":
-      return 72;
-    case "MEDIUM":
     default:
-      return 48;
+      return 72;
   }
 }
 
@@ -89,7 +94,8 @@ function calculateSlaStatus(
   const remainingMs = due.getTime() - now.getTime();
   const remainingHours = remainingMs / (60 * 60 * 1000);
 
-  return remainingHours <= 24 ? "DUE_SOON" : "ON_TRACK";
+  // Mark as DUE_SOON if less than 25% of SLA window or <= 2 hours remaining
+  return remainingHours <= 2 ? "DUE_SOON" : "ON_TRACK";
 }
 
 async function refreshTicketSla(ticket: any) {
@@ -135,28 +141,37 @@ function generateTicketId(category: string) {
 export function assignDepartment(category: string) {
   switch (category) {
     case "HR":
+    case "Policy Query":
+    case "Leave Issue":
+    case "Leave":
+    case "Attendance":
+    case "Employee Referral":
+    case "Other":
       return "HR_ADMIN";
 
+    case "Payroll Issue":
     case "Payroll":
       return "FINANCE";
 
-    case "Leave":
+    case "Manager Concern":
+      // Manager concerns route to Senior Leadership / Super Admin
+      return "SUPER_ADMIN";
+
+    case "Harassment Complaint":
+      // POSH & Workplace harassment complaints route to dedicated HR / Legal / Super Admin
       return "HR_ADMIN";
 
-    case "Attendance":
+    case "IT Support":
+      return "IT_SUPPORT";
+
+    case "Infrastructure":
       return "HR_ADMIN";
 
     case "Recruitment":
       return "MANAGER";
 
-    case "Employee Referral":
-      return "HR_ADMIN";
-
     case "Complaint":
       return "HR_ADMIN";
-
-    case "IT Support":
-      return "IT_SUPPORT";
 
     default:
       return "HR_ADMIN";
@@ -182,12 +197,19 @@ export async function createTicket(data: {
   aiPriority?: string | null;
   aiPriorityReason?: string | null;
   aiSentiment?: string | null;
-  expiryDays?: number;
 }) {
   const now = new Date().toISOString();
-  const expiryDays = Number(data.expiryDays ?? env.ticketExpiryDays);
-  if (!Number.isFinite(expiryDays) || expiryDays <= 0 || expiryDays > 365) {
-    throw new Error("Ticket expiry must be between 1 and 365 days.");
+
+  // Enforce CRITICAL priority and POSH isolation for Harassment Complaints
+  let effectivePriority = data.priority;
+  if (data.category === "Harassment Complaint") {
+    effectivePriority = "CRITICAL";
+  }
+
+  // Manager isolation: Manager Concern and Harassment Complaint MUST NOT be assigned to direct manager
+  let assignedManagerId: string | null = null;
+  if (data.category === "Complaint") {
+    assignedManagerId = data.managerId || null;
   }
 
   const ticket = await Ticket.create({
@@ -197,7 +219,7 @@ export async function createTicket(data: {
 
     category: data.category,
 
-    priority: data.priority,
+    priority: effectivePriority,
 
     subject: data.subject,
 
@@ -207,12 +229,11 @@ export async function createTicket(data: {
 
     assignedTo: assignDepartment(data.category),
 
-    assignedManagerId:
-      data.category === "Complaint" ? data.managerId || null : null,
+    assignedManagerId,
 
     status: "OPEN",
 
-    slaDueAt: calculateSlaDueAt(now, data.priority),
+    slaDueAt: calculateSlaDueAt(now, effectivePriority),
     slaStatus: "ON_TRACK",
 
     isEscalated: false,
@@ -231,8 +252,6 @@ export async function createTicket(data: {
     aiSentiment: data.aiSentiment ?? null,
 
     createdAt: now,
-    expiresAt: new Date(new Date(now).getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString(),
-    expiredAt: null,
 
     updatedAt: now,
   });
@@ -245,11 +264,7 @@ export async function createTicket(data: {
 // =========================================================
 
 export async function getTickets() {
-  const tickets = await Ticket.find({}).sort({ createdAt: -1 }).lean();
-  return tickets.map((ticket: any) => ({
-    ...ticket,
-    isExpired: ticket.status === "EXPIRED" || (ticket.expiresAt ? new Date(ticket.expiresAt).getTime() <= Date.now() : false),
-  }));
+  return Ticket.find({}).sort({ createdAt: -1 }).lean();
 }
 
 // =========================================================
@@ -261,10 +276,6 @@ export async function getTicket(id: string) {
 
   if (!ticket) return ticket;
 
-  if (ticket.status === "EXPIRED" || (ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())) {
-    throw new Error("This ticket has expired and can no longer be accessed.");
-  }
-
   return refreshTicketSla(ticket);
 }
 
@@ -273,16 +284,12 @@ export async function getTicket(id: string) {
 // =========================================================
 
 export async function updateTicketStatus(id: string, status: string) {
-  if (!isTicketStatus(status) || status === "EXPIRED") {
+  if (!isTicketStatus(status)) {
     throw new Error("Invalid ticket status.");
   }
 
   return Ticket.findByIdAndUpdate(
     id,
-    {
-      status: { $ne: "EXPIRED" },
-      expiresAt: { $gt: new Date().toISOString() },
-    },
     {
       $set: {
         status,
@@ -313,11 +320,7 @@ export async function getMyTickets(employeeId: string) {
   console.log(
     `[Tickets] Found ${tickets.length} ticket(s) for employee ${employeeId}`,
   );
-
-  return tickets.map((ticket: any) => ({
-    ...ticket,
-    isExpired: ticket.status === "EXPIRED" || (ticket.expiresAt ? new Date(ticket.expiresAt).getTime() <= Date.now() : false),
-  }));
+  return tickets;
 }
 
 // =========================================================
@@ -415,11 +418,17 @@ export async function getTeamGrievanceTicket(
 
 export const HR_CATEGORIES = [
   "HR",
+  "Policy Query",
+  "Leave Issue",
   "Leave",
   "Attendance",
   "Recruitment",
   "Employee Referral",
   "Complaint",
+  "Manager Concern",
+  "Harassment Complaint",
+  "Infrastructure",
+  "Other",
 ];
 
 export async function getTicketsForDepartment(
@@ -431,19 +440,25 @@ export async function getTicketsForDepartment(
     return Ticket.find({}).sort({ createdAt: -1 }).lean();
   }
 
-  // IT Support sees only IT Support tickets
+  // IT Support sees IT Support and Infrastructure tickets
   if (role === "IT_SUPPORT") {
     return Ticket.find({
-      $or: [{ assignedTo: "IT_SUPPORT" }, { category: "IT Support" }],
+      $or: [
+        { assignedTo: "IT_SUPPORT" },
+        { category: { $in: ["IT Support", "Infrastructure"] } },
+      ],
     })
       .sort({ createdAt: -1 })
       .lean();
   }
 
-  // Finance sees only Payroll / Finance tickets
+  // Finance sees Payroll / Finance tickets
   if (role === "FINANCE") {
     return Ticket.find({
-      $or: [{ assignedTo: "FINANCE" }, { category: "Payroll" }],
+      $or: [
+        { assignedTo: "FINANCE" },
+        { category: { $in: ["Payroll", "Payroll Issue"] } },
+      ],
     })
       .sort({ createdAt: -1 })
       .lean();
@@ -462,7 +477,6 @@ export function isUserAuthorizedForTicket(
   user: { role: string; employeeId?: string | null },
 ): boolean {
   if (!ticket || !user) return false;
-  if (ticket.status === "EXPIRED" || (ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())) return false;
   const role = String(user.role);
 
   // Super Admin and HR Admin have enterprise-wide access
@@ -662,12 +676,6 @@ export async function getTicketMessages(ticketId: string) {
     throw new Error("TicketMessage model is not available");
   }
 
-  const ticket = await Ticket.findById(ticketId).select("status expiresAt").lean();
-  if (!ticket) throw new Error("Ticket not found.");
-  if (ticket.status === "EXPIRED" || (ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())) {
-    throw new Error("This ticket has expired and can no longer be accessed.");
-  }
-
   return TicketMessage.find({
     ticketId,
   })
@@ -676,7 +684,6 @@ export async function getTicketMessages(ticketId: string) {
     })
     .lean();
 }
-
 // =========================================================
 // CREATE TICKET MESSAGE
 // =========================================================
@@ -692,23 +699,12 @@ export async function createTicketMessage(data: {
     throw new Error("TicketMessage model is not available");
   }
 
-  const ticket = await Ticket.findById(data.ticketId).select("status expiresAt").lean();
-  if (!ticket) throw new Error("Ticket not found.");
-  if (ticket.status === "EXPIRED" || (ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())) {
-    throw new Error("This ticket has expired and can no longer be updated.");
-  }
-
   const message = await TicketMessage.create({
     ticketId: data.ticketId,
-
     employeeId: data.employeeId,
-
     senderName: data.senderName,
-
     senderRole: data.senderRole,
-
     message: data.message,
-
     createdAt: new Date(),
   });
 

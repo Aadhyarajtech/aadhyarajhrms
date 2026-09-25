@@ -2,13 +2,19 @@ import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
 import { profileImageUpload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
-import { isAdmin, isManagerOrAbove } from "@/middleware/rbac";
+import { isAdmin, isManagerOrAbove, requireRole } from "@/middleware/rbac";
 import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./employees.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
-
+import {
+  generateCareerInsights,
+  generateEmployee360Summary,
+} from "./employee.ai";
+import * as attendanceRepo from "@/modules/attendance/attendance.repository";
+import * as leaveRepo from "@/modules/leave/leave.repository";
+import * as performanceRepo from "@/modules/performance/performance.repository";
 export const employeesRouter = Router();
 employeesRouter.use(authenticate);
 
@@ -39,7 +45,7 @@ employeesRouter.post(
 
       if (!req.file) throw AppError.badRequest("Profile image is required.");
 
-      const avatarUrl = `${UPLOADS_PUBLIC_PATH} / ${req.file.filename}`;
+      const avatarUrl = `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`;
 
       const updated = await repo.updateEmployee(req.params.id, {
         avatarUrl,
@@ -58,6 +64,14 @@ employeesRouter.post(
 employeesRouter.get(
   "/",
   validate(listQuerySchema, "query"),
+  requireRole(
+    "SUPER_ADMIN",
+    "HR_ADMIN",
+    "MANAGER",
+    "RECRUITER",
+    "FINANCE",
+    "IT_SUPPORT",
+  ),
   requirePermission("employees.view"),
   async (req, res, next) => {
     try {
@@ -140,49 +154,352 @@ employeesRouter.get(
   },
 );
 
+/* =========================================================
+   AI CAREER & DEVELOPMENT INSIGHTS
+========================================================= */
+
+employeesRouter.get(
+  "/ai/career/:id",
+  requirePermission("employees.view"),
+  async (req, res, next) => {
+    try {
+      const employeeId = req.params.id;
+
+      const employee = await repo.getEmployeeAiContext(employeeId);
+
+      if (!employee) {
+        return res.status(404).json({
+          message: "Employee not found.",
+        });
+      }
+
+      const ai = await generateCareerInsights({
+        employee: employee.employee,
+        department: employee.department,
+        designation: employee.designation,
+        manager: employee.manager,
+      });
+
+      return res.json({
+        employeeId,
+        ai,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+/* =========================================================
+   AI EMPLOYEE 360° SUMMARY
+========================================================= */
+
+/**
+ * Returns the most recent completed months, including the current month.
+ *
+ * The month/year calculation is intentionally done in Asia/Kolkata so that
+ * the AI summary does not change month unexpectedly around UTC midnight.
+ */
+function getPreviousMonths(months: number) {
+  const now = new Date();
+
+  const currentYear = Number(
+    new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+    }).format(now),
+  );
+
+  const currentMonth = Number(
+    new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      month: "numeric",
+    }).format(now),
+  );
+
+  const result: Array<{ month: number; year: number }> = [];
+
+  for (let i = months - 1; i >= 0; i -= 1) {
+    const date = new Date(
+      Date.UTC(currentYear, currentMonth - 1 - i, 1),
+    );
+
+    result.push({
+      month: date.getUTCMonth() + 1,
+      year: date.getUTCFullYear(),
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Builds a compact attendance context for the AI model.
+ *
+ * We use six months of existing attendance summaries rather than sending
+ * individual attendance records to the LLM. This keeps the prompt small
+ * while still giving the model enough history to identify trends.
+ */
+async function getEmployee360Attendance(employeeId: string) {
+  const periods = getPreviousMonths(6);
+
+  const summaries = await Promise.all(
+    periods.map(({ month, year }) =>
+      attendanceRepo.getMonthlyEmployeeSummary(employeeId, month, year),
+    ),
+  );
+
+  const totals = summaries.reduce(
+    (acc, summary) => {
+      acc.totalDays += Number(summary.totalDays ?? 0);
+      acc.presentDays += Number(summary.presentDays ?? 0);
+      acc.absentDays += Number(summary.absentDays ?? 0);
+      acc.halfDays += Number(summary.halfDays ?? 0);
+      acc.lateDays += Number(summary.lateDays ?? 0);
+      acc.earlyDepartureDays += Number(summary.earlyDepartureDays ?? 0);
+      acc.totalWorkHours += Number(summary.totalWorkHours ?? 0);
+      acc.weekendDays += Number(summary.weekendDays ?? 0);
+      acc.holidayDays += Number(summary.holidayDays ?? 0);
+      return acc;
+    },
+    {
+      totalDays: 0,
+      presentDays: 0,
+      absentDays: 0,
+      halfDays: 0,
+      lateDays: 0,
+      earlyDepartureDays: 0,
+      totalWorkHours: 0,
+      weekendDays: 0,
+      holidayDays: 0,
+    },
+  );
+
+  const workingDays =
+    totals.totalDays - totals.weekendDays - totals.holidayDays;
+
+  const attendanceRate =
+    workingDays > 0
+      ? Math.round((totals.presentDays / workingDays) * 100)
+      : null;
+
+  const averageWorkHours =
+    totals.presentDays > 0
+      ? Math.round((totals.totalWorkHours / totals.presentDays) * 100) / 100
+      : null;
+
+  // Compare the first three months with the latest three months.
+  const firstHalf = summaries.slice(0, 3);
+  const secondHalf = summaries.slice(3);
+
+  const calculateRate = (items: typeof summaries) => {
+    const present = items.reduce(
+      (sum, item) => sum + Number(item.presentDays ?? 0),
+      0,
+    );
+
+    const working = items.reduce(
+      (sum, item) =>
+        sum +
+        Number(item.totalDays ?? 0) -
+        Number(item.weekendDays ?? 0) -
+        Number(item.holidayDays ?? 0),
+      0,
+    );
+
+    return working > 0 ? (present / working) * 100 : null;
+  };
+
+  const firstRate = calculateRate(firstHalf);
+  const secondRate = calculateRate(secondHalf);
+
+  let trend: string | null = null;
+
+  if (firstRate !== null && secondRate !== null) {
+    const difference = secondRate - firstRate;
+
+    if (difference >= 5) {
+      trend = "IMPROVING";
+    } else if (difference <= -5) {
+      trend = "DECLINING";
+    } else {
+      trend = "STABLE";
+    }
+  }
+
+  return {
+    attendanceRate,
+    presentDays: totals.presentDays,
+    absentDays: totals.absentDays,
+    halfDays: totals.halfDays,
+    lateDays: totals.lateDays,
+    averageWorkHours,
+    trend,
+  };
+}
+
+/**
+ * Builds the leave context used by the Employee 360° summary.
+ *
+ * This intentionally uses the existing leave repository APIs so that leave
+ * calculations remain consistent with the rest of the HRMS.
+ */
+async function getEmployee360Leave(employeeId: string) {
+  const currentYear = Number(
+    new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+    }).format(new Date()),
+  );
+
+  const [balances, requests] = await Promise.all([
+    leaveRepo.listBalancesForEmployee(employeeId, currentYear),
+    leaveRepo.listRequests({ employeeId }),
+  ]);
+
+  const totalAllocated = (balances as any[]).reduce(
+    (sum: number, balance: any) =>
+      sum + Number(balance.allotted ?? 0),
+    0,
+  );
+
+  const totalUsed = (balances as any[]).reduce(
+    (sum: number, balance: any) =>
+      sum + Number(balance.used ?? 0),
+    0,
+  );
+
+  const remaining = (balances as any[]).reduce(
+    (sum: number, balance: any) =>
+      sum +
+      Math.max(
+        0,
+        Number(balance.allotted ?? 0) - Number(balance.used ?? 0),
+      ),
+    0,
+  );
+
+  const recentRequests = (requests as any[]).slice(0, 20);
+
+  return {
+    totalAllocated,
+    totalUsed,
+    remaining,
+    requests: recentRequests.map((request: any) => ({
+      leaveType:
+        request.leaveTypeName ??
+        request.leaveType ??
+        "Leave",
+      totalDays: Number(request.totalDays ?? 0),
+      status: request.status ?? "UNKNOWN",
+    })),
+  };
+}
+
+/**
+ * Builds the performance context used by the Employee 360° summary.
+ *
+ * The existing scorecard API exposes strengths and development areas but
+ * does not expose individual goal records in its response, so goals are
+ * deliberately left empty instead of inventing goal data.
+ */
+async function getEmployee360Performance(employeeId: string) {
+  const scorecard = await performanceRepo.getPerformanceScorecard(employeeId);
+
+  if (!scorecard) {
+    return {
+      latestRating: null,
+      strengths: [],
+      developmentAreas: [],
+      goals: [],
+    };
+  }
+
+  return {
+    latestRating: scorecard.overallRating ?? null,
+    strengths: Array.isArray(scorecard.strengths)
+      ? scorecard.strengths
+      : [],
+    developmentAreas: Array.isArray(scorecard.developmentAreas)
+      ? scorecard.developmentAreas
+      : [],
+    goals: [],
+  };
+}
+
+employeesRouter.get(
+  "/ai/360/:id",
+  requirePermission("employees.view"),
+  async (req, res, next) => {
+    try {
+      if (
+        req.user?.role === "EMPLOYEE" &&
+        req.user.employeeId !== req.params.id
+      ) {
+        throw AppError.forbidden();
+      }
+
+      const employeeId = req.params.id;
+
+      const employee = await repo.getEmployeeAiContext(employeeId);
+
+      if (!employee) {
+        return res.status(404).json({
+          message: "Employee not found.",
+        });
+      }
+
+      const [attendance, leave, performance] = await Promise.all([
+        getEmployee360Attendance(employeeId),
+        getEmployee360Leave(employeeId),
+        getEmployee360Performance(employeeId),
+      ]);
+
+      const ai = await generateEmployee360Summary({
+        profile: employee.employee,
+        department: employee.department?.name ?? null,
+        designation: employee.designation?.title ?? null,
+        manager: employee.manager?.name ?? null,
+        skills: employee.employee.skills,
+        performance,
+        attendance,
+        leave,
+      });
+
+      return res.json({
+        employeeId,
+        ai,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
 employeesRouter.get(
   "/:id",
   requirePermission("employees.view"),
   async (req, res, next) => {
-  try {
-    const requester = req.user!;
+    try {
+      const employee = await repo.getEmployeeById(req.params.id);
 
-    const employee = await repo.getEmployeeById(req.params.id);
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
 
-    if (!employee) {
-      throw AppError.notFound("Employee not found.");
+      if (
+        req.user?.role === "EMPLOYEE" &&
+        req.user.employeeId !== req.params.id
+      ) {
+        throw AppError.forbidden();
+      }
+
+      res.json({ employee });
+    } catch (err) {
+      next(err);
     }
-
-    // Super Admin and HR Admin can view any employee.
-    const isAdmin =
-      requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
-
-    if (isAdmin) {
-      return res.json({ employee });
-    }
-
-    // Any authenticated employee can view their own profile.
-    if (requester.employeeId === req.params.id) {
-      return res.json({ employee });
-    }
-
-    // Reporting managers can view any employee profile.
-    // This only changes visibility; edit permissions remain restricted below.
-    if (requester.role === "MANAGER") {
-      return res.json({ employee });
-    }
-
-    // Other roles with employees.view (Recruiter, Finance, IT Support) can
-    // view employee profiles. Their write access remains restricted below.
-    if (["RECRUITER", "FINANCE", "IT_SUPPORT"].includes(requester.role)) {
-      return res.json({ employee });
-    }
-
-    throw AppError.forbidden();
-  } catch (err) {
-    next(err);
-  }
-});
+  },
+);
 
 employeesRouter.get(
   "/:id/direct-reports",
@@ -233,6 +550,7 @@ const createEmployeeSchema = z.object({
   departmentId: z.string(),
   designationId: z.string(),
   managerId: z.string().nullable().optional(),
+  isManager: z.boolean().optional(),
   employmentType: z
     .enum(["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"])
     .optional(),
@@ -244,6 +562,21 @@ const createEmployeeSchema = z.object({
   grade: z.string().optional(),
   workLocation: z.string().optional(),
   probationPeriodMonths: z.coerce.number().int().min(0).optional(),
+
+  emergencyContactName: z.string().nullable().optional(),
+  emergencyContactPhone: z.string().nullable().optional(),
+  emergencyContactRelationship: z.string().nullable().optional(),
+  emergencyContactEmail: z.string().email().or(z.literal("")).nullable().optional(),
+  employeeAadhaar: z.string().nullable().optional(),
+  employeePan: z.string().nullable().optional(),
+  employeeTan: z.string().nullable().optional(),
+  bankAccountNumber: z.string().nullable().optional(),
+  bankIfscCode: z.string().nullable().optional(),
+  bankBranch: z.string().nullable().optional(),
+  investmentDeclarations: z.record(z.string(), z.unknown()).optional(),
+  medicalConditions: z.string().nullable().optional(),
+  bloodGroup: z.string().nullable().optional(),
+  insurancePolicyNumber: z.string().nullable().optional(),
   temporaryPassword: z
     .string()
     .min(8, "Temporary password must be at least 8 characters."),
@@ -272,6 +605,7 @@ const updateEmployeeSchema = z.object({
   departmentId: z.string().optional(),
   designationId: z.string().optional(),
   managerId: z.string().nullable().optional(),
+  isManager: z.boolean().optional(),
   employmentType: z
     .enum(["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"])
     .optional(),
@@ -314,10 +648,72 @@ const updateEmployeeSchema = z.object({
     .or(z.literal(""))
     .nullable()
     .optional(),
-  employeeAadhaar: z.string().nullable().optional(),
-  employeePan: z.string().nullable().optional(),
+  employeeAadhaar: z
+    .string()
+    .trim()
+    .regex(/^\d{12}$/, "Aadhaar must contain exactly 12 digits.")
+    .nullable()
+    .optional(),
+  employeePan: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{5}\d{4}[A-Z]$/, "PAN must be a valid 10-character PAN.")
+    .nullable()
+    .optional(),
+
+  // Sensitive financial information. These fields are accepted by the
+  // privileged employee update endpoint (/:id), while the /me endpoint
+  // intentionally does not copy them from employee self-service requests.
+  employeeTan: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{4}\d{5}[A-Z]$/, "TAN must be a valid 10-character TAN.")
+    .nullable()
+    .optional(),
+  bankAccountNumber: z
+    .string()
+    .trim()
+    .regex(/^\d{6,18}$/, "Bank account number must contain 6 to 18 digits.")
+    .nullable()
+    .optional(),
+  bankIfscCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, "IFSC code must be a valid 11-character IFSC.")
+    .nullable()
+    .optional(),
+  bankBranch: z
+    .string()
+    .trim()
+    .max(150, "Bank branch cannot exceed 150 characters.")
+    .nullable()
+    .optional(),
+  investmentDeclarations: z
+    .object({
+      hra: z.coerce.number().min(0).optional(),
+      deduction80C: z.coerce.number().min(0).optional(),
+      other: z.coerce.number().min(0).optional(),
+    })
+    .optional(),
+
   avatarUrl: z.string().optional(),
   signature: z.string().nullable().optional(),
+  medicalConditions: z.string().nullable().optional(),
+  bloodGroup: z.string().nullable().optional(),
+  insurancePolicyNumber: z.string().nullable().optional(),
+  emergencyContacts: z
+    .array(
+      z.object({
+        name: z.string().nullable().optional(),
+        phone: z.string().nullable().optional(),
+        relationship: z.string().nullable().optional(),
+        email: z.string().email().or(z.literal("")).nullable().optional(),
+      }),
+    )
+    .optional(),
 
   education: z
     .array(
@@ -404,6 +800,10 @@ employeesRouter.patch(
         emergencyContactPhone: req.body.emergencyContactPhone,
         emergencyContactRelationship: req.body.emergencyContactRelationship,
         emergencyContactEmail: req.body.emergencyContactEmail,
+        emergencyContacts: req.body.emergencyContacts,
+        medicalConditions: req.body.medicalConditions,
+        bloodGroup: req.body.bloodGroup,
+        insurancePolicyNumber: req.body.insurancePolicyNumber,
 
         employeeAadhaar: req.body.employeeAadhaar,
         employeePan: req.body.employeePan,
@@ -426,34 +826,16 @@ employeesRouter.patch(
 
 employeesRouter.patch(
   "/:id",
+  isAdmin,
   validate(updateEmployeeSchema),
   async (req, res, next) => {
     try {
-      const requester = req.user!;
       const target = (await repo.getEmployeeById(req.params.id)) as any;
       if (!target) throw AppError.notFound("Employee not found.");
 
-      const isSelf = requester.employeeId === req.params.id;
-      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(requester.role);
-      if (!isSelf && !isPrivileged) throw AppError.forbidden();
-
-      // Employees may only edit their own contact details, not org-structural fields.
-      const body = isPrivileged
-        ? req.body
-        : {
-            phone: req.body.phone,
-            personalEmail: req.body.personalEmail,
-            address: req.body.address,
-            city: req.body.city,
-            emergencyContactName: req.body.emergencyContactName,
-            emergencyContactPhone: req.body.emergencyContactPhone,
-            avatarUrl: req.body.avatarUrl,
-          };
-
-            const updateBody: any = { ...body };
+      const updateBody: any = { ...req.body };
 
       if (
-        isPrivileged &&
         req.body.status === "ON_PROBATION" &&
         target.status !== "ON_PROBATION"
       ) {
@@ -487,7 +869,6 @@ employeesRouter.patch(
 );
 
       if (
-        isPrivileged &&
         req.body.status &&
         req.body.status !== target.status
       ) {
@@ -516,6 +897,49 @@ employeesRouter.patch(
     }
   },
 );
+
+employeesRouter.get("/:id/onboarding", isAdmin, async (req, res, next) => {
+  try {
+    const employee = await repo.getEmployeeById(req.params.id);
+
+    if (!employee) {
+      throw AppError.notFound("Employee not found.");
+    }
+
+    res.json({
+      onboarding: employee.onboarding ?? null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+employeesRouter.post("/:id/onboarding/start", isAdmin, async (req, res, next) => {
+  try {
+    const employee = await repo.getEmployeeById(req.params.id);
+
+    if (!employee) {
+      throw AppError.notFound("Employee not found.");
+    }
+
+    if (employee.status !== "ONBOARDING") {
+      throw AppError.badRequest(
+        "Onboarding can only be started for employees with ONBOARDING status.",
+      );
+    }
+
+    const onboarding = employee.onboarding ?? null;
+
+    res.json({
+      success: true,
+      message: "Employee onboarding is ready to continue.",
+      employee,
+      onboarding,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 employeesRouter.patch(
   "/:id/offboarding-checklist",
@@ -572,41 +996,69 @@ employeesRouter.patch(
   },
 );
 
+employeesRouter.patch(
+  "/:id/onboarding/stage",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+      const stage = Number(req.body.stage);
+      if (!Number.isInteger(stage) || stage < 2 || stage > 7) {
+        throw AppError.badRequest("Onboarding stage must be an integer from 2 to 7.");
+      }
+
+      const employee = await repo.updateOnboardingStage(
+        req.params.id,
+        stage,
+        req.user!.userId,
+        typeof req.body.remarks === "string" ? req.body.remarks : null,
+      );
+
+      if (!employee) throw AppError.notFound("Employee not found.");
+
+      res.json({
+        success: true,
+        message: `Onboarding stage ${stage} completed successfully.`,
+        employee,
+      });
+    } catch (err) {
+      if (err instanceof Error && !("statusCode" in err)) {
+        return next(AppError.badRequest(err.message));
+      }
+      next(err);
+    }
+  },
+);
+
 employeesRouter.post(
   "/:id/complete-onboarding",
   isAdmin,
   async (req, res, next) => {
     try {
-      const employee = await repo.getEmployeeById(req.params.id);
+      const employeeBefore = await repo.getEmployeeById(req.params.id);
 
-      if (!employee) {
+      if (!employeeBefore) {
         throw AppError.notFound("Employee not found.");
       }
 
-      if (employee.status !== "ONBOARDING") {
+      if (employeeBefore.status !== "ONBOARDING") {
         throw AppError.badRequest(
           "Only employees with ONBOARDING status can complete onboarding.",
         );
       }
 
-      // Change employee lifecycle status
-      const probationStartDate = new Date().toISOString();
+      const updatedEmployee = await repo.completeOnboarding(
+        req.params.id,
+        req.user!.userId,
+      );
 
-const probationEndDate = new Date(probationStartDate);
-probationEndDate.setMonth(probationEndDate.getMonth() + 3);
+      if (!updatedEmployee) {
+        throw AppError.notFound("Employee not found.");
+      }
 
-const updatedEmployee = await repo.updateEmployee(req.params.id, {
-  status: "ON_PROBATION",
-  probationStartDate,
-  probationEndDate: probationEndDate.toISOString(),
-});
+      await repo.updateUserActiveStatus(employeeBefore.userId, true);
 
-      // Activate employee user account
-      await repo.updateUserActiveStatus(employee.userId, true);
-
-      // Notify employee
       await notify({
-        userId: employee.userId,
+        userId: employeeBefore.userId,
         type: "SYSTEM",
         title: "Onboarding completed",
         message:
@@ -618,13 +1070,16 @@ const updatedEmployee = await repo.updateEmployee(req.params.id, {
         success: true,
         message: "Employee onboarding completed successfully.",
         employee: updatedEmployee,
+        onboarding: updatedEmployee.onboarding ?? null,
       });
     } catch (err) {
+      if (err instanceof Error && !("statusCode" in err)) {
+        return next(AppError.badRequest(err.message));
+      }
       next(err);
     }
   },
 );
-
 
 employeesRouter.post(
   "/:id/confirm-probation",

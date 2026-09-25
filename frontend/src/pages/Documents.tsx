@@ -240,6 +240,8 @@ function typeLabel(value: string) {
 
 export default function Documents() {
   const [showInsights,setShowInsights ] = useState(false);
+  void showInsights;
+void setShowInsights;
 
   const { user, hasPermission } = useAuth();
 
@@ -1051,6 +1053,38 @@ queryFn: () => DocumentsApi.list(documentEmployeeId),
 
   );
 
+}
+void openPrivateDocument;
+async function openPrivateDocument(
+  
+  id: string,
+  fileName: string,
+  showToast: (message: string, variant?: "success" | "error" | "info") => void,
+) {
+  // Open synchronously to avoid popup blockers, then populate it after the
+  // authenticated API request completes.
+  const popup = window.open("about:blank", "_blank");
+
+  try {
+    const blob = await DocumentsApi.download(id);
+    const objectUrl = URL.createObjectURL(blob);
+
+    if (popup) {
+      popup.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } else {
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    }
+  } catch (err) {
+    popup?.close();
+    showToast(getErrorMessage(err), "error");
+  }
 }
 
  

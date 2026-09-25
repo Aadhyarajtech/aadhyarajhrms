@@ -491,6 +491,49 @@ export async function sendRegularizationDecisionEmail(input: {
 }
 
 /* =========================================================
+   PASSWORD RESET OTP EMAIL
+========================================================= */
+
+export async function sendPasswordResetOtpEmail(input: {
+  to: string;
+  otp: string;
+  expiresInMinutes: number;
+}) {
+  const otp = escapeHtml(input.otp);
+  const expiresInMinutes = input.expiresInMinutes;
+
+  return sendEmail({
+    to: input.to,
+    subject: "Aadhyaraj Technologies - Password Reset OTP",
+    text:
+      `Your Aadhyaraj HRMS password reset OTP is: ${input.otp}\n\n` +
+      `This OTP expires in ${expiresInMinutes} minutes.\n` +
+      `If you did not request a password reset, you can ignore this email.`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <body style="margin:0;padding:0;background:#f5f7fb;font-family:Arial,Helvetica,sans-serif;">
+          <div style="max-width:600px;margin:30px auto;background:#ffffff;border-radius:12px;padding:30px;box-sizing:border-box;">
+            <h2 style="margin-top:0;color:#111827;">Reset your Aadhyaraj HRMS password</h2>
+            <p style="font-size:15px;line-height:1.7;color:#333333;">
+              Use the OTP below to reset your password.
+            </p>
+            <div style="margin:24px 0;padding:18px;text-align:center;background:#f8fafc;border-radius:10px;">
+              <span style="font-size:32px;letter-spacing:8px;font-weight:700;color:#4f46e5;">${otp}</span>
+            </div>
+            <p style="font-size:14px;color:#555555;">This OTP expires in ${expiresInMinutes} minutes.</p>
+            <p style="font-size:12px;color:#777777;margin-top:28px;">
+              If you did not request a password reset, you can safely ignore this email.
+            </p>
+            <p style="font-size:12px;color:#777777;">This email was sent by Aadhyaraj Technologies.</p>
+          </div>
+        </body>
+      </html>
+    `,
+  });
+}
+
+/* =========================================================
    VERIFY SMTP CONNECTION
 ========================================================= */
 

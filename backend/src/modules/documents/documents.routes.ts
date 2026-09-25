@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { requirePermission } from "@/middleware/permissions";
+import { isAdmin } from "@/middleware/rbac";
 import { validate } from "@/middleware/validate";
-import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
+import { privateDocumentUpload } from "@/middleware/upload";
 import { AppError } from "@/utils/errors";
 import * as repo from "./documents.repository";
 
@@ -101,7 +101,7 @@ documentsRouter.get("/employee/:employeeId", async (req, res, next) => {
 
 documentsRouter.post(
   "/employee/:employeeId",
-  upload.single("file"),
+  privateDocumentUpload.single("file"),
   async (req, res, next) => {
     try {
       const employeeId = req.params.employeeId;
@@ -139,23 +139,28 @@ documentsRouter.post(
 
         // The type is intentionally taken from the request by the
         // repository, not from this payload, so it cannot be overridden.
-        const parsedExpiryDate = expiryDateSchema.safeParse(
-          req.body.expiryDate,
-        );
+        const parsedExpiryDate =
+  expiryDateSchema.safeParse(req.body.expiryDate);
 
-        if (!parsedExpiryDate.success) {
-          throw AppError.badRequest("Invalid expiry date.");
-        }
+if (!parsedExpiryDate.success) {
+  throw AppError.badRequest("Invalid expiry date.");
+}
 
-        const { document } = await repo.fulfillDocumentRequest({
-          requestId,
-          fileName: req.file.originalname,
-          fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
-          uploadedByUserId: req.user!.userId,
-          expiryDate: parsedExpiryDate.data ?? null,
-        });
+const { document } = await repo.fulfillDocumentRequest({
+  requestId,
+  fileName: req.file.originalname,
+  fileUrl: "",
+  storageKey: req.file.filename,
+  uploadedByUserId: req.user!.userId,
+  expiryDate: parsedExpiryDate.data ?? null,
+});
 
-        res.status(201).json({ document });
+const secureDocument = await repo.setDocumentFileUrl(
+  document.id,
+  req.file.filename,
+);
+
+        res.status(201).json({ document: secureDocument });
         return;
       }
 
@@ -182,41 +187,77 @@ documentsRouter.post(
       );
       const type = parsedType.success ? parsedType.data : "OTHER";
 
-      const parsedExpiryDate = expiryDateSchema.safeParse(req.body.expiryDate);
+      const parsedExpiryDate =
+  expiryDateSchema.safeParse(req.body.expiryDate);
 
-      if (!parsedExpiryDate.success) {
-        throw AppError.badRequest("Invalid expiry date.");
-      }
+if (!parsedExpiryDate.success) {
+  throw AppError.badRequest("Invalid expiry date.");
+}
 
-      const document = await repo.addDocument({
-        employeeId,
-        uploadedBy: req.user!.userId,
-        requestId: null,
-        type,
-        fileName: req.file.originalname,
-        fileUrl: `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
-        expiryDate: parsedExpiryDate.data ?? null,
-      });
+const document = await repo.addDocument({
+  employeeId,
+  uploadedBy: req.user!.userId,
+  requestId: null,
+  type,
+  fileName: req.file.originalname,
+  fileUrl: "",
+  storageKey: req.file.filename,
+  expiryDate: parsedExpiryDate.data ?? null,
+});
 
-      res.status(201).json({ document });
+const secureDocument = await repo.setDocumentFileUrl(
+  document.id,
+  req.file.filename,
+);
+
+res.status(201).json({ document: secureDocument });
     } catch (error) {
       next(error);
     }
   },
 );
 
-documentsRouter.delete(
-  "/:id",
-  requirePermission("documents.manage"),
-  async (req, res, next) => {
-    try {
-      await repo.deleteDocument(req.params.id);
-      res.status(204).send();
-    } catch (err) {
-      next(err);
+documentsRouter.get("/:id/download", async (req, res, next) => {
+  try {
+    const document = await repo.getDocument(req.params.id);
+    if (!document) throw AppError.notFound("Document not found.");
+
+    const isOwner = document.employeeId === req.user!.employeeId;
+    const isAdminPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(
+      req.user!.role,
+    );
+    let isAuthorized = isOwner || isAdminPrivileged;
+
+    if (!isAuthorized && req.user!.role === "MANAGER") {
+      isAuthorized = await repo.isDirectReport(
+        req.user!.employeeId as string,
+        document.employeeId,
+      );
     }
-  },
-);
+
+    if (!isAuthorized) throw AppError.forbidden();
+
+    const { filePath, row } = await repo.getPrivateDocumentPath(req.params.id);
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${String(row.fileName).replace(/[^a-zA-Z0-9._ -]/g, "_")}"`,
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    res.sendFile(filePath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+documentsRouter.delete("/:id", isAdmin, async (req, res, next) => {
+  try {
+    await repo.deleteDocument(req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
 
 documentsRouter.patch(
   "/:id/review",
@@ -232,6 +273,17 @@ documentsRouter.patch(
       if (req.body.status === "REJECTED" && !req.body.rejectionReason) {
         throw AppError.badRequest("Rejection reason is required.");
       }
+
+      if (req.user!.role === "MANAGER") {
+        const existing = await repo.getDocument(req.params.id);
+        if (!existing) throw AppError.notFound("Document not found.");
+        const allowed = await repo.isDirectReport(
+          req.user!.employeeId as string,
+          existing.employeeId,
+        );
+        if (!allowed) throw AppError.forbidden();
+      }
+
       const document = await repo.reviewDocument(
         req.params.id,
         req.user!.userId,
@@ -346,17 +398,13 @@ documentsRouter.get("/requests/company", async (req, res, next) => {
 });
 
 // --- Assets ---
-documentsRouter.get(
-  "/assets/all",
-  requirePermission("documents.manage"),
-  async (_req, res, next) => {
-    try {
-      res.json({ assets: await repo.listAssets() });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
+documentsRouter.get("/assets/all", isAdmin, async (_req, res, next) => {
+  try {
+    res.json({ assets: await repo.listAssets() });
+  } catch (err) {
+    next(err);
+  }
+});
 
 documentsRouter.get("/assets/employee/:employeeId", async (req, res, next) => {
   try {
@@ -371,7 +419,7 @@ documentsRouter.get("/assets/employee/:employeeId", async (req, res, next) => {
 
 documentsRouter.post(
   "/assets",
-  requirePermission("documents.manage"),
+  isAdmin,
   validate(assignSchema),
   async (req, res, next) => {
     try {
@@ -384,7 +432,7 @@ documentsRouter.post(
 
 documentsRouter.patch(
   "/assets/:id/status",
-  requirePermission("documents.manage"),
+  isAdmin,
   validate(assetStatusSchema),
   async (req, res, next) => {
     try {

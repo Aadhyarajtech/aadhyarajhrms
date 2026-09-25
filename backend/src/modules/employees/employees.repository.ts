@@ -1,6 +1,45 @@
 import bcrypt from "bcryptjs";
 import { Employee, User, Department, Designation } from "@/db/models";
 import { nowIso } from "@/db/connection";
+import { AppError } from "@/utils/errors";
+
+export const EMPLOYEE_ONBOARDING_STAGES = [
+  "HR Creates Employee Account in System",
+  "Personal & Professional Details Entry",
+  "Document Upload & Verification",
+  "Department & Role Assignment",
+  "Payroll Structure Configuration",
+  "System Login Credentials Issued",
+  "Employee Orientation & Policy Briefing",
+  "Profile Activated — Employee Successfully Onboarded",
+] as const;
+
+export function buildDefaultOnboarding(status?: string) {
+  const completedLegacy = Boolean(status && status !== "ONBOARDING");
+  const stages = EMPLOYEE_ONBOARDING_STAGES.map((name, index) => ({
+    stage: index + 1,
+    name,
+    status: completedLegacy || index === 0 ? "COMPLETED" : "PENDING",
+    completedAt: completedLegacy || index === 0 ? nowIso() : null,
+    completedBy: null,
+    remarks: null,
+  }));
+
+  return {
+    currentStage: completedLegacy ? 8 : 2,
+    status: completedLegacy ? "COMPLETED" : "IN_PROGRESS",
+    stages,
+    startedAt: nowIso(),
+    completedAt: completedLegacy ? nowIso() : null,
+  };
+}
+
+function normalizeOnboarding(onboarding: any, employeeStatus?: string) {
+  if (!onboarding || !Array.isArray(onboarding.stages) || onboarding.stages.length < 8) {
+    return buildDefaultOnboarding(employeeStatus);
+  }
+  return onboarding;
+}
 
 export interface EmployeeFilters {
   search?: string;
@@ -19,19 +58,25 @@ async function enrichEmployees(employeeDocs: any[]) {
   const managerIds = [
     ...new Set(employeeDocs.map((e) => e.managerId).filter(Boolean)),
   ];
+  const employeeIds = employeeDocs.map((e) => e._id);
   const userIds = [...new Set(employeeDocs.map((e) => e.userId))];
 
-  const [departments, designations, managers, users] = await Promise.all([
+  const [departments, designations, managers, users, reportCounts] = await Promise.all([
     Department.find({ _id: { $in: departmentIds } }).lean(),
     Designation.find({ _id: { $in: designationIds } }).lean(),
     Employee.find({ _id: { $in: managerIds } }).lean(),
     User.find({ _id: { $in: userIds } }).lean(),
+    Employee.aggregate([
+      { $match: { managerId: { $in: employeeIds } } },
+      { $group: { _id: "$managerId", count: { $sum: 1 } } },
+    ]),
   ]);
 
   const deptMap = new Map(departments.map((d) => [d._id, d]));
   const desMap = new Map(designations.map((d) => [d._id, d]));
   const managerMap = new Map(managers.map((m) => [m._id, m]));
   const userMap = new Map(users.map((u) => [u._id, u]));
+  const reportCountMap = new Map(reportCounts.map((r) => [r._id, r.count]));
 
   return employeeDocs.map((e) => {
     const dept = deptMap.get(e.departmentId);
@@ -39,9 +84,15 @@ async function enrichEmployees(employeeDocs: any[]) {
     const manager = e.managerId ? managerMap.get(e.managerId) : undefined;
     const user = userMap.get(e.userId);
     const { _id, ...rest } = e;
+    const onboarding = normalizeOnboarding(e.onboarding, e.status);
     return {
       id: _id,
       ...rest,
+      onboarding,
+      isManager:
+        e.isManager === true ||
+        (reportCountMap.get(e._id) ?? 0) > 0 ||
+        user?.role === "MANAGER",
       departmentName: dept?.name ?? null,
       departmentCode: dept?.code ?? null,
       departmentColor: dept?.colorHex ?? null,
@@ -93,7 +144,7 @@ export async function listEmployees(filters: EmployeeFilters) {
 
   const [rows, total] = await Promise.all([
     Employee.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, _id: 1 })
       .skip(offset)
       .limit(pageSize)
       .lean(),
@@ -118,8 +169,78 @@ export async function getEmployeeByUserId(userId: string) {
   return enrichEmployee(doc);
 }
 
+/**
+ * Validate a reporting-manager assignment without changing existing employee
+ * records. A manager cannot be the employee themself and a reporting chain
+ * cannot contain a cycle.
+ */
+async function validateManagerAssignment(
+  employeeId: string,
+  managerId?: string | null,
+) {
+  if (!managerId) return;
+
+  if (managerId === employeeId) {
+    throw AppError.badRequest("An employee cannot report to themself.");
+  }
+
+  const manager = await Employee.findById(managerId).select("_id managerId status isManager userId").lean<any>();
+  if (!manager) {
+    throw AppError.notFound("Reporting manager not found.");
+  }
+
+  // Reporting managers are employees explicitly marked as managers. Keep
+  // legacy MANAGER-role accounts valid until their employee profile is
+  // updated, so existing reporting relationships are not broken.
+  const managerUser = await User.findOne({ _id: manager.userId }).select("role").lean<any>();
+  const hasExistingDirectReports = await Employee.exists({ managerId });
+  if (
+    manager.isManager !== true &&
+    managerUser?.role !== "MANAGER" &&
+    !hasExistingDirectReports
+  ) {
+    throw AppError.badRequest("The selected employee is not marked as a manager.");
+  }
+
+  // Follow the proposed manager's chain. If it reaches the employee being
+  // edited, the new relationship would create a circular hierarchy.
+  const visited = new Set<string>();
+  let currentId: string | null = managerId;
+
+  while (currentId) {
+    if (currentId === employeeId) {
+      throw AppError.badRequest("Invalid reporting hierarchy: this assignment creates a manager cycle.");
+    }
+    if (visited.has(currentId)) {
+      throw AppError.badRequest("Invalid reporting hierarchy: an existing manager cycle was detected.");
+    }
+    visited.add(currentId);
+
+    const current:  { _id?: unknown; managerId?: unknown } | null =
+      currentId === managerId
+        ? manager
+        : await Employee.findById(currentId).select("_id managerId").lean<any>();
+
+    currentId = current?.managerId ? String(current.managerId) : null;
+  }
+}
+
 export async function listDirectReports(managerId: string) {
-  const rows = await Employee.find({ managerId }).sort({ firstName: 1 }).lean();
+  const rows = await Employee.find({
+    managerId,
+    status: {
+      $in: [
+        "ACTIVE",
+        "ON_PROBATION",
+        "ON_LEAVE",
+        "NOTICE_PERIOD",
+        "ON_HOLD",
+      ],
+    },
+  })
+    .sort({ firstName: 1, lastName: 1 })
+    .lean();
+
   return enrichEmployees(rows);
 }
 
@@ -163,6 +284,7 @@ export interface CreateEmployeeInput {
   departmentId: string;
   designationId: string;
   managerId?: string | null;
+  isManager?: boolean;
   employmentType?: string;
   dateOfJoining: string;
   gender?: string;
@@ -183,8 +305,23 @@ export interface CreateEmployeeInput {
   emergencyContactPhone?: string | null;
   emergencyContactRelationship?: string | null;
   emergencyContactEmail?: string | null;
+  emergencyContacts?: {
+    name?: string | null;
+    phone?: string | null;
+    relationship?: string | null;
+    email?: string | null;
+  }[];
+
+  medicalConditions?: string | null;
+  bloodGroup?: string | null;
+  insurancePolicyNumber?: string | null;
 
   employeeAadhaar?: string | null;
+  employeeTan?: string | null;
+  bankAccountNumber?: string | null;
+  bankIfscCode?: string | null;
+  bankBranch?: string | null;
+  investmentDeclarations?: Record<string, unknown>;
   employeePan?: string | null;
   signature?: string | null;
   avatarUrl?: string;
@@ -226,8 +363,30 @@ export async function createEmployee(input: CreateEmployeeInput) {
   const passwordHash = bcrypt.hashSync(input.temporaryPassword, 10);
   const employeeCode = await nextEmployeeCode();
 
+  if (input.managerId) {
+    // New employee does not have an id yet, so only validate that the selected
+    // manager exists and is not part of a malformed existing chain.
+    const manager = await Employee.findById(input.managerId)
+      .select("_id managerId status")
+      .lean<any>();
+    if (!manager) throw AppError.notFound("Reporting manager not found.");
+    if (manager.status === "INACTIVE" || manager.status === "TERMINATED" || manager.status === "RESIGNED") {
+      throw AppError.badRequest("An inactive employee cannot be assigned as reporting manager.");
+    }
+  }
+
+  const normalizedEmail = input.email.toLowerCase().trim();
+  const existingUser = await User.findOne({ email: normalizedEmail })
+    .select("_id")
+    .lean();
+  if (existingUser) {
+    throw AppError.conflict(
+      "An account with this login email already exists. Use the existing employee record or a different email.",
+    );
+  }
+
   const user = await User.create({
-    email: input.email.toLowerCase().trim(),
+    email: normalizedEmail,
     passwordHash,
     role: input.role as any,
     isActive: true,
@@ -256,8 +415,18 @@ export async function createEmployee(input: CreateEmployeeInput) {
     emergencyContactPhone: input.emergencyContactPhone ?? null,
     emergencyContactRelationship: input.emergencyContactRelationship ?? null,
     emergencyContactEmail: input.emergencyContactEmail ?? null,
+    emergencyContacts: input.emergencyContacts ?? [],
+
+    medicalConditions: input.medicalConditions ?? null,
+    bloodGroup: input.bloodGroup ?? null,
+    insurancePolicyNumber: input.insurancePolicyNumber ?? null,
 
     employeeAadhaar: input.employeeAadhaar ?? null,
+    employeeTan: input.employeeTan ?? null,
+    bankAccountNumber: input.bankAccountNumber ?? null,
+    bankIfscCode: input.bankIfscCode ?? null,
+    bankBranch: input.bankBranch ?? null,
+    investmentDeclarations: input.investmentDeclarations ?? {},
     employeePan: input.employeePan ?? null,
     signature: input.signature ?? null,
     avatarUrl: input.avatarUrl ?? null,
@@ -269,6 +438,7 @@ export async function createEmployee(input: CreateEmployeeInput) {
     departmentId: input.departmentId,
     designationId: input.designationId,
     managerId: input.managerId ?? null,
+    isManager: input.isManager ?? input.role === "MANAGER",
     employmentType: (input.employmentType as any) ?? "FULL_TIME",
 
     grade: input.grade ?? null,
@@ -288,10 +458,23 @@ export async function createEmployee(input: CreateEmployeeInput) {
         : null,
     probationReminderSentAt: null,
 
-    status:
-      input.probationPeriodMonths && input.probationPeriodMonths > 0
-        ? "ON_PROBATION"
-        : "ACTIVE",
+    // New employees stay in the onboarding lifecycle until all 8 stages
+    // are completed. This keeps account creation separate from activation.
+    status: "ONBOARDING",
+    onboarding: {
+      currentStage: 2,
+      status: "IN_PROGRESS",
+      stages: EMPLOYEE_ONBOARDING_STAGES.map((name, index) => ({
+        stage: index + 1,
+        name,
+        status: index === 0 ? "COMPLETED" : "PENDING",
+        completedAt: index === 0 ? now : null,
+        completedBy: null,
+        remarks: null,
+      })),
+      startedAt: now,
+      completedAt: null,
+    },
 
     dateOfJoining: input.dateOfJoining,
     isArchived: false,
@@ -314,6 +497,7 @@ export interface UpdateEmployeeInput {
   departmentId?: string;
   designationId?: string;
   managerId?: string | null;
+  isManager?: boolean;
   employmentType?: string;
   grade?: string | null;
   workLocation?: string | null;
@@ -359,7 +543,21 @@ export interface UpdateEmployeeInput {
   emergencyContactPhone?: string;
   emergencyContactRelationship?: string | null;
   emergencyContactEmail?: string | null;
+  emergencyContacts?: {
+    name?: string | null;
+    phone?: string | null;
+    relationship?: string | null;
+    email?: string | null;
+  }[];
+  medicalConditions?: string | null;
+  bloodGroup?: string | null;
+  insurancePolicyNumber?: string | null;
   employeeAadhaar?: string | null;
+  employeeTan?: string | null;
+  bankAccountNumber?: string | null;
+  bankIfscCode?: string | null;
+  bankBranch?: string | null;
+  investmentDeclarations?: Record<string, unknown>;
   employeePan?: string | null;
   signature?: string | null;
 
@@ -408,11 +606,150 @@ export interface UpdateEmployeeInput {
   } | null;
 }
 
+export async function updateOnboardingStage(
+  id: string,
+  stageNumber: number,
+  completedBy: string,
+  remarks?: string | null,
+) {
+  const current = await Employee.findById(id).lean<any>();
+  if (!current) return undefined;
+
+  const onboarding = normalizeOnboarding(current.onboarding, current.status);
+
+  if (stageNumber < 2 || stageNumber > 7) {
+    throw new Error("Only onboarding stages 2 through 7 can be completed individually.");
+  }
+
+  if (current.status !== "ONBOARDING") {
+    throw new Error("Only employees in ONBOARDING status can update onboarding stages.");
+  }
+
+  const currentStage = Number(onboarding.currentStage || 2);
+  if (stageNumber !== currentStage) {
+    throw new Error(`Complete onboarding stage ${currentStage} before stage ${stageNumber}.`);
+  }
+
+  const now = nowIso();
+  const stages = onboarding.stages.map((stage: any) => {
+    if (stage.stage === stageNumber) {
+      return {
+        ...stage,
+        status: "COMPLETED",
+        completedAt: now,
+        completedBy,
+        remarks: typeof remarks === "string" && remarks.trim() ? remarks.trim() : null,
+      };
+    }
+    if (stage.stage === stageNumber + 1) {
+      return { ...stage, status: "IN_PROGRESS" };
+    }
+    return stage;
+  });
+
+  const updated = await Employee.findByIdAndUpdate(
+    id,
+    {
+      $set: {
+        onboarding: {
+          ...onboarding,
+          currentStage: stageNumber + 1,
+          status: "IN_PROGRESS",
+          startedAt: onboarding.startedAt ?? now,
+          stages,
+        },
+        updatedAt: now,
+      },
+    },
+    { new: true },
+  ).lean();
+
+  return enrichEmployee(updated);
+}
+
+export async function completeOnboarding(id: string, completedBy: string) {
+  const current = await Employee.findById(id).lean<any>();
+  if (!current) return undefined;
+
+  const onboarding = normalizeOnboarding(current.onboarding, current.status);
+  const priorStagesComplete = onboarding.stages
+    .filter((stage: any) => stage.stage < 8)
+    .every((stage: any) => stage.status === "COMPLETED");
+
+  if (current.status !== "ONBOARDING") {
+    throw new Error("Only employees in ONBOARDING status can complete onboarding.");
+  }
+
+  if (!priorStagesComplete) {
+    const nextStage = onboarding.stages.find((stage: any) => stage.status !== "COMPLETED")?.stage ?? 8;
+    throw new Error(`Complete onboarding stage ${nextStage} before activation.`);
+  }
+
+  const now = nowIso();
+  const probationMonths = Number(current.probationPeriodMonths ?? 0);
+  const probationStartDate = probationMonths > 0
+    ? (current.probationStartDate ?? current.dateOfJoining ?? now)
+    : null;
+  const probationEndDate = probationStartDate && probationMonths > 0
+    ? (() => {
+        const date = new Date(probationStartDate);
+        date.setMonth(date.getMonth() + probationMonths);
+        return date.toISOString();
+      })()
+    : null;
+
+  const updatedOnboarding = {
+    ...onboarding,
+    currentStage: 8,
+    status: "COMPLETED",
+    completedAt: now,
+    stages: onboarding.stages.map((stage: any) =>
+      stage.stage === 8
+        ? { ...stage, status: "COMPLETED", completedAt: now, completedBy, remarks: stage.remarks ?? null }
+        : { ...stage, status: "COMPLETED" },
+    ),
+  };
+
+  const updated = await Employee.findByIdAndUpdate(
+    id,
+    {
+      $set: {
+        onboarding: updatedOnboarding,
+        status: probationMonths > 0 ? "ON_PROBATION" : "ACTIVE",
+        probationStartDate,
+        probationEndDate,
+        updatedAt: now,
+      },
+    },
+    { new: true },
+  ).lean();
+
+  return enrichEmployee(updated);
+}
+
 export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
   const current = await Employee.findById(id).lean<any>();
   if (!current) return undefined;
 
   const merged = { ...current, ...input };
+  const hasIsManagerUpdate = Object.prototype.hasOwnProperty.call(input, "isManager");
+
+  if (Object.prototype.hasOwnProperty.call(input, "managerId")) {
+    await validateManagerAssignment(id, merged.managerId ?? null);
+  }
+
+  if (hasIsManagerUpdate && input.isManager === false) {
+    const directReportCount = await Employee.countDocuments({
+      managerId: id,
+      status: { $nin: ["TERMINATED", "RESIGNED", "INACTIVE"] },
+    });
+    if (directReportCount > 0) {
+      throw AppError.badRequest(
+        `Cannot remove manager status while ${directReportCount} employee(s) still report to this employee. Reassign them first.`,
+      );
+    }
+  }
+
   await Employee.updateOne(
     { _id: id },
     {
@@ -422,6 +759,7 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         departmentId: merged.departmentId,
         designationId: merged.designationId,
         managerId: merged.managerId ?? null,
+        ...(hasIsManagerUpdate ? { isManager: Boolean(input.isManager) } : {}),
         employmentType: merged.employmentType,
         grade: merged.grade ?? null,
         workLocation: merged.workLocation ?? null,
@@ -453,8 +791,18 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         emergencyContactRelationship:
           merged.emergencyContactRelationship ?? null,
         emergencyContactEmail: merged.emergencyContactEmail ?? null,
+        emergencyContacts: merged.emergencyContacts ?? current.emergencyContacts ?? [],
+        medicalConditions: merged.medicalConditions ?? null,
+        bloodGroup: merged.bloodGroup ?? null,
+        insurancePolicyNumber: merged.insurancePolicyNumber ?? null,
 
         employeeAadhaar: merged.employeeAadhaar ?? null,
+        employeeTan: merged.employeeTan ?? null,
+        bankAccountNumber: merged.bankAccountNumber ?? null,
+        bankIfscCode: merged.bankIfscCode ?? null,
+        bankBranch: merged.bankBranch ?? null,
+        investmentDeclarations:
+          merged.investmentDeclarations ?? current.investmentDeclarations ?? {},
         employeePan: merged.employeePan ?? null,
         signature: merged.signature ?? null,
         avatarUrl: merged.avatarUrl ?? null,
@@ -462,6 +810,7 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         certifications: merged.certifications ?? current.certifications ?? [],
         workHistory: merged.workHistory ?? current.workHistory ?? [],
         skills: merged.skills ?? current.skills ?? [],
+        onboarding: merged.onboarding ?? current.onboarding ?? buildDefaultOnboarding(merged.status),
         dateOfExit: merged.dateOfExit ?? null,
 
         isArchived:
@@ -550,15 +899,42 @@ export async function getOrgChart() {
   const byId = new Map(
     camel.map((e) => [e.id, { ...e, directReports: [] as any[] }]),
   );
-  const roots: any[] = [];
 
+  // Build a clean parent map from the real managerId values. If old/restored
+  // data contains a self-reference or circular chain, treat the affected
+  // employee as a root instead of losing the entire branch from the chart.
+  const parentMap = new Map<string, string>();
   for (const emp of byId.values()) {
-    if (emp.managerId && byId.has(emp.managerId)) {
-      byId.get(emp.managerId)!.directReports.push(emp);
+    const managerId = emp.managerId ? String(emp.managerId) : "";
+    if (!managerId || managerId === emp.id || !byId.has(managerId)) continue;
+
+    const visited = new Set<string>([emp.id]);
+    let cursor: string | undefined = managerId;
+    let valid = true;
+
+    while (cursor) {
+      if (visited.has(cursor)) {
+        valid = false;
+        break;
+      }
+      visited.add(cursor);
+      const parent = byId.get(cursor);
+      cursor = parent?.managerId ? String(parent.managerId) : undefined;
+    }
+
+    if (valid) parentMap.set(emp.id, managerId);
+  }
+
+  const roots: any[] = [];
+  for (const emp of byId.values()) {
+    const managerId = parentMap.get(emp.id);
+    if (managerId) {
+      byId.get(managerId)!.directReports.push(emp);
     } else {
       roots.push(emp);
     }
   }
+
   return roots;
 }
 
@@ -623,20 +999,51 @@ export async function getHeadcountTrend(months = 6) {
 }
 
 export async function getManagersList() {
-  const rows = await Employee.find({ status: "ACTIVE" })
+  // Reporting-manager candidates are employees, not User.role values.
+  // `isManager` is the explicit source of truth for newly maintained data.
+  // Existing records with direct reports or the legacy MANAGER role remain
+  // available so the current hierarchy is not broken during the transition.
+  const rows = await Employee.find({
+    status: {
+      $in: ["ACTIVE", "ON_PROBATION", "ON_LEAVE", "NOTICE_PERIOD", "ON_HOLD"],
+    },
+  })
     .sort({ firstName: 1, lastName: 1 })
     .lean();
 
-  const designationIds = [...new Set(rows.map((e) => e.designationId).filter(Boolean))];
-  const designations = await Designation.find({ _id: { $in: designationIds } }).lean();
-  const desMap = new Map(designations.map((d) => [d._id, d]));
+  const designationIds = [
+    ...new Set(rows.map((e) => e.designationId).filter(Boolean)),
+  ];
+  const userIds = [...new Set(rows.map((e) => e.userId).filter(Boolean))];
 
-  return rows.map((employee) => ({
-    id: employee._id,
-    firstName: employee.firstName ?? "",
-    lastName: employee.lastName ?? "",
-    designationTitle: desMap.get(employee.designationId)?.title ?? null,
-  }));
+  const [designations, users, reportCounts] = await Promise.all([
+    Designation.find({ _id: { $in: designationIds } }).lean(),
+    User.find({ _id: { $in: userIds } }).select("_id role").lean(),
+    Employee.aggregate([
+      { $match: { managerId: { $ne: null } } },
+      { $group: { _id: "$managerId", count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const desMap = new Map(designations.map((d) => [d._id, d]));
+  const userMap = new Map(users.map((u) => [u._id, u]));
+  const reportMap = new Map(reportCounts.map((r) => [r._id, r.count]));
+
+  return rows
+    .filter((employee) => {
+      const role = userMap.get(employee.userId)?.role;
+      const hasDirectReports = (reportMap.get(employee._id) ?? 0) > 0;
+      const isLegacyManager = employee.isManager === undefined && role === "MANAGER";
+      return employee.isManager === true || hasDirectReports || isLegacyManager;
+    })
+    .map((employee) => ({
+      id: employee._id,
+      firstName: employee.firstName ?? "",
+      lastName: employee.lastName ?? "",
+      designationTitle: desMap.get(employee.designationId)?.title ?? null,
+      isManager: employee.isManager === true || (reportMap.get(employee._id) ?? 0) > 0 || userMap.get(employee.userId)?.role === "MANAGER",
+      directReportCount: reportMap.get(employee._id) ?? 0,
+    }));
 }
 
 export async function updateUserActiveStatus(
@@ -652,4 +1059,81 @@ export async function updateUserActiveStatus(
       },
     },
   );
+}
+export async function getEmployeeAiContext(employeeId: string) {
+  const employee = await Employee.findById(employeeId).lean();
+
+  if (!employee) {
+    return null;
+  }
+
+  const [department, designation, manager] = await Promise.all([
+    employee.departmentId
+      ? Department.findById(employee.departmentId)
+          .select("name code")
+          .lean()
+      : null,
+
+    employee.designationId
+      ? Designation.findById(employee.designationId)
+          .select("title level")
+          .lean()
+      : null,
+
+    employee.managerId
+      ? Employee.findById(employee.managerId)
+          .select("employeeCode firstName lastName")
+          .lean()
+      : null,
+  ]);
+
+  return {
+    employee: {
+      id: String(employee._id),
+      employeeCode: employee.employeeCode,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+
+      workLocation: employee.workLocation ?? null,
+      grade: employee.grade ?? null,
+      employmentType: employee.employmentType ?? null,
+      status: employee.status,
+
+      dateOfJoining: employee.dateOfJoining ?? null,
+
+      skills: (employee.skills ?? []).map((skill: any) => ({
+        name: skill.name,
+        category: skill.category ?? null,
+        competencyLevel: skill.competencyLevel,
+      })),
+
+      education: employee.education ?? [],
+      certifications: employee.certifications ?? [],
+      workHistory: employee.workHistory ?? [],
+    },
+
+    department: department
+      ? {
+          id: String(department._id),
+          name: department.name,
+          code: department.code,
+        }
+      : null,
+
+    designation: designation
+      ? {
+          id: String(designation._id),
+          title: designation.title,
+          level: designation.level,
+        }
+      : null,
+
+    manager: manager
+      ? {
+          id: String(manager._id),
+          employeeCode: manager.employeeCode,
+          name: `${manager.firstName} ${manager.lastName}`.trim(),
+        }
+      : null,
+  };
 }

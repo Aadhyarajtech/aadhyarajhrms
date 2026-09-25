@@ -16,7 +16,7 @@ interface AIClassification {
   intent?: string;
   confidence?: number;
   reason?: string;
-  priority?: "LOW" | "MEDIUM" | "HIGH";
+  priority?: "CRITICAL" | "LOW" | "MEDIUM" | "HIGH";
   priorityReason?: string;
   sentiment?: "POSITIVE" | "NEUTRAL" | "FRUSTRATED" | "CRITICAL";
   message?: string;
@@ -26,9 +26,10 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [category, setCategory] = useState("HR");
-  const [priority, setPriority] = useState("MEDIUM");
+  const [priority, setPriority] = useState<"CRITICAL" | "LOW" | "MEDIUM" | "HIGH">("MEDIUM");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -143,6 +144,9 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       formData.append("priority", priority);
       formData.append("subject", subject.trim());
       formData.append("description", description.trim());
+      if (expiryDate) {
+        formData.append("expiryDate", expiryDate);
+      }
 
       if (attachment) {
         formData.append("attachment", attachment);
@@ -161,6 +165,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       userChangedPriorityRef.current = false;
       setSubject("");
       setDescription("");
+      setExpiryDate("");
       setAttachment(null);
       setAiResult(null);
 
@@ -236,18 +241,92 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
 
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2"
+              onChange={(e) => {
+                const val = e.target.value;
+                setCategory(val);
+                if (val === "Harassment Complaint") {
+                  setPriority("CRITICAL");
+                  userChangedPriorityRef.current = true;
+                }
+              }}
+              className="w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
             >
-              <option>HR</option>
-              <option>Payroll</option>
-              <option>Leave</option>
-              <option>Attendance</option>
-              <option>Recruitment</option>
-              <option>Employee Referral</option>
-              <option>IT Support</option>
-              <option>Complaint</option>
+              <option value="">Select a category</option>
+
+<option value="Payroll Issue">
+  Payroll Issue (Discrepancy, Tax, Payslip, Bonus)
+</option>
+
+<option value="Leave Issue">
+  Leave Issue (Balance Dispute, Wrongful Rejection)
+</option>
+
+<option value="Attendance">
+  Attendance (Attendance / Regularization)
+</option>
+
+<option value="Manager Concern">
+  Manager Concern (Interpersonal / Workplace)
+</option>
+
+<option value="Harassment Complaint">
+  Harassment Complaint (POSH / Safety / Whistleblower)
+</option>
+
+<option value="IT Support">
+  IT Support (Access, Hardware, VPN, Credentials)
+</option>
+
+<option value="Infrastructure">
+  Infrastructure (Facilities, Desk, Equipment)
+</option>
+
+<option value="Policy Query">
+  Policy Query (HR Policies, Benefits, Insurance)
+</option>
+
+<option value="Recruitment">
+  Recruitment (Recruitment Support)
+</option>
+
+<option value="Employee Referral">
+  Employee Referral
+</option>
+
+<option value="Complaint">
+  Complaint (Employee Grievance)
+</option>
+
+<option value="Other">
+  Other Concern
+</option>
             </select>
+
+            {/* POSH / Harassment Special Protection Notice */}
+            {category === "Harassment Complaint" && (
+              <div className="mt-2 flex items-start gap-2.5 rounded-lg border border-rose-200 bg-rose-50/90 p-3 text-xs text-rose-900 animate-fade-in">
+                <span className="text-base leading-none">🔒</span>
+                <div>
+                  <p className="font-semibold text-rose-950">Confidential POSH Grievance Routing</p>
+                  <p className="mt-0.5 text-rose-800 leading-relaxed">
+                    This ticket is routed strictly to the dedicated <strong>POSH Committee & HR Leadership</strong> with maximum urgency (<strong>1-Hour SLA</strong>). Your reporting manager and regular staff will <strong>not</strong> have visibility into this case.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Manager Concern Special Notice */}
+            {category === "Manager Concern" && (
+              <div className="mt-2 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50/90 p-3 text-xs text-amber-900 animate-fade-in">
+                <span className="text-base leading-none">🛡️</span>
+                <div>
+                  <p className="font-semibold text-amber-950">Independent Leadership Review</p>
+                  <p className="mt-0.5 text-amber-800 leading-relaxed">
+                    Manager concern tickets bypass your direct reporting manager and are routed directly to <strong>Senior Leadership & HR Head</strong> for impartial mediation (3 Business Days SLA).
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* AI Classification Suggestion */}
             {aiLoading && (
@@ -388,13 +467,25 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
               value={priority}
               onChange={(e) => {
                 userChangedPriorityRef.current = true;
-                setPriority(e.target.value);
+                setPriority(e.target.value as "CRITICAL" | "LOW" | "MEDIUM" | "HIGH");
               }}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
             >
-              <option value="LOW">Low</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
+              <option value="CRITICAL">
+  Critical – Safety, POSH, System Down
+</option>
+
+<option value="HIGH">
+  High – Payroll Discrepancy, Blocker
+</option>
+
+<option value="MEDIUM">
+  Medium – Standard Request
+</option>
+
+<option value="LOW">
+  Low – General Inquiry
+</option>
             </select>
 
             {/* Suggested priority mismatch helper */}
@@ -449,6 +540,24 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
             />
           </div>
+
+          {/* Expiry date
+          <div>
+            <label className="mb-2 block text-sm font-medium">
+              Expiry Date <span className="font-normal text-gray-500">(Optional)</span>
+            </label>
+            <input
+              type="date"
+              value={expiryDate}
+              min={new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+              max={new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Leave blank to use the default 3-day ticket expiry.
+            </p>
+          </div> */}
 
           {/* Attachment */}
           <div>

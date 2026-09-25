@@ -19,30 +19,38 @@ import { api, getErrorMessage, resolveAssetUrl } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useAuth } from "@/context/AuthContext";
 import ExecutiveHelpdeskAnalytics from "@/components/tickets/ExecutiveHelpdeskAnalytics";
-import { ExpiryBadge } from "@/components/common/ExpiryBadge";
 
 const ALL_CATEGORIES = [
   { value: "ALL", label: "All Categories" },
-  { value: "HR", label: "HR" },
+  { value: "Payroll Issue", label: "Payroll Issue" },
+  { value: "Leave Issue", label: "Leave Issue" },
+  { value: "Manager Concern", label: "Manager Concern" },
+  { value: "Harassment Complaint", label: "Harassment Complaint (POSH)" },
+  { value: "IT Support", label: "IT Support" },
+  { value: "Infrastructure", label: "Infrastructure" },
+  { value: "Policy Query", label: "Policy Query" },
+  { value: "Other", label: "Other Concern" },
+  { value: "HR", label: "General HR" },
   { value: "Payroll", label: "Payroll" },
   { value: "Leave", label: "Leave" },
   { value: "Attendance", label: "Attendance" },
   { value: "Recruitment", label: "Recruitment" },
   { value: "Employee Referral", label: "Employee Referral" },
-  { value: "IT Support", label: "IT Support" },
   { value: "Complaint", label: "Complaint / Grievance" },
 ];
 
 function getCategoryOptions(role?: string) {
   if (role === "IT_SUPPORT") {
     return [
-      { value: "ALL", label: "All IT Support Tickets" },
+      { value: "ALL", label: "All IT Support & Infra Tickets" },
       { value: "IT Support", label: "IT Support" },
+      { value: "Infrastructure", label: "Infrastructure" },
     ];
   }
   if (role === "FINANCE") {
     return [
       { value: "ALL", label: "All Payroll Tickets" },
+      { value: "Payroll Issue", label: "Payroll Issue" },
       { value: "Payroll", label: "Payroll" },
     ];
   }
@@ -94,12 +102,6 @@ function formatDateTime(value?: string | null) {
   return date.toLocaleString();
 }
 
-function isTicketExpired(ticket: { status?: string; expiresAt?: string | null }) {
-  return (
-    ticket.status === "EXPIRED" ||
-    (!!ticket.expiresAt && new Date(ticket.expiresAt).getTime() <= Date.now())
-  );
-}
 
 export default function Tickets() {
   const queryClient = useQueryClient();
@@ -165,14 +167,25 @@ export default function Tickets() {
   const departmentScopedTickets = (data || []).filter((ticket: any) => {
     if (user?.role === "IT_SUPPORT") {
       return (
-        ticket.category === "IT Support" || ticket.assignedTo === "IT_SUPPORT"
+        ticket.category === "IT Support" ||
+        ticket.category === "Infrastructure" ||
+        ticket.assignedTo === "IT_SUPPORT"
       );
     }
     if (user?.role === "FINANCE") {
-      return ticket.category === "Payroll" || ticket.assignedTo === "FINANCE";
+      return (
+        ticket.category === "Payroll" ||
+        ticket.category === "Payroll Issue" ||
+        ticket.assignedTo === "FINANCE"
+      );
     }
     if (user?.role === "MANAGER") {
-      return ticket.category === "Complaint";
+      // Managers only see standard complaints assigned to them, NEVER harassment or manager concerns
+      return (
+        ticket.category === "Complaint" &&
+        ticket.category !== "Harassment Complaint" &&
+        ticket.category !== "Manager Concern"
+      );
     }
     return true;
   });
@@ -181,7 +194,6 @@ export default function Tickets() {
   const openCount = departmentScopedTickets.filter((t: any) => t.status === "OPEN").length;
   const inProgressCount = departmentScopedTickets.filter((t: any) => t.status === "IN_PROGRESS").length;
   const resolvedCount = departmentScopedTickets.filter((t: any) => t.status === "RESOLVED").length;
-  const expiredCount = departmentScopedTickets.filter((t: any) => isTicketExpired(t)).length;
   const atRiskCount = departmentScopedTickets.filter(
     (t: any) =>
       t.status === "OPEN" &&
@@ -203,13 +215,8 @@ export default function Tickets() {
           ticket.isBreached);
       if (!isNeedsAttention) {
         return false;
-      }
-    } else if (statusFilter !== "ALL") {
-      if (statusFilter === "EXPIRED") {
-        if (!isTicketExpired(ticket)) return false;
-      } else if (ticket.status !== statusFilter || isTicketExpired(ticket)) {
-        return false;
-      }
+      }    } else if (statusFilter !== "ALL" && ticket.status !== statusFilter) {
+      return false;
     }
     if (categoryFilter !== "ALL" && ticket.category !== categoryFilter) {
       return false;
@@ -386,7 +393,6 @@ export default function Tickets() {
                 { id: "OPEN", label: `Open (${openCount})` },
                 { id: "IN_PROGRESS", label: `In Progress (${inProgressCount})` },
                 { id: "RESOLVED", label: `Resolved (${resolvedCount})` },
-                { id: "EXPIRED", label: `Expired (${expiredCount})` },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -494,9 +500,6 @@ export default function Tickets() {
                   <td className="py-2.5 px-3 font-semibold whitespace-nowrap">
                     <Link
                       to={`/app/tickets/${ticket._id}`}
-                        onClick={(event) => {
-                          if (isTicketExpired(ticket)) event.preventDefault();
-                        }}
                       className="inline-flex items-center gap-1.5 text-brand-600 hover:text-brand-800 hover:underline"
                       title="Click to open conversation"
                     >
@@ -573,14 +576,17 @@ export default function Tickets() {
                   {/* Priority */}
                   <td className="py-2.5 px-2 whitespace-nowrap">
                     <span
-                      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold ${
-                        ticket.priority === "HIGH"
+                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold ${
+                        ticket.priority === "CRITICAL"
+                          ? "bg-rose-100 text-rose-800 border border-rose-300 font-bold animate-pulse shadow-2xs"
+                          : ticket.priority === "HIGH"
                           ? "bg-red-50 text-red-700 border border-red-200"
                           : ticket.priority === "MEDIUM"
                           ? "bg-amber-50 text-amber-700 border border-amber-200"
                           : "bg-slate-50 text-slate-700 border border-slate-200"
                       }`}
                     >
+                      {ticket.priority === "CRITICAL" && <span>🚨</span>}
                       {ticket.priority}
                     </span>
                   </td>
@@ -589,9 +595,6 @@ export default function Tickets() {
                   <td className="py-2.5 px-2 max-w-[170px]">
                     <Link
                       to={`/app/tickets/${ticket._id}`}
-                        onClick={(event) => {
-                          if (isTicketExpired(ticket)) event.preventDefault();
-                        }}
                       className="block truncate font-medium text-gray-900 hover:text-brand-600 hover:underline"
                       title={ticket.subject}
                     >
@@ -625,12 +628,6 @@ export default function Tickets() {
 
                   {/* Status Dropdown */}
                   <td className="py-2.5 px-2 whitespace-nowrap">
-                    {ticket.status === "EXPIRED" ? (
-                      <div>
-                        <span className="inline-flex rounded-full bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">Expired</span>
-                        <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} className="mt-1" />
-                      </div>
-                    ) : (
                     <select
                       value={ticket.status}
                       disabled={updateStatus.isPending}
@@ -650,8 +647,6 @@ export default function Tickets() {
                         </option>
                       ))}
                     </select>
-                    )}
-                    {!isTicketExpired(ticket) && <ExpiryBadge expiresAt={ticket.expiresAt} expiredAt={ticket.expiredAt} className="mt-1" />}
                   </td>
 
                   {/* SLA & Predictive Risk */}
@@ -703,17 +698,7 @@ export default function Tickets() {
                   {/* Actions */}
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
                     <div className="inline-flex items-center justify-end gap-1.5">
-                      {isTicketExpired(ticket) ? (
-                        <span
-                          className="inline-flex cursor-not-allowed items-center gap-1 rounded-md bg-gray-100 px-2.5 py-1 text-[11px] font-medium text-gray-400"
-                          title="Expired ticket cannot be opened"
-                          aria-disabled="true"
-                        >
-                          <MessageCircle className="h-3 w-3" />
-                          <span>Expired</span>
-                        </span>
-                      ) : (
-                        <Link
+                      <Link
                           to={`/app/tickets/${ticket._id}`}
                           className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand-700 shadow-2xs transition"
                           title="Open conversation"
@@ -721,7 +706,6 @@ export default function Tickets() {
                           <MessageCircle className="h-3 w-3" />
                           <span>Chat</span>
                         </Link>
-                      )}
 
                       {ticket.category === "Complaint" && !ticket.isEscalated && (
                         <button

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -19,6 +19,16 @@ import {
   Clock,
   AlertCircle,
   RefreshCw,
+  Award,
+  Brain,
+  CheckCircle2,
+  ChevronRight,
+  Lightbulb,
+  Loader2,
+  Sparkles,
+  TrendingUp,
+  Circle,
+  PlayCircle,
 } from "lucide-react";
 import {
   EmployeesApi,
@@ -51,6 +61,17 @@ import {
 
 const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
 
+const ONBOARDING_STAGES = [
+  "HR Creates Employee Account in System",
+  "Personal & Professional Details Entry",
+  "Document Upload & Verification",
+  "Department & Role Assignment",
+  "Payroll Structure Configuration",
+  "System Login Credentials Issued",
+  "Employee Orientation & Policy Briefing",
+  "Profile Activated — Employee Successfully Onboarded",
+] as const;
+
 const salarySchema = z.object({
   ctc: z.coerce.number().positive(),
   basicPercentage: z.coerce.number().min(40).max(50),
@@ -82,7 +103,8 @@ export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, hasPermission } = useAuth();
-  const canViewEmployees = hasPermission("employees.view");
+  const canViewEmployees =
+    hasPermission("employees.view") && user?.role !== "EMPLOYEE";
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [tab, setTab] = useState("overview");
@@ -135,6 +157,27 @@ export default function EmployeeProfile() {
       showToast("Employee onboarding completed successfully.");
     },
 
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
+
+  const updateOnboardingStageMutation = useMutation({
+    mutationFn: async (data: { stage: number; remarks?: string }) => {
+      if (!employee) throw new Error("Employee not found.");
+      return EmployeesApi.updateOnboardingStage(
+        employee.id,
+        data.stage,
+        data.remarks,
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["employee", effectiveId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      showToast("Onboarding stage completed successfully.");
+    },
     onError: (error) => {
       showToast(getErrorMessage(error), "error");
     },
@@ -330,14 +373,15 @@ export default function EmployeeProfile() {
     );
   }
 
-  const tabs = [
-    { key: "overview", label: "Overview" },
-    { key: "attendance", label: "Attendance" },
-    { key: "leave", label: "Leave" },
-    { key: "performance", label: "Performance" },
-    ...(canViewPayroll ? [{ key: "payroll", label: "Payroll" }] : []),
-    { key: "documents", label: "Documents & Assets" },
-  ];
+ const tabs = [
+  { key: "overview", label: "Overview" },
+  { key: "attendance", label: "Attendance" },
+  { key: "leave", label: "Leave" },
+  { key: "performance", label: "Performance" },
+  { key: "ai-insights", label: "AI Insights" },
+  ...(canViewPayroll ? [{ key: "payroll", label: "Payroll" }] : []),
+  { key: "documents", label: "Documents & Assets" },
+];
 
   return (
     <div>
@@ -392,10 +436,22 @@ export default function EmployeeProfile() {
               <Button
                 size="sm"
                 className="whitespace-nowrap"
+                disabled={
+                  employee.onboarding?.currentStage !== 8 ||
+                  employee.onboarding?.status === "COMPLETED"
+                }
                 onClick={() => {
+                  if (employee.onboarding?.currentStage !== 8) {
+                    showToast(
+                      `Complete onboarding stage ${employee.onboarding?.currentStage ?? 2} first.`,
+                      "error",
+                    );
+                    return;
+                  }
+
                   if (
                     window.confirm(
-                      "Are you sure you want to complete onboarding for this employee?",
+                      "All onboarding stages are complete. Activate this employee?",
                     )
                   ) {
                     completeOnboardingMutation.mutate();
@@ -403,7 +459,7 @@ export default function EmployeeProfile() {
                 }}
                 isLoading={completeOnboardingMutation.isPending}
               >
-                Complete Onboarding
+                Activate Employee
               </Button>
             )}
             {isAdmin && employee.status === "ON_PROBATION" && (
@@ -609,10 +665,21 @@ export default function EmployeeProfile() {
         </div>
         {employee.managerFirstName && (
           <div className="mt-5 flex items-center gap-2 border-t border-line/70 pt-4 text-[13px] text-ink-faint">
-            <Briefcase size={14} /> Reports to{" "}
-            <span className="font-medium text-ink">
-              {employee.managerFirstName} {employee.managerLastName}
-            </span>
+            <Briefcase size={14} />
+            <span>Reports to</span>{" "}
+            {employee.managerId ? (
+              <button
+                type="button"
+                onClick={() => navigate(`/app/employees/${employee.managerId}`)}
+                className="font-medium text-ink underline-offset-2 transition-colors hover:text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+              >
+                {employee.managerFirstName} {employee.managerLastName}
+              </button>
+            ) : (
+              <span className="font-medium text-ink">
+                {employee.managerFirstName} {employee.managerLastName}
+              </span>
+            )}
           </div>
         )}
       </Card>
@@ -638,6 +705,15 @@ export default function EmployeeProfile() {
           }
           onCompleteOffboarding={() => completeOffboardingMutation.mutate()}
           isCompletingOffboarding={completeOffboardingMutation.isPending}
+          onUpdateOnboardingStage={(stage, remarks) =>
+            updateOnboardingStageMutation.mutate({ stage, remarks })
+          }
+          isUpdatingOnboardingStage={updateOnboardingStageMutation.isPending}
+          onCompleteOnboarding={() => completeOnboardingMutation.mutate()}
+          isCompletingOnboarding={completeOnboardingMutation.isPending}
+          onOpenEdit={() => setEditOpen(true)}
+          onOpenDocuments={() => setTab("documents")}
+          onOpenPayroll={() => setTab("payroll")}
         />
       )}
       {tab === "attendance" && <AttendanceTab employeeId={employee.id} />}
@@ -645,6 +721,9 @@ export default function EmployeeProfile() {
         <LeaveTab employeeId={employee.id} canManage={isAdmin} />
       )}
       {tab === "performance" && <PerformanceTab employeeId={employee.id} />}
+      {tab === "ai-insights" && (
+  <EmployeeAIInsightsSection employeeId={employee.id} />
+)}
       {tab === "payroll" && canViewPayroll && (
         <PayrollTab
           employeeId={employee.id}
@@ -719,6 +798,13 @@ function OverviewTab({
   isUpdatingOffboardingChecklist,
   onCompleteOffboarding,
   isCompletingOffboarding,
+  onUpdateOnboardingStage,
+  isUpdatingOnboardingStage,
+  onCompleteOnboarding,
+  isCompletingOnboarding,
+  onOpenEdit,
+  onOpenDocuments,
+  onOpenPayroll,
 }: {
   employee: any;
   isAdmin: boolean;
@@ -731,6 +817,13 @@ function OverviewTab({
   isUpdatingOffboardingChecklist: boolean;
   onCompleteOffboarding: () => void;
   isCompletingOffboarding: boolean;
+  onUpdateOnboardingStage: (stage: number, remarks?: string) => void;
+  isUpdatingOnboardingStage: boolean;
+  onCompleteOnboarding: () => void;
+  isCompletingOnboarding: boolean;
+  onOpenEdit: () => void;
+  onOpenDocuments: () => void;
+  onOpenPayroll: () => void;
 }) {
   const education = Array.isArray(employee.education) ? employee.education : [];
   const certifications = Array.isArray(employee.certifications)
@@ -749,6 +842,20 @@ function OverviewTab({
 
   return (
     <div className="space-y-5 sm:space-y-6">
+      {/* 8-stage onboarding workflow */}
+      {isAdmin && employee.status === "ONBOARDING" && (
+        <OnboardingWorkflow
+          employee={employee}
+          onOpenEdit={onOpenEdit}
+          onOpenDocuments={onOpenDocuments}
+          onOpenPayroll={onOpenPayroll}
+          onCompleteOnboarding={onCompleteOnboarding}
+          isCompletingOnboarding={isCompletingOnboarding}
+          onCompleteStage={onUpdateOnboardingStage}
+          isCompletingStage={isUpdatingOnboardingStage}
+        />
+      )}
+
       {/* Personal information */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:gap-6">
         <Card className="lg:col-span-2">
@@ -815,6 +922,59 @@ function OverviewTab({
             <Info label="PAN" value={employee.employeePan ?? "—"} />
           </dl>
         </Card>
+
+        {isAdmin && (
+          <Card className="h-fit self-start">
+            <CardHeader
+              title="Bank & Financial Details"
+              subtitle="Restricted to HR administrators"
+            />
+            <dl className="grid grid-cols-1 gap-y-5 text-[13.5px] sm:grid-cols-2">
+              <Info
+                label="Bank account number"
+                value={employee.bankAccountNumber ?? "—"}
+              />
+              <Info
+                label="IFSC code"
+                value={employee.bankIfscCode ?? "—"}
+              />
+              <Info
+                label="Bank branch"
+                value={employee.bankBranch ?? "—"}
+              />
+              <Info
+                label="TAN"
+                value={employee.employeeTan ?? "—"}
+              />
+              <Info
+                label="HRA declaration"
+                value={
+                  employee.investmentDeclarations?.hra != null
+                    ? formatCurrencyINR(Number(employee.investmentDeclarations.hra))
+                    : "—"
+                }
+              />
+              <Info
+                label="80C declaration"
+                value={
+                  employee.investmentDeclarations?.deduction80C != null
+                    ? formatCurrencyINR(
+                        Number(employee.investmentDeclarations.deduction80C),
+                      )
+                    : "—"
+                }
+              />
+              <Info
+                label="Other declaration"
+                value={
+                  employee.investmentDeclarations?.other != null
+                    ? formatCurrencyINR(Number(employee.investmentDeclarations.other))
+                    : "—"
+                }
+              />
+            </dl>
+          </Card>
+        )}
 
         <Card className="h-fit self-start bg-gradient-to-br from-brand-600 to-brand-800 p-5 text-white">
           <div className="space-y-4">
@@ -1479,6 +1639,608 @@ function OverviewTab({
   );
 }
 
+
+// ----------------------------------------------------------------------------
+// Fast, requirement-aware 8-stage onboarding workspace.
+// Uses the existing onboarding APIs only; no new backend contract is required.
+function OnboardingWorkflow({
+  employee,
+  onOpenEdit,
+  onOpenDocuments,
+  onOpenPayroll,
+  onCompleteOnboarding,
+  isCompletingOnboarding,
+  onCompleteStage,
+  isCompletingStage,
+}: {
+  employee: any;
+  onOpenEdit: () => void;
+  onOpenDocuments: () => void;
+  onOpenPayroll: () => void;
+  onCompleteOnboarding: () => void;
+  isCompletingOnboarding: boolean;
+  onCompleteStage: (stage: number, remarks?: string) => void;
+  isCompletingStage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+
+  const { data: documents, isLoading: documentsLoading } = useQuery({
+    queryKey: ["documents", "onboarding", employee.id],
+    queryFn: () => DocumentsApi.list(employee.id),
+    enabled: employee.status === "ONBOARDING",
+  });
+
+  const { data: salaryStructure, isLoading: salaryLoading } = useQuery({
+    queryKey: ["salary-structure", employee.id],
+    queryFn: () => PayrollApi.getSalaryStructure(employee.id),
+    enabled: employee.status === "ONBOARDING",
+  });
+
+  const onboarding = employee.onboarding ?? {
+    currentStage: 2,
+    status: "IN_PROGRESS",
+    stages: ONBOARDING_STAGES.map((name, index) => ({
+      stage: index + 1,
+      name,
+      status: index === 0 ? "COMPLETED" : "PENDING",
+      completedAt: null,
+      completedBy: null,
+      remarks: null,
+    })),
+  };
+
+  const stages = ONBOARDING_STAGES.map((name, index) =>
+    onboarding.stages?.find((item: any) => item.stage === index + 1) ?? {
+      stage: index + 1,
+      name,
+      status: index === 0 ? "COMPLETED" : "PENDING",
+      completedAt: null,
+      completedBy: null,
+      remarks: null,
+    },
+  );
+
+  const currentStage = Math.min(8, Math.max(2, Number(onboarding.currentStage ?? 2)));
+  const completedCount = stages.filter(
+    (stage: any) => stage.status === "COMPLETED",
+  ).length;
+  const progress = Math.round((completedCount / 8) * 100);
+
+  const verifiedDocuments = (documents ?? []).filter(
+    (document: any) => document.status === "VERIFIED",
+  );
+
+  const personalDetailsReady = [
+    employee.firstName,
+    employee.lastName,
+    employee.gender,
+    employee.maritalStatus,
+    employee.dateOfBirth,
+    employee.phone,
+    employee.personalEmail,
+    employee.address,
+    employee.city,
+    employee.state,
+    employee.country,
+    employee.dateOfJoining,
+    employee.employmentType,
+  ].every((value) => String(value ?? "").trim().length > 0);
+
+  const documentsReady = verifiedDocuments.length > 0;
+  const organizationReady = Boolean(
+    employee.departmentId && employee.designationId && employee.managerId,
+  );
+  const payrollReady = Boolean(salaryStructure);
+  const credentialsReady = Boolean(employee.userId && employee.email);
+
+  const requirementForStage = (stage: number) => {
+    switch (stage) {
+      case 1:
+        return {
+          ready: Boolean(employee.id && employee.employeeCode && employee.userId),
+          label: "Employee account and employee ID exist",
+          action: "Account created",
+        };
+      case 2:
+        return {
+          ready: personalDetailsReady,
+          label: "Core personal and employment details are complete",
+          action: "Review profile",
+        };
+      case 3:
+        return {
+          ready: documentsReady,
+          label: "At least one employee document is verified",
+          action: "Review documents",
+        };
+      case 4:
+        return {
+          ready: organizationReady,
+          label: "Department, designation and reporting manager are assigned",
+          action: "Review assignment",
+        };
+      case 5:
+        return {
+          ready: payrollReady,
+          label: "Salary structure is configured",
+          action: "Review payroll",
+        };
+      case 6:
+        return {
+          ready: credentialsReady,
+          label: "System account and login identity are available",
+          action: "Credentials ready",
+        };
+      case 7:
+        return {
+          ready: true,
+          label: "HR confirmation required for orientation and policy briefing",
+          action: "Confirm briefing",
+        };
+      case 8:
+        return {
+          ready: currentStage === 8 && completedCount >= 7,
+          label: "All seven preparation stages are complete",
+          action: "Activate employee",
+        };
+      default:
+        return { ready: false, label: "Not available", action: "Pending" };
+    }
+  };
+
+  const bulkMutation = useMutation({
+    mutationFn: async () => {
+      if (currentStage < 2 || currentStage > 7) return;
+
+      const missing: string[] = [];
+      for (let stage = currentStage; stage <= 7; stage += 1) {
+        const requirement = requirementForStage(stage);
+        if (!requirement.ready) {
+          missing.push(`Stage ${stage}: ${requirement.label}`);
+        }
+      }
+
+      if (missing.length) {
+        throw new Error(
+          `Complete the required setup before fast-track activation:\n${missing.join("\n")}`,
+        );
+      }
+
+      const briefingConfirmed = window.confirm(
+        "Fast-track will complete every remaining eligible onboarding stage (2–7).\n\nConfirm that employee orientation and company policy briefing will be completed/recorded for this employee.",
+      );
+      if (!briefingConfirmed) return;
+
+      let latestEmployee: any = employee;
+      for (let stage = currentStage; stage <= 7; stage += 1) {
+        latestEmployee = await EmployeesApi.updateOnboardingStage(
+          employee.id,
+          stage,
+          stage === 7
+            ? "Orientation and company policy briefing confirmed by HR."
+            : undefined,
+        );
+      }
+      return latestEmployee;
+    },
+    onSuccess: (latestEmployee) => {
+      if (!latestEmployee) return;
+      queryClient.setQueryData(["employee", employee.id], latestEmployee);
+      void queryClient.invalidateQueries({ queryKey: ["employee", employee.id] });
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      showToast("All eligible onboarding stages completed. Employee is ready for activation.");
+    },
+    onError: (error) => showToast(getErrorMessage(error), "error"),
+  });
+
+  const stageMeta = [
+    {
+      stage: 1,
+      short: "Account",
+      detail: "HR creates employee account",
+      icon: "01",
+    },
+    {
+      stage: 2,
+      short: "Profile",
+      detail: "Personal & professional details",
+      icon: "02",
+    },
+    {
+      stage: 3,
+      short: "Documents",
+      detail: "Upload & verification",
+      icon: "03",
+    },
+    {
+      stage: 4,
+      short: "Organization",
+      detail: "Department & role assignment",
+      icon: "04",
+    },
+    {
+      stage: 5,
+      short: "Payroll",
+      detail: "Salary structure configuration",
+      icon: "05",
+    },
+    {
+      stage: 6,
+      short: "Credentials",
+      detail: "System login credentials",
+      icon: "06",
+    },
+    {
+      stage: 7,
+      short: "Orientation",
+      detail: "Policies & orientation briefing",
+      icon: "07",
+    },
+    {
+      stage: 8,
+      short: "Activation",
+      detail: "Profile activated",
+      icon: "08",
+    },
+  ];
+
+  const stageAction = (stage: number) => {
+    if (stage === 2 || stage === 4) onOpenEdit();
+    if (stage === 3) onOpenDocuments();
+    if (stage === 5) onOpenPayroll();
+  };
+
+  const activeStage = stageMeta.find((item) => item.stage === currentStage);
+  const currentRequirement = requirementForStage(currentStage);
+  const canFastTrack = currentStage >= 2 && currentStage <= 7 && !bulkMutation.isPending;
+  const readyToActivate = currentStage === 8 && completedCount >= 7;
+
+  return (
+    <Card className="overflow-hidden border-brand-200/70 bg-gradient-to-br from-white via-white to-brand-50/40 shadow-sm">
+      <div className="border-b border-line/70 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-5 sm:px-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+                <PlayCircle size={19} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-600">
+                  Employee Lifecycle · Onboarding
+                </p>
+                <h2 className="mt-1 font-display text-lg font-medium text-ink">
+                  8-Stage Onboarding Control Center
+                </h2>
+                <p className="mt-1 text-[12px] text-ink-faint">
+                  Complete the full onboarding journey from account creation to activation without leaving this page.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[240px]">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-ink-soft">
+              <span>{completedCount} / 8 stages completed</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-brand-100">
+              <div
+                className="h-full rounded-full bg-brand-600 transition-all duration-500"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10.5px] text-ink-faint">
+              <span>{activeStage ? `Current: ${activeStage.short}` : "Onboarding"}</span>
+              <span>{onboarding.status === "IN_PROGRESS" ? "In progress" : onboarding.status}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-5 py-5 sm:px-6">
+        <div className="overflow-x-auto pb-2">
+          <div className="flex min-w-[760px] items-start">
+            {stageMeta.map((item, index) => {
+              const stage = stages[item.stage - 1];
+              const completed = stage?.status === "COMPLETED";
+              const active = item.stage === currentStage && !completed;
+              const locked = item.stage > currentStage;
+              const ready = requirementForStage(item.stage).ready;
+
+              return (
+                <div key={item.stage} className="flex min-w-[94px] flex-1 items-start">
+                  <div className="w-full">
+                    <div className="flex items-center">
+                      <div
+                        className={cx(
+                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold transition",
+                          completed
+                            ? "border-success-500 bg-success-500 text-white"
+                            : active
+                              ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                              : ready && !locked
+                                ? "border-brand-200 bg-brand-50 text-brand-700"
+                                : "border-line bg-canvas text-ink-faint",
+                        )}
+                      >
+                        {completed ? <CheckCircle2 size={17} /> : item.icon}
+                      </div>
+                      {index < stageMeta.length - 1 && (
+                        <div
+                          className={cx(
+                            "mx-1 h-0.5 flex-1",
+                            completed ? "bg-success-300" : "bg-line",
+                          )}
+                        />
+                      )}
+                    </div>
+                    <p
+                      className={cx(
+                        "mt-2 pr-2 text-[10.5px] font-semibold",
+                        completed || active ? "text-ink" : "text-ink-faint",
+                      )}
+                    >
+                      {item.short}
+                    </p>
+                    <p className="mt-0.5 pr-2 text-[9.5px] leading-4 text-ink-faint">
+                      {item.detail}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+          <div className="rounded-2xl border border-brand-200/70 bg-brand-50/50 p-4 sm:p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-600">
+                  Next required action
+                </p>
+                <h3 className="mt-1 text-[15px] font-semibold text-ink">
+                  Stage {currentStage}: {activeStage?.short}
+                </h3>
+                <p className="mt-1 text-[12px] leading-5 text-ink-soft">
+                  {currentRequirement.label}
+                </p>
+              </div>
+              <Badge tone={currentRequirement.ready ? "success" : "brand"}>
+                {currentRequirement.ready ? "Ready" : "Needs attention"}
+              </Badge>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {[
+                ["Stage 2", personalDetailsReady, "Profile details"],
+                ["Stage 3", documentsReady, documentsLoading ? "Checking documents…" : `${verifiedDocuments.length} verified document(s)`],
+                ["Stage 4", organizationReady, "Department · designation · manager"],
+                ["Stage 5", payrollReady, salaryLoading ? "Checking salary structure…" : "Salary structure"],
+                ["Stage 6", credentialsReady, "Employee account credentials"],
+                ["Stage 7", true, "HR orientation confirmation"],
+              ].map(([label, ready, detail]) => (
+                <div
+                  key={String(label)}
+                  className={cx(
+                    "flex items-center gap-2.5 rounded-xl border px-3 py-2.5",
+                    ready ? "border-success-500/20 bg-white" : "border-warning-300/60 bg-white",
+                  )}
+                >
+                  {ready ? (
+                    <CheckCircle2 size={15} className="shrink-0 text-success-600" />
+                  ) : (
+                    <AlertCircle size={15} className="shrink-0 text-warning-600" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold text-ink">{label}</p>
+                    <p className="truncate text-[10px] text-ink-faint">{String(detail)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {currentStage === 2 && (
+                <Button size="sm" variant="outline" onClick={onOpenEdit}>
+                  Review profile details
+                </Button>
+              )}
+              {currentStage === 3 && (
+                <Button size="sm" variant="outline" onClick={onOpenDocuments}>
+                  Review documents
+                </Button>
+              )}
+              {currentStage === 4 && (
+                <Button size="sm" variant="outline" onClick={onOpenEdit}>
+                  Review organization
+                </Button>
+              )}
+              {currentStage === 5 && (
+                <Button size="sm" variant="outline" onClick={onOpenPayroll}>
+                  Review payroll
+                </Button>
+              )}
+              {currentStage === 7 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isCompletingStage}
+                  isLoading={isCompletingStage}
+                  onClick={() => {
+                    const confirmed = window.confirm(
+                      "Confirm that the employee orientation and company policy briefing has been completed.",
+                    );
+                    if (confirmed) {
+                      onCompleteStage(
+                        7,
+                        "Orientation and company policy briefing confirmed by HR.",
+                      );
+                    }
+                  }}
+                >
+                  Confirm orientation & policies
+                </Button>
+              )}
+              {currentStage >= 2 && currentStage <= 6 && currentRequirement.ready && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isCompletingStage}
+                  isLoading={isCompletingStage}
+                  onClick={() => {
+                    const remarks = window.prompt(
+                      `Stage ${currentStage} remarks (optional):`,
+                    ) ?? "";
+                    onCompleteStage(currentStage, remarks.trim() || undefined);
+                  }}
+                >
+                  Complete Stage {currentStage}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-line/70 bg-white p-4 sm:p-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+              Fast-track
+            </p>
+            <h3 className="mt-1 text-[15px] font-semibold text-ink">
+              Finish eligible stages in one action
+            </h3>
+            <p className="mt-2 text-[12px] leading-5 text-ink-faint">
+              The system checks the existing profile, documents, organization assignment, payroll and account data, then completes the remaining eligible stages sequentially through the existing onboarding API.
+            </p>
+            <Button
+              className="mt-4 w-full"
+              disabled={!canFastTrack}
+              isLoading={bulkMutation.isPending}
+              onClick={() => bulkMutation.mutate()}
+            >
+              {bulkMutation.isPending ? "Completing onboarding…" : "Complete all eligible stages"}
+            </Button>
+            {currentStage === 7 && (
+              <p className="mt-2 text-[10.5px] text-ink-faint">
+                Stage 7 requires an explicit HR confirmation for orientation and policy briefing.
+              </p>
+            )}
+            {readyToActivate && (
+              <div className="mt-4 rounded-xl border border-success-500/25 bg-success-50/60 p-3">
+                <p className="text-[11px] font-semibold text-success-700">
+                  All preparation stages are complete.
+                </p>
+                <p className="mt-1 text-[10.5px] text-success-700/80">
+                  Stage 8 is ready. Activate the employee to finish onboarding.
+                </p>
+                <Button
+                  size="sm"
+                  className="mt-3 w-full"
+                  isLoading={isCompletingOnboarding}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "All required onboarding stages are complete. Activate this employee?",
+                      )
+                    ) {
+                      onCompleteOnboarding();
+                    }
+                  }}
+                >
+                  Activate Employee
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {stageMeta.map((item) => {
+            const stage = stages[item.stage - 1];
+            const completed = stage?.status === "COMPLETED";
+            const active = item.stage === currentStage && !completed;
+            const requirement = requirementForStage(item.stage);
+
+            return (
+              <div
+                key={item.stage}
+                className={cx(
+                  "rounded-2xl border p-4 transition",
+                  completed
+                    ? "border-success-500/25 bg-success-50/45"
+                    : active
+                      ? "border-brand-300 bg-brand-50/45 shadow-sm"
+                      : "border-line/60 bg-white",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <div
+                      className={cx(
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                        completed
+                          ? "bg-success-100 text-success-700"
+                          : active
+                            ? "bg-brand-100 text-brand-700"
+                            : "bg-canvas text-ink-faint",
+                      )}
+                    >
+                      {completed ? <CheckCircle2 size={17} /> : <Circle size={17} />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                        Stage {item.stage}
+                      </p>
+                      <p className="mt-0.5 text-[12px] font-semibold leading-5 text-ink">
+                        {item.short}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge tone={completed ? "success" : active ? "brand" : undefined}>
+                    {completed ? "Completed" : active ? "In progress" : "Pending"}
+                  </Badge>
+                </div>
+
+                <p className="mt-3 text-[10.5px] leading-4 text-ink-faint">
+                  {item.detail}
+                </p>
+
+                {stage?.completedAt && (
+                  <p className="mt-2 text-[10px] text-ink-faint">
+                    Completed {formatDate(stage.completedAt)}
+                  </p>
+                )}
+
+                {active && item.stage < 8 && (
+                  <div className="mt-3">
+                    <div className="rounded-xl bg-white/80 px-3 py-2 text-[10.5px] text-ink-faint">
+                      {requirement.ready ? "Requirements satisfied" : requirement.label}
+                    </div>
+                    {(item.stage === 2 || item.stage === 4 || item.stage === 3 || item.stage === 5) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2 w-full"
+                        onClick={() => stageAction(item.stage)}
+                      >
+                        {requirement.action}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-line/60 bg-canvas/60 px-4 py-3 text-[11px] text-ink-faint">
+          <span className="font-semibold text-ink-soft">Workflow rule:</span> onboarding remains sequential at the API level, but this control center can validate the prerequisites and complete every eligible remaining stage in one action. Activation stays protected behind the existing final onboarding endpoint.
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
@@ -1827,9 +2589,22 @@ function DocumentsTab({
   canManage: boolean;
   onUpload: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const { data: documents, isLoading: docsLoading } = useQuery({
     queryKey: ["documents", employeeId],
     queryFn: () => DocumentsApi.list(employeeId),
+  });
+
+  const reviewDocumentMutation = useMutation({
+    mutationFn: ({ id, status, rejectionReason }: { id: string; status: "VERIFIED" | "REJECTED"; rejectionReason?: string }) =>
+      api.patch(`/documents/${id}/review`, { status, rejectionReason }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["documents", employeeId] });
+      void queryClient.invalidateQueries({ queryKey: ["documents", "onboarding", employeeId] });
+      showToast("Document review updated.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
   });
   const { data: assets, isLoading: assetsLoading } = useQuery({
     queryKey: ["assets", employeeId],
@@ -1872,10 +2647,51 @@ function DocumentsTab({
                 rel="noreferrer"
                 className="flex items-center justify-between rounded-xl border border-line/60 px-4 py-2.5 transition hover:border-brand-300 hover:bg-brand-50"
               >
-                <span className="flex items-center gap-2.5 text-[13px] text-ink">
-                  <FileText size={15} className="text-brand-500" /> {d.fileName}
+                <span className="flex min-w-0 items-center gap-2.5 text-[13px] text-ink">
+                  <FileText size={15} className="shrink-0 text-brand-500" />
+                  <span className="min-w-0 truncate">{d.fileName}</span>
                 </span>
-                <Badge tone="neutral">{d.type.replace(/_/g, " ")}</Badge>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge tone={d.status === "VERIFIED" ? "success" : d.status === "REJECTED" ? "danger" : "neutral"}>
+                    {d.status ?? "PENDING"}
+                  </Badge>
+                  {canManage && d.status !== "VERIFIED" && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={reviewDocumentMutation.isPending}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        reviewDocumentMutation.mutate({ id: d.id, status: "VERIFIED" });
+                      }}
+                    >
+                      Verify
+                    </Button>
+                  )}
+                  {canManage && d.status === "PENDING" && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={reviewDocumentMutation.isPending}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const reason = window.prompt("Rejection reason:");
+                        if (!reason?.trim()) return;
+                        reviewDocumentMutation.mutate({
+                          id: d.id,
+                          status: "REJECTED",
+                          rejectionReason: reason.trim(),
+                        });
+                      }}
+                    >
+                      Reject
+                    </Button>
+                  )}
+                </div>
               </a>
             ))}
           </div>
@@ -1918,6 +2734,7 @@ type EmployeeForm = {
   departmentId: string;
   designationId: string;
   managerId: string;
+  isManager: boolean;
 
   gender: string;
   maritalStatus: string;
@@ -1934,6 +2751,15 @@ type EmployeeForm = {
   emergencyContactEmail: string;
   employeeAadhaar: string;
   employeePan: string;
+  employeeTan: string;
+  bankAccountNumber: string;
+  bankIfscCode: string;
+  bankBranch: string;
+  investmentDeclarations: {
+    hra: number;
+    deduction80C: number;
+    other: number;
+  };
   signature: string;
   avatarUrl: string;
   education: {
@@ -1989,6 +2815,7 @@ function EditEmployeeModal({
         departmentId: employee.departmentId ?? "",
         designationId: employee.designationId ?? "",
         managerId: employee.managerId ?? "",
+        isManager: employee.isManager === true,
         gender: employee.gender ?? "",
         maritalStatus: employee.maritalStatus ?? "",
         dateOfBirth: employee.dateOfBirth ?? "",
@@ -2007,6 +2834,15 @@ function EditEmployeeModal({
 
         employeeAadhaar: employee.employeeAadhaar ?? "",
         employeePan: employee.employeePan ?? "",
+        employeeTan: employee.employeeTan ?? "",
+        bankAccountNumber: employee.bankAccountNumber ?? "",
+        bankIfscCode: employee.bankIfscCode ?? "",
+        bankBranch: employee.bankBranch ?? "",
+        investmentDeclarations: {
+          hra: Number(employee.investmentDeclarations?.hra ?? 0),
+          deduction80C: Number(employee.investmentDeclarations?.deduction80C ?? 0),
+          other: Number(employee.investmentDeclarations?.other ?? 0),
+        },
         signature: employee.signature ?? "",
         avatarUrl: employee.avatarUrl ?? "",
 
@@ -2031,6 +2867,7 @@ function EditEmployeeModal({
       departmentId: employee.departmentId ?? "",
       designationId: employee.designationId ?? "",
       managerId: employee.managerId ?? "",
+      isManager: employee.isManager === true,
 
       gender: employee.gender ?? "",
       maritalStatus: employee.maritalStatus ?? "",
@@ -2049,6 +2886,15 @@ function EditEmployeeModal({
 
       employeeAadhaar: employee.employeeAadhaar ?? "",
       employeePan: employee.employeePan ?? "",
+      employeeTan: employee.employeeTan ?? "",
+      bankAccountNumber: employee.bankAccountNumber ?? "",
+      bankIfscCode: employee.bankIfscCode ?? "",
+      bankBranch: employee.bankBranch ?? "",
+      investmentDeclarations: {
+        hra: Number(employee.investmentDeclarations?.hra ?? 0),
+        deduction80C: Number(employee.investmentDeclarations?.deduction80C ?? 0),
+        other: Number(employee.investmentDeclarations?.other ?? 0),
+      },
       signature: employee.signature ?? "",
       avatarUrl: employee.avatarUrl ?? "",
 
@@ -2136,6 +2982,9 @@ function EditEmployeeModal({
       const updatedPayload = {
         ...payload,
         avatarUrl,
+        // Reporting manager is optional. An empty selection explicitly clears
+        // the manager so top-level employees (such as Admin) can be saved.
+        managerId: payload.managerId || null,
         dateOfBirth: payload.dateOfBirth || null,
         state: payload.state || null,
         emergencyContactRelationship:
@@ -2143,6 +2992,15 @@ function EditEmployeeModal({
         emergencyContactEmail: payload.emergencyContactEmail || null,
         employeeAadhaar: payload.employeeAadhaar || null,
         employeePan: payload.employeePan || null,
+        employeeTan: payload.employeeTan || null,
+        bankAccountNumber: payload.bankAccountNumber || null,
+        bankIfscCode: payload.bankIfscCode || null,
+        bankBranch: payload.bankBranch || null,
+        investmentDeclarations: {
+          hra: Number(payload.investmentDeclarations?.hra ?? 0),
+          deduction80C: Number(payload.investmentDeclarations?.deduction80C ?? 0),
+          other: Number(payload.investmentDeclarations?.other ?? 0),
+        },
         signature: payload.signature || null,
       };
 
@@ -2170,6 +3028,7 @@ function EditEmployeeModal({
             Cancel
           </Button>
           <Button
+            type="button"
             onClick={handleSubmit((v) => mutation.mutate(v))}
             isLoading={mutation.isPending}
           >
@@ -2178,7 +3037,12 @@ function EditEmployeeModal({
         </>
       }
     >
-      <form className="grid gap-4 sm:grid-cols-2">
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit((v) => mutation.mutate(v))}>
+        {Object.keys(errors).length > 0 && (
+          <div className="sm:col-span-2 rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+            Please correct the highlighted fields before saving your changes.
+          </div>
+        )}
         {isAdmin && (
           <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
             <div className="border-b border-line pb-2">
@@ -2205,7 +3069,7 @@ function EditEmployeeModal({
                       setValue("designationId", "");
                     },
                   })}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                  className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${errors.departmentId ? "border-danger-500" : "border-line"}`}
                 >
                   <option value="">Select department</option>
 
@@ -2215,6 +3079,7 @@ function EditEmployeeModal({
                     </option>
                   ))}
                 </select>
+                {errors.departmentId && <p className="mt-1 text-xs text-danger-500">{errors.departmentId.message}</p>}
               </div>
 
               {/* Designation */}
@@ -2242,36 +3107,63 @@ function EditEmployeeModal({
                     </option>
                   ))}
                 </select>
+                {errors.designationId && <p className="mt-1 text-xs text-danger-500">{errors.designationId.message}</p>}
+              </div>
+
+              {/* Manager Status */}
+              <div className="sm:col-span-2 rounded-xl border border-line/60 bg-surface/40 px-4 py-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    {...register("isManager")}
+                    className="mt-0.5 h-4 w-4 rounded border-line text-primary-600 focus:ring-primary-500"
+                  />
+                  <span>
+                    <span className="block text-[13px] font-medium text-ink">Is Manager</span>
+                    <span className="block text-[11px] text-ink-faint">
+                      When enabled, this employee becomes available in Reporting Manager selections.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {/* Reporting Manager */}
               <div className="sm:col-span-2">
                 <label className="text-[13px] font-medium text-ink-soft">
-                  Reporting Manager <span className="text-danger-500">*</span>
+                  Reporting Manager
                 </label>
 
                 <select
-                  {...register("managerId", {
-                    required: "Reporting Manager is required",
-                  })}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                  {...register("managerId")}
+                  className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${
+                    errors.managerId ? "border-danger-500" : "border-line"
+                  }`}
                 >
-                  <option value="">Select reporting manager</option>
+                  <option value="">No reporting manager (top of hierarchy)</option>
 
                   {managers
                     ?.filter((manager: any) => manager.id !== employee.id)
                     .map((manager: any) => (
                       <option key={manager.id} value={manager.id}>
                         {manager.firstName} {manager.lastName}
+                        {manager.designationTitle ? ` — ${manager.designationTitle}` : ""}
                       </option>
                     ))}
                 </select>
+<p className="mt-1 text-[11px] text-ink-faint">
+                  Leave this empty for a top-level employee. The org chart is built from these manager assignments.
+                </p>
+                {errors.managerId && (
+                  <p className="mt-1 text-xs text-danger-500">
+                    {errors.managerId.message}
+                  </p>
+                )}
               </div>
             </div>
           </div>
         )}
-        <TextField label="First name" required {...register("firstName", { required: "First name is required" })} />
-        <TextField label="Last name" required {...register("lastName", { required: "Last name is required" })} />
+        <TextField label="First name" required error={errors.firstName?.message} {...register("firstName", { required: "First name is required." })} />
+        <TextField label="Last name" required error={errors.lastName?.message} {...register("lastName", { required: "Last name is required." })} />
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
             Gender <span className="text-danger-500">*</span>
@@ -2279,7 +3171,7 @@ function EditEmployeeModal({
 
           <select
             {...register("gender", { required: "Gender is required" })}
-            className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+            className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${errors.managerId ? "border-danger-500" : "border-line"}`}
           >
             <option value="">Select gender</option>
             <option value="MALE">MALE</option>
@@ -2295,7 +3187,7 @@ function EditEmployeeModal({
 
           <select
             {...register("maritalStatus", { required: "Marital Status is required" })}
-            className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+            className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${errors.maritalStatus ? "border-danger-500" : "border-line"}`}
           >
             <option value="">Select marital status</option>
             <option value="SINGLE">SINGLE</option>
@@ -2344,6 +3236,110 @@ function EditEmployeeModal({
 
         <TextField label="Aadhaar" {...register("employeeAadhaar")} />
         <TextField label="PAN" {...register("employeePan")} />
+
+        {isAdmin && (
+          <div className="sm:col-span-2 rounded-2xl border border-line/60 p-4">
+            <div className="border-b border-line pb-2">
+              <h3 className="text-sm font-medium text-ink">
+                Bank & Financial Details
+              </h3>
+              <p className="text-xs text-ink-faint">
+                Sensitive financial and statutory information. Visible to HR administrators.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <TextField
+                label="Bank Account Number"
+                required
+                error={errors.bankAccountNumber?.message}
+                inputMode="numeric"
+                autoComplete="off"
+                {...register("bankAccountNumber", {
+                  required: "Bank account number is required.",
+                  pattern: { value: /^\d{6,18}$/, message: "Enter a valid bank account number (6–18 digits)." },
+                })}
+              />
+              <TextField
+                label="IFSC Code"
+                required
+                error={errors.bankIfscCode?.message}
+                autoComplete="off"
+                {...register("bankIfscCode", {
+                  required: "IFSC code is required.",
+                  setValueAs: (value) => String(value ?? "").toUpperCase().trim(),
+                  pattern: { value: /^[A-Z]{4}0[A-Z0-9]{6}$/, message: "Enter a valid 11-character IFSC code (e.g. SBIN0001234)." },
+                })}
+              />
+              <TextField
+                label="Bank Branch"
+                required
+                error={errors.bankBranch?.message}
+                {...register("bankBranch", {
+                  required: "Bank branch is required.",
+                  validate: (value) => value.trim().length >= 2 || "Enter a valid bank branch name.",
+                })}
+              />
+              <TextField
+                label="TAN"
+                required
+                error={errors.employeeTan?.message}
+                autoComplete="off"
+                {...register("employeeTan", {
+                  required: "TAN is required.",
+                  setValueAs: (value) => String(value ?? "").toUpperCase().trim(),
+                  pattern: { value: /^[A-Z]{4}\d{5}[A-Z]$/, message: "Enter a valid 10-character TAN (e.g. ABCD12345E)." },
+                })}
+              />
+            </div>
+
+            <div className="mt-5 border-t border-line/60 pt-4">
+              <p className="text-[13px] font-medium text-ink">
+                Investment Declarations
+              </p>
+              <p className="mt-0.5 text-xs text-ink-faint">
+                Enter declared annual amounts in INR.
+              </p>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <TextField
+                  label="HRA Declaration"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  error={errors.investmentDeclarations?.hra?.message}
+                  {...register("investmentDeclarations.hra", {
+                    valueAsNumber: true,
+                    min: { value: 0, message: "HRA declaration cannot be negative." },
+                  })}
+                />
+                <TextField
+                  label="80C Declaration"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  error={errors.investmentDeclarations?.deduction80C?.message}
+                  {...register("investmentDeclarations.deduction80C", {
+                    valueAsNumber: true,
+                    min: { value: 0, message: "80C declaration cannot be negative." },
+                  })}
+                />
+                <TextField
+                  label="Other Declaration"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  error={errors.investmentDeclarations?.other?.message}
+                  {...register("investmentDeclarations.other", {
+                    valueAsNumber: true,
+                    min: { value: 0, message: "Other declaration cannot be negative." },
+                  })}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         <TextField
           label="Signature URL"
           className="sm:col-span-2"
@@ -3231,5 +4227,613 @@ function UploadDocModal({
         </div>
       </div>
     </Modal>
+  );
+}
+// ----------------------------------------------------------------------------
+// AI Employee Insights
+// ----------------------------------------------------------------------------
+
+function AIInfoCard({
+  icon,
+  title,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card>
+      <div className="flex items-center gap-2.5 border-b border-line/60 px-5 py-4 sm:px-6">
+        <span className="text-brand-600">{icon}</span>
+        <h3 className="text-[14px] font-semibold text-ink">{title}</h3>
+      </div>
+      <div className="space-y-4 px-5 py-5 sm:px-6">{children}</div>
+    </Card>
+  );
+}
+
+function AISectionHeading({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 text-brand-600">
+        {icon}
+        <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+      </div>
+      <p className="mt-1 text-[12px] text-ink-faint">{description}</p>
+    </div>
+  );
+}
+
+function AIEmptyState() {
+  return <p className="text-[13px] text-ink-faint">No insights available.</p>;
+}
+
+function AIBulletList({
+  title,
+  items,
+  icon = <ChevronRight size={14} />,
+}: {
+  title?: string;
+  items?: string[];
+  icon?: ReactNode;
+}) {
+  return (
+    <div>
+      {title && (
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+          {title}
+        </p>
+      )}
+      <ul className="space-y-2">
+        {(items ?? []).map((item, index) => (
+          <li
+            key={`${item}-${index}`}
+            className="flex gap-2 text-[13px] leading-5 text-ink"
+          >
+            <span className="mt-0.5 shrink-0 text-brand-600">{icon}</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AIInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+        {label}
+      </p>
+      <p className="mt-1 text-[13px] text-ink">{value}</p>
+    </div>
+  );
+}
+
+function AIChipList({ title, items }: { title: string; items?: string[] }) {
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+        {title}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {(items ?? []).map((item, index) => (
+          <span
+            key={`${item}-${index}`}
+            className="rounded-full bg-brand-50 px-2.5 py-1 text-[12px] text-brand-700"
+          >
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AIPriorityBadge({ priority }: { priority: string }) {
+  return (
+    <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700">
+      {priority}
+    </span>
+  );
+}
+
+function AIInsightSkeleton() {
+  return (
+    <Card>
+      <Skeleton className="h-36 rounded-2xl" />
+    </Card>
+  );
+}
+
+function EmployeeAIInsightsSection({
+  employeeId,
+}: {
+  employeeId: string;
+}) {
+  const {
+    data: careerData,
+    isLoading: careerLoading,
+    isError: careerError,
+    refetch: refetchCareer,
+  } = useQuery({
+    queryKey: ["employee-ai-career", employeeId],
+    queryFn: () => EmployeesApi.aiCareer(employeeId),
+    enabled: !!employeeId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const {
+    data: summaryData,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useQuery({
+    queryKey: ["employee-ai-360", employeeId],
+    queryFn: () => EmployeesApi.ai360(employeeId),
+    enabled: !!employeeId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const career = careerData?.ai;
+  const summary = summaryData?.ai;
+
+  const isLoading = careerLoading || summaryLoading;
+  const hasError = careerError || summaryError;
+
+  const refreshInsights = () => {
+    void refetchCareer();
+    void refetchSummary();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-5">
+        <Card>
+          <div className="flex items-center gap-3 px-5 py-5 sm:px-6">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+              <Loader2 size={19} className="animate-spin" />
+            </div>
+
+            <div>
+              <p className="text-[14px] font-semibold text-ink">
+                Generating AI employee insights...
+              </p>
+
+              <p className="mt-0.5 text-[12px] text-ink-faint">
+                Analyzing the available employee information.
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <AIInsightSkeleton />
+          <AIInsightSkeleton />
+        </div>
+
+        <AIInsightSkeleton />
+      </div>
+    );
+  }
+
+  if (hasError && !career && !summary) {
+    return (
+      <Card>
+        <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+            <Sparkles size={22} />
+          </div>
+
+          <h3 className="mt-4 text-[15px] font-semibold text-ink">
+            Unable to generate AI insights
+          </h3>
+
+          <p className="mt-1 max-w-md text-[13px] text-ink-faint">
+            The AI employee insights could not be loaded. Existing employee
+            information and functionality are not affected.
+          </p>
+
+          <Button
+            className="mt-5"
+            size="sm"
+            variant="outline"
+            leftIcon={<RefreshCw size={14} />}
+            onClick={refreshInsights}
+          >
+            Try again
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* ============================================================
+          AI HEADER
+         ============================================================ */}
+
+      <Card className="overflow-hidden">
+        <div className="bg-gradient-to-br from-brand-50 via-white to-canvas px-5 py-5 sm:px-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-sm">
+                <Sparkles size={20} />
+              </div>
+
+              <div>
+                <h2 className="font-display text-lg font-medium text-ink">
+                  AI Employee Insights
+                </h2>
+
+                <p className="mt-0.5 text-[13px] text-ink-faint">
+                  AI-powered employee 360° analysis and career development
+                  insights.
+                </p>
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<RefreshCw size={14} />}
+              onClick={refreshInsights}
+            >
+              Refresh
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* ============================================================
+          EMPLOYEE 360°
+         ============================================================ */}
+
+      {summary && (
+        <>
+          <AISectionHeading
+            icon={<Brain size={17} />}
+            title="Employee 360° Summary"
+            description="A consolidated view of the employee based on available HR data."
+          />
+
+          <Card>
+            <CardHeader
+              title="Executive Summary"
+              subtitle="AI-generated employee overview"
+            />
+
+            <div className="px-5 pb-5 sm:px-6">
+              <p className="text-[14px] leading-6 text-ink">
+                {summary.executiveSummary}
+              </p>
+            </div>
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+
+            <AIInfoCard
+              icon={<Briefcase size={17} />}
+              title="Employee Profile"
+            >
+              <AIInfoRow
+                label="Role"
+                value={summary.profile.role}
+              />
+
+              <AIInfoRow
+                label="Department"
+                value={summary.profile.department}
+              />
+
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                  Experience
+                </p>
+
+                <p className="mt-1 text-[13px] leading-5 text-ink">
+                  {summary.profile.experienceSummary}
+                </p>
+              </div>
+            </AIInfoCard>
+
+            <AIInfoCard
+              icon={<Award size={17} />}
+              title="Skills"
+            >
+              <p className="text-[13px] leading-5 text-ink">
+                {summary.skills.overview}
+              </p>
+
+              <AIChipList
+                title="Strongest Skills"
+                items={summary.skills.strongestSkills}
+              />
+
+              <AIChipList
+                title="Development Skills"
+                items={summary.skills.developmentSkills}
+              />
+            </AIInfoCard>
+
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+
+            <AIInfoCard
+              icon={<TrendingUp size={17} />}
+              title="Performance"
+            >
+              <p className="text-[13px] leading-5 text-ink">
+                {summary.performance.overview}
+              </p>
+
+              <AIBulletList
+                title="Strengths"
+                items={summary.performance.strengths}
+                icon={<CheckCircle2 size={14} />}
+              />
+
+              <AIBulletList
+                title="Development Areas"
+                items={summary.performance.developmentAreas}
+                icon={<Target size={14} />}
+              />
+            </AIInfoCard>
+
+            <AIInfoCard
+              icon={<CheckCircle2 size={17} />}
+              title="Attendance"
+            >
+              <p className="text-[13px] leading-5 text-ink">
+                {summary.attendance.overview}
+              </p>
+
+              <AIBulletList
+                title="Observations"
+                items={summary.attendance.observations}
+              />
+            </AIInfoCard>
+
+          </div>
+
+          <AIInfoCard
+            icon={<Briefcase size={17} />}
+            title="Leave"
+          >
+            <p className="text-[13px] leading-5 text-ink">
+              {summary.leave.overview}
+            </p>
+
+            <AIBulletList
+              title="Observations"
+              items={summary.leave.observations}
+            />
+          </AIInfoCard>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+
+            <AIInfoCard
+              icon={<Target size={17} />}
+              title="Development Priorities"
+            >
+              <AIBulletList
+                items={summary.development.priorities}
+                icon={<Target size={14} />}
+              />
+            </AIInfoCard>
+
+            <AIInfoCard
+              icon={<Lightbulb size={17} />}
+              title="Suggested Actions"
+            >
+              <AIBulletList
+                items={summary.development.suggestedActions}
+                icon={<ChevronRight size={14} />}
+              />
+            </AIInfoCard>
+
+          </div>
+
+          <AIInfoCard
+            icon={<Briefcase size={17} />}
+            title="Manager Discussion Points"
+          >
+            <AIBulletList
+              items={summary.managerView.discussionPoints}
+            />
+          </AIInfoCard>
+        </>
+      )}
+
+      {/* ============================================================
+          CAREER DEVELOPMENT
+         ============================================================ */}
+
+      {career && (
+        <>
+          <AISectionHeading
+            icon={<TrendingUp size={17} />}
+            title="AI Career & Development Insights"
+            description="AI-generated suggestions based on the employee's available profile information."
+          />
+
+          <Card>
+            <CardHeader
+              title="Career Development Summary"
+              subtitle="AI-generated career analysis"
+            />
+
+            <div className="px-5 pb-5 sm:px-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+
+                <p className="max-w-3xl text-[14px] leading-6 text-ink">
+                  {career.summary}
+                </p>
+
+                <div className="shrink-0 rounded-2xl border border-line/60 bg-black/[0.015] px-4 py-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                    AI Confidence
+                  </p>
+
+                  <p className="mt-1 text-lg font-semibold text-ink">
+                    {Math.round(career.confidence * 100)}%
+                  </p>
+                </div>
+
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+
+            <AIInfoCard
+              icon={<Award size={17} />}
+              title="Strengths"
+            >
+              {career.strengths.length === 0 ? (
+                <AIEmptyState />
+              ) : (
+                <div className="space-y-3">
+                  {career.strengths.map((item, index) => (
+                    <div
+                      key={`${item.area}-${index}`}
+                      className="rounded-2xl border border-line/60 bg-black/[0.015] p-4"
+                    >
+                      <p className="text-[13px] font-semibold text-ink">
+                        {item.area}
+                      </p>
+
+                      <p className="mt-1.5 text-[12.5px] leading-5 text-ink-faint">
+                        {item.evidence}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </AIInfoCard>
+
+            <AIInfoCard
+              icon={<Target size={17} />}
+              title="Development Areas"
+            >
+              {career.developmentAreas.length === 0 ? (
+                <AIEmptyState />
+              ) : (
+                <div className="space-y-3">
+                  {career.developmentAreas.map((item, index) => (
+                    <div
+                      key={`${item.area}-${index}`}
+                      className="rounded-2xl border border-line/60 bg-black/[0.015] p-4"
+                    >
+                      <p className="text-[13px] font-semibold text-ink">
+                        {item.area}
+                      </p>
+
+                      <p className="mt-1.5 text-[12.5px] leading-5 text-ink-faint">
+                        {item.reason}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </AIInfoCard>
+
+          </div>
+
+          <AIInfoCard
+            icon={<Lightbulb size={17} />}
+            title="Recommended Skills"
+          >
+            {career.recommendedSkills.length === 0 ? (
+              <AIEmptyState />
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {career.recommendedSkills.map((item, index) => (
+                  <div
+                    key={`${item.skill}-${index}`}
+                    className="rounded-2xl border border-line/60 bg-white p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-[13px] font-semibold text-ink">
+                        {item.skill}
+                      </p>
+
+                      <AIPriorityBadge priority={item.priority} />
+                    </div>
+
+                    <p className="mt-2 text-[12.5px] leading-5 text-ink-faint">
+                      {item.reason}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </AIInfoCard>
+
+          <AIInfoCard
+            icon={<Briefcase size={17} />}
+            title="Potential Career Paths"
+          >
+            {career.careerPaths.length === 0 ? (
+              <AIEmptyState />
+            ) : (
+              <div className="space-y-3">
+                {career.careerPaths.map((item, index) => (
+                  <div
+                    key={`${item.role}-${index}`}
+                    className="flex gap-3 rounded-2xl border border-line/60 bg-black/[0.015] p-4"
+                  >
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                      <ChevronRight size={15} />
+                    </div>
+
+                    <div>
+                      <p className="text-[13px] font-semibold text-ink">
+                        {item.role}
+                      </p>
+
+                      <p className="mt-1 text-[12.5px] leading-5 text-ink-faint">
+                        {item.rationale}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </AIInfoCard>
+
+          <AIInfoCard
+            icon={<Target size={17} />}
+            title="Development Actions"
+          >
+            <AIBulletList
+              items={career.developmentActions}
+              icon={<ChevronRight size={14} />}
+            />
+          </AIInfoCard>
+        </>
+      )}
+
+      <div className="rounded-2xl border border-line/60 bg-black/[0.015] px-4 py-3">
+        <p className="text-[11px] leading-5 text-ink-faint">
+          AI insights are generated from available employee information and
+          should be reviewed by HR or the appropriate manager before being used
+          for development planning.
+        </p>
+      </div>
+    </div>
   );
 }

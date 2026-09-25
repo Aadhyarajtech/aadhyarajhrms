@@ -205,7 +205,16 @@ export default function App() {
           <Route
             path="employees"
             element={
-              <ProtectedRoute permissions={["employees.view"]}>
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "MANAGER",
+                  "RECRUITER",
+                  "FINANCE",
+                  "IT_SUPPORT",
+                ]}
+              >
                 <EmployeeDirectory />
               </ProtectedRoute>
             }

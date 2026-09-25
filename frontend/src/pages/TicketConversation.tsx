@@ -41,6 +41,9 @@ interface Ticket {
   employeeId?: string;
   attachment?: string;
   createdAt?: string;
+  expiresAt?: string | null;
+  expiredAt?: string | null;
+  isExpired?: boolean;
   aiCategory?: string | null;
   aiIntent?: string | null;
   aiConfidence?: number | null;
@@ -68,6 +71,13 @@ interface TicketMessage {
 
 function formatStatus(status: string) {
   return status.replaceAll("_", " ");
+}
+
+function isTicketExpired(ticket: Ticket) {
+  if (ticket.status === "EXPIRED" || ticket.isExpired) return true;
+  if (!ticket.expiresAt) return false;
+  const expiresAt = new Date(ticket.expiresAt).getTime();
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
 }
 
 function formatTime(value: string) {
@@ -130,10 +140,12 @@ export default function TicketConversation() {
     },
   });
 
+  const ticketExpired = Boolean(ticket && isTicketExpired(ticket));
+
   // Phase 5: Similar Ticket / Recurring Issue Detection Query
   const { data: similarData } = useQuery({
     queryKey: ["ticket-similar", id],
-    enabled: Boolean(id) && isStaff,
+    enabled: Boolean(id) && isStaff && !ticketExpired,
     queryFn: async () => {
       const res = await api.get(`/tickets/${id}/similar`);
       return res.data;
@@ -194,6 +206,9 @@ export default function TicketConversation() {
   const sendMessage = useMutation({
     mutationFn: async () => {
       if (!id) throw new Error("Ticket ID is missing");
+      if (ticketExpired) {
+        throw new Error("This ticket has expired and cannot be updated.");
+      }
 
       const text = message.trim();
 
@@ -201,14 +216,8 @@ export default function TicketConversation() {
         throw new Error("Message cannot be empty");
       }
 
-      const form = new FormData();
-      form.append("message", text);
-      if (selectedFile) {
-        form.append("attachment", selectedFile);
-      }
-
-      const res = await api.post(`/tickets/${id}/messages`, form, {
-        headers: { "Content-Type": "multipart/form-data" },
+      const res = await api.post(`/tickets/${id}/messages`, {
+        message: text,
       });
 
       return res.data.message;
@@ -218,12 +227,18 @@ export default function TicketConversation() {
       setMessage("");
       setSelectedFile(null);
       isUserAtBottom.current = true;
+
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 50);
 
-      queryClient.invalidateQueries({ queryKey: ["ticket-messages", id] });
-      queryClient.invalidateQueries({ queryKey: ["ticket", id] });
+      queryClient.invalidateQueries({
+        queryKey: ["ticket-messages", id],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["ticket", id],
+      });
     },
   });
 
@@ -288,7 +303,7 @@ export default function TicketConversation() {
   }, [messages]);
 
   async function handleGenerateReply() {
-    if (draftLoading) return;
+    if (draftLoading || ticketExpired) return;
     setDraftLoading(true);
     try {
       const res = await api.post(`/tickets/${id}/suggest-reply`, {
@@ -489,10 +504,36 @@ export default function TicketConversation() {
             {ticket.subject}
           </p>
 
-          <p className="text-[11px] text-gray-500">
-            {ticket.category} · {ticket.priority} Priority
-            {ticket.assignedTo ? ` · Assigned to ${ticket.assignedTo}` : ""}
-          </p>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500 mt-0.5">
+            <span className="font-medium text-gray-700">{ticket.category}</span>
+            <span>·</span>
+            <span
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                ticket.priority === "CRITICAL"
+                  ? "bg-rose-100 text-rose-800 border border-rose-300 font-bold animate-pulse"
+                  : ticket.priority === "HIGH"
+                  ? "bg-red-50 text-red-700 border border-red-200"
+                  : ticket.priority === "MEDIUM"
+                  ? "bg-amber-50 text-amber-700 border border-amber-200"
+                  : "bg-slate-50 text-slate-700 border border-slate-200"
+              }`}
+            >
+              {ticket.priority === "CRITICAL" && <span>🚨</span>}
+              {ticket.priority} Priority
+            </span>
+            {ticket.priority === "CRITICAL" && (
+              <span className="text-rose-700 font-semibold">(1-Hour Response SLA)</span>
+            )}
+            {ticket.priority === "HIGH" && (
+              <span className="text-amber-700 font-medium">(4-Hour Response SLA)</span>
+            )}
+            {ticket.assignedTo && <span>· Assigned to {ticket.assignedTo}</span>}
+            {ticket.category === "Harassment Complaint" && (
+              <span className="inline-flex items-center gap-1 rounded bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 font-medium">
+                🔒 POSH Confidential Case
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Staff AI Header Quick Actions — Always visible without scrolling */}
@@ -522,7 +563,7 @@ export default function TicketConversation() {
 
             <button
               type="button"
-              disabled={summaryLoading}
+              disabled={summaryLoading || ticketExpired}
               onClick={async () => {
                 if (summary) {
                   setSummaryOpen(!summaryOpen);
@@ -564,7 +605,7 @@ export default function TicketConversation() {
               </span>
             </button>
 
-            {similarTickets.length > 0 && (
+            {similarTickets.length > 0 && !ticketExpired && (
               <button
                 type="button"
                 onClick={() => setSimilarOpen(!similarOpen)}
@@ -588,6 +629,13 @@ export default function TicketConversation() {
           </div>
         )}
       </div>
+
+      {ticketExpired && (
+        <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-800">
+          <strong>Ticket expired.</strong> This ticket is available as read-only history.
+          {ticket?.expiresAt ? ` Expired at ${new Date(ticket.expiresAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}.` : ""}
+        </div>
+      )}
 
       {/* =====================================================
           STICKY TOP AI PANELS (Pinned above chat - no scrolling needed)
@@ -968,7 +1016,7 @@ export default function TicketConversation() {
                 />
                 <button
                   type="button"
-                  disabled={draftLoading}
+                  disabled={draftLoading || ticketExpired}
                   onClick={handleGenerateReply}
                   className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 py-1 text-xs font-medium text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-50"
                 >
@@ -986,6 +1034,11 @@ export default function TicketConversation() {
       )}
 
       <div className="border-t border-gray-200 bg-white p-3">
+        {ticketExpired && (
+          <p className="mb-2 text-center text-xs font-medium text-gray-500">
+            This ticket is read-only because its expiry time has passed.
+          </p>
+        )}
         <div className="flex items-center gap-3">
           {/* Hidden file input */}
           <input
@@ -1000,6 +1053,7 @@ export default function TicketConversation() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
+            disabled={ticketExpired}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100 hover:text-gray-700"
             title="Attach file"
           >
@@ -1017,7 +1071,7 @@ export default function TicketConversation() {
               }
             }}
             placeholder="Type a message..."
-            disabled={sendMessage.isPending}
+            disabled={sendMessage.isPending || ticketExpired}
             rows={message.length > 120 ? 3 : 1}
             className="flex-1 resize-none rounded-2xl border border-violet-300 bg-white px-5 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-50"
           />
@@ -1028,6 +1082,7 @@ export default function TicketConversation() {
             onClick={handleSendMessage}
             disabled={
               sendMessage.isPending ||
+              ticketExpired ||
               (!message.trim() && !selectedFile)
             }
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-500 text-white transition hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-50"
