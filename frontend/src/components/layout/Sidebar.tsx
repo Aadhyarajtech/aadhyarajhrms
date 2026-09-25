@@ -199,10 +199,6 @@ const NAV_ITEMS: NavItem[] = [
     roles: [
       "SUPER_ADMIN",
       "HR_ADMIN",
-      "MANAGER",
-      "RECRUITER",
-      "FINANCE",
-      "IT_SUPPORT",
     ],
     section: "people",
   },
@@ -214,10 +210,6 @@ const NAV_ITEMS: NavItem[] = [
     roles: [
       "SUPER_ADMIN",
       "HR_ADMIN",
-      "MANAGER",
-      "RECRUITER",
-      "FINANCE",
-      "IT_SUPPORT",
     ],
     section: "people",
   },
@@ -233,10 +225,6 @@ const NAV_ITEMS: NavItem[] = [
     roles: [
       "SUPER_ADMIN",
       "HR_ADMIN",
-      "MANAGER",
-      "RECRUITER",
-      "FINANCE",
-      "IT_SUPPORT",
     ],
     section: "management",
   },
@@ -248,10 +236,7 @@ const NAV_ITEMS: NavItem[] = [
     roles: [
       "SUPER_ADMIN",
       "HR_ADMIN",
-      "MANAGER",
       "RECRUITER",
-      "FINANCE",
-      "IT_SUPPORT",
     ],
     section: "management",
   },
@@ -263,7 +248,6 @@ const NAV_ITEMS: NavItem[] = [
   roles: [
     "SUPER_ADMIN",
     "HR_ADMIN",
-    "MANAGER",
     "RECRUITER",
     "FINANCE",
     "IT_SUPPORT",
