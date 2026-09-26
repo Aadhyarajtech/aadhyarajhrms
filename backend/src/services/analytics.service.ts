@@ -170,10 +170,12 @@ export async function getHelpdeskExecutiveAnalytics(
     else if (t.status === "RESOLVED") resolvedTickets++;
     else if (t.status === "CLOSED") closedTickets++;
 
-    // 2. Priority breakdown
-    const prio = (t.priority as keyof typeof priorityCounts) || "MEDIUM";
-    if (priorityCounts[prio] !== undefined) {
-      priorityCounts[prio]++;
+    // 2. Priority breakdown (CRITICAL and HIGH both grouped in top urgent tier)
+    const prio = (t.priority || "").toUpperCase();
+    if (prio === "CRITICAL" || prio === "HIGH") {
+      priorityCounts.HIGH++;
+    } else if (prio === "LOW") {
+      priorityCounts.LOW++;
     } else {
       priorityCounts.MEDIUM++;
     }

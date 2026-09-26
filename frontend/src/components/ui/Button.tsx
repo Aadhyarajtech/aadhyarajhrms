@@ -56,7 +56,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || isLoading}
         className={cx(
-          "inline-flex items-center justify-center rounded-xl font-semibold tracking-[-0.01em] transition-all duration-150 ease-out",
+          "inline-flex items-center justify-center rounded-xl font-semibold tracking-[-0.01em] transition-all duration-150 ease-out whitespace-nowrap shrink-0",
           "disabled:cursor-not-allowed disabled:opacity-60",
           "active:scale-[0.98]",
           VARIANT_STYLES[variant],

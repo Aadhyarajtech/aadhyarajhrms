@@ -5,6 +5,8 @@ import {
   Employee,
   Attendance,
   Department,
+  LeaveRequest,
+  LeaveType,
 } from "@/db/models";
 import { AppError } from "@/utils/errors";
 
@@ -73,7 +75,7 @@ export async function detectPayrollAnomalies(
   const currentPayslips = await Payslip.find({ payrollRunId: run._id }).lean();
   if (!currentPayslips.length) {
     return {
-      runId: run._id,
+      runId: String(run._id),
       month: run.month,
       year: run.year,
       status: run.status,
@@ -102,13 +104,16 @@ export async function detectPayrollAnomalies(
   const empMap = new Map(employees.map((e) => [e._id, e]));
   const deptMap = new Map(departments.map((d) => [d._id, d.name]));
 
-  // 2. Fetch prior run for Month-over-Month analysis
+  // 2. Fetch prior run for Month-over-Month analysis (finalized runs only)
   const priorMonth = run.month === 1 ? 12 : run.month - 1;
   const priorYear = run.month === 1 ? run.year - 1 : run.year;
   const priorRun = await PayrollRun.findOne({
     month: priorMonth,
     year: priorYear,
-  }).lean();
+    status: { $in: ["PAID", "APPROVED", "HR_REVIEW", "PROCESSED"] },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
   const priorPayslips = priorRun
     ? await Payslip.find({ payrollRunId: priorRun._id }).lean()
     : [];
@@ -116,18 +121,68 @@ export async function detectPayrollAnomalies(
     priorPayslips.map((p) => [p.employeeId, p]),
   );
 
-  // 3. Fetch attendance records for the target run's month
-  const prefix = `${run.year}-${String(run.month).padStart(2, "0")}`;
-  const attendanceRows = await Attendance.find({
-    date: { $regex: `^${prefix}-` },
+  // 3. Fetch attendance records aligned with payroll cycle dates
+  const attendanceQuery: Record<string, any> = {
     employeeId: { $in: employeeIds },
-  }).lean();
+  };
+  if (run.startDate && run.endDate) {
+    attendanceQuery.date = { $gte: run.startDate, $lte: run.endDate };
+  } else {
+    const prefix = `${run.year}-${String(run.month).padStart(2, "0")}`;
+    attendanceQuery.date = { $regex: `^${prefix}-` };
+  }
+  const attendanceRows = await Attendance.find(attendanceQuery).lean();
 
   const attendanceMap = new Map<string, typeof attendanceRows>();
   for (const row of attendanceRows) {
     const list = attendanceMap.get(row.employeeId) ?? [];
     list.push(row);
     attendanceMap.set(row.employeeId, list);
+  }
+
+  // 4. Fetch approved paid leaves to avoid false unrecovered absence flags
+  const approvedLeaves = await LeaveRequest.find({
+    employeeId: { $in: employeeIds },
+    status: "APPROVED",
+    ...(run.startDate && run.endDate
+      ? {
+          startDate: { $lte: run.endDate },
+          endDate: { $gte: run.startDate },
+        }
+      : {
+          $or: [
+            { startDate: { $regex: `^${run.year}-${String(run.month).padStart(2, "0")}` } },
+            { endDate: { $regex: `^${run.year}-${String(run.month).padStart(2, "0")}` } },
+          ],
+        }),
+  }).lean();
+
+  const leaveTypes = await LeaveType.find({}).lean();
+  const paidLeaveTypeIds = new Set(
+    leaveTypes.filter((t) => t.isPaid !== false).map((t) => String(t._id)),
+  );
+
+  const approvedPaidDaysMap = new Map<string, number>();
+  for (const l of approvedLeaves) {
+    if (paidLeaveTypeIds.has(String(l.leaveTypeId))) {
+      const current = approvedPaidDaysMap.get(l.employeeId) ?? 0;
+      approvedPaidDaysMap.set(l.employeeId, current + (l.totalDays || 0));
+    }
+  }
+
+  // Calculate period factor for partial/standard cycles
+  let cyclePeriodFactor = 1;
+  if (run.startDate && run.endDate) {
+    const d1 = new Date(run.startDate);
+    const d2 = new Date(run.endDate);
+    if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
+      const diffDays =
+        Math.round(
+          Math.abs((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)),
+        ) + 1;
+      const calDays = new Date(run.year, run.month, 0).getDate() || 30;
+      cyclePeriodFactor = Math.min(1, diffDays / Math.max(calDays, 1));
+    }
   }
 
   const anomalies: PayrollAnomalyItem[] = [];
@@ -138,13 +193,13 @@ export async function detectPayrollAnomalies(
   const panMap = new Map<string, typeof employees>();
 
   for (const emp of employees) {
-    const bank = emp.bankAccountNumber?.trim();
+    const bank = emp.bankAccountNumber?.replace(/[\s-]/g, "").trim();
     if (bank && bank.length >= 6 && !/^0+$/.test(bank)) {
       const list = bankAccountMap.get(bank) ?? [];
       list.push(emp);
       bankAccountMap.set(bank, list);
     }
-    const pan = emp.employeePan?.trim().toUpperCase();
+    const pan = emp.employeePan?.replace(/[\s-]/g, "").trim().toUpperCase();
     if (pan && pan.length >= 5) {
       const list = panMap.get(pan) ?? [];
       list.push(emp);
@@ -262,47 +317,59 @@ export async function detectPayrollAnomalies(
       }
     }
 
-    // --- Check 5: Attendance vs. LOP Consistency ---
+    // --- Check 5: Attendance vs. LOP Consistency (offsetting approved paid leaves) ---
     const attList = attendanceMap.get(p.employeeId) ?? [];
     const absentDays = attList.filter((a) => a.status === "ABSENT").length;
     const halfDays = attList.filter((a) => a.status === "HALF_DAY").length;
     const totalAbsenteeism = absentDays + halfDays * 0.5;
+    const approvedPaidDays = approvedPaidDaysMap.get(p.employeeId) ?? 0;
+    const uncoveredAbsences = Math.max(0, totalAbsenteeism - approvedPaidDays);
 
-    if (totalAbsenteeism >= 3 && (p.lop ?? 0) === 0) {
+    if (uncoveredAbsences >= 3 && (p.lop ?? 0) === 0) {
       anomalies.push({
         id: `anom_${itemCounter++}`,
         category: "ATTENDANCE_MISMATCH",
         severity: "MEDIUM",
         title: "Unrecovered Absences (Missing LOP)",
-        description: `${empName} has ${totalAbsenteeism} absent/half days in timesheets, but ₹0 Loss of Pay was deducted from salary.`,
+        description: `${empName} has ${uncoveredAbsences} unrecovered absent/half days in timesheets (not covered by approved leaves), but ₹0 Loss of Pay was deducted from salary.`,
         employeeId: p.employeeId,
         employeeName: empName,
         employeeCode: emp?.employeeCode || p.employeeId,
         department: empDept,
         currentValue: "0 LOP",
-        expectedValue: `${totalAbsenteeism} days LOP`,
-        financialExposure: roundMoney((p.grossEarnings / 30) * totalAbsenteeism),
+        expectedValue: `${uncoveredAbsences} days LOP`,
+        financialExposure: roundMoney(
+          (p.grossEarnings / 30) * uncoveredAbsences,
+        ),
         recommendation:
-          "Verify if paid leaves were applied to cover absences. Re-run payroll to calculate attendance deductions accurately.",
+          "Verify timesheet punch regularizations and approved leave applications. Re-run payroll to calculate attendance deductions accurately.",
       });
     }
 
-    // --- Check 6: Statutory Consistency (PF != 12% of Basic) ---
-    const expectedPf = roundMoney(p.basic * 0.12);
-    if (Math.abs(p.pf - expectedPf) > 10) {
+    // --- Check 6: Statutory Consistency (PF != 12% of Basic, respecting statutory cap & proration) ---
+    const expectedPfFull = roundMoney(p.basic * 0.12 * cyclePeriodFactor);
+    const expectedPfCapped = roundMoney(1800 * cyclePeriodFactor); // Statutory EPF cap under Indian EPF Act
+    const matchesFull = Math.abs(p.pf - expectedPfFull) <= 10;
+    const matchesCapped = Math.abs(p.pf - expectedPfCapped) <= 10;
+    const isExempt = p.pf === 0 && p.basic > 15000;
+
+    if (!matchesFull && !matchesCapped && !isExempt) {
       anomalies.push({
         id: `anom_${itemCounter++}`,
         category: "STATUTORY_COMPLIANCE",
         severity: "LOW",
         title: "PF Statutory Variance",
-        description: `${empName}'s Provident Fund deduction is ${formatINR(p.pf)}, deviating from 12% statutory basic calculation (${formatINR(expectedPf)}).`,
+        description: `${empName}'s Provident Fund deduction is ${formatINR(p.pf)}, deviating from both 12% basic (${formatINR(expectedPfFull)}) and the statutory cap (${formatINR(expectedPfCapped)}).`,
         employeeId: p.employeeId,
         employeeName: empName,
         employeeCode: emp?.employeeCode || p.employeeId,
         department: empDept,
         currentValue: formatINR(p.pf),
-        expectedValue: formatINR(expectedPf),
-        financialExposure: Math.abs(p.pf - expectedPf),
+        expectedValue: formatINR(expectedPfFull),
+        financialExposure: Math.min(
+          Math.abs(p.pf - expectedPfFull),
+          Math.abs(p.pf - expectedPfCapped),
+        ),
         recommendation:
           "Ensure salary structure complies with EPF contribution limits and employee voluntary contributions.",
       });
@@ -430,7 +497,7 @@ High Issues: ${highs.length}
 Total Financial Exposure at Risk: ${formatINR(exposure)}
 
 Top Sample Anomalies:
-${anomalies.slice(0, 5).map((a) => `- [${a.severity}] ${a.title}: ${a.description}`).join("\n")}
+${anomalies.slice(0, 5).map((a) => `- [${a.severity}] ${a.category}: ${a.title} (Financial Impact: ${formatINR(a.financialExposure || 0)})`).join("\n")}
 
 Format your response strictly as JSON with this schema:
 {

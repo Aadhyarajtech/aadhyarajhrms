@@ -234,8 +234,13 @@ export async function explainPayslip(payslipId: string): Promise<PayslipExplanat
     const promptPayload = {
       employee: {
         name: employeeName,
-        department: payslip.department?.name || "General",
-        designation: payslip.designation?.name || "Staff",
+        department:
+          payslip.departmentName || payslip.department?.name || "General",
+        designation:
+          payslip.designationTitle ||
+          payslip.designation?.title ||
+          payslip.designation?.name ||
+          "Staff",
       },
       currentPayslip: {
         month: payslip.month,
@@ -359,19 +364,56 @@ export async function askPayslipQuestion(payslipId: string, question: string): P
 
   // Check pre-computed FAQ cache first for instant response
   const lowerQ = trimmed.toLowerCase();
-  for (const [faqKey, faqVal] of Object.entries(explanation.faqAnswers)) {
-    if (lowerQ.includes("different") || lowerQ.includes("changed") || lowerQ.includes("variance") || lowerQ.includes("less") || lowerQ.includes("more")) {
-      if (faqKey.includes("different")) return { question: trimmed, answer: faqVal, source: "cached_faq" };
-    }
-    if (lowerQ.includes("lop") || lowerQ.includes("loss of pay") || lowerQ.includes("absent") || lowerQ.includes("unpaid")) {
-      if (faqKey.includes("LOP")) return { question: trimmed, answer: faqVal, source: "cached_faq" };
-    }
-    if (lowerQ.includes("tax") || lowerQ.includes("tds") || lowerQ.includes("regime")) {
-      if (faqKey.includes("tax")) return { question: trimmed, answer: faqVal, source: "cached_faq" };
-    }
-    if (lowerQ.includes("take home") || lowerQ.includes("take-home") || lowerQ.includes("net") || lowerQ.includes("derived") || lowerQ.includes("calculate")) {
-      if (faqKey.includes("take-home")) return { question: trimmed, answer: faqVal, source: "cached_faq" };
-    }
+  const faqEntries = Object.entries(explanation.faqAnswers || {});
+
+  // 1. Direct or normalized match (e.g. quick FAQ chip clicked by user)
+  const exactMatch = faqEntries.find(
+    ([k]) => k.trim().toLowerCase() === lowerQ,
+  );
+  if (exactMatch) {
+    return { question: trimmed, answer: exactMatch[1], source: "cached_faq" };
+  }
+
+  // 2. Helper to find FAQ value by keyword in key (case-insensitive)
+  const findFaqByKeyword = (kw: string) => {
+    return faqEntries.find(([k]) =>
+      k.toLowerCase().includes(kw.toLowerCase()),
+    )?.[1];
+  };
+
+  // 3. Specific domain keyword matches (check specific domains before general "different")
+  if (
+    lowerQ.includes("lop") ||
+    lowerQ.includes("loss of pay") ||
+    lowerQ.includes("unpaid")
+  ) {
+    const ans = findFaqByKeyword("lop");
+    if (ans) return { question: trimmed, answer: ans, source: "cached_faq" };
+  } else if (
+    lowerQ.includes("tax") ||
+    lowerQ.includes("tds") ||
+    lowerQ.includes("regime")
+  ) {
+    const ans = findFaqByKeyword("tax");
+    if (ans) return { question: trimmed, answer: ans, source: "cached_faq" };
+  } else if (
+    lowerQ.includes("take home") ||
+    lowerQ.includes("take-home") ||
+    lowerQ.includes("net pay") ||
+    lowerQ.includes("net salary") ||
+    lowerQ.includes("derived")
+  ) {
+    const ans = findFaqByKeyword("take-home") || findFaqByKeyword("derived");
+    if (ans) return { question: trimmed, answer: ans, source: "cached_faq" };
+  } else if (
+    lowerQ.includes("different") ||
+    lowerQ.includes("changed") ||
+    lowerQ.includes("variance") ||
+    lowerQ.includes("less pay") ||
+    lowerQ.includes("more pay")
+  ) {
+    const ans = findFaqByKeyword("different");
+    if (ans) return { question: trimmed, answer: ans, source: "cached_faq" };
   }
 
   if (!env.groqApiKey) {

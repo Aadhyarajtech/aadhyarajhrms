@@ -437,7 +437,7 @@ export async function runSeed() {
     { name: "Independence Day", date: `${year}-08-15` },
     { name: "Ganesh Chaturthi", date: `${year}-08-27`, isOptional: true },
     { name: "Gandhi Jayanti", date: `${year}-10-02` },
-    { name: "Diwali", date: `${year}-11-08` },
+    { name: "Diwali", date: `${year}-11-09` },
     { name: "Christmas Day", date: `${year}-12-25` },
   ];
   await Holiday.insertMany(

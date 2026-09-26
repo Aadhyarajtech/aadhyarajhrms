@@ -1113,8 +1113,6 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.record),
 
-
-
   teamRegularizationRequests: (
     status: AttendanceRegularizationStatus | string = "PENDING",
   ) =>
@@ -1314,6 +1312,73 @@ export type LeaveCalendarEntry =
   | LeaveCalendarLeaveEntry
   | LeaveCalendarHolidayEntry;
 
+export interface LeaveApprovalSuggestionResponse {
+  recommendation: "APPROVE" | "REVIEW";
+  riskScore: number;
+  riskLevel: "LOW" | "MEDIUM" | "HIGH";
+  leaveBalance: {
+    available: number | null;
+    requested: number;
+    sufficient: boolean | null;
+  };
+  teamImpact: {
+    affectedEmployees: number;
+    affectedDays: number;
+    impactLevel: "LOW" | "MEDIUM" | "HIGH";
+  };
+  reasons: string[];
+  explanation: string;
+}
+
+export interface HolidayBridge {
+  holidayName: string;
+  holidayDate: string;
+  dayOfWeek: string;
+  bridgeStartDate: string;
+  bridgeEndDate: string;
+  suggestedLeaveDates: string[];
+  totalConsecutiveDaysOff: number;
+  leaveDaysRequired: number;
+  description: string;
+}
+
+export interface LeaveBalanceSummary {
+  leaveTypeName: string;
+  leaveTypeId: string;
+  colorHex: string;
+  allotted: number;
+  used: number;
+  pending: number;
+  available: number;
+}
+
+export interface SuggestedLeave {
+  leaveTypeId?: string;
+  leaveTypeName?: string;
+  startDate?: string;
+  endDate?: string;
+  reason?: string;
+}
+
+export interface AskLeaveAIResult {
+  answer: string;
+  quickActions: string[];
+  suggestedLeave?: SuggestedLeave | null;
+  holidayBridges?: HolidayBridge[];
+  balances?: LeaveBalanceSummary[];
+  teamSummary?: {
+    totalTeamMembers: number;
+    membersOnLeaveSoon: number;
+    upcomingLeaves: Array<{
+      employeeName: string;
+      leaveTypeName: string;
+      startDate: string;
+      endDate: string;
+      days: number;
+    }>;
+  };
+}
+
 export const LeaveApi = {
   types: () =>
     api
@@ -1342,13 +1407,13 @@ export const LeaveApi = {
       .then((r) => r.data.requests),
 
   apply: (payload: {
-    leaveTypeId: string;
-    startDate: string;
-    endDate: string;
-    halfDay?: boolean;
-    halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
-    reason: string;
-  }) =>
+  leaveTypeId: string;
+  startDate: string;
+  endDate: string;
+  halfDay?: boolean;
+  halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
+  reason: string;
+}) =>
     api
       .post<{
         request: LeaveRequest;
@@ -1438,6 +1503,16 @@ export const LeaveApi = {
         endDate,
         employeeId,
       })
+      .then((r) => r.data),
+
+  aiApproval: (requestId: string) =>
+    api
+      .post<LeaveApprovalSuggestionResponse>("/leave/ai/approval", { requestId })
+      .then((r) => r.data),
+
+  aiAssistant: (payload: { question: string; employeeId?: string }) =>
+    api
+      .post<AskLeaveAIResult>("/leave/ai/assistant", payload)
       .then((r) => r.data),
 };
 
@@ -2123,7 +2198,7 @@ export const PerformanceApi = {
   deactivateCycle: (id: string) =>
     api.patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/deactivate`).then((r) => r.data.cycle),
 
-  feedbackRequests: (cycleId?: string) =>
+   feedbackRequests: (cycleId?: string) =>
     api
       .get<{ requests: PerformanceFeedbackRequest[] }>("/performance/feedback-requests", { params: { cycleId } })
       .then((r) => r.data.requests),
@@ -2146,7 +2221,7 @@ export const PerformanceApi = {
       .post(`/performance/reviews/${id}/feedback`, payload)
       .then((r) => r.data.feedback),
 
-  feedbackSummary: (id: string) =>
+    feedbackSummary: (id: string) =>
     api
       .get<{
         summary: FeedbackSummary;

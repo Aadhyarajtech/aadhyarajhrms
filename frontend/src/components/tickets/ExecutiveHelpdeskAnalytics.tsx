@@ -106,7 +106,6 @@ export default function ExecutiveHelpdeskAnalytics({
   data,
   isLoading,
   onRefresh,
-  onFilterAnomalyTickets,
 }: Props) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -395,15 +394,6 @@ export default function ExecutiveHelpdeskAnalytics({
                         <Megaphone className="h-3 w-3" />
                         <span>Broadcast to All ({group.ticketCount})</span>
                       </button>
-                      {onFilterAnomalyTickets && (
-                        <button
-                          type="button"
-                          onClick={() => onFilterAnomalyTickets(group.category)}
-                          className="text-[11px] font-semibold text-brand-600 hover:text-brand-800 hover:underline px-2 py-1 rounded bg-white border border-brand-200 cursor-pointer"
-                        >
-                          Filter {group.category} Queue &rarr;
-                        </button>
-                      )}
                       <button
                         type="button"
                         onClick={() => toggleGroupExpand(group.groupId)}

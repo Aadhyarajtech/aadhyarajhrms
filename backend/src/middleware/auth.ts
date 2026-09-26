@@ -198,9 +198,10 @@ export async function authenticate(
      * employee hierarchy, their effective role becomes MANAGER
      * for authorization purposes.
      */
-    const effectiveRole = isCurrentManager
-      ? "MANAGER"
-      : user.role;
+    const effectiveRole =
+      user.role === "EMPLOYEE" && isCurrentManager
+        ? "MANAGER"
+        : user.role;
 
     /*
      * -------------------------------------------------------

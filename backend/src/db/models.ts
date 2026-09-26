@@ -4535,6 +4535,7 @@ export interface TicketDoc {
   | "RESOLVED"
   | "CLOSED"
   | "EXPIRED";
+
   // Ticket lifecycle / expiry
   expiryDays: number;
   expiresAt: string | null;

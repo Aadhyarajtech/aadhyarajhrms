@@ -986,8 +986,9 @@ function localFallbackReply(
   }
 
   let reply: string;
+  const cat = (category || "").toLowerCase();
 
-  if (category === "Payroll") {
+  if (cat.includes("payroll") || cat.includes("salary") || cat.includes("tax")) {
     if (tone === "empathetic") {
       reply = `Hi ${firstName},\n\nThank you for reaching out regarding "${subject}". I understand how stressful unexpected payroll or deduction discrepancies can be, and we want to get this resolved for you right away.\n\nI am pulling up your latest payslip and cross-checking the computation sheet with our Accounts desk. If you have any relevant proof (such as an investment declaration acknowledgment or bank statement excerpt), please feel free to attach it here so we can expedite the adjustment in the upcoming payout cycle.${agentSignOff}`;
     } else if (tone === "formal") {
@@ -995,7 +996,7 @@ function localFallbackReply(
     } else {
       reply = `Hi ${firstName}, I'm reviewing your payroll query regarding "${subject}" with the accounts desk now. We'll cross-check your records and update you shortly.${agentSignOff}`;
     }
-  } else if (category === "IT Support") {
+  } else if (cat.includes("it") || cat.includes("support") || cat.includes("hardware") || cat.includes("vpn")) {
     if (tone === "empathetic") {
       reply = `Hi ${firstName},\n\nI'm sorry to hear that you're running into this issue with "${subject}". Having your workstation or tools disrupted is frustrating, so we're treating this with priority.\n\nCould you please share your machine asset tag (or serial number) and let us know if you have tried a quick restart or if any error code appeared? In the meantime, our IT team is looking into this to get you back up and running as quickly as possible.${agentSignOff}`;
     } else if (tone === "formal") {
@@ -1003,7 +1004,7 @@ function localFallbackReply(
     } else {
       reply = `Hi ${firstName}, our IT team has received your ticket about "${subject}". Please share your laptop asset tag and any error screenshot so we can assist you right away.${agentSignOff}`;
     }
-  } else if (category === "Leave" || category === "Attendance") {
+  } else if (cat.includes("leave") || cat.includes("attendance")) {
     if (tone === "empathetic") {
       reply = `Hi ${firstName},\n\nThank you for following up on "${subject}". I know keeping leave and attendance records accurate is important, especially around payroll cutoff dates.\n\nI've opened your attendance and leave profile to verify the dates and sync with your reporting manager's approval queue. We'll ensure the necessary adjustments are reflected on your portal shortly.${agentSignOff}`;
     } else if (tone === "formal") {
@@ -1011,7 +1012,7 @@ function localFallbackReply(
     } else {
       reply = `Hi ${firstName}, I'm checking your attendance/leave record for "${subject}" now and will confirm once the adjustment is updated on the portal.${agentSignOff}`;
     }
-  } else if (category === "Complaint") {
+  } else if (cat.includes("complaint") || cat.includes("harassment") || cat.includes("concern") || cat.includes("grievance")) {
     if (tone === "empathetic") {
       reply = `Hi ${firstName},\n\nThank you for bringing this matter regarding "${subject}" to our attention. Please be assured that your concern is being treated with the utmost seriousness, discretion, and confidentiality.\n\nWe are initiating an objective review in accordance with our workplace policy. If you would prefer a private 1-on-1 discussion at your convenience, please let me know when you are available.${agentSignOff}`;
     } else if (tone === "formal") {
@@ -1181,27 +1182,11 @@ export async function generateCalendarAI<T>(
     );
 
     clearTimeout(timeout);
-    if (!response.ok) {
-      const errorBody = await response.text();
 
+    if (!response.ok) {
       console.warn(
         `[AI] Groq API returned ${response.status} for Calendar AI. Using fallback.`,
       );
-
-      console.warn("[AI] Groq error details:", {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorBody,
-        retryAfter: response.headers.get("retry-after"),
-        remainingRequests: response.headers.get(
-          "x-ratelimit-remaining-requests",
-        ),
-        remainingTokens: response.headers.get(
-          "x-ratelimit-remaining-tokens",
-        ),
-        resetRequests: response.headers.get("x-ratelimit-reset-requests"),
-        resetTokens: response.headers.get("x-ratelimit-reset-tokens"),
-      });
 
       return fallback;
     }
@@ -1640,163 +1625,6 @@ ${input.screeningSummary || "Not available"}`,
     },
   );
 }
-export async function generateInterviewEvaluationAI(input: {
-  candidateName: string;
-  jobTitle: string;
-  jobDescription: string;
-  resumeText: string;
-  requiredSkills: string[];
-  matchedSkills: string[];
-  missingSkills: string[];
-  screeningSummary: string;
-  interviewerFeedback: string;
-  interviewerRecommendation: string;
-  scorecard: {
-    criterion: string;
-    score: number;
-    comment: string | null;
-  }[];
-}) {
-  const fallback = {
-    overallAssessment: "AI evaluation unavailable.",
-    technicalAssessment: "Not available.",
-    communicationAssessment: "Not available.",
-    strengths: [],
-    weaknesses: [],
-    concerns: [],
-    recommendation: "REVIEW_REQUIRED" as const,
-    suggestedNextStep: "Manual review required.",
-  };
-
-  return generateCalendarAI(
-    `You are an AI Interview Evaluation Assistant for an enterprise recruitment system.
-
-Your job is to help a human recruiter analyze a completed interview.
-
-Use ONLY the candidate, resume, job description, screening information, interviewer feedback, and interviewer scorecard provided.
-
-The human interviewer remains responsible for the hiring decision.
-
-## Generate these sections
-
-1. OVERALL ASSESSMENT
-Provide a concise summary of how the candidate performed during the interview based on the available evidence.
-
-2. TECHNICAL ASSESSMENT
-Evaluate the candidate's demonstrated technical knowledge against the job requirements and interview evidence.
-
-3. COMMUNICATION ASSESSMENT
-Evaluate communication based ONLY on the interview feedback and scorecard comments provided.
-
-4. STRENGTHS
-Identify the candidate's demonstrated strengths supported by the interview evidence.
-
-5. WEAKNESSES
-Identify areas where the interview evidence indicates gaps or weaknesses.
-
-6. CONCERNS
-Identify specific concerns that the recruiter may want to verify in a later stage.
-
-7. RECOMMENDATION
-Provide one of:
-- PROCEED
-- HOLD
-- REJECT
-- REVIEW_REQUIRED
-
-This is an AI-assisted recommendation for recruiter review, not an automatic hiring decision.
-
-8. SUGGESTED NEXT STEP
-Provide a concise suggested recruitment next step based on the evidence.
-
-## Rules
-
-- Use only the information provided.
-- Do not invent interview answers, candidate experience, skills, qualifications, or achievements.
-- Do not infer protected or sensitive characteristics.
-- Do not make claims that are unsupported by the interview evidence.
-- Distinguish between interviewer-provided evidence and AI analysis.
-- Treat the interviewer scorecard and feedback as primary interview evidence.
-- Consider the job requirements when evaluating technical relevance.
-- Keep the evaluation concise and practical for recruiters.
-- Do not repeat the entire interview feedback.
-- Return valid JSON matching the requested structure.
-
-## Output Format
-
-{
-  "overallAssessment": "Concise assessment",
-  "technicalAssessment": "Technical assessment",
-  "communicationAssessment": "Communication assessment",
-  "strengths": ["Strength 1", "Strength 2"],
-  "weaknesses": ["Weakness 1", "Weakness 2"],
-  "concerns": ["Concern 1"],
-  "recommendation": "PROCEED",
-  "suggestedNextStep": "Suggested next step"
-}`,
-    `Candidate: ${input.candidateName}
-
-Job Title: ${input.jobTitle}
-
-Job Description:
-${input.jobDescription}
-
-Required Skills:
-${input.requiredSkills.join(", ") || "Not specified"}
-
-Candidate Resume:
-${input.resumeText || "Not available"}
-
-AI Screening Matched Skills:
-${input.matchedSkills.join(", ") || "None identified"}
-
-AI Screening Missing/Weak Skills:
-${input.missingSkills.join(", ") || "None identified"}
-
-AI Screening Summary:
-${input.screeningSummary || "Not available"}
-
-Interviewer Feedback:
-${input.interviewerFeedback || "Not provided"}
-
-Interviewer Recommendation:
-${input.interviewerRecommendation || "Not provided"}
-
-Interviewer Scorecard:
-${input.scorecard.length > 0
-      ? input.scorecard
-        .map(
-          (item) =>
-            `Criterion: ${item.criterion}
-Score: ${item.score}
-Comment: ${item.comment || "No comment"}`,
-        )
-        .join("\n\n")
-      : "No scorecard provided"
-    }`,
-    z.object({
-      overallAssessment: z.string().min(1),
-      technicalAssessment: z.string().min(1),
-      communicationAssessment: z.string().min(1),
-      strengths: z.array(z.string()).max(6),
-      weaknesses: z.array(z.string()).max(6),
-      concerns: z.array(z.string()).max(6),
-      recommendation: z.enum([
-        "PROCEED",
-        "HOLD",
-        "REJECT",
-        "REVIEW_REQUIRED",
-      ]),
-      suggestedNextStep: z.string().min(1),
-    }),
-    fallback,
-    {
-      temperature: 0.2,
-      maxTokens: 1600,
-      timeoutMs: 12000,
-    },
-  );
-}
 export async function generateJobRequisitionAI(input: {
   jobTitle: string;
   currentDepartment?: string;
@@ -1819,10 +1647,10 @@ export async function generateJobRequisitionAI(input: {
     designationTitle: input.currentDesignation || "",
     roleCategory: input.currentRoleCategory || "",
     employmentType: (input.currentEmploymentType || "FULL_TIME") as
-      | "FULL_TIME"
-      | "PART_TIME"
-      | "CONTRACT"
-      | "INTERN",
+  | "FULL_TIME"
+  | "PART_TIME"
+  | "CONTRACT"
+  | "INTERN",
     location: input.currentLocation || "Bengaluru, India",
     experienceMin: input.currentExperienceMin ?? 0,
     experienceMax: input.currentExperienceMax ?? 5,

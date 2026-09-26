@@ -6,6 +6,7 @@
  */
 
 import { Ticket, Employee } from "@/db/models";
+import TicketMessage from "@/db/TicketMessage";
 
 export interface SimilarTicketMatch {
   _id: string;
@@ -51,14 +52,14 @@ const DOMAIN_KEYWORDS: Record<string, number> = {
   biometric: 3,
   punch: 3,
   scanner: 3,
-  attendance: 2.5,
+  attendance: 2,
   checkin: 2.5,
   checkout: 2.5,
-  salary: 3,
+  salary: 2,
   payslip: 3,
   tds: 2.5,
   reimbursement: 2.5,
-  payroll: 2,
+  payroll: 1.5,
   wifi: 3,
   vpn: 3,
   network: 2.5,
@@ -67,7 +68,7 @@ const DOMAIN_KEYWORDS: Record<string, number> = {
   laptop: 2,
   hardware: 2,
   screen: 2,
-  leave: 2.5,
+  leave: 2,
   casual: 2,
   sick: 2,
   approval: 2,
@@ -96,15 +97,43 @@ export function calculateTicketSimilarity(
   t1: { subject: string; description?: string; category: string; aiIntent?: string | null },
   t2: { subject: string; description?: string; category: string; aiIntent?: string | null },
 ): number {
-  if (t1.category !== t2.category) {
+  // Normalize category comparison (e.g. "Payroll" vs "Payroll Issue", "IT" vs "IT Support")
+  const cat1 = (t1.category || "").toLowerCase().replace(/[\s_-]+/g, "");
+  const cat2 = (t2.category || "").toLowerCase().replace(/[\s_-]+/g, "");
+  const catMatch =
+    cat1 === cat2 ||
+    (cat1.length >= 3 && cat2.length >= 3 && (cat1.includes(cat2) || cat2.includes(cat1)));
+  if (!catMatch) {
     // Different categories are usually not the same operational issue
     return 0;
+  }
+
+  // 1. AI Intent Analysis:
+  // If both tickets have AI-extracted intents, verify alignment
+  if (t1.aiIntent && t2.aiIntent) {
+    const i1 = t1.aiIntent.trim().toLowerCase();
+    const i2 = t2.aiIntent.trim().toLowerCase();
+    if (i1 !== i2) {
+      // Conflicting intents indicate completely different operational topics (e.g. "Salary not credited" vs "Bank account update")
+      return 0;
+    }
   }
 
   const k1 = extractKeywords(`${t1.subject} ${t1.description || ""}`);
   const k2 = extractKeywords(`${t2.subject} ${t2.description || ""}`);
 
   if (k1.size === 0 || k2.size === 0) return 0;
+
+  // Check subject overlap
+  const s1 = extractKeywords(t1.subject);
+  const s2 = extractKeywords(t2.subject);
+  let hasSubjectOverlap = false;
+  for (const [w] of s1) {
+    if (s2.has(w)) {
+      hasSubjectOverlap = true;
+      break;
+    }
+  }
 
   let dotProduct = 0;
   let norm1 = 0;
@@ -130,15 +159,24 @@ export function calculateTicketSimilarity(
     score = Math.min(1, score + 0.25);
   }
 
+  // If subjects share zero keywords and neither has a confirmed matching AI intent, penalize heavily
+  if (!hasSubjectOverlap && (!t1.aiIntent || !t2.aiIntent)) {
+    score = score * 0.4;
+  }
+
   return score;
 }
 
 /**
- * Finds all tickets similar to a specific ticket
+ * Finds all tickets similar to a specific ticket.
+ * Constrained strictly to tickets created on that particular day (24 hours)
+ * and in an active unresolved state (OPEN, IN_PROGRESS, WAITING_FOR_EMPLOYEE).
+ * Also filters out tickets that have already received a broadcast message
+ * so duplicate broadcast messages are never sent twice.
  */
 export async function findSimilarTickets(
   ticketId: string,
-  minSimilarity = 0.45,
+  minSimilarity = 0.70,
   limit = 6,
 ): Promise<{ targetTicket: any; similarTickets: SimilarTicketMatch[] }> {
   const targetTicket = await Ticket.findById(ticketId).lean();
@@ -146,14 +184,62 @@ export async function findSimilarTickets(
     throw new Error("Ticket not found");
   }
 
-  // Fetch potential candidate tickets (same category or recent)
+  // 1. If target ticket itself already received a broadcast message, this recurring incident has already been handled
+  const targetBroadcast = await TicketMessage.findOne({
+    ticketId: String(targetTicket._id),
+    senderName: { $regex: /broadcast/i },
+    createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+  }).lean();
+
+  if (targetBroadcast) {
+    return {
+      targetTicket,
+      similarTickets: [],
+    };
+  }
+
+  // 2. Calculate that particular day's window (24 hours around target ticket)
+  const targetCreated = new Date(targetTicket.createdAt);
+  const dayStart = new Date(targetCreated);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(targetCreated);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const windowStart = new Date(
+    Math.min(dayStart.getTime(), targetCreated.getTime() - 24 * 60 * 60 * 1000),
+  ).toISOString();
+  const windowEnd = new Date(
+    Math.max(dayEnd.getTime(), targetCreated.getTime() + 24 * 60 * 60 * 1000),
+  ).toISOString();
+
+  // 3. Fetch candidates: same category, active only, same day only
+  const catPrefix = (targetTicket.category || "").trim().split(/\s+/)[0];
   const candidates = await Ticket.find({
     _id: { $ne: targetTicket._id },
-    category: targetTicket.category,
+    category: { $regex: new RegExp(`^${catPrefix}`, "i") },
+    status: { $in: ["OPEN", "IN_PROGRESS", "WAITING_FOR_EMPLOYEE"] },
+    createdAt: { $gte: windowStart, $lte: windowEnd },
   })
     .sort({ createdAt: -1 })
     .limit(80)
     .lean();
+
+  if (candidates.length === 0) {
+    return {
+      targetTicket,
+      similarTickets: [],
+    };
+  }
+
+  // 4. Find if any candidate already received a broadcast message
+  const candIds = candidates.map((c: any) => String(c._id));
+  const existingBroadcasts = await TicketMessage.find({
+    ticketId: { $in: candIds },
+    senderName: { $regex: /broadcast/i },
+  }).lean();
+  const alreadyBroadcastSet = new Set(
+    existingBroadcasts.map((m: any) => String(m.ticketId)),
+  );
 
   const employeeIds = Array.from(
     new Set(candidates.map((c: any) => c.employeeId).filter(Boolean)),
@@ -166,12 +252,18 @@ export async function findSimilarTickets(
   const matches: SimilarTicketMatch[] = [];
 
   for (const cand of candidates as any[]) {
+    const candIdStr = String(cand._id);
+    // If ticket already received a broadcast message, skip to prevent duplicate messaging
+    if (alreadyBroadcastSet.has(candIdStr)) {
+      continue;
+    }
+
     const sim = calculateTicketSimilarity(targetTicket as any, cand as any);
     const scorePct = Math.round(sim * 100);
 
     if (scorePct >= Math.round(minSimilarity * 100)) {
       matches.push({
-        _id: String(cand._id),
+        _id: candIdStr,
         ticketId: cand.ticketId,
         subject: cand.subject,
         category: cand.category,
@@ -194,17 +286,28 @@ export async function findSimilarTickets(
 }
 
 /**
- * Clusters active/recent tickets into distinct Recurring Issue Groups
+ * Clusters active tickets from that particular day (defaults to 24 hours)
+ * into distinct Recurring Issue Groups.
  * Only groups active/unresolved tickets (OPEN, IN_PROGRESS, WAITING_FOR_EMPLOYEE)
- * within the recent time window (defaults to 48 hours / 1-2 days) to prevent
- * pinging historical or already-resolved ticket owners.
+ * within the recent 24-hour time window to prevent pinging historical or already-resolved tickets.
+ * Excludes tickets that have already received a broadcast message so that
+ * when a broadcast is sent, the recurring incident is resolved/removed.
  */
 export async function detectRecurringIssueGroups(
   minClusterSize = 2,
-  windowHours = 48,
+  windowHours = 24,
   departmentFilter?: { assignedTo?: string[]; categories?: string[] },
 ): Promise<RecurringIssueGroup[]> {
   const cutoff = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
+
+  // Find all ticket IDs that have already received a broadcast message in this window
+  const broadcastMessages = await TicketMessage.find({
+    senderName: { $regex: /broadcast/i },
+    createdAt: { $gte: new Date(cutoff) },
+  }).lean();
+  const broadcastTicketIds = new Set(
+    broadcastMessages.map((m: any) => String(m.ticketId)),
+  );
 
   const query: any = {
     status: { $in: ["OPEN", "IN_PROGRESS", "WAITING_FOR_EMPLOYEE"] },
@@ -224,10 +327,21 @@ export async function detectRecurringIssueGroups(
     }
   }
 
-  const tickets = await Ticket.find(query)
+  const rawTickets = await Ticket.find(query)
     .sort({ createdAt: -1 })
     .limit(150)
     .lean();
+
+  if (!rawTickets || rawTickets.length === 0) return [];
+
+  // Exclude tickets that have already received a broadcast message!
+  // Once a broadcast message is sent to a ticket cluster, those tickets are addressed,
+  // so the incident is removed from the active recurring incident queue.
+  const tickets = rawTickets.filter(
+    (t: any) =>
+      !broadcastTicketIds.has(String(t._id)) &&
+      !broadcastTicketIds.has(String(t.ticketId)),
+  );
 
   if (!tickets || tickets.length === 0) return [];
 
@@ -256,7 +370,7 @@ export async function detectRecurringIssueGroups(
       if (visited.has(candId)) continue;
 
       const sim = calculateTicketSimilarity(base as any, cand as any);
-      if (sim >= 0.5) {
+      if (sim >= 0.65) {
         cluster.push(cand);
         visited.add(candId);
       }

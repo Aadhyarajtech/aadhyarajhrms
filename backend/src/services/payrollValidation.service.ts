@@ -1,4 +1,5 @@
 import { env } from "../config/env";
+import { AppError } from "../utils/errors";
 import {
   Employee,
   SalaryStructure,
@@ -51,6 +52,15 @@ export async function validatePayrollReadiness(
   month: number,
   year: number,
 ): Promise<PayrollReadinessResult> {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  if (year > currentYear || (year === currentYear && month > currentMonth)) {
+    throw AppError.badRequest(
+      "Future periods cannot be validated for payroll readiness.",
+    );
+  }
+
   const prefix = `${year}-${String(month).padStart(2, "0")}`;
 
   // 1. Fetch active employees
@@ -59,7 +69,7 @@ export async function validatePayrollReadiness(
     isArchived: { $ne: true },
   })
     .select(
-      "_id firstName lastName employeeCode bankAccountNumber bankIfscCode employeePan departmentId",
+      "_id firstName lastName employeeCode bankAccountNumber bankIfscCode employeePan employeeAadhaar departmentId",
     )
     .lean();
 
@@ -143,22 +153,12 @@ export async function validatePayrollReadiness(
     });
   }
 
-  // --- CHECK 2: Existing Run Finalized Check ---
-  let isRunFinalized = false;
-  if (existingRun && (existingRun.status === "PAID" || existingRun.status === "APPROVED")) {
-    isRunFinalized = true;
-    items.push({
-      id: `run-finalized-${existingRun._id}`,
-      category: "STRUCTURE",
-      severity: "BLOCKER",
-      title: `Payroll Run Already ${existingRun.status}`,
-      description: `Payroll for ${monthName(month)} ${year} is already marked as ${existingRun.status}. Reprocessing requires prior approval.`,
-    });
-  }
 
   // --- CHECK 3: Banking Details & PAN Compliance (GROUPED WARNINGS) ---
   const employeesMissingBank: typeof activeEmployees = [];
   const employeesMissingPan: typeof activeEmployees = [];
+  const employeesMissingAadhaar: typeof activeEmployees = [];
+  const employeesMissingTaxRegime: typeof activeEmployees = [];
 
   for (const emp of activeEmployees) {
     const hasAccount =
@@ -176,6 +176,15 @@ export async function validatePayrollReadiness(
 
     if (!emp.employeePan || emp.employeePan.trim() === "") {
       employeesMissingPan.push(emp);
+    }
+
+    if (!emp.employeeAadhaar || emp.employeeAadhaar.trim() === "") {
+      employeesMissingAadhaar.push(emp);
+    }
+
+    const structure = structureMap.get(String(emp._id));
+    if (structure && (!structure.taxRegime || !["NEW", "OLD"].includes(structure.taxRegime))) {
+      employeesMissingTaxRegime.push(emp);
     }
   }
 
@@ -204,6 +213,38 @@ export async function validatePayrollReadiness(
       description: `${employeesMissingPan.length} employee(s) have no PAN recorded (statutory 20% TDS withholding risk under Section 206AA).`,
       count: employeesMissingPan.length,
       affectedEmployees: employeesMissingPan.map((e) => ({
+        id: String(e._id),
+        name: `${e.firstName} ${e.lastName}`,
+        code: e.employeeCode,
+      })),
+    });
+  }
+
+  if (employeesMissingAadhaar.length > 0) {
+    items.push({
+      id: "aadhaar-missing",
+      category: "BANKING",
+      severity: "WARNING",
+      title: "Missing Aadhaar Identification",
+      description: `${employeesMissingAadhaar.length} employee(s) have no Aadhaar number recorded (statutory identity & EPFO linking compliance).`,
+      count: employeesMissingAadhaar.length,
+      affectedEmployees: employeesMissingAadhaar.map((e) => ({
+        id: String(e._id),
+        name: `${e.firstName} ${e.lastName}`,
+        code: e.employeeCode,
+      })),
+    });
+  }
+
+  if (employeesMissingTaxRegime.length > 0) {
+    items.push({
+      id: "tax-regime-missing",
+      category: "BANKING",
+      severity: "WARNING",
+      title: "Undeclared Tax Regime (TDS Calculation Risk)",
+      description: `${employeesMissingTaxRegime.length} employee(s) have not declared their Income Tax Regime (New vs Old) in their salary structure.`,
+      count: employeesMissingTaxRegime.length,
+      affectedEmployees: employeesMissingTaxRegime.map((e) => ({
         id: String(e._id),
         name: `${e.firstName} ${e.lastName}`,
         code: e.employeeCode,
@@ -259,24 +300,13 @@ export async function validatePayrollReadiness(
   }
 
   // --- COMPUTE REALISTIC & PROPORTIONAL READINESS SCORE ---
-  const blockersCount =
-    employeesMissingStructure.length + (isRunFinalized ? 1 : 0);
-
-  const warningsCount =
-    employeesMissingBank.length +
-    employeesMissingPan.length +
-    employeesZeroBase.length +
-    (missingCheckoutCount > 0 ? 1 : 0) +
-    (!existingRun || existingRun.status === "DRAFT" ? 1 : 0) +
-    pendingLeaves.length;
+  const blockersCount = items.filter((i) => i.severity === "BLOCKER").length;
+  const warningsCount = items.filter((i) => i.severity === "WARNING").length;
 
   // Blocker penalties
   let blockerPenalty = 0;
   if (employeesMissingStructure.length > 0) {
     blockerPenalty += 20 + Math.min(25, employeesMissingStructure.length * 3);
-  }
-  if (isRunFinalized) {
-    blockerPenalty += 30;
   }
 
   // Warning penalties (proportional & capped at 25 points maximum)
