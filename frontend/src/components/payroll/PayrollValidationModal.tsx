@@ -39,19 +39,28 @@ export function PayrollValidationModal({
   initialYear,
   onProceedToProcess,
 }: Props) {
-  const [selectedMonth, setSelectedMonth] = useState(initialMonth);
-  const [selectedYear, setSelectedYear] = useState(initialYear);
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+
+  const targetMonth = initialMonth || currentMonth;
+  const targetYear = initialYear || currentYear;
+
+  const [selectedMonth, setSelectedMonth] = useState(targetMonth);
+  const [selectedYear, setSelectedYear] = useState(targetYear);
   const [activeTab, setActiveTab] = useState<TabCategory>("ALL");
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (open) {
-      setSelectedMonth(initialMonth);
-      setSelectedYear(initialYear);
+      const monthToUse = initialMonth || currentMonth;
+      const yearToUse = initialYear || currentYear;
+      setSelectedMonth(monthToUse);
+      setSelectedYear(yearToUse);
       setActiveTab("ALL");
       setExpandedItems({});
     }
-  }, [open, initialMonth, initialYear]);
+  }, [open, initialMonth, initialYear, currentMonth, currentYear]);
 
   // Handle escape key and body overflow lock
   useEffect(() => {
@@ -68,6 +77,10 @@ export function PayrollValidationModal({
     };
   }, [open, onClose]);
 
+  const isFutureSelected =
+    selectedYear > currentYear ||
+    (selectedYear === currentYear && selectedMonth > currentMonth);
+
   const {
     data: result,
     isLoading,
@@ -78,7 +91,7 @@ export function PayrollValidationModal({
   } = useQuery<PayrollReadinessResult>({
     queryKey: ["payroll-readiness", selectedMonth, selectedYear],
     queryFn: () => PayrollApi.validateReadiness(selectedMonth, selectedYear),
-    enabled: open,
+    enabled: open && !isFutureSelected,
     staleTime: 30 * 1000,
   });
 
@@ -131,6 +144,7 @@ export function PayrollValidationModal({
   ).length;
 
   const handleProceed = () => {
+    if (isFutureSelected) return;
     if (isBlocked) {
       if (
         !window.confirm(
@@ -186,33 +200,16 @@ export function PayrollValidationModal({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Month & Year Selectors */}
+            {/* Locked Current Period Display */}
             <div className="flex items-center gap-1.5">
-              <select
-                aria-label="Target Month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs font-medium text-gray-700 shadow-2xs transition hover:bg-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <option key={m} value={m}>
-                    {monthName(m)}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                aria-label="Target Year"
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs font-medium text-gray-700 shadow-2xs transition hover:bg-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                {[2024, 2025, 2026, 2027].map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-1.5 rounded-lg border border-indigo-200/90 bg-indigo-50/90 px-2.5 py-1 text-xs font-semibold text-indigo-700 shadow-2xs">
+                <span>{monthName(selectedMonth)} {selectedYear}</span>
+                {selectedMonth === currentMonth && selectedYear === currentYear ? (
+                  <span className="rounded bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-800">Current</span>
+                ) : (
+                  <span className="rounded bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-700">Selected Cycle</span>
+                )}
+              </div>
 
               <button
                 type="button"
@@ -297,7 +294,7 @@ export function PayrollValidationModal({
                   </div>
                   <p className="mt-1 text-xs text-gray-500 max-w-xs leading-snug">
                     {isBlocked
-                      ? "Active employees lack salary structures. Resolve blockers before processing."
+                      ? `${blockersCount} critical blocker(s) detected. Resolve items below before processing.`
                       : isAttention
                       ? "All employees covered. Review advisory warnings before proceeding."
                       : "All systems validated. Payroll can be generated with high confidence."}
@@ -341,7 +338,28 @@ export function PayrollValidationModal({
 
         {/* Scrollable Content */}
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5">
-          {isLoading ? (
+          {isFutureSelected ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-8 text-center my-8">
+              <ShieldAlert size={36} className="mx-auto text-amber-600" />
+              <h4 className="mt-2 text-sm font-semibold text-amber-900">
+                Future Period Not Accessible
+              </h4>
+              <p className="mt-1 text-xs text-amber-700 max-w-sm mx-auto">
+                AI Pre-Run Payroll Readiness only validates active current or past cycles. Future periods like {monthName(selectedMonth)} {selectedYear} cannot be accessed yet.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-4 border-amber-300 bg-white text-amber-800 hover:bg-amber-50"
+                onClick={() => {
+                  setSelectedMonth(currentMonth);
+                  setSelectedYear(currentYear);
+                }}
+              >
+                Switch to Current Month ({monthName(currentMonth)} {currentYear})
+              </Button>
+            </div>
+          ) : isLoading ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className="relative mb-4 flex h-14 w-14 items-center justify-center">
                 <div className="absolute inset-0 rounded-full border-4 border-indigo-100 animate-pulse" />
@@ -613,7 +631,7 @@ export function PayrollValidationModal({
             {isBlocked ? (
               <span className="font-semibold text-rose-700 flex items-center gap-1">
                 <AlertCircle size={14} />
-                {blockersCount} blocker(s) found. Missing salary structures must be assigned.
+                {blockersCount} critical blocker(s) found. Must be resolved before payroll processing.
               </span>
             ) : isAttention ? (
               <span className="font-semibold text-amber-700 flex items-center gap-1">
@@ -636,6 +654,7 @@ export function PayrollValidationModal({
             <Button
               size="sm"
               variant="primary"
+              disabled={isFutureSelected}
               className={cx(
                 isBlocked
                   ? "bg-rose-600 hover:bg-rose-700 text-white"

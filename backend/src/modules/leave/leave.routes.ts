@@ -14,6 +14,7 @@ import {
   analyzeLeavePatterns,
   analyzeLeaveApproval,
 } from "./leaveAi.service";
+import { askLeaveAI } from "./leave.askai";
 import { getEmployeeById } from "@/modules/employees/employees.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
 
@@ -334,6 +335,39 @@ leaveRouter.post(
   async (req, res, next) => {
     try {
       const result = await generateLeaveReason(req.body.reason);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * ============================================================
+ * AI LEAVE ASSISTANT (CONVERSATIONAL COPILOT)
+ * ============================================================
+ */
+const aiAssistantSchema = z.object({
+  question: z.string().min(1, "Question cannot be empty").max(1000),
+  employeeId: z.string().optional(),
+});
+
+leaveRouter.post(
+  "/ai/assistant",
+  validate(aiAssistantSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user!.employeeId) {
+        throw AppError.forbidden("Employee profile is required.");
+      }
+
+      const result = await askLeaveAI({
+        requesterId: req.user!.employeeId,
+        requesterRole: req.user!.role,
+        question: req.body.question,
+        targetEmployeeId: req.body.employeeId,
+      });
+
       res.json(result);
     } catch (err) {
       next(err);

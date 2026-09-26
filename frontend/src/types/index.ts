@@ -72,16 +72,16 @@ export interface Employee {
   managerLastName: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
   status:
+    | "ONBOARDING"
+    | "ON_PROBATION"
+    | "ACTIVE"
+    | "ON_LEAVE"
+    | "NOTICE_PERIOD"
+    | "TERMINATED"
+    | "RESIGNED"
+    | "INACTIVE"
+    | "ON_HOLD";
 
-  | "ONBOARDING"
-  | "ON_PROBATION"
-  | "ACTIVE"
-  | "ON_LEAVE"
-  | "NOTICE_PERIOD"
-  | "TERMINATED"
-  | "RESIGNED"
-  | "INACTIVE"
-  | "ON_HOLD";
   dateOfJoining: string;
   dateOfExit: string | null;
   probationPeriodMonths?: number | null;
@@ -524,16 +524,7 @@ export interface Candidate {
   resumeParsingError?: string | null;
   resumeParsedAt?: string | null;
   extractedSkills?: string[];
-  extractedExperience?:
-  | number
-  | null
-  | {
-    company: string | null;
-    position: string | null;
-    startDate: string | null;
-    endDate: string | null;
-    description: string;
-  }[];
+  extractedExperience?: number | null;
   extractedEducation?: string[];
 
   jobFitScore?: number | null;

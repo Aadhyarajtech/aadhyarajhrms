@@ -65,6 +65,8 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "leave.view",
     "payroll.view",
     "payroll.manage",
+    "tickets.view",
+    "tickets.manage",
     "reports.view",
     "reports.export",
     "announcements.view",

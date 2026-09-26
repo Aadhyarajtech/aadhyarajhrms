@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -36,6 +36,8 @@ import { ProgressRing } from "@/components/ui/ProgressRing";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, monthName, cx } from "@/lib/format";
 import ExpiryBadge from "@/components/common/ExpiryBadge";
+import { AiLeaveAssistantView } from "@/components/leave/AiLeaveAssistantView";
+import { AiLeaveApprovalModal } from "@/components/leave/AiLeaveApprovalModal";
 
 const MANAGER_ROLES: string[] = [
   "SUPER_ADMIN",
@@ -198,9 +200,16 @@ export default function Leave() {
   );
 
   const [applyOpen, setApplyOpen] = useState(false);
+  const [applyPrefill, setApplyPrefill] = useState<{
+    startDate?: string;
+    endDate?: string;
+    reason?: string;
+    leaveTypeId?: string;
+  } | null>(null);
 
   const tabs = [
     { key: "mine", label: "My Leave" },
+    { key: "assistant", label: "AI Leave Assistant ✦" },
     ...(isManager
       ? [
           { key: "team", label: "Team Approvals" },
@@ -219,7 +228,10 @@ export default function Leave() {
         action={
           <Button
             leftIcon={<Plus size={16} />}
-            onClick={() => setApplyOpen(true)}
+            onClick={() => {
+              setApplyPrefill(null);
+              setApplyOpen(true);
+            }}
           >
             Apply for leave
           </Button>
@@ -234,6 +246,14 @@ export default function Leave() {
       />
 
       {tab === "mine" && <MyLeave />}
+      {tab === "assistant" && (
+        <AiLeaveAssistantView
+          onApplyWithDates={(payload) => {
+            setApplyPrefill(payload);
+            setApplyOpen(true);
+          }}
+        />
+      )}
       {tab === "team" && isManager && <TeamApprovals />}
       {tab === "analytics" && isManager && <LeaveAnalytics />}
       {tab === "patterns" && isManager && <LeavePatternDetection />}
@@ -241,7 +261,11 @@ export default function Leave() {
 
       <ApplyModal
         open={applyOpen}
-        onClose={() => setApplyOpen(false)}
+        onClose={() => {
+          setApplyOpen(false);
+          setApplyPrefill(null);
+        }}
+        prefillData={applyPrefill}
       />
     </div>
   );
@@ -399,6 +423,17 @@ function TeamApprovals() {
   const { showToast } = useToast();
 
   const [filter, setFilter] = useState("PENDING");
+  const [selectedAiRequest, setSelectedAiRequest] = useState<{
+    id: string;
+    employeeName: string;
+    employeeCode?: string;
+    avatarUrl?: string | null;
+    leaveTypeName: string;
+    startDate: string;
+    endDate: string;
+    totalDays: number;
+    reason: string;
+  } | null>(null);
 
   const {
     data: requests,
@@ -422,16 +457,18 @@ function TeamApprovals() {
     mutationFn: ({
       id,
       status,
+      decisionNote,
     }: {
       id: string;
       status: "APPROVED" | "REJECTED";
-    }) => LeaveApi.decide(id, status),
+      decisionNote?: string;
+    }) => LeaveApi.decide(id, status, decisionNote),
 
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["leave"],
       });
-
+      setSelectedAiRequest(null);
       showToast("Decision recorded.");
     },
 
@@ -473,78 +510,157 @@ function TeamApprovals() {
           description="Requests from your direct reports will show up here."
         />
       ) : (
-        <div className="space-y-2">
-          {(activeRequests ?? []).map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50/60 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200/70 hover:shadow-[0_10px_24px_rgba(91,79,229,0.08)]"
-            >
-              <div className="flex items-center gap-3">
-                <Avatar
-                  firstName={r.firstName}
-                  lastName={r.lastName}
-                  src={r.avatarUrl}
-                  size="sm"
-                />
+        <div className="space-y-3">
+          {(activeRequests ?? []).map((r) => {
+            const daysCount =
+              r.totalDays && r.totalDays > 0
+                ? r.totalDays
+                : Math.max(
+                    1,
+                    Math.round(
+                      (new Date(r.endDate).getTime() -
+                        new Date(r.startDate).getTime()) /
+                        (1000 * 60 * 60 * 24),
+                    ) + 1,
+                  );
 
-                <div>
-                  <p className="text-[13px] font-medium text-ink">
-                    {r.firstName} {r.lastName}
-                  </p>
+            const durationLabel = (r as any).halfDay
+              ? "0.5 day (Half Day)"
+              : `${daysCount} ${daysCount === 1 ? "day" : "days"}`;
 
-                  <p className="text-[12px] text-ink-faint">
-                    {r.leaveTypeName} ·{" "}
-                    {formatDate(r.startDate)} –{" "}
-                    {formatDate(r.endDate)} ({r.totalDays}d)
-                  </p>
+            return (
+              <div
+                key={r.id}
+                className="group relative rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition-all duration-200 hover:border-brand-200 hover:shadow-md"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  {/* Employee info & details */}
+                  <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                    <div className="shrink-0 ring-2 ring-slate-100 ring-offset-1 rounded-full overflow-hidden mt-0.5">
+                      <Avatar
+                        firstName={r.firstName}
+                        lastName={r.lastName}
+                        src={r.avatarUrl}
+                        size="md"
+                      />
+                    </div>
 
-                  <p className="text-[12px] text-ink-faint">
-                    "{r.reason}"
-                  </p>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[14px] font-semibold text-slate-900">
+                          {r.firstName} {r.lastName}
+                        </span>
+                        {r.employeeCode && (
+                          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-600">
+                            {r.employeeCode}
+                          </span>
+                        )}
+                        <span className="inline-flex items-center rounded-full bg-brand-50 px-2.5 py-0.5 text-[11px] font-medium text-brand-700 border border-brand-200/60">
+                          {r.leaveTypeName}
+                        </span>
+                        <span className="inline-flex items-center rounded-md bg-amber-50/90 px-2 py-0.5 text-[11px] font-semibold text-amber-800 border border-amber-200/60">
+                          {durationLabel}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[12px] text-slate-500 font-medium">
+                        <CalendarDays size={13} className="text-slate-400 shrink-0" />
+                        <span>
+                          {formatDate(r.startDate)}
+                          {r.startDate !== r.endDate ? ` – ${formatDate(r.endDate)}` : ""}
+                        </span>
+                      </div>
+
+                      {r.reason && (
+                        <p className="mt-1 rounded-xl bg-slate-50/80 border border-slate-100 px-3 py-1.5 text-[12.5px] italic text-slate-600 leading-relaxed">
+                          "{r.reason}"
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  {r.status === "PENDING" ? (
+                    <div className="flex items-center gap-2 shrink-0 self-end lg:self-center pt-2 lg:pt-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedAiRequest({
+                            id: r.id,
+                            employeeName: `${r.firstName} ${r.lastName}`,
+                            employeeCode: r.employeeCode,
+                            avatarUrl: r.avatarUrl,
+                            leaveTypeName: r.leaveTypeName,
+                            startDate: r.startDate,
+                            endDate: r.endDate,
+                            totalDays: daysCount,
+                            reason: r.reason,
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200/90 bg-gradient-to-r from-violet-50 via-indigo-50 to-purple-50 px-3.5 py-1.5 text-[12px] font-semibold text-indigo-700 shadow-xs transition-all hover:border-indigo-300 hover:from-violet-100 hover:to-indigo-100 hover:shadow-sm active:scale-[0.98] whitespace-nowrap shrink-0"
+                      >
+                        <Sparkles size={13} className="text-amber-500 animate-pulse shrink-0" />
+                        AI Analysis
+                      </button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        leftIcon={<X size={14} />}
+                        isLoading={decideMutation.isPending}
+                        className="border-slate-200 text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                        onClick={() =>
+                          decideMutation.mutate({
+                            id: r.id,
+                            status: "REJECTED",
+                          })
+                        }
+                      >
+                        Reject
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        leftIcon={<Check size={14} />}
+                        isLoading={decideMutation.isPending}
+                        onClick={() =>
+                          decideMutation.mutate({
+                            id: r.id,
+                            status: "APPROVED",
+                          })
+                        }
+                      >
+                        Approve
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <StatusBadge status={r.status} />
+                      <ExpiryBadge
+                        expiresAt={r.expiresAt}
+                        expiredAt={r.expiredAt}
+                        status={r.status}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {r.status === "PENDING" ? (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    leftIcon={<X size={14} />}
-                    isLoading={decideMutation.isPending}
-                    onClick={() =>
-                      decideMutation.mutate({
-                        id: r.id,
-                        status: "REJECTED",
-                      })
-                    }
-                  >
-                    Reject
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    leftIcon={<Check size={14} />}
-                    isLoading={decideMutation.isPending}
-                    onClick={() =>
-                      decideMutation.mutate({
-                        id: r.id,
-                        status: "APPROVED",
-                      })
-                    }
-                  >
-                    Approve
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-end gap-2">
-                  <StatusBadge status={r.status} />
-                  <ExpiryBadge expiresAt={r.expiresAt} expiredAt={r.expiredAt} status={r.status} />
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
+
+      {/* AI Approval Recommendation Modal */}
+      <AiLeaveApprovalModal
+        open={!!selectedAiRequest}
+        onClose={() => setSelectedAiRequest(null)}
+        request={selectedAiRequest}
+        onDecide={(id, status, note) =>
+          decideMutation.mutate({ id, status, decisionNote: note })
+        }
+        isDeciding={decideMutation.isPending}
+      />
     </Card>
   );
 }
@@ -1757,9 +1873,16 @@ function LeaveCalendar() {
 function ApplyModal({
   open,
   onClose,
+  prefillData,
 }: {
   open: boolean;
   onClose: () => void;
+  prefillData?: {
+    startDate?: string;
+    endDate?: string;
+    reason?: string;
+    leaveTypeId?: string;
+  } | null;
 }) {
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -1793,6 +1916,19 @@ function ApplyModal({
     resolver: zodResolver(applySchema),
     defaultValues: { halfDay: false, halfDayType: null },
   });
+
+  useEffect(() => {
+    if (open) {
+      if (prefillData) {
+        if (prefillData.startDate) setValue("startDate", prefillData.startDate);
+        if (prefillData.endDate) setValue("endDate", prefillData.endDate);
+        if (prefillData.reason) setValue("reason", prefillData.reason);
+        if (prefillData.leaveTypeId) setValue("leaveTypeId", prefillData.leaveTypeId);
+      } else {
+        reset();
+      }
+    }
+  }, [open, prefillData, setValue, reset]);
 
   /*
    * Watch the selected dates so the conflict analysis

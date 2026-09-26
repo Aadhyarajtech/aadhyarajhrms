@@ -17,13 +17,15 @@ export interface SlaRiskEvaluation {
 
 export function getPrioritySlaHours(priority?: string | null): number {
   switch (priority?.toUpperCase()) {
+    case "CRITICAL":
+      return 1;
     case "HIGH":
+      return 4;
+    case "MEDIUM":
       return 24;
     case "LOW":
-      return 72;
-    case "MEDIUM":
     default:
-      return 48;
+      return 72;
   }
 }
 
@@ -99,14 +101,18 @@ export function calculatePredictiveSlaRisk(
     factors.push(`Halfway through SLA resolution window (${remainingHours.toFixed(1)}h left).`);
   }
 
-  // 2. High Priority Base Penalty (+12 points)
-  const isHighPriority = ticket.priority === "HIGH" || ticket.aiPriority === "HIGH";
+  // 2. High & Critical Priority Base Penalty (+15 to +20 points)
+  const isCriticalPriority = ticket.priority === "CRITICAL" || ticket.aiPriority === "CRITICAL";
+  const isHighPriority = ticket.priority === "HIGH" || ticket.aiPriority === "HIGH" || isCriticalPriority;
   const isMediumPriority = ticket.priority === "MEDIUM" || ticket.aiPriority === "MEDIUM";
   const isNegativeSentiment = ticket.aiSentiment === "CRITICAL" || ticket.aiSentiment === "FRUSTRATED";
 
-  if (isHighPriority) {
+  if (isCriticalPriority) {
+    score += 20;
+    factors.push("Critical priority policy (1-hour response SLA target).");
+  } else if (isHighPriority) {
     score += 12;
-    factors.push("High priority SLA policy (24h turnaround target).");
+    factors.push("High priority SLA policy (4h turnaround target).");
   }
 
   // 3. Employee Sentiment Sensitivity (+12 to +20 points)
@@ -143,8 +149,15 @@ export function calculatePredictiveSlaRisk(
   const hoursOpen = Math.floor(elapsedHours);
 
   if (ticket.status === "OPEN") {
-    // Rule A: HIGH-priority open >= 4 hours without staff response
-    if (isHighPriority && elapsedHours >= 4) {
+    // Rule 0: CRITICAL-priority open >= 30 mins (0.5 hours) without staff response
+    if (isCriticalPriority && elapsedHours >= 0.5) {
+      attentionBadge = "HIGH_ATTENTION";
+      attentionReason = `CRITICAL-priority ticket open for ${hoursOpen > 0 ? `${hoursOpen}h` : `${Math.round(elapsedHours * 60)}m`} with no staff response`;
+      factors.unshift(`🔴 High Attention Required: CRITICAL-priority ticket has been open for ${hoursOpen > 0 ? `${hoursOpen}h` : `${Math.round(elapsedHours * 60)}m`} with no staff response.`);
+      score = Math.max(score, 90);
+    }
+    // Rule A: HIGH-priority open >= 2 hours without staff response
+    else if (isHighPriority && elapsedHours >= 2) {
       attentionBadge = "HIGH_ATTENTION";
       attentionReason = `HIGH-priority ticket open for ${hoursOpen}h with no staff response`;
       factors.unshift(`🔴 High Attention Required: HIGH-priority ticket has been open for ${hoursOpen}h with no staff response.`);

@@ -14,6 +14,7 @@ import { requirePermission } from "@/middleware/permissions";
 import * as repo from "./ticket.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { User, AuditLog, Ticket } from "@/db/models";
+import TicketMessage from "@/db/TicketMessage";
 import { Employee } from "@/db/models";
 import {
   classifyTicket,
@@ -204,6 +205,93 @@ ticketRouter.post(
     }
   },
 );
+
+/* =========================================================
+   POST /tickets/classify
+   Real-time AI ticket classification for subject & description.
+========================================================= */
+
+const classifyTicketRequestSchema = z.object({
+  subject: z.string().optional().default(""),
+  description: z.string().optional().default(""),
+  category: z.string().optional().default(""),
+});
+
+ticketRouter.post(
+  "/classify",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { message: "Unauthorized" },
+        });
+      }
+
+      const parsed = classifyTicketRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: { message: "Invalid request payload" },
+        });
+      }
+
+      const { subject, description, category } = parsed.data;
+
+      if (!subject.trim() && !description.trim()) {
+        return res.json({
+          classified: false,
+          message: "Insufficient content to classify",
+        });
+      }
+
+      const result = await classifyTicket(
+        subject.trim(),
+        description.trim(),
+        category.trim() || undefined,
+      );
+
+      if (!result) {
+        return res.json({
+          classified: false,
+          message: "Classification unavailable",
+        });
+      }
+
+      // Map to UI-matching category options
+      let suggestedCategory: string = result.category;
+      if (result.category === "Payroll") suggestedCategory = "Payroll Issue";
+      else if (result.category === "Leave") suggestedCategory = "Leave Issue";
+      else if (result.category === "HR") suggestedCategory = "Policy Query";
+      else if (
+        result.category === "Complaint" &&
+        (result.intent === "Workplace Harassment" ||
+          /harassment|posh|abuse|safety/i.test(`${subject} ${description}`))
+      ) {
+        suggestedCategory = "Harassment Complaint";
+      } else if (
+        result.category === "Complaint" &&
+        (result.intent === "Manager Issue" ||
+          /manager|lead|supervisor/i.test(`${subject} ${description}`))
+      ) {
+        suggestedCategory = "Manager Concern";
+      }
+
+      return res.json({
+        classified: true,
+        category: suggestedCategory,
+        rawCategory: result.category,
+        intent: result.intent,
+        confidence: result.confidence,
+        reason: result.reason,
+        priority: result.priority,
+        priorityReason: result.priorityReason,
+        sentiment: result.sentiment,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 
 /* =========================================================
    GET TICKETS
@@ -411,7 +499,7 @@ ticketRouter.get(
       const departmentFilter = getDepartmentFilterForRole(role);
       const windowHours = req.query.windowHours
         ? Number(req.query.windowHours)
-        : 48;
+        : 24;
       const groups = await detectRecurringIssueGroups(
         2,
         windowHours,
@@ -520,6 +608,28 @@ ticketRouter.post(
       for (const ticket of tickets) {
         const ticketIdStr = String(ticket._id);
 
+        // Check if ticket already received this broadcast message or a broadcast today
+        const existingBroadcast = await TicketMessage.findOne({
+          ticketId: ticketIdStr,
+          $or: [
+            { message: broadcastMessage.trim() },
+            {
+              senderName: { $regex: /broadcast/i },
+              createdAt: { $gte: new Date(Date.now() - 12 * 60 * 60 * 1000) },
+            },
+          ],
+        }).lean();
+
+        if (existingBroadcast) {
+          // Prevent duplicate message from being sent two times
+          results.push({
+            ticketId: ticket.ticketId,
+            status: ticket.status,
+            messageId: String((existingBroadcast as any)?._id || ""),
+          });
+          continue;
+        }
+
         // 1. Create message in ticket conversation
         const createdMsg = await messageRepo.createTicketMessage({
           ticketId: ticketIdStr,
@@ -538,7 +648,15 @@ ticketRouter.post(
 
         // 3. Notify ticket owner employee
         try {
-          const ownerEmp = await Employee.findById(ticket.employeeId).lean();
+          const ownerEmp = ticket.employeeId
+            ? await Employee.findOne({
+                $or: [
+                  { _id: ticket.employeeId },
+                  { employeeCode: ticket.employeeId },
+                  { userId: ticket.employeeId },
+                ],
+              }).lean()
+            : null;
           if (ownerEmp?.userId && ownerEmp.userId !== req.user.userId) {
             await notify({
               userId: ownerEmp.userId,
@@ -1200,7 +1318,9 @@ if (!repo.isUserAuthorizedForTicket(ticket, req.user)) {
         updatedAt: new Date().toISOString(),
       };
 
-      if (result.priority === "HIGH") {
+      if (result.priority === "CRITICAL" || result.sentiment === "CRITICAL") {
+        updateFields.priority = "CRITICAL";
+      } else if (result.priority === "HIGH" && ticket.priority !== "CRITICAL") {
         updateFields.priority = "HIGH";
       }
 
@@ -1399,7 +1519,13 @@ ticketRouter.post(
 
       // Fetch employee profile for real identity context
       const employee = ticket.employeeId
-        ? await Employee.findById(ticket.employeeId).lean()
+        ? await Employee.findOne({
+            $or: [
+              { _id: ticket.employeeId },
+              { employeeCode: ticket.employeeId },
+              { userId: ticket.employeeId },
+            ],
+          }).select("_id firstName lastName designation department").lean()
         : null;
 
       const employeeName = employee
@@ -1494,7 +1620,13 @@ ticketRouter.post(
 
       // Fetch employee profile for real identity context
       const employee = ticket.employeeId
-        ? await Employee.findById(ticket.employeeId).lean()
+        ? await Employee.findOne({
+            $or: [
+              { _id: ticket.employeeId },
+              { employeeCode: ticket.employeeId },
+              { userId: ticket.employeeId },
+            ],
+          }).select("_id firstName lastName designation department").lean()
         : null;
 
       const employeeName = employee

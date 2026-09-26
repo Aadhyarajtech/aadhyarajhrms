@@ -153,16 +153,35 @@ payrollRouter.post(
   },
 );
 
+const readinessSchema = z.object({
+  month: z.coerce.number().int().min(1).max(12).optional(),
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+});
+
 payrollRouter.post(
   "/validate-readiness",
   requirePermission("payroll.manage"),
-  validate(processSchema),
+  validate(readinessSchema),
   async (req, res, next) => {
     try {
-      const result = await validatePayrollReadiness(
-        Number(req.body.month),
-        Number(req.body.year),
-      );
+      const now = new Date();
+      let month = Number(req.body.month);
+      let year = Number(req.body.year);
+
+      if ((!month || !year) && req.body.startDate) {
+        const d = new Date(req.body.startDate);
+        if (!isNaN(d.getTime())) {
+          month = d.getMonth() + 1;
+          year = d.getFullYear();
+        }
+      }
+
+      if (!month) month = now.getMonth() + 1;
+      if (!year) year = now.getFullYear();
+
+      const result = await validatePayrollReadiness(month, year);
       res.json(result);
     } catch (err) {
       next(err);
@@ -315,17 +334,42 @@ payrollRouter.get(
   },
 );
 
+async function checkPayslipAccess(
+  payslip: any,
+  user: { userId: string; role: string; employeeId?: string | null },
+) {
+  const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
+    user.role,
+  );
+  if (isPrivileged) return;
+
+  let userEmployeeId = user.employeeId ? String(user.employeeId) : null;
+  if (!userEmployeeId && user.userId) {
+    const employee = await Employee.findOne({ userId: user.userId })
+      .select("_id")
+      .lean();
+    if (employee) userEmployeeId = String(employee._id);
+  }
+
+  const isOwner = Boolean(
+    userEmployeeId &&
+      payslip.employeeId &&
+      String(payslip.employeeId) === userEmployeeId,
+  );
+
+  if (isOwner && payslip.runStatus !== "PAID") {
+    throw AppError.forbidden("Payslip is not yet released for viewing.");
+  }
+  if (!isOwner) {
+    throw AppError.forbidden("You do not have permission to view this payslip.");
+  }
+}
+
 payrollRouter.get("/payslips/:id", async (req, res, next) => {
   try {
     const payslip = (await repo.getPayslip(req.params.id)) as any;
     if (!payslip) throw AppError.notFound("Payslip not found.");
-    const isOwner = payslip.employeeId === req.user!.employeeId;
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
-      req.user!.role,
-    );
-    if (isOwner && payslip.runStatus !== "PAID" && !isPrivileged)
-      throw AppError.forbidden();
-    if (!isOwner && !isPrivileged) throw AppError.forbidden();
+    await checkPayslipAccess(payslip, req.user!);
     res.json({ payslip });
   } catch (err) {
     next(err);
@@ -336,13 +380,7 @@ payrollRouter.get("/payslips/:id/explain", async (req, res, next) => {
   try {
     const payslip = (await repo.getPayslip(req.params.id)) as any;
     if (!payslip) throw AppError.notFound("Payslip not found.");
-    const isOwner = payslip.employeeId === req.user!.employeeId;
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
-      req.user!.role,
-    );
-    if (isOwner && payslip.runStatus !== "PAID" && !isPrivileged)
-      throw AppError.forbidden();
-    if (!isOwner && !isPrivileged) throw AppError.forbidden();
+    await checkPayslipAccess(payslip, req.user!);
 
     const explanation = await explainPayslip(req.params.id);
     res.json({ explanation });
@@ -355,13 +393,7 @@ payrollRouter.post("/payslips/:id/ask", async (req, res, next) => {
   try {
     const payslip = (await repo.getPayslip(req.params.id)) as any;
     if (!payslip) throw AppError.notFound("Payslip not found.");
-    const isOwner = payslip.employeeId === req.user!.employeeId;
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
-      req.user!.role,
-    );
-    if (isOwner && payslip.runStatus !== "PAID" && !isPrivileged)
-      throw AppError.forbidden();
-    if (!isOwner && !isPrivileged) throw AppError.forbidden();
+    await checkPayslipAccess(payslip, req.user!);
 
     const { question } = req.body;
     if (!question || typeof question !== "string") {
