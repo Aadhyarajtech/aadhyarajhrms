@@ -181,14 +181,6 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/my-team",
     label: "My Team",
     icon: Users,
-    roles: [
-      "SUPER_ADMIN",
-      "HR_ADMIN",
-      "MANAGER",
-      "RECRUITER",
-      "FINANCE",
-      "IT_SUPPORT",
-    ],
     section: "people",
   },
 
@@ -316,6 +308,16 @@ export function Sidebar({
   ------------------------------------------------------- */
 
   const items = NAV_ITEMS.filter((item) => {
+    if (item.to === "/app/my-team") {
+      return (
+        role === "SUPER_ADMIN" ||
+        role === "HR_ADMIN" ||
+        role === "MANAGER" ||
+        user?.isManager === true ||
+        user?.employee?.isManager === true
+      );
+    }
+
     if (!item.roles) {
       return true;
     }

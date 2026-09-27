@@ -224,14 +224,55 @@ export async function previewTax(input: {
   });
 }
 
+async function payrollRunToApi(row: any) {
+  if (!row) return undefined;
+
+  const api = toApiDoc(row);
+  const departmentIds = [
+    ...new Set(
+      [
+        ...(Array.isArray(api?.attendanceLockedDepartmentIds)
+          ? api.attendanceLockedDepartmentIds
+          : []),
+        ...(api?.departmentId ? [api.departmentId] : []),
+      ]
+        .map(String)
+        .filter(Boolean),
+    ),
+  ];
+
+  if (!departmentIds.length) {
+    return { ...api, departments: [] };
+  }
+
+  const departments = await Department.find({ _id: { $in: departmentIds } })
+    .select("_id name")
+    .lean();
+  const departmentMap = new Map(
+    departments.map((department) => [String(department._id), department.name]),
+  );
+
+  return {
+    ...api,
+    departments: departmentIds
+      .map((id) => ({ id, name: departmentMap.get(id) ?? "Unknown department" }))
+      .filter((department) => departmentMap.has(department.id)),
+    // Keep the legacy field for older consumers. New payroll runs use the
+    // departments array as the source of truth.
+    departmentName: api?.departmentId
+      ? departmentMap.get(String(api.departmentId)) ?? null
+      : null,
+  };
+}
+
 export async function listPayrollRuns() {
-  const rows = await PayrollRun.find({}).sort({ year: -1, month: -1 }).lean();
-  return rows.map(toApiDoc);
+  const rows = await PayrollRun.find({}).sort({ year: -1, month: -1, startDate: -1 }).lean();
+  return Promise.all(rows.map(payrollRunToApi));
 }
 
 export async function getPayrollRun(id: string) {
   const row = await PayrollRun.findById(id).lean();
-  return toApiDoc(row);
+  return payrollRunToApi(row);
 }
 
 function daysInMonth(month: number, year: number): number {
@@ -333,12 +374,10 @@ export async function lockAttendanceForPayroll(
     throw AppError.badRequest("Select at least one department to lock attendance.");
   }
 
-  const departments = await Department.find({
-    _id: { $in: selectedDepartmentIds },
-  })
+  const departments = await Department.find({ _id: { $in: selectedDepartmentIds } })
     .select("_id name")
     .lean();
-  const knownDepartmentIds = new Set(departments.map((department) => department._id));
+  const knownDepartmentIds = new Set(departments.map((department) => String(department._id)));
   const invalidDepartmentIds = selectedDepartmentIds.filter(
     (departmentId) => !knownDepartmentIds.has(departmentId),
   );
@@ -346,6 +385,11 @@ export async function lockAttendanceForPayroll(
     throw AppError.badRequest("One or more selected departments do not exist.");
   }
 
+  // One payroll period has one lifecycle. All departments selected for this
+  // period are stored on the same PayrollRun. attendanceLockedDepartmentIds
+  // remains the source of truth so existing attendance-lock functionality is
+  // preserved without introducing another department list field.
+  const now = nowIso();
   let run = await PayrollRun.findOne({
     startDate: period.startDate,
     endDate: period.endDate,
@@ -353,62 +397,49 @@ export async function lockAttendanceForPayroll(
 
   if (run && ["PROCESSED", "HR_REVIEW", "APPROVED", "PAID"].includes(run.status)) {
     throw AppError.badRequest(
-      "This payroll period has already moved past attendance lock.",
+      "This payroll period has already been processed and cannot have departments added or changed.",
     );
   }
 
-  const existingLockedDepartmentIds = new Set(
-    run?.attendanceLockedDepartmentIds ?? [],
-  );
-  selectedDepartmentIds.forEach((departmentId) => existingLockedDepartmentIds.add(departmentId));
-  const lockedDepartmentIds = [...existingLockedDepartmentIds];
-
-  const payrollEmployees = await Employee.find({
-    status: { $in: ["ACTIVE", "ON_PROBATION", "ON_LEAVE", "NOTICE_PERIOD"] },
-    isArchived: { $ne: true },
-  })
-    .select("_id departmentId")
-    .lean();
-
-  const requiredDepartmentIds = [
-    ...new Set(
-      payrollEmployees
-        .map((employee) => employee.departmentId)
-        .filter(Boolean),
-    ),
+  const existingDepartmentIds = Array.isArray(run?.attendanceLockedDepartmentIds)
+    ? run.attendanceLockedDepartmentIds.map(String)
+    : run?.departmentId
+      ? [String(run.departmentId)]
+      : [];
+  const mergedDepartmentIds = [
+    ...new Set([...existingDepartmentIds, ...selectedDepartmentIds]),
   ];
-  const allDepartmentsLocked = requiredDepartmentIds.every((departmentId) =>
-    existingLockedDepartmentIds.has(departmentId),
-  );
-  const status = allDepartmentsLocked ? "ATTENDANCE_LOCKED" : "DRAFT";
 
-  const now = nowIso();
   if (!run) {
     run = await PayrollRun.create({
       month: period.month,
       year: period.year,
       startDate: period.startDate,
       endDate: period.endDate,
-      status,
-      attendanceLockedAt: allDepartmentsLocked ? now : null,
-      attendanceLockedDepartmentIds: lockedDepartmentIds,
+      departmentId: null,
+      status: "ATTENDANCE_LOCKED",
+      attendanceLockedAt: now,
+      attendanceLockedDepartmentIds: mergedDepartmentIds,
     });
   } else {
     await PayrollRun.updateOne(
       { _id: run._id },
       {
         $set: {
-          ...period,
-          status,
-          attendanceLockedAt:
-            allDepartmentsLocked ? run.attendanceLockedAt ?? now : null,
-          attendanceLockedDepartmentIds: lockedDepartmentIds,
+          month: period.month,
+          year: period.year,
+          departmentId: null,
+          status: "ATTENDANCE_LOCKED",
+          attendanceLockedAt: run.attendanceLockedAt ?? now,
+          attendanceLockedDepartmentIds: mergedDepartmentIds,
         },
       },
     );
+    run = await PayrollRun.findById(run._id).lean();
   }
 
-  return getPayrollRun(run._id);
+  const result = await getPayrollRun(run!._id);
+  return result;
 }
 
 function calculateProfessionalTax(
@@ -435,46 +466,57 @@ function calculateProfessionalTax(
   return -1;
 }
 
-/** Processes payroll after attendance is locked. PF and ESI are automatic; TDS remains a declared monthly amount until tax declarations are available. */
-export async function processPayrollRun(startDate: string, endDate: string) {
+/** Processes one payroll period after attendance is locked. PF and ESI are automatic; TDS remains a declared monthly amount until tax declarations are available. */
+export async function processPayrollRun(
+  startDate: string,
+  endDate: string,
+  departmentIds: string[],
+) {
   const period = getPayrollPeriod(startDate, endDate);
-  let run = await PayrollRun.findOne({
+  const requestedDepartmentIds = [...new Set((departmentIds ?? []).map(String).filter(Boolean))];
+  if (!requestedDepartmentIds.length) {
+    throw AppError.badRequest("Select at least one department to process payroll.");
+  }
+
+  const run = await PayrollRun.findOne({
     startDate: period.startDate,
     endDate: period.endDate,
   }).lean();
 
-  if (run && run.status !== "DRAFT" && run.status !== "ATTENDANCE_LOCKED") {
-    throw AppError.conflict(
-      `Payroll for ${period.startDate} to ${period.endDate} is already ${run.status}. It cannot be processed again.`,
-    );
-  }
-
-  if (!run || run.status === "DRAFT") {
-    throw AppError.badRequest(
-      "Attendance must be locked for all payroll departments before payroll processing.",
-    );
-  }
-
   if (!run || run.status !== "ATTENDANCE_LOCKED") {
     throw AppError.badRequest(
-      "Attendance must be locked before payroll processing.",
+      "This payroll period is not attendance-locked and ready for payroll processing.",
     );
   }
 
-  // Never delete payslips as part of the normal Process Payroll operation.
-  // Existing payslips here indicate an inconsistent/partially processed run;
-  // stopping is safer than destroying historical payroll data.
-  const existingPayslipCount = await Payslip.countDocuments({
-    payrollRunId: run._id,
-  });
-  if (existingPayslipCount > 0) {
-    throw AppError.conflict(
-      `This payroll run already contains ${existingPayslipCount} payslip(s). No existing payslips were changed.`,
+  const lockedDepartmentIds = [
+    ...new Set(
+      (Array.isArray(run.attendanceLockedDepartmentIds)
+        ? run.attendanceLockedDepartmentIds
+        : run.departmentId
+          ? [run.departmentId]
+          : []
+      ).map(String).filter(Boolean),
+    ),
+  ];
+  if (!lockedDepartmentIds.length) {
+    throw AppError.badRequest("No departments are attendance-locked for this payroll period.");
+  }
+
+  if (requestedDepartmentIds.some((id) => !lockedDepartmentIds.includes(id))) {
+    throw AppError.badRequest(
+      "One or more selected departments are not attendance-locked for this payroll period.",
     );
+  }
+
+  const existingPayslipCount = await Payslip.countDocuments({ payrollRunId: run._id });
+  if (existingPayslipCount > 0) {
+    throw AppError.badRequest("Payroll has already been generated for this payroll period.");
   }
 
   const totalDaysInMonth = period.totalDays;
   const employees = await Employee.find({
+    departmentId: { $in: lockedDepartmentIds },
     status: { $in: ["ACTIVE", "ON_PROBATION", "ON_LEAVE", "NOTICE_PERIOD"] },
     isArchived: { $ne: true },
   }).lean();
@@ -484,9 +526,6 @@ export async function processPayrollRun(startDate: string, endDate: string) {
   }).lean();
   const structureMap = new Map(structures.map((s) => [s.employeeId, s]));
 
-  // Do not generate a partial payroll. A missing salary structure used to be
-  // silently skipped, which made the run headcount/payslip count smaller than
-  // the actual employee population and made payroll look incomplete.
   const employeesWithoutSalary = employees.filter(
     (employee) => !structureMap.has(employee._id),
   );
@@ -503,6 +542,9 @@ export async function processPayrollRun(startDate: string, endDate: string) {
     );
   }
 
+  // The calculations below are intentionally kept the same as the existing
+  // payroll implementation; only the employee scope changes from one
+  // department to all departments in this single PayrollRun.
   const unpaidLeaveTypes = await LeaveType.find({ isPaid: false })
     .select("_id")
     .lean();
@@ -688,6 +730,7 @@ export async function processPayrollRun(startDate: string, endDate: string) {
     { _id: run._id },
     {
       $set: {
+        departmentId: null,
         status: "PROCESSED",
         totalGross: roundMoney(totalGross),
         totalDeductions: roundMoney(totalDeductions),
@@ -697,7 +740,12 @@ export async function processPayrollRun(startDate: string, endDate: string) {
       },
     },
   );
-  return getPayrollRun(run._id);
+
+  const result = await getPayrollRun(run._id);
+  if (!result) {
+    throw AppError.notFound("Payroll run not found after processing.");
+  }
+  return result;
 }
 
 export async function submitPayrollForReview(id: string, userId: string) {
@@ -1160,8 +1208,25 @@ export async function reprocessPayrollRun(id: string) {
     throw AppError.notFound("Payroll run not found.");
   }
 
-  return processPayrollRun(
+  const departmentIds = [
+    ...new Set(
+      (Array.isArray(run.attendanceLockedDepartmentIds)
+        ? run.attendanceLockedDepartmentIds
+        : run.departmentId
+          ? [run.departmentId]
+          : []
+      ).map(String).filter(Boolean),
+    ),
+  ];
+
+  if (!departmentIds.length) {
+    throw AppError.badRequest("This payroll run has no department scope and cannot be reprocessed.");
+  }
+
+  const result = await processPayrollRun(
     run.startDate ?? `${run.year}-${String(run.month).padStart(2, "0")}-01`,
     run.endDate ?? new Date(run.year, run.month, 0).toISOString().slice(0, 10),
+    departmentIds,
   );
+  return result;
 }

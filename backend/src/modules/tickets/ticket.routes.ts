@@ -323,6 +323,7 @@ ticketRouter.get(
         "HR_ADMIN",
         "FINANCE",
         "MANAGER",
+        "RECRUITER",
         "IT_SUPPORT",
       ];
 
@@ -398,7 +399,10 @@ function getDepartmentFilterForRole(role: string) {
     return { assignedTo: ["IT_SUPPORT"], categories: ["IT Support"] };
   }
   if (role === "FINANCE") {
-    return { assignedTo: ["FINANCE"], categories: ["Payroll"] };
+    return { assignedTo: ["FINANCE"], categories: ["Payroll", "Payroll Issue"] };
+  }
+  if (role === "RECRUITER") {
+    return { assignedTo: ["RECRUITER"], categories: ["Recruitment", "Employee Referral"] };
   }
   return undefined;
 }
@@ -419,6 +423,7 @@ ticketRouter.get(
         "HR_ADMIN",
         "FINANCE",
         "MANAGER",
+        "RECRUITER",
         "IT_SUPPORT",
       ];
       if (!allowedRoles.includes(role)) {
@@ -431,7 +436,11 @@ ticketRouter.get(
       }
 
       const departmentFilter = getDepartmentFilterForRole(role);
-      const analytics = await getHelpdeskExecutiveAnalytics(departmentFilter);
+      const analytics = await getHelpdeskExecutiveAnalytics(
+        role === "MANAGER"
+          ? { managerEmployeeId: req.user.employeeId }
+          : departmentFilter,
+      );
       return res.json({
         success: true,
         analytics,
@@ -456,9 +465,26 @@ ticketRouter.get(
       }
 
       const role = String(req.user.role);
+      const staffRoles = [
+        "SUPER_ADMIN",
+        "HR_ADMIN",
+        "FINANCE",
+        "MANAGER",
+        "RECRUITER",
+        "IT_SUPPORT",
+      ];
+      if (!staffRoles.includes(role)) {
+        return res.status(403).json({
+          error: { message: "Only support staff can access ticket anomalies" },
+        });
+      }
+
       const departmentFilter = getDepartmentFilterForRole(role);
       const query: any = {};
-      if (departmentFilter) {
+      if (role === "MANAGER") {
+        query.category = "Complaint";
+        query.assignedManagerId = req.user.employeeId;
+      } else if (departmentFilter) {
         query.$or = [
           { assignedTo: { $in: departmentFilter.assignedTo } },
           { category: { $in: departmentFilter.categories } },
@@ -496,6 +522,20 @@ ticketRouter.get(
       }
 
       const role = String(req.user.role);
+      const staffRoles = [
+        "SUPER_ADMIN",
+        "HR_ADMIN",
+        "FINANCE",
+        "MANAGER",
+        "RECRUITER",
+        "IT_SUPPORT",
+      ];
+      if (!staffRoles.includes(role)) {
+        return res.status(403).json({
+          error: { message: "Only support staff can access recurring issues" },
+        });
+      }
+
       const departmentFilter = getDepartmentFilterForRole(role);
       const windowHours = req.query.windowHours
         ? Number(req.query.windowHours)
@@ -503,7 +543,9 @@ ticketRouter.get(
       const groups = await detectRecurringIssueGroups(
         2,
         windowHours,
-        departmentFilter,
+        role === "MANAGER"
+          ? { managerEmployeeId: req.user.employeeId }
+          : departmentFilter,
       );
 
       return res.json({
@@ -544,6 +586,7 @@ ticketRouter.post(
         "HR_ADMIN",
         "FINANCE",
         "MANAGER",
+        "RECRUITER",
         "IT_SUPPORT",
       ];
       if (!allowedRoles.includes(role)) {
@@ -1200,6 +1243,7 @@ ticketRouter.get(
         "HR_ADMIN",
         "FINANCE",
         "MANAGER",
+        "RECRUITER",
         "IT_SUPPORT",
       ];
 
@@ -1265,6 +1309,7 @@ const staffRoles = [
   "HR_ADMIN",
   "FINANCE",
   "MANAGER",
+  "RECRUITER",
   "IT_SUPPORT",
 ];
 
@@ -1482,6 +1527,7 @@ const STAFF_ROLES = [
   "IT_SUPPORT",
   "SUPER_ADMIN",
   "MANAGER",
+  "RECRUITER",
 ];
 
 ticketRouter.post(

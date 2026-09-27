@@ -38,3 +38,25 @@ export function requireAnyPermission(...permissions: string[]) {
     }
   };
 }
+
+
+/**
+ * Permission check used by manager workspaces. A user who is explicitly
+ * configured as a manager can use the manager-specific action even when
+ * their business role is FINANCE, IT_SUPPORT, RECRUITER, or EMPLOYEE.
+ */
+export function requirePermissionOrManager(permission: string) {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) return next(AppError.unauthorized());
+      if (req.user.isManager) return next();
+      const allowed = await hasPermission(req.user.role, permission);
+      if (!allowed) {
+        return next(AppError.forbidden(`Missing permission: ${permission}`));
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}

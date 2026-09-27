@@ -62,6 +62,7 @@ function serializeProfile(
     role: p.role,
     isActive: !!p.isActive,
     mustResetPwd: !!p.mustResetPwd,
+    isManager: p.isManager,
     employee: p.employeeId
       ? {
           id: p.employeeId,
@@ -73,6 +74,7 @@ function serializeProfile(
           departmentId: p.departmentId,
           departmentName: p.departmentName,
           designationTitle: p.designationTitle,
+          isManager: p.isManager,
         }
       : null,
   };

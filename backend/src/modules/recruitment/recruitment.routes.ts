@@ -25,7 +25,7 @@ recruitmentRouter.use(authenticate);
 
 recruitmentRouter.get(
   "/jobs",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const status =
@@ -47,7 +47,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/jobs/:id",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const job = await repo.getJobPosting(req.params.id);
@@ -420,7 +420,7 @@ recruitmentRouter.patch(
 
 recruitmentRouter.get(
   "/candidates",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const jobPostingId =
@@ -436,10 +436,9 @@ recruitmentRouter.get(
     }
   },
 );
-
 recruitmentRouter.get(
   "/candidates/:id",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const candidate = await repo.getCandidate(req.params.id);
@@ -1084,7 +1083,7 @@ recruitmentRouter.post(
 
 recruitmentRouter.get(
   "/interviews",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const candidateId =
@@ -1200,7 +1199,7 @@ recruitmentRouter.post(
 
 recruitmentRouter.get(
   "/analytics/pipeline",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getPipelineSummary();
@@ -1214,7 +1213,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/sources",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getSourceAnalytics();
@@ -1228,7 +1227,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/referrals",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getReferralAnalytics();
@@ -1242,7 +1241,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/volume-hiring",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getVolumeHiringAnalytics();
@@ -1256,7 +1255,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/open-roles",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const count = await repo.getOpenRolesCount();
@@ -1270,7 +1269,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/metrics",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getRecruitmentMetrics();

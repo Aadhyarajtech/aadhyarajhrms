@@ -60,6 +60,13 @@ function getCategoryOptions(role?: string) {
       { value: "Complaint", label: "Complaint / Grievance" },
     ];
   }
+  if (role === "RECRUITER") {
+    return [
+      { value: "ALL", label: "All Recruitment Tickets" },
+      { value: "Recruitment", label: "Recruitment" },
+      { value: "Employee Referral", label: "Employee Referral" },
+    ];
+  }
   return ALL_CATEGORIES;
 }
 
@@ -209,11 +216,14 @@ export default function Tickets() {
       );
     }
     if (user?.role === "MANAGER") {
-      // Managers only see standard complaints assigned to them, NEVER harassment or manager concerns
+      // Managers only see standard complaints assigned to them.
+      return ticket.category === "Complaint";
+    }
+    if (user?.role === "RECRUITER") {
       return (
-        ticket.category === "Complaint" &&
-        ticket.category !== "Harassment Complaint" &&
-        ticket.category !== "Manager Concern"
+        ticket.category === "Recruitment" ||
+        ticket.category === "Employee Referral" ||
+        ticket.assignedTo === "RECRUITER"
       );
     }
     return true;

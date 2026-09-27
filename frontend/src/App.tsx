@@ -396,12 +396,14 @@ export default function App() {
             path="settings"
             element={
               <ProtectedRoute
-                permissions={[
-                  "settings.manage",
-                  "organization.manage",
-                  "attendance.manage",
-                  "performance.manage",
-                  "governance.manage",
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "MANAGER",
+                  "RECRUITER",
+                  "FINANCE",
+                  "IT_SUPPORT",
+                  "EMPLOYEE",
                 ]}
               >
                 <Settings />

@@ -146,6 +146,31 @@ type InterviewCopilot = {
     followUps: string[];
   }[];
 };
+
+type InterviewEvaluation = {
+  overallAssessment: string;
+  technicalAssessment: string;
+  communicationAssessment: string;
+  strengths: string[];
+  weaknesses: string[];
+  concerns: string[];
+  recommendation: "PROCEED" | "HOLD" | "REJECT" | "REVIEW_REQUIRED";
+  suggestedNextStep: string;
+};
+
+const rankedCandidatesApi = (jobPostingId: string) =>
+  api
+    .get<{ candidates: Candidate[] }>("/recruitment/candidates/ranked", {
+      params: { jobPostingId },
+    })
+    .then((response) => response.data.candidates);
+
+const evaluateInterviewApi = (interviewId: string) =>
+  api
+    .post<{ evaluation: InterviewEvaluation }>(
+      `/recruitment/interviews/${interviewId}/ai-evaluation`,
+    )
+    .then((response) => response.data.evaluation);
 /* =========================================================
    LOCAL REQUISITION TYPES
 ========================================================= */
@@ -282,7 +307,7 @@ export default function JobDetail() {
   const { data: rankedCandidates, isLoading: rankedCandidatesLoading } =
     useQuery({
       queryKey: ["ranked-candidates", jobId],
-      queryFn: () => RecruitmentApi.rankedCandidates(jobId!),
+      queryFn: () => rankedCandidatesApi(jobId!),
       enabled: !!jobId,
     });
   const stageMutation = useMutation({
@@ -4499,20 +4524,7 @@ function ScheduleInterviewModal({
     useState<Interview | null>(null);
 
   const [interviewEvaluationData, setInterviewEvaluationData] =
-    useState<{
-      overallAssessment: string;
-      technicalAssessment: string;
-      communicationAssessment: string;
-      strengths: string[];
-      weaknesses: string[];
-      concerns: string[];
-      recommendation:
-      | "PROCEED"
-      | "HOLD"
-      | "REJECT"
-      | "REVIEW_REQUIRED";
-      suggestedNextStep: string;
-    } | null>(null);
+    useState<InterviewEvaluation | null>(null);
 
   const [feedbackText, setFeedbackText] = useState("");
   const [scorecard, setScorecard] = useState<Array<{ criterion: string; score: number; comment: string }>>([
@@ -4612,7 +4624,7 @@ function ScheduleInterviewModal({
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
   const interviewEvaluationMutation = useMutation({
-    mutationFn: (id: string) => RecruitmentApi.evaluateInterview(id),
+    mutationFn: (id: string) => evaluateInterviewApi(id),
 
     onSuccess: (data) => {
       setInterviewEvaluationData(data);

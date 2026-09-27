@@ -992,7 +992,8 @@ function PostJobModal({
     ) ?? [];
 
   const mutation = useMutation({
-    mutationFn: RecruitmentApi.createJob,
+    mutationFn: (payload: Record<string, unknown>) =>
+      RecruitmentApi.createJob(payload),
 
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -1055,9 +1056,13 @@ function PostJobModal({
   });
 
   const aiJobDescriptionMutation = useMutation({
-    mutationFn: RecruitmentApi.generateJobDescription,
+    mutationFn: (
+      payload: Parameters<typeof RecruitmentApi.generateJobDescription>[0],
+    ) => RecruitmentApi.generateJobDescription(payload),
 
-    onSuccess: (draft) => {
+    onSuccess: (
+      draft: Awaited<ReturnType<typeof RecruitmentApi.generateJobDescription>>,
+    ) => {
       setValue("departmentId", draft.departmentId, {
         shouldDirty: true,
         shouldValidate: true,
@@ -1263,7 +1268,7 @@ function PostJobModal({
       skills,
     };
 
-    mutation.mutate(payload as any);
+    mutation.mutate(payload);
   };
 
   return (
