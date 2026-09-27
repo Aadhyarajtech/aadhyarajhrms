@@ -295,8 +295,12 @@ export async function findSimilarTickets(
  */
 export async function detectRecurringIssueGroups(
   minClusterSize = 2,
-  windowHours = 24,
-  departmentFilter?: { assignedTo?: string[]; categories?: string[] },
+  windowHours = 48,
+  departmentFilter?: {
+    assignedTo?: string[];
+    categories?: string[];
+    managerEmployeeId?: string | null;
+  }
 ): Promise<RecurringIssueGroup[]> {
   const cutoff = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
 
@@ -315,15 +319,20 @@ export async function detectRecurringIssueGroups(
   };
 
   if (departmentFilter) {
-    const conditions: any[] = [];
-    if (departmentFilter.assignedTo && departmentFilter.assignedTo.length > 0) {
-      conditions.push({ assignedTo: { $in: departmentFilter.assignedTo } });
-    }
-    if (departmentFilter.categories && departmentFilter.categories.length > 0) {
-      conditions.push({ category: { $in: departmentFilter.categories } });
-    }
-    if (conditions.length > 0) {
-      query.$or = conditions;
+    if (departmentFilter.managerEmployeeId) {
+      query.category = "Complaint";
+      query.assignedManagerId = departmentFilter.managerEmployeeId;
+    } else {
+      const conditions: any[] = [];
+      if (departmentFilter.assignedTo && departmentFilter.assignedTo.length > 0) {
+        conditions.push({ assignedTo: { $in: departmentFilter.assignedTo } });
+      }
+      if (departmentFilter.categories && departmentFilter.categories.length > 0) {
+        conditions.push({ category: { $in: departmentFilter.categories } });
+      }
+      if (conditions.length > 0) {
+        query.$or = conditions;
+      }
     }
   }
 

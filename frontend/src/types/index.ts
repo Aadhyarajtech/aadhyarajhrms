@@ -17,6 +17,7 @@ export interface AuthEmployee {
   departmentId: string;
   departmentName: string;
   designationTitle: string;
+  isManager: boolean;
 }
 
 export interface AuthUser {
@@ -25,6 +26,7 @@ export interface AuthUser {
   role: Role;
   isActive: boolean;
   mustResetPwd: boolean;
+  isManager: boolean;
   employee: AuthEmployee | null;
 }
 
@@ -777,6 +779,11 @@ export interface PayrollRun {
   processedAt: string | null;
   attendanceLockedAt: string | null;
   attendanceLockedDepartmentIds: string[];
+  /** All departments included in this single payroll period/run. */
+  departments?: Array<{ id: string; name: string }>;
+  /** Legacy single-department fields kept for backwards compatibility. */
+  departmentId?: string | null;
+  departmentName?: string | null;
   reviewedAt: string | null;
   reviewedByUserId: string | null;
   approvedAt: string | null;

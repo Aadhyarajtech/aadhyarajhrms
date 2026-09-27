@@ -140,7 +140,7 @@ export async function authenticate(
     const employee = await Employee.findOne({
       userId: user._id,
     })
-      .select("_id isManager status")
+      .select("_id isManager status firstName lastName")
       .lean<any>();
 
     /*
@@ -198,10 +198,16 @@ export async function authenticate(
      * employee hierarchy, their effective role becomes MANAGER
      * for authorization purposes.
      */
-    const effectiveRole =
-      user.role === "EMPLOYEE" && isCurrentManager
-        ? "MANAGER"
-        : user.role;
+/*
+     * Keep the employee's real User.role unchanged. Manager status is a
+     * separate capability derived from the employee hierarchy. This is
+     * important for FINANCE, IT_SUPPORT, RECRUITER, and EMPLOYEE accounts
+     * that are also configured as managers.
+     *
+     * Authorization code can use req.user.isManager for manager capabilities
+     * without changing the user's actual application role.
+     */
+    const effectiveRole = user.role;
 
     /*
      * -------------------------------------------------------
@@ -216,6 +222,8 @@ export async function authenticate(
       employeeId: String(employee._id),
       email: user.email,
       role: effectiveRole,
+      isManager: isCurrentManager,
+      name: employee.firstName ? `${employee.firstName} ${employee.lastName ?? ""}`.trim() : user.email,
     } as AuthUser;
 
     return next();

@@ -7,10 +7,12 @@ export function ProtectedRoute({
   children,
   roles,
   permissions,
+  managerOnly = false,
 }: {
   children: React.ReactNode;
   roles?: Role[];
   permissions?: string[];
+  managerOnly?: boolean;
 }) {
   const { user, isLoading, hasPermission } = useAuth();
 
@@ -24,8 +26,16 @@ export function ProtectedRoute({
 
   if (!user) return <Navigate to="/login" replace />;
   const roleAllowed = !roles || roles.includes(user.role);
+  const managerAllowed =
+    !managerOnly ||
+    user.employee?.isManager === true ||
+    user.role === "SUPER_ADMIN" ||
+    user.role === "HR_ADMIN";
   const permissionAllowed =
     !permissions?.length || permissions.some(hasPermission);
+  if (!managerAllowed)
+    return <Navigate to="/app/dashboard" replace />;
+
   if (roles && permissions) {
     if (!roleAllowed && !permissionAllowed)
       return <Navigate to="/app/dashboard" replace />;

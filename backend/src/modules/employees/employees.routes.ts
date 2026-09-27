@@ -517,15 +517,14 @@ employeesRouter.get(
         requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
 
       // Managers may only request their own direct reports.
-      if (
-        requester.role === "MANAGER" &&
-        requester.employeeId !== employeeId
-      ) {
-        throw AppError.forbidden();
+      if (!isAdmin && !requester.isManager) {
+        throw AppError.forbidden(
+          "Only employees marked as managers can access direct reports.",
+        );
       }
 
-      // Employees cannot access direct-report lists.
-      if (!isAdmin && requester.role !== "MANAGER") {
+      // Non-admin managers may only request their own direct reports.
+      if (!isAdmin && requester.employeeId !== employeeId) {
         throw AppError.forbidden();
       }
 

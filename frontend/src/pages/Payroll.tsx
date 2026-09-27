@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -13,6 +13,8 @@ import {
   Clock,
   Sparkles,
   ShieldAlert,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { PayslipAiExplainer } from "@/components/payroll/PayslipAiExplainer";
 import { PayrollValidationModal } from "@/components/payroll/PayrollValidationModal";
@@ -328,7 +330,8 @@ function RequestPayslipsModal({ onClose }: { onClose: () => void }) {
 function PayrollRuns() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [viewRun, setViewRun] = useState<string | null>(null);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [expandedPayslipId, setExpandedPayslipId] = useState<string | null>(null);
   const [auditRun, setAuditRun] = useState<PayrollRun | null>(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
   const { data: runs, isLoading } = useQuery({
@@ -339,6 +342,7 @@ function PayrollRuns() {
     queryKey: ["organization", "departments"],
     queryFn: OrganizationApi.departments,
   });
+
   const today = new Date();
   const previousMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
   const previousMonthStart = new Date(
@@ -358,24 +362,54 @@ function PayrollRuns() {
 
   const selectedStartDate = watch("startDate");
   const selectedEndDate = watch("endDate");
-  const selectedRun = runs?.find(
-    (run) => run.startDate === selectedStartDate && run.endDate === selectedEndDate,
-  );
-  const canProcessSelectedPeriod = selectedRun?.status === "ATTENDANCE_LOCKED";
   const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    setSelectedDepartmentIds(selectedRun?.attendanceLockedDepartmentIds ?? []);
-  }, [selectedRun?.id, selectedRun?.attendanceLockedDepartmentIds]);
+  const runsForSelectedPeriod = (runs ?? []).filter(
+    (run) => run.startDate === selectedStartDate && run.endDate === selectedEndDate,
+  );
+  // A payroll period now has one PayrollRun. Keep this lookup compatible with
+  // legacy department-scoped runs while using the grouped department list for
+  // all new runs.
+  const periodRun = runsForSelectedPeriod[0] ?? null;
+  const runByDepartment = new Map<string, PayrollRun>();
 
+  runsForSelectedPeriod.forEach((run) => {
+    const departmentIds = run.attendanceLockedDepartmentIds?.length
+      ? run.attendanceLockedDepartmentIds
+      : run.departmentId
+        ? [run.departmentId]
+        : [];
+    departmentIds.forEach((departmentId) => {
+      runByDepartment.set(String(departmentId), run);
+    });
+  });
+
+  // Each department is handled independently while sharing the selected payroll period.
   const selectedDepartments = departments.filter((department) =>
     selectedDepartmentIds.includes(department.id),
   );
+
+  const selectedRuns = selectedDepartmentIds
+    .map((departmentId) => runByDepartment.get(departmentId))
+    .filter((run): run is PayrollRun => !!run);
+
+  const selectedRun = selectedRuns[0] ?? periodRun;
+
+  const lockedSelectedDepartmentIds = selectedDepartmentIds.filter((departmentId) => {
+    const run = runByDepartment.get(departmentId);
+    if (!run || run.status !== "ATTENDANCE_LOCKED") return false;
+
+    return run.attendanceLockedDepartmentIds?.length
+      ? run.attendanceLockedDepartmentIds.map(String).includes(String(departmentId))
+      : String(run.departmentId ?? "") === String(departmentId);
+  });
+
+  const payrollDepartmentsLocked = lockedSelectedDepartmentIds.length > 0;
+  const canProcessSelectedPeriod = payrollDepartmentsLocked;
+
   const availableDepartments = departments.filter(
     (department) => !selectedDepartmentIds.includes(department.id),
   );
-  const payrollDepartmentsLocked =
-    selectedRun?.status === "ATTENDANCE_LOCKED";
 
   const validateDateRange = () => {
     if (!selectedStartDate || !selectedEndDate) {
@@ -398,17 +432,17 @@ function PayrollRuns() {
       PayrollApi.lockAttendance(v.startDate, v.endDate, v.departmentIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payroll", "runs"] });
-      showToast("Attendance lock updated for the selected departments.");
+      showToast("Attendance locked for the selected departments.");
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
   const processMutation = useMutation({
-    mutationFn: (v: { startDate: string; endDate: string }) =>
-      PayrollApi.process(v.startDate, v.endDate),
+    mutationFn: (v: { startDate: string; endDate: string; departmentIds: string[] }) =>
+      PayrollApi.process(v.startDate, v.endDate, v.departmentIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payroll", "runs"] });
-      showToast("Payroll processed successfully.");
+      showToast("Payroll processed for the selected departments.");
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
@@ -449,152 +483,170 @@ function PayrollRuns() {
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
+  const handleLock = handleSubmit((v) => {
+    if (!validateDateRange()) return;
+    if (!selectedDepartmentIds.length) {
+      showToast("Select at least one department to lock attendance.", "error");
+      return;
+    }
+    lockMutation.mutate({ ...v, departmentIds: selectedDepartmentIds });
+  });
+
+  const handleProcess = handleSubmit((v) => {
+    if (!validateDateRange()) return;
+    if (!lockedSelectedDepartmentIds.length) {
+      showToast("Select departments whose attendance is locked for this exact period.", "error");
+      return;
+    }
+    processMutation.mutate({
+      ...v,
+      departmentIds: lockedSelectedDepartmentIds,
+    });
+  });
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader
           title="Process payroll"
           action={<span className="rounded-full bg-brand-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-brand-700">Admin workflow</span>}
-          subtitle="Generates payslips for every active employee with a salary structure."
+          subtitle="Generates one payroll run for the selected period and includes all selected departments."
         />
-        <form className="flex flex-col gap-3 rounded-2xl bg-gradient-to-r from-slate-50 to-white p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-muted">
-              <span>Payroll start date <span className="text-red-500">*</span></span>
-              <input
-                type="date"
-                required
-                {...register("startDate", { required: true })}
-                max={selectedEndDate || toInputDate(new Date(Date.now() - 86400000))}
-                className="h-12 w-[200px] rounded-2xl border border-line bg-white px-4 text-[15px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-muted">
-              <span>Payroll end date <span className="text-red-500">*</span></span>
-              <input
-                type="date"
-                required
-                {...register("endDate", { required: true })}
-                min={selectedStartDate}
-                max={toInputDate(new Date(Date.now() - 86400000))}
-                className="h-12 w-[200px] rounded-2xl border border-line bg-white px-4 text-[15px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-              />
-            </label>
-            <div className="flex min-w-[280px] flex-1 flex-col gap-2 text-[13px] font-medium text-ink-muted">
-              <span>Departments to lock attendance <span className="text-red-500">*</span></span>
-              <select
-                value=""
-                disabled={departmentsLoading}
-                onChange={(event) => {
-                  const departmentId = event.target.value;
-                  if (!departmentId) return;
-                  setSelectedDepartmentIds((current) =>
-                    current.includes(departmentId) ? current : [...current, departmentId],
+        <form className="flex flex-wrap items-end gap-3 rounded-2xl bg-gradient-to-r from-slate-50 to-white p-4">
+          <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-muted">
+            <span>Payroll start date <span className="text-red-500">*</span></span>
+            <input
+              type="date"
+              required
+              {...register("startDate", { required: true })}
+              max={selectedEndDate || toInputDate(new Date(Date.now() - 86400000))}
+              className="h-12 w-[200px] rounded-2xl border border-line bg-white px-4 text-[15px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-muted">
+            <span>Payroll end date <span className="text-red-500">*</span></span>
+            <input
+              type="date"
+              required
+              {...register("endDate", { required: true })}
+              min={selectedStartDate}
+              max={toInputDate(new Date(Date.now() - 86400000))}
+              className="h-12 w-[200px] rounded-2xl border border-line bg-white px-4 text-[15px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            />
+          </label>
+
+          <div className="flex min-w-[280px] flex-1 flex-col gap-2 text-[13px] font-medium text-ink-muted">
+            <span>
+              Departments to process <span className="text-red-500">*</span>
+            </span>
+            <select
+              value=""
+              disabled={departmentsLoading}
+              onChange={(event) => {
+                const departmentId = event.target.value;
+                if (!departmentId) return;
+                setSelectedDepartmentIds((current) =>
+                  current.includes(departmentId)
+                    ? current
+                    : [...current, departmentId],
+                );
+              }}
+              className="h-12 rounded-2xl border border-line bg-white px-4 text-[15px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-50"
+            >
+              <option value="">
+                {departmentsLoading ? "Loading departments..." : "Select a department"}
+              </option>
+              {availableDepartments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+
+            {selectedDepartments.length > 0 ? (
+              <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-2">
+                {selectedDepartments.map((department) => {
+                  const isLocked = lockedSelectedDepartmentIds.includes(department.id);
+                  const run = runByDepartment.get(department.id);
+
+                  return (
+                    <span
+                      key={department.id}
+                      className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-brand-50 px-3 py-1.5 text-[12px] font-semibold text-brand-700"
+                    >
+                      {department.name}
+                      {run && <StatusBadge status={run.status} />}
+                      {isLocked ? (
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                          Locked
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${department.name}`}
+                          className="rounded-full p-0.5 text-brand-600 transition hover:bg-brand-100 hover:text-brand-800"
+                          onClick={() =>
+                            setSelectedDepartmentIds((current) =>
+                              current.filter((id) => id !== department.id),
+                            )
+                          }
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </span>
                   );
-                }}
-                className="h-12 rounded-2xl border border-line bg-white px-4 text-[15px] text-ink outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-50"
-              >
-                <option value="">{departmentsLoading ? "Loading departments..." : "Select a department"}</option>
-                {availableDepartments.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {department.name}
-                  </option>
-                ))}
-              </select>
-              {selectedDepartments.length > 0 ? (
-                <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-2">
-                  {selectedDepartments.map((department) => {
-                    const isLocked = selectedRun?.attendanceLockedDepartmentIds?.includes(department.id) ?? false;
-                    return (
-                      <span
-                        key={department.id}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-brand-100 bg-brand-50 px-3 py-1.5 text-[12px] font-semibold text-brand-700"
-                      >
-                        {department.name}
-                        {isLocked ? (
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">Locked</span>
-                        ) : (
-                          <button
-                            type="button"
-                            aria-label={`Remove ${department.name}`}
-                            className="rounded-full p-0.5 text-brand-600 transition hover:bg-brand-100 hover:text-brand-800"
-                            onClick={() =>
-                              setSelectedDepartmentIds((current) =>
-                                current.filter((id) => id !== department.id),
-                              )
-                            }
-                          >
-                            <X size={13} />
-                          </button>
-                        )}
-                      </span>
-                    );
-                  })}
-                </div>
-              ) : (
-                <span className="text-[11px] text-ink-faint">Select one or more departments. Only selected departments will be locked.</span>
-              )}
-              {payrollDepartmentsLocked && (selectedRun?.attendanceLockedDepartmentIds?.length ?? 0) > 0 && (
-                <span className="text-[11px] text-emerald-700">
-                  Locked departments are shown above. Remove a department only if you intend to change the lock selection before processing payroll.
-                </span>
-              )}
-            </div>
-            <span className="pb-3 text-[12px] text-ink-faint">Select any completed period.</span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-indigo-200 bg-indigo-50/50 text-indigo-700 hover:bg-indigo-100/60"
-              leftIcon={<Sparkles size={15} className="text-indigo-600" />}
-              onClick={() => setShowValidationModal(true)}
-            >
-              Pre-Run Readiness Check
-            </Button>
-
-            <Button
-              variant="outline"
-              leftIcon={<Clock size={15} />}
-              onClick={handleSubmit((v) => {
-                if (!validateDateRange()) return;
-                if (!selectedDepartmentIds.length) {
-                  showToast("Select at least one department to lock attendance.", "error");
-                  return;
-                }
-                lockMutation.mutate({ ...v, departmentIds: selectedDepartmentIds });
-              })}
-              isLoading={lockMutation.isPending}
-            >
-              Lock attendance
-            </Button>
-            {selectedDepartmentIds.length > 0 && (
+                })}
+              </div>
+            ) : (
               <span className="text-[11px] text-ink-faint">
-                {selectedDepartmentIds.length} department{selectedDepartmentIds.length === 1 ? "" : "s"} selected for attendance lock.
+                Select one or more departments. Each department can be locked and
+                processed independently within the same payroll period.
               </span>
             )}
-            <Button
-              leftIcon={<Play size={15} />}
-              onClick={handleSubmit((v) => {
-                if (validateDateRange()) processMutation.mutate(v);
-              })}
-              isLoading={processMutation.isPending}
-              disabled={!canProcessSelectedPeriod}
-              title={
-                selectedRun
-                  ? `Payroll is ${selectedRun.status}. Only attendance-locked payroll can be processed.`
-                  : "Lock attendance for this payroll period before processing."
-              }
-            >
-              Process payroll
-            </Button>
           </div>
+
+          <span className="pb-3 text-[12px] text-ink-faint">
+            Select any completed period.
+          </span>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="border-indigo-200 bg-indigo-50/50 text-indigo-700 hover:bg-indigo-100/60"
+            leftIcon={<Sparkles size={15} className="text-indigo-600" />}
+            onClick={() => setShowValidationModal(true)}
+          >
+            Pre-Run Readiness Check
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            leftIcon={<Clock size={15} />}
+            onClick={handleLock}
+            isLoading={lockMutation.isPending}
+          >
+            Lock attendance
+          </Button>
+          <Button
+            type="button"
+            leftIcon={<Play size={15} />}
+            onClick={handleProcess}
+            isLoading={processMutation.isPending}
+            disabled={!canProcessSelectedPeriod}
+            title={
+              selectedRun
+                ? `Payroll is ${selectedRun.status}. Only attendance-locked departments can be processed.`
+                : "Lock attendance for the selected departments before processing."
+            }
+          >
+            Process payroll
+          </Button>
         </form>
       </Card>
 
       <Card>
-        <CardHeader title="Payroll history" subtitle="Track payroll processing, review, approval and payment status." />
+        <CardHeader title="Payroll history" subtitle="Each payroll period is one payroll run containing all selected departments." />
         {isLoading ? (
           <Skeleton className="h-48 rounded-2xl" />
         ) : !runs?.length ? (
@@ -604,6 +656,7 @@ function PayrollRuns() {
             <table className="w-full text-left text-[13px]">
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] uppercase tracking-[0.08em] text-slate-400">
+                  <th className="pb-2 font-medium">Departments</th>
                   <th className="pb-2 font-medium">Period</th>
                   <th className="pb-2 font-medium">Headcount</th>
                   <th className="pb-2 font-medium">Gross</th>
@@ -613,94 +666,88 @@ function PayrollRuns() {
                 </tr>
               </thead>
               <tbody>
-                {runs.map((r) => (
-                  <tr key={r.id} className="border-b border-slate-100 transition-colors hover:bg-brand-50/20">
-                    <td className="py-2.5">
-                      <div className="font-medium text-ink">{r.startDate} → {r.endDate}</div>
-                      <div className="text-[11px] text-ink-faint">{monthName(r.month)} {r.year}</div>
-                    </td>
-                    <td className="py-2.5 text-ink-faint">{r.headcount}</td>
-                    <td className="py-2.5 text-ink-faint">
-                      {formatCurrencyINR(r.totalGross)}
-                    </td>
-                    <td className="py-2.5 font-medium text-ink">
-                      {formatCurrencyINR(r.totalNet)}
-                    </td>
-                    <td className="py-2.5">
-                      <StatusBadge status={r.status} />
-                    </td>
-                    <td className="py-2.5 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => setAuditRun(r)}
-                          className="flex items-center gap-1 text-[12px] font-medium text-indigo-600 hover:underline"
-                          title="Run automated anomaly detection and audit on this payroll period"
-                        >
-                          <ShieldAlert size={13} className="text-indigo-600" />
-                          Audit
-                        </button>
-                        <button
-                          onClick={() => setViewRun(r.id)}
-                          className="text-[12px] font-medium text-brand-600 hover:underline"
-                        >
-                          View payslips
-                        </button>
-                        {r.status === "PROCESSED" && (
-                          <button
-                            onClick={() => reviewMutation.mutate(r.id)}
-                            className="text-[12px] font-medium text-brand-600 hover:underline"
-                          >
-                            Submit for review
-                          </button>
-                        )}
-                        {r.status === "HR_REVIEW" && (
-                          <button
-                            onClick={() => approveMutation.mutate(r.id)}
-                            className="text-[12px] font-medium text-success-700 hover:underline"
-                          >
-                            Approve
-                          </button>
-                        )}
-                        {r.status === "APPROVED" && (
-                          <button
-                            onClick={() => markPaidMutation.mutate(r.id)}
-                            className="text-[12px] font-medium text-success-700 hover:underline"
-                          >
-                            Mark paid
-                          </button>
-                        )}
-                        {r.status === "PAID" && !r.payslipsSentAt && (
-                          <button
-                            onClick={() => sendPayslipsMutation.mutate(r.id)}
-                            className="text-[12px] font-medium text-brand-600 hover:underline"
-                          >
-                            Send payslips
-                          </button>
-                        )}
-                        {r.status === "PAID" && r.payslipsSentAt && (
-                          <span className="text-[12px] font-medium text-success-700">
-                            Payslips sent
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {runs.map((r) => {
+                  const expanded = expandedRunId === r.id;
+                  return (
+                    <Fragment key={r.id}>
+                      <tr className="border-b border-slate-100 transition-colors hover:bg-brand-50/20">
+                        <td className="py-2.5 align-top">
+                          <div className="flex max-w-[420px] flex-wrap gap-1.5">
+                            {(r.departments?.length
+                              ? r.departments
+                              : r.departmentName
+                                ? [{ id: r.departmentId ?? "legacy", name: r.departmentName }]
+                                : []
+                            ).map((department) => (
+                              <span
+                                key={`${r.id}-${department.id}`}
+                                className="rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700"
+                              >
+                                {department.name}
+                              </span>
+                            ))}
+                            {!r.departments?.length && !r.departmentName && (
+                              <span className="text-[12px] text-ink-faint">Legacy / Unscoped</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-2.5">
+                          <div className="font-medium text-ink">{r.startDate} → {r.endDate}</div>
+                          <div className="text-[11px] text-ink-faint">{monthName(r.month)} {r.year}</div>
+                        </td>
+                        <td className="py-2.5 text-ink-faint">{r.headcount}</td>
+                        <td className="py-2.5 text-ink-faint">{formatCurrencyINR(r.totalGross)}</td>
+                        <td className="py-2.5 font-medium text-ink">{formatCurrencyINR(r.totalNet)}</td>
+                        <td className="py-2.5"><StatusBadge status={r.status} /></td>
+                        <td className="py-2.5 text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <button onClick={() => setAuditRun(r)} className="flex items-center gap-1 text-[12px] font-medium text-indigo-600 hover:underline" title="Run automated anomaly detection and audit on this payroll period">
+                              <ShieldAlert size={13} className="text-indigo-600" /> Audit
+                            </button>
+                            <button
+                              onClick={() => {
+                                setExpandedRunId(expanded ? null : r.id);
+                                setExpandedPayslipId(null);
+                              }}
+                              className="flex items-center gap-1 text-[12px] font-medium text-brand-600 hover:underline"
+                            >
+                              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              View payslips
+                            </button>
+                            {r.status === "PROCESSED" && <button onClick={() => reviewMutation.mutate(r.id)} className="text-[12px] font-medium text-brand-600 hover:underline">Submit for review</button>}
+                            {r.status === "HR_REVIEW" && <button onClick={() => approveMutation.mutate(r.id)} className="text-[12px] font-medium text-success-700 hover:underline">Approve</button>}
+                            {r.status === "APPROVED" && <button onClick={() => markPaidMutation.mutate(r.id)} className="text-[12px] font-medium text-success-700 hover:underline">Mark paid</button>}
+                            {r.status === "PAID" && !r.payslipsSentAt && <button onClick={() => sendPayslipsMutation.mutate(r.id)} className="text-[12px] font-medium text-brand-600 hover:underline">Send payslips</button>}
+                            {r.status === "PAID" && r.payslipsSentAt && <span className="text-[12px] font-medium text-success-700">Payslips sent</span>}
+                          </div>
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr className="border-b border-slate-200 bg-slate-50/50">
+                          <td colSpan={7} className="p-4">
+                            <InlineRunPayslips
+                              runId={r.id}
+                              expandedPayslipId={expandedPayslipId}
+                              onTogglePayslip={(id) => setExpandedPayslipId((current) => current === id ? null : id)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </Card>
 
-      {viewRun && (
-        <RunPayslipsModal runId={viewRun} onClose={() => setViewRun(null)} />
-      )}
       {auditRun && (
         <PayrollAnomalyModal
           open={!!auditRun}
-          runId={auditRun.id}
-          runMonth={auditRun.month}
-          runYear={auditRun.year}
+          runId={auditRun!.id}
+          runMonth={auditRun!.month}
+          runYear={auditRun!.year}
           onClose={() => setAuditRun(null)}
         />
       )}
@@ -711,22 +758,20 @@ function PayrollRuns() {
           selectedEndDate
             ? new Date(`${selectedEndDate}T00:00:00`).getMonth() + 1
             : selectedStartDate
-            ? new Date(`${selectedStartDate}T00:00:00`).getMonth() + 1
-            : today.getMonth() + 1
+              ? new Date(`${selectedStartDate}T00:00:00`).getMonth() + 1
+              : today.getMonth() + 1
         }
         initialYear={
           selectedEndDate
             ? new Date(`${selectedEndDate}T00:00:00`).getFullYear()
             : selectedStartDate
-            ? new Date(`${selectedStartDate}T00:00:00`).getFullYear()
-            : today.getFullYear()
+              ? new Date(`${selectedStartDate}T00:00:00`).getFullYear()
+              : today.getFullYear()
         }
         onProceedToProcess={() => {
-          if (validateDateRange()) {
-            processMutation.mutate({
-              startDate: selectedStartDate,
-              endDate: selectedEndDate,
-            });
+          if (validateDateRange() && lockedSelectedDepartmentIds.length) {
+            processMutation.mutate({ startDate: selectedStartDate, endDate: selectedEndDate, departmentIds: lockedSelectedDepartmentIds });
+            setShowValidationModal(false);
           }
         }}
       />
@@ -734,67 +779,80 @@ function PayrollRuns() {
   );
 }
 
-function RunPayslipsModal({
+function InlineRunPayslips({
   runId,
-  onClose,
+  expandedPayslipId,
+  onTogglePayslip,
 }: {
   runId: string;
-  onClose: () => void;
+  expandedPayslipId: string | null;
+  onTogglePayslip: (id: string) => void;
 }) {
-  const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ["payroll", "run-payslips", runId],
     queryFn: () => PayrollApi.payslipsForRun(runId),
   });
 
+  if (isLoading) return <Skeleton className="h-32 rounded-2xl" />;
+  if (!data?.length) return <p className="py-3 text-[13px] text-ink-faint">No payslips are available for this payroll run.</p>;
+
   return (
-    <>
-      <Modal open onClose={onClose} title="Payslips for this run" size="lg">
-        {isLoading ? (
-          <Skeleton className="h-64 rounded-2xl" />
-        ) : (
-          <div className="space-y-2">
-            {data?.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between rounded-xl border border-line/60 px-4 py-2.5 text-[13px]"
-              >
-                <div>
-                  <p className="font-medium text-ink">
-                    {p.firstName} {p.lastName}
-                  </p>
-                  <p className="text-[12px] text-ink-faint">
-                    {p.employeeCode} · {p.departmentName}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <p className="font-medium text-ink">
-                    {formatCurrencyINR(p.netPay)}
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    leftIcon={
-                      <Sparkles size={12} className="text-indigo-600" />
-                    }
-                    onClick={() => setSelectedPayslip(p)}
-                  >
-                    View & Explain
-                  </Button>
+    <div className="space-y-2">
+      {data.map((p) => {
+        const expanded = expandedPayslipId === p.id;
+        const earnings: [string, number][] = [
+          ["Basic", p.basic], ["HRA", p.hra], ["Conveyance", p.conveyance],
+          ["Medical", p.medical], ["Special allowance", p.specialAllowance],
+          ["Performance bonus", p.performanceBonus], ["Overtime", p.overtimeAmount],
+        ];
+        const deductions: [string, number][] = [
+          ["Provident Fund", p.pf], ["Professional tax", p.professionalTax],
+          ["Income tax (TDS)", p.incomeTax], ["ESI", p.esi],
+          ["Loss of pay", p.lop], ["Advance recovery", p.advanceRecovery],
+        ];
+        return (
+          <div key={p.id} className="overflow-hidden rounded-xl border border-line/60 bg-white">
+            <button type="button" onClick={() => onTogglePayslip(p.id)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50">
+              <div className="flex min-w-0 items-center gap-2">
+                {expanded ? <ChevronUp size={16} className="shrink-0 text-brand-600" /> : <ChevronDown size={16} className="shrink-0 text-brand-600" />}
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-ink">{p.firstName} {p.lastName}</p>
+                  <p className="text-[11px] text-ink-faint">{p.employeeCode} · {p.departmentName ?? "Department"}</p>
                 </div>
               </div>
-            ))}
+              <p className="shrink-0 font-semibold text-ink">{formatCurrencyINR(p.netPay)} <span className="ml-1 text-[11px] font-normal text-ink-faint">{expanded ? "▲" : "🔻"}</span></p>
+            </button>
+            {expanded && (
+              <div className="border-t border-line/60 bg-slate-50/60 p-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl bg-white p-4">
+                    <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-ink-faint">Earnings</p>
+                    <div className="space-y-1.5">
+                      {earnings.map(([label, value]) => <div key={label} className="flex justify-between text-[12px]"><span className="text-ink-faint">{label}</span><span>{formatCurrencyINR(value ?? 0)}</span></div>)}
+                      <div className="mt-3 flex justify-between border-t border-line/60 pt-2 text-[13px] font-semibold"><span>Gross earnings</span><span>{formatCurrencyINR(p.grossEarnings)}</span></div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-white p-4">
+                    <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-ink-faint">Deductions</p>
+                    <div className="space-y-1.5">
+                      {deductions.map(([label, value]) => <div key={label} className="flex justify-between text-[12px]"><span className="text-ink-faint">{label}</span><span>{formatCurrencyINR(value ?? 0)}</span></div>)}
+                      <div className="mt-3 flex justify-between border-t border-line/60 pt-2 text-[13px] font-semibold"><span>Total deductions</span><span>{formatCurrencyINR(p.totalDeductions)}</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Net pay</p><p className="mt-1 text-lg font-semibold text-ink">{formatCurrencyINR(p.netPay)}</p></div>
+                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Days payable</p><p className="mt-1 font-semibold text-ink">{p.daysPayable} / {p.daysInMonth}</p></div>
+                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Taxable income</p><p className="mt-1 font-semibold text-ink">{formatCurrencyINR(p.taxableIncome)}</p></div>
+                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Annual tax</p><p className="mt-1 font-semibold text-ink">{formatCurrencyINR(p.annualTax)}</p></div>
+                </div>
+                <div className="mt-4"><PayslipAiExplainer payslipId={p.id} /></div>
+              </div>
+            )}
           </div>
-        )}
-      </Modal>
-
-      {selectedPayslip && (
-        <PayslipModal
-          payslip={selectedPayslip}
-          onClose={() => setSelectedPayslip(null)}
-        />
-      )}
-    </>
+        );
+      })}
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ export interface AuthUser {
   employeeId: string | null;
   name: string;
   email: string;
+  isManager: boolean;
   role:
     | "SUPER_ADMIN"
     | "HR_ADMIN"

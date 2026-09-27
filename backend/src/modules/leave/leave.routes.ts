@@ -21,6 +21,37 @@ import { notify } from "@/modules/notifications/notifications.repository";
 export const leaveRouter = Router();
 
 /**
+ * The Leave AI service intentionally accepts the legacy management-role
+ * union (SUPER_ADMIN / HR_ADMIN / MANAGER).  Manager status is separate
+ * from the employee's business role, so a FINANCE / IT_SUPPORT /
+ * RECRUITER employee with isManager=true is represented as MANAGER only
+ * at this AI-service boundary. The actual authenticated role is never
+ * changed.
+ */
+const getLeaveAiRequesterRole = (requester: {
+  role:
+    | "SUPER_ADMIN"
+    | "HR_ADMIN"
+    | "MANAGER"
+    | "RECRUITER"
+    | "FINANCE"
+    | "IT_SUPPORT"
+    | "EMPLOYEE";
+  isManager?: boolean;
+}): "SUPER_ADMIN" | "HR_ADMIN" | "MANAGER" => {
+  if (requester.role === "SUPER_ADMIN") return "SUPER_ADMIN";
+  if (requester.role === "HR_ADMIN") return "HR_ADMIN";
+  if (requester.role === "MANAGER") return "MANAGER";
+
+  // A non-MANAGER business role can still be a manager when isManager=true.
+  if (requester.isManager) return "MANAGER";
+
+  // Callers are already blocked by the route authorization above.
+  // This fallback keeps the value type-safe without changing Leave AI.
+  return "MANAGER";
+};
+
+/**
  * Every Leave route requires authentication.
  */
 leaveRouter.use(authenticate);
@@ -443,7 +474,8 @@ leaveRouter.post(
       if (
         requester.role !== "SUPER_ADMIN" &&
         requester.role !== "HR_ADMIN" &&
-        requester.role !== "MANAGER"
+        requester.role !== "MANAGER" &&
+        !requester.isManager
       ) {
         throw AppError.forbidden(
           "Only managers and administrators can use the leave approval assistant.",
@@ -452,7 +484,7 @@ leaveRouter.post(
 
       const result = await analyzeLeaveApproval({
         requestId: req.body.requestId,
-        requesterRole: requester.role,
+        requesterRole: getLeaveAiRequesterRole(requester),
         requesterEmployeeId: requester.employeeId,
       });
 
@@ -499,7 +531,8 @@ leaveRouter.post(
       if (
         requester.role !== "SUPER_ADMIN" &&
         requester.role !== "HR_ADMIN" &&
-        requester.role !== "MANAGER"
+        requester.role !== "MANAGER" &&
+        !requester.isManager
       ) {
         throw AppError.forbidden(
           "Only managers and administrators can access leave pattern analysis.",
@@ -509,7 +542,7 @@ leaveRouter.post(
       const patterns = await analyzeLeavePatterns({
         startDate: req.body.startDate,
         endDate: req.body.endDate,
-        requesterRole: requester.role,
+        requesterRole: getLeaveAiRequesterRole(requester),
         requesterEmployeeId: requester.employeeId,
         employeeId: req.body.employeeId,
       });
@@ -562,7 +595,8 @@ leaveRouter.post(
       if (
         requester.role !== "SUPER_ADMIN" &&
         requester.role !== "HR_ADMIN" &&
-        requester.role !== "MANAGER"
+        requester.role !== "MANAGER" &&
+        !requester.isManager
       ) {
         throw AppError.forbidden(
           "Only managers and administrators can access leave analytics.",
@@ -572,7 +606,7 @@ leaveRouter.post(
       const analytics = await analyzeLeaveAnalytics({
         startDate: req.body.startDate,
         endDate: req.body.endDate,
-        requesterRole: requester.role,
+        requesterRole: getLeaveAiRequesterRole(requester),
         requesterEmployeeId: requester.employeeId,
         employeeId: req.body.employeeId,
       });

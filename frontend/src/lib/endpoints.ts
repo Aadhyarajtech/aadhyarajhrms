@@ -231,13 +231,14 @@ export const EmployeesApi = {
     remarks?: string | null,
   ) =>
     api
-      .patch<{ employee: Employee }>(
-        `/employees/${id}/onboarding/stage`,
-        {
-          stage,
-          remarks,
-        },
-      )
+      .patch<{
+        success?: boolean;
+        message?: string;
+        employee: Employee;
+      }>(`/employees/${id}/onboarding/stage`, {
+        stage,
+        remarks,
+      })
       .then((r) => r.data.employee),
 
   startNoticePeriod: (id: string, noticeDays: number) =>
@@ -1519,12 +1520,39 @@ export const LeaveApi = {
 
 
 // --- Recruitment ------------------------------------------------------------------
+export interface GenerateJobDescriptionPayload {
+  jobTitle: string;
+  departmentId?: string;
+  designationId?: string;
+  roleCategory?: string;
+  employmentType?: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
+  location?: string;
+  experienceMin?: number;
+  experienceMax?: number;
+  skills?: string;
+}
+
+export interface GenerateJobDescriptionDraft {
+  departmentName?: string;
+  designationTitle?: string;
+  departmentId: string;
+  designationId: string;
+  roleCategory: string;
+  employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
+  location: string;
+  experienceMin: number;
+  experienceMax: number;
+  skills: string[];
+  screeningQuestions: string[];
+  description: string;
+}
+
 export interface InterviewCopilotQuestion {
   question: string;
   followUps: string[];
 }
 
-export interface InterviewCopilotResponse {
+export interface InterviewCopilot {
   focusAreas: string[];
   technicalQuestions: InterviewCopilotQuestion[];
   resumeQuestions: InterviewCopilotQuestion[];
@@ -1532,7 +1560,14 @@ export interface InterviewCopilotResponse {
   behavioralQuestions: InterviewCopilotQuestion[];
 }
 
-export interface InterviewEvaluationResponse {
+export interface InterviewCopilotResponse extends InterviewCopilot {}
+
+export interface InterviewCopilotApiResponse {
+  message?: string;
+  copilot: InterviewCopilot;
+}
+
+export interface InterviewEvaluation {
   overallAssessment: string;
   technicalAssessment: string;
   communicationAssessment: string;
@@ -1543,6 +1578,12 @@ export interface InterviewEvaluationResponse {
   suggestedNextStep: string;
 }
 
+export interface InterviewEvaluationResponse extends InterviewEvaluation {}
+
+export interface InterviewEvaluationApiResponse {
+  message?: string;
+  evaluation: InterviewEvaluation;
+}
 export const RecruitmentApi = {
   jobs: (status?: string) =>
     api
@@ -1566,6 +1607,14 @@ export const RecruitmentApi = {
         job: JobPosting;
       }>("/recruitment/jobs", payload)
       .then((r) => r.data.job),
+
+  generateJobDescription: (payload: GenerateJobDescriptionPayload) =>
+    api
+      .post<{
+        draft: GenerateJobDescriptionDraft;
+        message?: string;
+      }>("/recruitment/jobs/ai-generate", payload)
+      .then((r) => r.data.draft),
 
   updateJob: (id: string, payload: Record<string, unknown>) =>
     api
@@ -1847,56 +1896,27 @@ export const RecruitmentApi = {
       }>(`/recruitment/candidates/${id}/referral-bonus`, { status })
       .then((r) => r.data.candidate),
 
-  generateJobDescription: (payload: {
-    jobTitle: string;
-    departmentId?: string;
-    designationId?: string;
-    roleCategory?: string;
-    employmentType?: string;
-    location?: string;
-    experienceMin?: number;
-    experienceMax?: number;
-    skills?: string;
-  }) =>
+  rankedCandidates: (jobPostingId: string) =>
     api
-      .post<{
-        departmentId: string;
-        designationId: string;
-        roleCategory: string;
-        employmentType: string;
-        location: string;
-        experienceMin: number;
-        experienceMax: number;
-        skills: string[];
-        screeningQuestions: string[];
-        description: string;
-      }>("/recruitment/ai/job-description", payload)
-      .then((r) => r.data),
-
-  rankedCandidates: (jobId: string) =>
-    api
-      .get<{
-        candidates: Candidate[];
-      }>(`/recruitment/jobs/${jobId}/ranked-candidates`)
+      .get<{ candidates: Candidate[] }>("/recruitment/candidates/ranked", {
+        params: { jobPostingId },
+      })
       .then((r) => r.data.candidates),
 
-  interviewCopilot: (interviewId: string) =>
+  // The backend exposes interview copilot for a candidate, not an interview.
+  interviewCopilot: (candidateId: string) =>
     api
-      .get<InterviewCopilotResponse>(
-        `/recruitment/interviews/${interviewId}/copilot`,
+      .post<InterviewCopilotApiResponse>(
+        `/recruitment/candidates/${candidateId}/interview-copilot`,
       )
-      .then((r) => r.data),
+      .then((r) => r.data.copilot),
 
-  evaluateInterview: (
-    interviewId: string,
-    payload?: Record<string, unknown>,
-  ) =>
+  evaluateInterview: (interviewId: string) =>
     api
-      .post<InterviewEvaluationResponse>(
-        `/recruitment/interviews/${interviewId}/evaluate`,
-        payload ?? {},
+      .post<InterviewEvaluationApiResponse>(
+        `/recruitment/interviews/${interviewId}/ai-evaluation`,
       )
-      .then((r) => r.data),
+      .then((r) => r.data.evaluation),
 
   metrics: () =>
     api
@@ -2372,25 +2392,6 @@ export const PerformanceApi = {
 };
 
 // --- Payroll -----------------------------------------------------------------------
-function normalizePayrollPeriod(
-  monthOrStartDate: number | string,
-  yearOrEndDate: number | string,
-): { month: number; year: number } {
-  if (typeof monthOrStartDate === "number" && typeof yearOrEndDate === "number") {
-    return { month: monthOrStartDate, year: yearOrEndDate };
-  }
-
-  const start = new Date(String(monthOrStartDate));
-  if (Number.isNaN(start.getTime())) {
-    throw new Error("Invalid payroll start date.");
-  }
-
-  return {
-    month: start.getMonth() + 1,
-    year: start.getFullYear(),
-  };
-}
-
 export const PayrollApi = {
   getSalaryStructure: (employeeId: string) =>
     api
@@ -2439,43 +2440,30 @@ export const PayrollApi = {
       .post<PayrollReadinessResult>("/payroll/validate-readiness", { month, year })
       .then((r) => r.data),
   lockAttendance: (
-    monthOrStartDate: number | string,
-    yearOrEndDate: number | string,
-    _departmentIds?: string[],
-  ) => {
-    const { month, year } = normalizePayrollPeriod(
-      monthOrStartDate,
-      yearOrEndDate,
-    );
-
-    return api
-      .post<{
-        run: PayrollRun;
-      }>("/payroll/runs/lock-attendance", {
-        month,
-        year,
+    startDate: string,
+    endDate: string,
+    departmentIds: string[],
+  ) =>
+    api
+      .post<{ runs: PayrollRun[] }>("/payroll/runs/lock-attendance", {
+        startDate,
+        endDate,
+        departmentIds,
       })
-      .then((r) => r.data.run);
-  },
+      .then((r) => r.data.runs),
 
   process: (
-    monthOrStartDate: number | string,
-    yearOrEndDate: number | string,
-  ) => {
-    const { month, year } = normalizePayrollPeriod(
-      monthOrStartDate,
-      yearOrEndDate,
-    );
-
-    return api
-      .post<{
-        run: PayrollRun;
-      }>("/payroll/runs/process", {
-        month,
-        year,
+    startDate: string,
+    endDate: string,
+    departmentIds: string[],
+  ) =>
+    api
+      .post<{ runs: PayrollRun[] }>("/payroll/runs/process", {
+        startDate,
+        endDate,
+        departmentIds,
       })
-      .then((r) => r.data.run);
-  },
+      .then((r) => r.data.runs),
 
   submitForReview: (id: string) =>
     api
@@ -2771,14 +2759,14 @@ export const DocumentsApi = {
       })
       .then((r) => r.data.requests),
 
-  delete: (id: string) => api.delete(`/documents/${id}`),
-
   download: (id: string) =>
     api
-      .get(`/documents/${id}/download`, {
+      .get<Blob>(`/documents/${id}/download`, {
         responseType: "blob",
       })
-      .then((r) => r.data as Blob),
+      .then((r) => r.data),
+
+  delete: (id: string) => api.delete(`/documents/${id}`),
 
   allAssets: () =>
     api
