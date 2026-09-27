@@ -149,7 +149,7 @@ if (!parsedExpiryDate.success) {
 const { document } = await repo.fulfillDocumentRequest({
   requestId,
   fileName: req.file.originalname,
-  fileUrl: "",
+  fileUrl: "pending",
   storageKey: req.file.filename,
   uploadedByUserId: req.user!.userId,
   expiryDate: parsedExpiryDate.data ?? null,
@@ -200,7 +200,7 @@ const document = await repo.addDocument({
   requestId: null,
   type,
   fileName: req.file.originalname,
-  fileUrl: "",
+  fileUrl: "pending",
   storageKey: req.file.filename,
   expiryDate: parsedExpiryDate.data ?? null,
 });

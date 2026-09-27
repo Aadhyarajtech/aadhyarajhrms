@@ -374,16 +374,20 @@ export async function fulfillDocumentRequest(input: {
 
   // The document type is always taken from the request itself, never from
   // the uploader's payload, so the requested type cannot be changed silently.
-  const document = await addDocument({
+const document = await addDocument({
   employeeId: requestRow.employeeId,
   type: requestRow.type,
   fileName: input.fileName,
-  fileUrl: input.fileUrl,
+  fileUrl: input.storageKey || "pending",
   storageKey: input.storageKey,
   uploadedBy: input.uploadedByUserId,
   requestId: requestRow._id,
   expiryDate: input.expiryDate ?? null,
 });
+
+if (input.storageKey) {
+  await setDocumentFileUrl(document.id, input.storageKey);
+}
 
   const completedAt = nowIso();
   await DocumentRequest.updateOne(

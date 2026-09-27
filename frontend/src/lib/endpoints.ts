@@ -3462,19 +3462,8 @@ export const DocumentsApi = {
     }
 
     return api
-      .post(
-        `/documents/employee/${employeeId}`,
-        form,
-        {
-          headers: {
-            "Content-Type":
-              "multipart/form-data",
-          },
-        },
-      )
-      .then(
-        (r) => r.data.document,
-      );
+  .post(`/documents/employee/${employeeId}`, form)
+  .then((r) => r.data.document);
   },
 
   requestDocument: (

@@ -153,15 +153,17 @@ function getDocumentExpiryStatus(expiryDate?: string | null) {
  
 
 function formatExpiryDate(expiryDate?: string | null) {
-
   if (!expiryDate) return null;
 
-  const expiry = new Date(`${expiryDate}T00:00:00`);
+  const value = String(expiryDate).slice(0, 10);
 
-  if (Number.isNaN(expiry.getTime())) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
 
-  return expiry.toLocaleDateString();
+  if (!match) return null;
 
+  const [, year, month, day] = match;
+
+  return `${day}${month}${year}`;
 }
 
  
@@ -1056,34 +1058,49 @@ queryFn: () => DocumentsApi.list(documentEmployeeId),
 }
 void openPrivateDocument;
 async function openPrivateDocument(
-  
   id: string,
   fileName: string,
-  showToast: (message: string, variant?: "success" | "error" | "info") => void,
+  showToast?: (message: string, variant?: "success" | "error") => void,
 ) {
-  // Open synchronously to avoid popup blockers, then populate it after the
-  // authenticated API request completes.
   const popup = window.open("about:blank", "_blank");
 
   try {
     const blob = await DocumentsApi.download(id);
-    const objectUrl = URL.createObjectURL(blob);
+
+const extension = fileName.split(".").pop()?.toLowerCase();
+
+const mimeType =
+  extension === "pdf"
+    ? "application/pdf"
+    : extension === "png"
+    ? "image/png"
+    : extension === "jpg" || extension === "jpeg"
+    ? "image/jpeg"
+    : extension === "txt"
+    ? "text/plain"
+    : blob.type || "application/octet-stream";
+
+const viewableBlob = new Blob([blob], { type: mimeType });
+const objectUrl = URL.createObjectURL(viewableBlob);
 
     if (popup) {
       popup.location.href = objectUrl;
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } else {
       const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = fileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+anchor.href = objectUrl;
+anchor.target = "_blank";
+document.body.appendChild(anchor);
+anchor.click();
+anchor.remove();
     }
+
+    window.setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+    }, 60_000);
   } catch (err) {
     popup?.close();
-    showToast(getErrorMessage(err), "error");
+    console.error("Document open failed:", err);
+    showToast?.(getErrorMessage(err), "error");
   }
 }
 
@@ -1176,6 +1193,11 @@ const expiryMutation = useMutation({
   onError: (err) => showToast(getErrorMessage(err), "error"),
 });
 
+const [expiryDateInput, setExpiryDateInput] = useState(
+  doc.expiryDate
+    ? String(doc.expiryDate).slice(0, 10).split("-").reverse().join("/")
+    : "",
+);
 
 const [showRejectOptions, setShowRejectOptions] = useState(false);
 
@@ -1279,15 +1301,16 @@ const [showRejectOptions, setShowRejectOptions] = useState(false);
 
         <div className="grid grid-cols-2 gap-2">
 
-  <a
-    href={doc.fileUrl}
-    target="_blank"
-    rel="noreferrer"
-    className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
-  >
-    <Download size={14} className="mr-1.5" />
-    Open
-  </a>
+  <button
+  type="button"
+  onClick={() =>
+    openPrivateDocument(doc.id, doc.fileName, showToast)
+  }
+  className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
+>
+  <Download size={14} className="mr-1.5" />
+  Open
+</button>
 
   {canDelete && (
     <button
@@ -1329,18 +1352,49 @@ const [showRejectOptions, setShowRejectOptions] = useState(false);
     </label>
 
     <input
-      type="date"
-      value={
-        doc.expiryDate
-          ? String(doc.expiryDate).slice(0, 10)
-          : ""
-      }
-      onChange={(e) => {
-        expiryMutation.mutate(e.target.value || null);
-      }}
-      disabled={expiryMutation.isPending}
-      className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-brand-400 focus:ring-0"
-    />
+  type="text"
+  value={expiryDateInput}
+  onChange={(e) => {
+    let value = e.target.value.replace(/\D/g, "");
+
+    if (value.length > 8) {
+      value = value.slice(0, 8);
+    }
+
+    let formatted = value;
+
+    if (value.length > 4) {
+      formatted =
+        value.slice(0, 2) +
+        "/" +
+        value.slice(2, 4) +
+        "/" +
+        value.slice(4, 8);
+    } else if (value.length > 2) {
+      formatted =
+        value.slice(0, 2) +
+        "/" +
+        value.slice(2, 4);
+    }
+
+    setExpiryDateInput(formatted);
+
+    if (value.length === 8) {
+      const day = value.slice(0, 2);
+      const month = value.slice(2, 4);
+      const year = value.slice(4, 8);
+
+      const date = `${year}-${month}-${day}`;
+
+      expiryMutation.mutate(date);
+    }
+  }}
+  placeholder="DD/MM/YYYY"
+  maxLength={10}
+  inputMode="numeric"
+  disabled={expiryMutation.isPending}
+  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-brand-400 focus:ring-0"
+/>
   </div>
 )}
    
@@ -1597,23 +1651,19 @@ function OutgoingRequestRow({
 
         {request.status === "UPLOADED" && document && (
 
-          <a
-
-            href={document.fileUrl}
-
-            target="_blank"
-
-            rel="noreferrer"
-
-            className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
-
-          >
-
-            <Download size={14} className="mr-1.5" />
-
-            Open
-
-          </a>
+          <button
+  type="button"
+  onClick={() =>
+  openPrivateDocument(
+    document.id,
+    document.fileName,
+  )
+}
+  className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
+>
+  <Download size={14} className="mr-1.5" />
+  Open
+</button>
 
         )}
 
@@ -1819,7 +1869,13 @@ function UploadDocumentModal({
 
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err: any) => {
+  console.log("DOCUMENT UPLOAD ERROR:", err);
+  console.log("RESPONSE DATA:", err?.response?.data);
+  console.log("ERROR MESSAGE:", err?.response?.data?.error?.message);
+  console.log("ERROR CODE:", err?.response?.data?.error?.code);
+  showToast(getErrorMessage(err), "error");
+},
 
   });
 
@@ -1848,18 +1904,20 @@ function UploadDocumentModal({
           </Button>
 
           <Button
+  onClick={() => {
+    console.log("UPLOAD BUTTON CLICKED", {
+      file,
+      targetEmployeeId,
+      type,
+    });
 
-            onClick={() => mutation.mutate()}
-
-            isLoading={mutation.isPending}
-
-            disabled={!file || !targetEmployeeId}
-
-          >
-
-            Upload
-
-          </Button>
+    mutation.mutate();
+  }}
+  isLoading={mutation.isPending}
+  disabled={!file || !targetEmployeeId}
+>
+  Upload
+</Button>
 
         </>
 
@@ -2062,7 +2120,12 @@ function FulfillRequestModal({
 
     },
 
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err: any) => {
+  console.error("REQUESTED DOCUMENT UPLOAD ERROR:", err);
+  console.error("RESPONSE DATA:", err?.response?.data);
+  console.error("STATUS:", err?.response?.status);
+  showToast(getErrorMessage(err), "error");
+},
 
   });
 
