@@ -52,10 +52,23 @@ notificationsRouter.get("/", async (req, res, next) => {
 
 notificationsRouter.post("/:id/read", async (req, res, next) => {
   try {
-    await repo.markRead(req.params.id, req.user!.userId);
+    const result = await repo.markRead(
+      req.params.id,
+      req.user!.userId,
+    );
 
-    res.json({
+    if (result.matched === 0) {
+      return res.status(404).json({
+        error: {
+          message: "Notification not found or already expired.",
+        },
+      });
+    }
+
+    return res.json({
       message: "Marked as read.",
+      matched: result.matched,
+      modified: result.modified,
     });
   } catch (err) {
     next(err);
@@ -64,10 +77,12 @@ notificationsRouter.post("/:id/read", async (req, res, next) => {
 
 notificationsRouter.post("/read-all", async (req, res, next) => {
   try {
-    await repo.markAllRead(req.user!.userId);
+    const result = await repo.markAllRead(req.user!.userId);
 
-    res.json({
+    return res.json({
       message: "All notifications marked as read.",
+      matched: result.matched,
+      modified: result.modified,
     });
   } catch (err) {
     next(err);

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { EmployeesApi } from "@/lib/endpoints";
@@ -62,7 +62,7 @@ export default function OrgChart() {
           <div className="org-chart-scroll">
             <div className="org-chart-canvas">
               {isLoading ? (
-                <div className="grid min-w-[760px] place-items-center py-24">
+                <div className="grid min-w-full place-items-center py-24">
                   <div className="w-full max-w-3xl space-y-3 px-6">
                     {Array.from({ length: 5 }).map((_, index) => (
                       <Skeleton key={index} className="h-10 rounded-xl" />
@@ -89,7 +89,7 @@ export default function OrgChart() {
                   No organization data yet.
                 </div>
               ) : (
-                <OrgTree roots={roots} />
+                <FittedOrgTree roots={roots} />
               )}
             </div>
           </div>
@@ -97,228 +97,144 @@ export default function OrgChart() {
       </div>
 
       <style>{`
-        .org-chart-scroll {
+        .org-chart-viewport {
+          position: relative;
           width: 100%;
-          overflow-x: auto;
-          overflow-y: hidden;
-          -webkit-overflow-scrolling: touch;
-          scrollbar-width: thin;
-        }
-
-        .org-chart-canvas {
-          min-width: max-content;
-          min-height: 590px;
-          padding: 58px 72px 72px 50px;
-          box-sizing: border-box;
+          height: clamp(560px, calc(100dvh - 170px), 900px);
+          overflow: hidden;
           background: #fff;
         }
 
-        /*
-         * This is the key layout:
-         * every TreeNode is a horizontal unit. Its employee is on the left
-         * and its direct-report column is on the right. This produces the
-         * same left-to-right tree direction as the reference image.
-         */
+        .org-chart-fit-stage {
+          position: absolute;
+          left: 0;
+          top: 0;
+          display: inline-block;
+          transform-origin: top left;
+          will-change: transform, left, top;
+        }
+
         .org-tree-root {
           display: flex;
           align-items: center;
-          min-width: max-content;
+          width: max-content;
           min-height: 460px;
+          padding: 58px 72px 72px 50px;
+          box-sizing: border-box;
         }
 
-        .org-tree-node {
-          position: relative;
-          display: flex;
-          align-items: center;
-          flex: 0 0 auto;
-        }
-
+        .org-tree-node { position: relative; display: flex; align-items: center; flex: 0 0 auto; }
         .org-node {
-          position: relative;
-          z-index: 2;
-          display: inline-flex;
-          align-items: center;
-          gap: 14px;
-          width: 164px;
-          min-width: 164px;
-          min-height: 38px;
-          padding: 2px 0;
-          border: 0;
-          background: #fff;
-          color: #252525;
-          text-align: left;
-          cursor: pointer;
-          font: inherit;
+          position: relative; z-index: 2; display: inline-flex; align-items: center; gap: 14px;
+          width: 164px; min-width: 164px; min-height: 38px; padding: 2px 0; border: 0;
+          background: #fff; color: #252525; text-align: left; cursor: pointer; font: inherit;
         }
-
-        .org-node:hover .org-name {
-          color: #111827;
-        }
-
-        .org-node:focus-visible {
-          outline: 2px solid #9ca3af;
-          outline-offset: 4px;
-          border-radius: 4px;
-        }
-
-        .org-dot {
-          width: 20px;
-          height: 20px;
-          min-width: 20px;
-          border-radius: 9999px;
-          background: #3a3a3a;
-        }
-
-        .org-name {
-          display: block;
-          min-width: 0;
-          overflow-wrap: anywhere;
-          font-size: 13px;
-          line-height: 15px;
-          font-weight: 500;
-        }
-
-        /*
-         * The reference uses only the name beside the dot. Designation is
-         * retained as an accessible tooltip rather than adding visual rows
-         * that would change the reference geometry.
-         */
+        .org-node:hover .org-name { color: #111827; }
+        .org-node:focus-visible { outline: 2px solid #9ca3af; outline-offset: 4px; border-radius: 4px; }
+        .org-dot { width: 20px; height: 20px; min-width: 20px; border-radius: 9999px; background: #3a3a3a; }
+        .org-name { display: block; min-width: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 15px; font-weight: 500; }
         .org-children {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          gap: 0;
-          min-width: max-content;
-          margin-left: 118px;
-          padding: 8px 0;
+          position: relative; display: flex; flex-direction: column; justify-content: center; gap: 0;
+          width: max-content; margin-left: 118px; padding: 8px 0;
         }
-
-        /* Horizontal line from manager node to the team's junction. */
-        .org-children::before {
-          content: "";
-          position: absolute;
-          left: -118px;
-          top: 50%;
-          width: 118px;
-          height: 1px;
-          background: #d8d6d2;
-        }
-
-        /*
-         * The vertical junction is intentionally independent of employee
-         * name/card width. Each child row owns a fixed 42px connector zone.
-         * Subtrees are centered within that row, preventing text overlap.
-         */
-        .org-children.has-multiple::after {
-          content: "";
-          position: absolute;
-          left: 0;
-          top: 29px;
-          bottom: 29px;
-          width: 1px;
-          background: #d8d6d2;
-        }
-
-        .org-child {
-          position: relative;
-          display: flex;
-          align-items: center;
-          min-height: 42px;
-        }
-
-        /* Horizontal connector from the vertical junction to each child. */
-        .org-child::before {
-          content: "";
-          position: absolute;
-          left: 0;
-          top: 50%;
-          width: 92px;
-          height: 1px;
-          background: #d8d6d2;
-        }
-
-        .org-child > .org-tree-node {
-          margin-left: 92px;
-        }
-
-        /* A single child has a simple straight horizontal connection. */
-        .org-children:not(.has-multiple)::after {
-          display: none;
-        }
-
-        /*
-         * When a child has a large subtree, the row naturally grows to that
-         * subtree's height. The connector remains at the child's center,
-         * exactly where the reference branches into the next level.
-         */
+        .org-children::before { content: ""; position: absolute; left: -118px; top: 50%; width: 118px; height: 1px; background: #d8d6d2; }
+        .org-children.has-multiple::after { content: ""; position: absolute; left: 0; top: 29px; bottom: 29px; width: 1px; background: #d8d6d2; }
+        .org-child { position: relative; display: flex; align-items: center; min-height: 42px; }
+        .org-child::before { content: ""; position: absolute; left: 0; top: 50%; width: 92px; height: 1px; background: #d8d6d2; }
+        .org-child > .org-tree-node { margin-left: 92px; }
+        .org-children:not(.has-multiple)::after { display: none; }
         .org-collapse {
-          position: absolute;
-          z-index: 5;
-          left: 146px;
-          top: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 18px;
-          height: 18px;
-          padding: 0;
-          border: 1px solid #e8e6e3;
-          border-radius: 9999px;
-          background: #fff;
-          color: #aaa59f;
-          cursor: pointer;
-          transform: translateY(-50%);
+          position: absolute; z-index: 5; left: 146px; top: 50%; display: flex; align-items: center; justify-content: center;
+          width: 18px; height: 18px; padding: 0; border: 1px solid #e8e6e3; border-radius: 9999px;
+          background: #fff; color: #aaa59f; cursor: pointer; transform: translateY(-50%);
         }
-
-        .org-collapse:hover {
-          color: #66615b;
-          border-color: #d2cec8;
-        }
+        .org-collapse:hover { color: #66615b; border-color: #d2cec8; }
 
         @media (max-width: 900px) {
-          .org-chart-canvas {
-            padding: 48px 48px 64px 36px;
-          }
-
-          .org-tree-root {
-            min-height: 500px;
-          }
+          .org-chart-viewport { height: clamp(560px, calc(100dvh - 155px), 760px); }
+          .org-tree-root { padding: 42px 42px 52px 28px; }
         }
 
         @media (max-width: 640px) {
-          .org-chart-canvas {
-            padding: 40px 40px 56px 28px;
-          }
+          .org-chart-viewport { height: calc(100dvh - 155px); min-height: 520px; }
+          .org-tree-root { min-height: 0; padding: 24px 24px 28px 16px; }
+          .org-node { width: 104px; min-width: 104px; gap: 7px; min-height: 30px; }
+          .org-dot { width: 13px; height: 13px; min-width: 13px; }
+          .org-name { font-size: 10px; line-height: 11px; }
+          .org-children { margin-left: 30px; padding: 4px 0; }
+          .org-children::before { left: -30px; width: 30px; }
+          .org-children.has-multiple::after { top: 17px; bottom: 17px; }
+          .org-child { min-height: 27px; }
+          .org-child::before { width: 25px; }
+          .org-child > .org-tree-node { margin-left: 25px; }
+          .org-collapse { left: 90px; width: 13px; height: 13px; }
+        }
 
-          .org-node {
-            width: 154px;
-            min-width: 154px;
-            gap: 12px;
-          }
-
-          .org-children {
-            margin-left: 94px;
-          }
-
-          .org-children::before {
-            left: -94px;
-            width: 94px;
-          }
-
-          .org-child::before {
-            width: 72px;
-          }
-
-          .org-child > .org-tree-node {
-            margin-left: 72px;
-          }
-
-          .org-collapse {
-            left: 136px;
-          }
+        @media (max-width: 400px) {
+          .org-chart-viewport { height: calc(100dvh - 145px); min-height: 500px; }
+          .org-tree-root { padding-left: 10px; padding-right: 10px; }
+          .org-node { width: 94px; min-width: 94px; gap: 6px; }
+          .org-name { font-size: 9px; line-height: 10px; }
+          .org-children { margin-left: 24px; }
+          .org-children::before { left: -24px; width: 24px; }
+          .org-child::before { width: 20px; }
+          .org-child > .org-tree-node { margin-left: 20px; }
+          .org-collapse { left: 82px; }
         }
       `}</style>
+    </div>
+  );
+}
+
+function FittedOrgTree({ roots }: { roots: OrgNodeData[] }) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [transform, setTransform] = useState({ scale: 1, left: 0, top: 0 });
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    const stage = stageRef.current;
+    if (!viewport || !stage) return;
+
+    const fit = () => {
+      const vw = viewport.clientWidth;
+      const vh = viewport.clientHeight;
+      const sw = stage.scrollWidth;
+      const sh = stage.scrollHeight;
+      if (!vw || !vh || !sw || !sh) return;
+
+      const scale = Math.min(1, vw / sw, vh / sh);
+      const scaledW = sw * scale;
+      const scaledH = sh * scale;
+      setTransform({
+        scale,
+        left: Math.max(0, (vw - scaledW) / 2),
+        top: Math.max(0, (vh - scaledH) / 2),
+      });
+    };
+
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(viewport);
+    observer.observe(stage);
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fit);
+      window.removeEventListener("orientationchange", fit);
+    };
+  }, [roots]);
+
+  return (
+    <div ref={viewportRef} className="org-chart-viewport">
+      <div
+        ref={stageRef}
+        className="org-chart-fit-stage"
+        style={{ transform: `translate(${transform.left}px, ${transform.top}px) scale(${transform.scale})` }}
+      >
+        <OrgTree roots={roots} />
+      </div>
     </div>
   );
 }

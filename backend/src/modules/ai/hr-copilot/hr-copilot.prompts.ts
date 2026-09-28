@@ -55,7 +55,7 @@ INSTRUCTIONS:
 5. If access was denied, do not attempt to reconstruct or infer the data.
 6. If the user asked for an overall summary, combine all relevant supplied domains.
 7. Keep the answer concise and readable.
-8. Do not return JSON as the visible answer.
+8. You MUST return a JSON object containing an "answer" key. The value of this key should be your final readable text response to the user. Do not nest JSON or markdown tables inside the answer string.
 9. Do not use Markdown tables.
 10. Do not use the "|" character.
 11. Do not expose internal implementation details.
@@ -562,7 +562,7 @@ RESPONSE STYLE:
 
 Give a natural conversational answer.
 
-Do NOT return JSON to the user.
+You MUST return a JSON object containing an "answer" key. The value of this key should be your final readable text response to the user. Do not nest JSON or markdown tables inside the answer string.
 
 Do NOT use Markdown tables.
 

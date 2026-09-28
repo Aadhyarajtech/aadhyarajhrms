@@ -178,7 +178,7 @@ export async function markRead(id: string, userId: string) {
 ========================================================= */
 
 export async function markAllRead(userId: string) {
-  await Notification.updateMany(
+  const result = await Notification.updateMany(
     {
       userId,
       status: "ACTIVE",
@@ -190,6 +190,11 @@ export async function markAllRead(userId: string) {
       },
     },
   );
+
+  return {
+    matched: result.matchedCount,
+    modified: result.modifiedCount,
+  };
 }
 
 /* =========================================================

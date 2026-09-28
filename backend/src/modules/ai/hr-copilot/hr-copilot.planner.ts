@@ -300,6 +300,7 @@ function extractManagerLookupEmployeeName(
     /\b(?:manager|reporting\s+manager)\s+(?:of|for)\s+(.+?)\s*\??$/i,
 
     /\bwho\s+manages\s+(.+?)\s*\??$/i,
+    /\bwho\s+works\s+under\s+(.+?)\s*\??$/i,
   ];
 
   for (const pattern of patterns) {
@@ -515,7 +516,7 @@ function detectDomains(
     domains.add("RECRUITMENT");
   }
 
-  if (/\b(?:organization|organisation|organizational|organisational|org\s+chart|organization\s+chart|reporting\s+structure|reports\s+to|who\s+reports|direct\s+reports|indirect\s+reports|team\s+structure|hierarchy)\b/.test(text)) {
+  if (/\b(?:organization|organisation|organizational|organisational|org\s+chart|organization\s+chart|reporting\s+structure|reports\s+to|who\s+reports|works\s+under|direct\s+reports|indirect\s+reports|team\s+structure|hierarchy|list\s+of\s+employees|all\s+employees)\b/.test(text)) {
     domains.add("ORGANIZATION");
   }
 
@@ -775,6 +776,24 @@ function buildFallbackHrCopilotPlan(
 
       reasoning:
         "The user is asking about their own team.",
+    };
+  }
+
+  /**
+   * 6.5 Organization
+   */
+  if (
+    /\b(?:organization|organisation|org\s+chart|entire\s+company|whole\s+company|all\s+employees|list\s+of\s+employees|headcount)\b/i.test(message)
+  ) {
+    return {
+      task: "SUMMARY",
+      scope: "ORGANIZATION",
+      domains: ["ORGANIZATION", ...detectDomains(message)].filter((value, index, array) => array.indexOf(value) === index) as HrCopilotPlan["domains"],
+      targetEmployeeName: null,
+      timeRange: detectTimeRange(message),
+      conditions: ["ORGANIZATION_WIDE"],
+      requestedFields: [],
+      reasoning: "The user is asking for organization-wide information.",
     };
   }
 

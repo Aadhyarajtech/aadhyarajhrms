@@ -296,7 +296,7 @@ function daysBetweenInclusive(
   return (
     Math.round(
       (end.getTime() - start.getTime()) /
-        86_400_000,
+      86_400_000,
     ) + 1
   );
 }
@@ -394,13 +394,10 @@ function buildConflictFallback(
     return "No overlapping leave was found for your team during the selected dates. Team availability appears normal for this period.";
   }
 
-  return `${affectedEmployees} team member${
-    affectedEmployees === 1 ? "" : "s"
-  } ${
-    affectedEmployees === 1 ? "has" : "have"
-  } overlapping leave during the selected period, covering ${affectedDays} overlapping day${
-    affectedDays === 1 ? "" : "s"
-  }. The potential team impact is ${impactLevel.toLowerCase()}. Consider coordinating with your team or manager before submitting the request.`;
+  return `${affectedEmployees} team member${affectedEmployees === 1 ? "" : "s"
+    } ${affectedEmployees === 1 ? "has" : "have"
+    } overlapping leave during the selected period, covering ${affectedDays} overlapping day${affectedDays === 1 ? "" : "s"
+    }. The potential team impact is ${impactLevel.toLowerCase()}. Consider coordinating with your team or manager before submitting the request.`;
 }
 
 async function callGroqForConflict(
@@ -774,54 +771,70 @@ export async function analyzeLeaveConflict(input: {
       type,
     ]),
   );
-
   const conflicts: LeaveConflictEmployee[] =
-    overlappingRequests.map((request) => {
-      const member = employeeMap.get(
-        String(request.employeeId),
-      );
+    overlappingRequests
+      .filter(
+        (
+          request,
+        ): request is typeof request & {
+          startDate: string;
+          endDate: string;
+        } =>
+          request.startDate !== null &&
+          request.endDate !== null,
+      )
+      .map((request) => {
+        const member = employeeMap.get(
+          String(request.employeeId),
+        );
 
-      const leaveType = leaveTypeMap.get(
-        String(request.leaveTypeId),
-      );
+        const leaveType = leaveTypeMap.get(
+          String(request.leaveTypeId),
+        );
 
-      const overlappingDays =
-        getOverlappingDays(
+        const overlappingDays =
+          getOverlappingDays(
+            startDate,
+            endDate,
+            request.startDate,
+            request.endDate,
+          );
+
+        const {
+          overlapStartDate,
+          overlapEndDate,
+        } = getOverlapRange(
           startDate,
           endDate,
           request.startDate,
           request.endDate,
         );
-       const { overlapStartDate, overlapEndDate } = getOverlapRange(
-  startDate,
-  endDate,
-  request.startDate,
-  request.endDate,
-);
 
-      return {
-        employeeId: String(request.employeeId),
+        return {
+          employeeId: String(request.employeeId),
 
-        firstName:
-          member?.firstName ?? null,
+          firstName:
+            member?.firstName ?? null,
 
-        lastName:
-          member?.lastName ?? null,
+          lastName:
+            member?.lastName ?? null,
 
-        leaveTypeName:
-          leaveType?.name ?? null,
+          leaveTypeName:
+            leaveType?.name ?? null,
 
-        status: request.status,
+          status: request.status,
 
-        startDate: request.startDate,
+          startDate: request.startDate,
 
-        endDate: request.endDate,
+          endDate: request.endDate,
 
-        overlappingDays,
-        overlapStartDate,
-        overlapEndDate,
-      };
-    });
+          overlappingDays,
+
+          overlapStartDate,
+
+          overlapEndDate,
+        };
+      });
 
   /*
    * Count unique affected employees.
@@ -1133,18 +1146,16 @@ Requested days:
 ${data.requestedDays}
 
 Available leave balance:
-${
-  data.availableBalance === null
-    ? "Not available"
-    : data.availableBalance
-}
+${data.availableBalance === null
+                  ? "Not available"
+                  : data.availableBalance
+                }
 
 Balance sufficient:
-${
-  data.balanceSufficient === null
-    ? "Unknown"
-    : data.balanceSufficient
-}
+${data.balanceSufficient === null
+                  ? "Unknown"
+                  : data.balanceSufficient
+                }
 
 Affected team employees:
 ${data.affectedEmployees}
@@ -1271,9 +1282,9 @@ export async function analyzeLeaveApproval(
   input: {
     requestId: string;
     requesterRole:
-      | "SUPER_ADMIN"
-      | "HR_ADMIN"
-      | "MANAGER";
+    | "SUPER_ADMIN"
+    | "HR_ADMIN"
+    | "MANAGER";
     requesterEmployeeId: string;
   },
 ): Promise<LeaveApprovalSuggestionResponse> {
@@ -1313,7 +1324,13 @@ export async function analyzeLeaveApproval(
   if (!request) {
     throw new Error("Leave request not found.");
   }
-
+  if (!request.startDate || !request.endDate) {
+    throw new Error(
+      "Leave request has missing start date or end date.",
+    );
+  }
+  const requestStartDate = request.startDate;
+  const requestEndDate = request.endDate;
   if (request.status !== "PENDING") {
     throw new Error(
       "AI approval suggestions are available only for pending leave requests.",
@@ -1367,9 +1384,8 @@ export async function analyzeLeaveApproval(
    * allotted + carriedOver - used.
    */
   const requestYear = new Date(
-    request.startDate,
+    requestStartDate,
   ).getFullYear();
-
   const balance = await LeaveBalance.findOne({
     employeeId: request.employeeId,
     leaveTypeId: request.leaveTypeId,
@@ -1381,11 +1397,11 @@ export async function analyzeLeaveApproval(
   const availableBalance =
     balance
       ? Math.max(
-          0,
-          balance.allotted +
-            balance.carriedOver -
-            balance.used,
-        )
+        0,
+        balance.allotted +
+        balance.carriedOver -
+        balance.used,
+      )
       : null;
 
   const balanceSufficient =
@@ -1401,8 +1417,8 @@ export async function analyzeLeaveApproval(
   const conflict =
     await analyzeLeaveConflict({
       employeeId: request.employeeId,
-      startDate: request.startDate,
-      endDate: request.endDate,
+      startDate: requestStartDate,
+      endDate: requestEndDate,
     });
 
   const reasons: string[] = [];
@@ -1461,7 +1477,7 @@ export async function analyzeLeaveApproval(
    */
   const recommendation =
     riskScore < 40 &&
-    balanceSufficient !== false
+      balanceSufficient !== false
       ? "APPROVE"
       : "REVIEW";
 
@@ -1487,10 +1503,10 @@ export async function analyzeLeaveApproval(
           leaveType.name,
 
         startDate:
-          request.startDate,
+          requestStartDate,
 
         endDate:
-          request.endDate,
+          requestEndDate,
 
         requestedDays:
           request.totalDays,
@@ -1944,9 +1960,9 @@ export async function analyzeLeaveAnalytics(
     startDate: string;
     endDate: string;
     requesterRole:
-      | "SUPER_ADMIN"
-      | "HR_ADMIN"
-      | "MANAGER";
+    | "SUPER_ADMIN"
+    | "HR_ADMIN"
+    | "MANAGER";
     requesterEmployeeId: string;
     employeeId?: string;
   },
@@ -2074,21 +2090,21 @@ export async function analyzeLeaveAnalytics(
     await Promise.all([
       employeeIds.length
         ? Employee.find({
-            _id: {
-              $in: employeeIds,
-            },
-          })
-            .select("_id firstName lastName")
-            .lean()
+          _id: {
+            $in: employeeIds,
+          },
+        })
+          .select("_id firstName lastName")
+          .lean()
         : [],
       leaveTypeIds.length
         ? LeaveType.find({
-            _id: {
-              $in: leaveTypeIds,
-            },
-          })
-            .select("_id name")
-            .lean()
+          _id: {
+            $in: leaveTypeIds,
+          },
+        })
+          .select("_id name")
+          .lean()
         : [],
     ]);
 
@@ -2143,6 +2159,10 @@ export async function analyzeLeaveAnalytics(
   let approvedLeaveDays = 0;
 
   for (const request of requests) {
+    if (!request.startDate || !request.endDate) {
+      continue;
+    }
+
     const status = String(request.status);
 
     if (status === "PENDING") {
@@ -2338,21 +2358,21 @@ export async function analyzeLeaveAnalytics(
   const approvalRate =
     approvedRequests + rejectedRequests > 0
       ? roundAnalyticsValue(
-          (approvedRequests /
-            (approvedRequests +
-              rejectedRequests)) *
-            100,
-          1,
-        )
+        (approvedRequests /
+          (approvedRequests +
+            rejectedRequests)) *
+        100,
+        1,
+      )
       : 0;
 
   const averageApprovedLeaveDuration =
     approvedRequests > 0
       ? roundAnalyticsValue(
-          approvedLeaveDays /
-            approvedRequests,
-          1,
-        )
+        approvedLeaveDays /
+        approvedRequests,
+        1,
+      )
       : 0;
 
   const leaveTypesAnalytics = [
@@ -2400,7 +2420,7 @@ export async function analyzeLeaveAnalytics(
 
   const peakMonth =
     peakMonthData &&
-    peakMonthData.approvedDays > 0
+      peakMonthData.approvedDays > 0
       ? peakMonthData.month
       : null;
 
@@ -2723,9 +2743,9 @@ export async function analyzeLeavePatterns(
     startDate: string;
     endDate: string;
     requesterRole:
-      | "SUPER_ADMIN"
-      | "HR_ADMIN"
-      | "MANAGER";
+    | "SUPER_ADMIN"
+    | "HR_ADMIN"
+    | "MANAGER";
     requesterEmployeeId: string;
     employeeId?: string;
   },
@@ -2841,10 +2861,10 @@ export async function analyzeLeavePatterns(
   const employees =
     employeeIds.length > 0
       ? await Employee.find({
-          _id: { $in: employeeIds },
-        })
-          .select("_id firstName lastName")
-          .lean()
+        _id: { $in: employeeIds },
+      })
+        .select("_id firstName lastName")
+        .lean()
       : [];
 
   const employeeMap = new Map(
@@ -2890,6 +2910,10 @@ export async function analyzeLeavePatterns(
   >();
 
   for (const request of requests) {
+    if (!request.startDate || !request.endDate) {
+      continue;
+    }
+
     const id = String(request.employeeId);
 
     const effectiveStart =

@@ -269,54 +269,16 @@ export function Topbar({
   ========================================================= */
 
   const markNotificationRead = async (id: string) => {
-    /*
-     * Do not depend on the logged-in role here. The backend endpoint
-     * identifies the authenticated user and marks only that user's
-     * notification as read.
-     */
-    queryClient.setQueryData(
-      ["notifications"],
-      (data: any) => {
-        if (!data) {
-          return data;
-        }
-
-        const notifications =
-          data.notifications?.map(
-            (notification: any) =>
-              notification.id === id
-                ? {
-                    ...notification,
-                    isRead: true,
-                    read: true,
-                  }
-                : notification,
-          ) ?? [];
-
-        const unreadCount =
-          notifications.filter(
-            (notification: any) =>
-              !isNotificationRead(notification),
-          ).length;
-
-        return {
-          ...data,
-          notifications,
-          unreadCount,
-        };
-      },
-    );
-
     try {
       await NotificationsApi.markRead(id);
 
-      /* Confirm server state immediately; do not wait for polling. */
+      // Always confirm the persisted server state before updating the UI.
       await queryClient.refetchQueries({
         queryKey: ["notifications"],
         type: "active",
       });
     } catch (error) {
-      /* Restore actual server state if the write failed. */
+      // Keep the UI aligned with the server if the write fails.
       await queryClient.refetchQueries({
         queryKey: ["notifications"],
         type: "active",
@@ -329,10 +291,58 @@ export function Topbar({
     }
   };
 
-  const handleNotifClick = async (
-    id: string,
-    link: string | null,
-  ) => {
+  /* =========================================================
+     RESOLVE NOTIFICATION DESTINATION
+
+     Notification producers normally store the exact route in `link`.
+     These fallbacks make older notifications with a missing link useful
+     as well, while preserving any existing dynamic route/query string.
+  ========================================================= */
+
+  const resolveNotificationLink = (notification: any) => {
+    const storedLink = String(notification?.link ?? "").trim();
+
+    if (storedLink) {
+      return storedLink;
+    }
+
+    switch (notification?.type) {
+      case "TICKET_MESSAGE":
+        return "/tickets";
+      case "LEAVE_REQUEST":
+      case "LEAVE_DECISION":
+        return "/leave";
+      case "ATTENDANCE_LATE":
+      case "ATTENDANCE_EARLY_DEPARTURE":
+      case "ATTENDANCE_REGULARIZATION":
+      case "ATTENDANCE_OVERTIME":
+      case "ATTENDANCE_COMP_OFF":
+        return "/attendance";
+      case "PAYROLL":
+        return "/payroll";
+      case "PERFORMANCE":
+        return "/performance";
+      case "RECRUITMENT":
+        return "/recruitment";
+      case "DOCUMENT_REQUESTED":
+      case "DOCUMENT_UPLOADED":
+      case "DOCUMENT_READY":
+      case "DOCUMENT_EXPIRY":
+        return "/documents";
+      case "ANNOUNCEMENT":
+        return "/announcements";
+      case "EMPLOYEE_LIFECYCLE":
+      case "SYSTEM":
+        return "/dashboard";
+      default:
+        return "/dashboard";
+    }
+  };
+
+
+  const handleNotifClick = async (notification: any) => {
+    const id = String(notification?.id ?? "");
+    const link = resolveNotificationLink(notification);
     /*
      * Reading and opening are independent actions.
      * A read-status failure must never prevent navigation.
@@ -610,10 +620,7 @@ export function Topbar({
                             <button
                               type="button"
                               onClick={() =>
-                                handleNotifClick(
-                                  notification.id,
-                                  notification.link,
-                                )
+                                handleNotifClick(notification)
                               }
                               className="min-w-0 flex-1 text-left"
                               aria-label={

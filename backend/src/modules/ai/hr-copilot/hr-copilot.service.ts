@@ -1308,8 +1308,16 @@ function buildHrCopilotFallbackAnswer(
   if (
     data.employee
   ) {
+    const wrapper = data.employee;
+    
+    if (typeof wrapper.message === "string" && !wrapper.employee) {
+      return wrapper.message;
+    }
+
     const employee =
-      data.employee;
+      wrapper.employee && typeof wrapper.employee === "object"
+        ? wrapper.employee
+        : wrapper;
 
     const name =
       employee.name ??
@@ -1381,6 +1389,10 @@ function buildHrCopilotFallbackAnswer(
   ) {
     const wrapper =
       data.attendance;
+
+    if (typeof wrapper.message === "string" && !wrapper.attendance && !wrapper.summary && !wrapper.date) {
+      return wrapper.message;
+    }
 
     const attendance =
       wrapper.attendance &&
@@ -1559,6 +1571,10 @@ function buildHrCopilotFallbackAnswer(
   ) {
     const leaveWrapper =
       data.leave;
+
+    if (typeof leaveWrapper.message === "string" && !leaveWrapper.balances && !leaveWrapper.requests && !Array.isArray(leaveWrapper)) {
+      return leaveWrapper.message;
+    }
 
     const leave =
       Array.isArray(
@@ -1992,6 +2008,10 @@ function buildHrCopilotFallbackAnswer(
   ) {
     const organization =
       data.organization;
+
+    if (typeof organization.message === "string" && !organization.manager && !organization.directReports && !organization.employees) {
+      return organization.message;
+    }
 
     if (
       organization.manager

@@ -1053,66 +1053,25 @@ export async function getManagersList() {
 
   return rows
     .filter((employee) => {
-      // Keep the cast local because the inferred Mongoose lean type
-      // does not currently expose the isManager property.
-      const employeeWithManagerFlag =
-        employee as typeof employee & { isManager?: boolean };
-
-      const employeeId = String(employee._id);
-      const userId = employee.userId
-        ? String(employee.userId)
-        : "";
-
-      const role = userMap.get(userId)?.role;
-
-      const hasDirectReports =
-        (reportMap.get(employeeId) ?? 0) > 0;
-
-      const explicitManager =
-        employeeWithManagerFlag.isManager === true;
-
-      const isLegacyManager =
-        employeeWithManagerFlag.isManager === undefined &&
-        role === "MANAGER";
-
+      const role = userMap.get(employee.userId)?.role;
+      // Include actual managers even before their first report is assigned.
+      // Also retain employees who already have reports, so restored data does
+      // not disappear from the manager selector.
       return (
-        explicitManager ||
-        hasDirectReports ||
-        isLegacyManager
+        role === "MANAGER" ||
+        role === "HR_ADMIN" ||
+        role === "SUPER_ADMIN" ||
+        (reportMap.get(employee._id) ?? 0) > 0
       );
     })
-    .map((employee) => {
-      const employeeWithManagerFlag =
-        employee as typeof employee & { isManager?: boolean };
-
-      const employeeId = String(employee._id);
-      const userId = employee.userId
-        ? String(employee.userId)
-        : "";
-
-      const explicitManager =
-        employeeWithManagerFlag.isManager === true;
-
-      const hasDirectReports =
-        (reportMap.get(employeeId) ?? 0) > 0;
-
-      const legacyManager =
-        userMap.get(userId)?.role === "MANAGER";
-
-      return {
-        id: employee._id,
-        firstName: employee.firstName ?? "",
-        lastName: employee.lastName ?? "",
-        designationTitle:
-          desMap.get(String(employee.designationId))?.title ?? null,
-        isManager:
-          explicitManager ||
-          hasDirectReports ||
-          legacyManager,
-        directReportCount:
-          reportMap.get(employeeId) ?? 0,
-      };
-    });
+    .map((employee) => ({
+      id: employee._id,
+      firstName: employee.firstName ?? "",
+      lastName: employee.lastName ?? "",
+      designationTitle: desMap.get(employee.designationId)?.title ?? null,
+      role: userMap.get(employee.userId)?.role ?? null,
+      directReportCount: reportMap.get(employee._id) ?? 0,
+    }));
 }
 
 export async function updateUserActiveStatus(
