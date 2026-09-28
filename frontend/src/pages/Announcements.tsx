@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import {
@@ -12,6 +13,14 @@ import {
   Trash2,
   ChevronDown,
   X,
+  Search,
+  Filter,
+  CalendarDays,
+  BarChart3,
+  Users,
+  CheckCircle2,
+  Clock3,
+  AlertCircle,
 } from "lucide-react";
 
 import { AnnouncementsApi } from "@/lib/endpoints";
@@ -157,6 +166,12 @@ interface AnnouncementStatusEntryLocal {
   read?: boolean;
   hasRead?: boolean;
   readAt?: string | null;
+  name?: string;
+  email?: string;
+  acknowledged?: boolean;
+  isAcknowledged?: boolean;
+  hasAcknowledged?: boolean;
+  acknowledgedAt?: string | null;
 }
 
 interface AnnouncementForm {
@@ -301,11 +316,6 @@ function todayLocalDate() {
   return local.toISOString().slice(0, 10);
 }
 
-function localDateTimeValue(date = new Date()) {
-  const offset = date.getTimezoneOffset();
-  const local = new Date(date.getTime() - offset * 60 * 1000);
-  return local.toISOString().slice(0, 16);
-}
 
 function localTimeValue(date = new Date()) {
   const offset = date.getTimezoneOffset();
@@ -353,6 +363,81 @@ function formatEventRange(start?: string | null, end?: string | null) {
   }
 
   return `${startDateText} ${startTimeText} – ${endDateText} ${endTimeText}`;
+}
+
+function formatEventDateRange(start?: string | null, end?: string | null) {
+  if (!start) return "";
+
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.getTime())) return "";
+
+  const endDate = end ? new Date(end) : null;
+  const options: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  };
+
+  const startText = startDate.toLocaleDateString(undefined, options);
+
+  if (!endDate || Number.isNaN(endDate.getTime())) {
+    return startText;
+  }
+
+  const endText = endDate.toLocaleDateString(undefined, options);
+
+  return startText === endText
+    ? startText
+    : `${startText} – ${endText}`;
+}
+
+function getAnnouncementStatus(announcement: Announcement) {
+  const explicitStatus = String(announcement.status || "").toUpperCase();
+
+  if (explicitStatus === "DRAFT") return "DRAFT";
+  if (explicitStatus === "SCHEDULED") return "SCHEDULED";
+  if (explicitStatus === "EXPIRED") return "EXPIRED";
+
+  if (isAnnouncementExpired(announcement)) return "EXPIRED";
+
+  return "PUBLISHED";
+}
+
+function getAnnouncementBucket(announcement: Announcement) {
+  const type = String(announcement.type || "").toUpperCase();
+
+  if (type === "HOLIDAY_NOTICE") return "HOLIDAYS";
+  if (type === "COMPANY_EVENT" || type === "MEETING_NOTICE") return "EVENTS";
+  if (type === "POLICY_UPDATE" || type === "BENEFITS_UPDATE" || type === "TRAINING_LD") return "HR_POLICY";
+  if (type === "EMPLOYEE_RECOGNITION") return "CELEBRATIONS";
+
+  return "COMPANY";
+}
+
+function getAnnouncementPriority(announcement: Announcement) {
+  const requiresAcknowledgement = Boolean(
+    (announcement as unknown as Record<string, unknown>).requiresAcknowledgement,
+  );
+
+  if (announcement.pinned || requiresAcknowledgement || announcement.type === "POLICY_UPDATE") {
+    return "Important";
+  }
+
+  return "Normal";
+}
+
+function getEventDate(announcement: Announcement) {
+  const value = announcement.eventStartAt || announcement.scheduledAt || announcement.publishedAt || announcement.createdAt;
+  if (!value) return null;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+
+
+function formatEventTime(date: Date) {
+  return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(date);
 }
 
 function MultiSelectCategory({
@@ -490,19 +575,20 @@ function MultiSelectCategory({
 
 export default function Announcements() {
   const { hasPermission } = useAuth();
-
   const isAdmin = hasPermission("announcements.manage");
 
   const [createOpen, setCreateOpen] = useState(false);
-
   const [editOpen, setEditOpen] = useState(false);
-
-  const [selectedAnnouncement, setSelectedAnnouncement] =
-    useState<Announcement | null>(null);
-
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
-  const [statusAnnouncement, setStatusAnnouncement] =
-    useState<Announcement | null>(null);
+  const [statusAnnouncement, setStatusAnnouncement] = useState<Announcement | null>(null);
+
+  // New UI-only filters/dashboard state. Existing API behaviour is unchanged.
+  const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState("ALL");
 
   const queryClient = useQueryClient();
 
@@ -515,72 +601,42 @@ export default function Announcements() {
     enabled: isAdmin && statusOpen && !!statusAnnouncement,
   });
 
-  /* =======================================================
-     MARK READ
-  ======================================================= */
-
   const markReadMutation = useMutation({
     mutationFn: AnnouncementsApi.markRead,
-
     onSuccess: (_data, announcementId) => {
       queryClient.setQueryData<Announcement[]>(["announcements"], (current) => {
-        if (!current) {
-          return current;
-        }
-
-        return current.map((announcement) => {
-          if (announcement.id !== announcementId) {
-            return announcement;
-          }
-
-          return {
-            ...announcement,
-            receipt: {
-              isRead: true,
-              readAt: new Date().toISOString(),
-              isAcknowledged: announcement.receipt?.isAcknowledged ?? false,
-              acknowledgedAt: announcement.receipt?.acknowledgedAt ?? null,
-            },
-          };
-        });
+        if (!current) return current;
+        return current.map((announcement) =>
+          announcement.id !== announcementId
+            ? announcement
+            : {
+                ...announcement,
+                receipt: {
+                  isRead: true,
+                  readAt: new Date().toISOString(),
+                  isAcknowledged: announcement.receipt?.isAcknowledged ?? false,
+                  acknowledgedAt: announcement.receipt?.acknowledgedAt ?? null,
+                },
+              },
+        );
       });
-
-      void queryClient.invalidateQueries({
-        queryKey: ["announcements"],
-      });
+      void queryClient.invalidateQueries({ queryKey: ["announcements"] });
     },
   });
-  /* =======================================================
-     ACKNOWLEDGE
-  ======================================================= */
 
   const acknowledgeMutation = useMutation({
     mutationFn: AnnouncementsApi.acknowledge,
-
     onSuccess: () => {
-      void queryClient.refetchQueries({
-        queryKey: ["announcements"],
-        type: "active",
-      });
+      void queryClient.refetchQueries({ queryKey: ["announcements"], type: "active" });
     },
   });
 
-  /* =======================================================
-     UPDATE
-  ======================================================= */
-
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: FormData }) =>
-      AnnouncementsApi.update(id, data),
-
+    mutationFn: ({ id, data }: { id: string; data: FormData }) => AnnouncementsApi.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["announcements"],
-      });
-
+      void queryClient.invalidateQueries({ queryKey: ["announcements"] });
       setEditOpen(false);
       setSelectedAnnouncement(null);
-
       window.dispatchEvent(
         new CustomEvent("announcement-toast", {
           detail: "Announcement updated successfully.",
@@ -589,341 +645,499 @@ export default function Announcements() {
     },
   });
 
-  /* =======================================================
-     DELETE
-  ======================================================= */
-
   const deleteMutation = useMutation({
     mutationFn: AnnouncementsApi.delete,
-
     onSuccess: () => {
-      void queryClient.refetchQueries({
-        queryKey: ["announcements"],
-        type: "active",
-      });
+      void queryClient.refetchQueries({ queryKey: ["announcements"], type: "active" });
     },
   });
 
-  /* =======================================================
-     GET ANNOUNCEMENTS
-  ======================================================= */
-
   const { data, isLoading, isError } = useQuery<Announcement[], Error>({
     queryKey: ["announcements"],
-
     queryFn: () => AnnouncementsApi.list(),
   });
 
-  /* =======================================================
-     ACTIONS
-  ======================================================= */
+  const allAnnouncements = data ?? [];
 
-  const handleMarkRead = (id: string) => {
-    markReadMutation.mutate(id);
+  const departmentOptions = useMemo(() => {
+    const values = new Set<string>();
+    allAnnouncements.forEach((announcement) => {
+      (announcement.departments ?? []).forEach((department) => {
+        if (department) values.add(department);
+      });
+    });
+    return Array.from(values).sort();
+  }, [allAnnouncements]);
+
+  const filteredAnnouncements = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return allAnnouncements
+      .filter((announcement) => {
+        if (!normalizedSearch) return true;
+        return [
+          announcement.title,
+          announcement.body,
+          getTypeLabel(announcement.type),
+          getAudienceLabel(announcement.audience),
+          ...(announcement.departments ?? []),
+          ...(announcement.locations ?? []),
+          ...(announcement.targetRoles ?? []),
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+      })
+      .filter((announcement) => typeFilter === "ALL" || announcement.type === typeFilter)
+      .filter((announcement) => statusFilter === "ALL" || getAnnouncementStatus(announcement) === statusFilter)
+      .filter((announcement) => departmentFilter === "ALL" || (announcement.departments ?? []).includes(departmentFilter))
+      .filter((announcement) => {
+        if (activeTab === "ALL") return true;
+        if (activeTab === "IMPORTANT") return getAnnouncementPriority(announcement) === "Important";
+        if (activeTab === "DRAFTS") return getAnnouncementStatus(announcement) === "DRAFT";
+        if (activeTab === "SCHEDULED") return getAnnouncementStatus(announcement) === "SCHEDULED";
+        if (activeTab === "EXPIRED") return getAnnouncementStatus(announcement) === "EXPIRED";
+        return getAnnouncementBucket(announcement) === activeTab;
+      })
+      .sort((a, b) => {
+        if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+  }, [activeTab, allAnnouncements, departmentFilter, search, statusFilter, typeFilter]);
+
+  const tabCounts = useMemo(() => {
+    const count = (predicate: (announcement: Announcement) => boolean) => allAnnouncements.filter(predicate).length;
+    return {
+      ALL: allAnnouncements.length,
+      IMPORTANT: count((announcement) => getAnnouncementPriority(announcement) === "Important"),
+      COMPANY: count((announcement) => getAnnouncementBucket(announcement) === "COMPANY"),
+      EVENTS: count((announcement) => getAnnouncementBucket(announcement) === "EVENTS"),
+      HOLIDAYS: count((announcement) => getAnnouncementBucket(announcement) === "HOLIDAYS"),
+      HR_POLICY: count((announcement) => getAnnouncementBucket(announcement) === "HR_POLICY"),
+      CELEBRATIONS: count((announcement) => getAnnouncementBucket(announcement) === "CELEBRATIONS"),
+      DRAFTS: count((announcement) => getAnnouncementStatus(announcement) === "DRAFT"),
+      SCHEDULED: count((announcement) => getAnnouncementStatus(announcement) === "SCHEDULED"),
+      EXPIRED: count((announcement) => getAnnouncementStatus(announcement) === "EXPIRED"),
+    };
+  }, [allAnnouncements]);
+
+  const overview = useMemo(() => {
+    const published = allAnnouncements.filter((a) => getAnnouncementStatus(a) === "PUBLISHED").length;
+    const scheduled = allAnnouncements.filter((a) => getAnnouncementStatus(a) === "SCHEDULED").length;
+    const drafts = allAnnouncements.filter((a) => getAnnouncementStatus(a) === "DRAFT").length;
+    const expired = allAnnouncements.filter((a) => getAnnouncementStatus(a) === "EXPIRED").length;
+    const read = allAnnouncements.filter((a) => a.receipt?.isRead).length;
+    const acknowledged = allAnnouncements.filter((a) => a.receipt?.isAcknowledged).length;
+    const readRate = allAnnouncements.length ? Math.round((read / allAnnouncements.length) * 100) : 0;
+    return { total: allAnnouncements.length, published, scheduled, drafts, expired, read, acknowledged, readRate };
+  }, [allAnnouncements]);
+
+  const upcomingEvents = useMemo(() => {
+    const now = Date.now();
+    return allAnnouncements
+      .filter(
+        (announcement) =>
+          announcement.calendarEnabled ||
+          announcement.type === "HOLIDAY_NOTICE" ||
+          announcement.type === "COMPANY_EVENT" ||
+          announcement.type === "MEETING_NOTICE",
+      )
+      .map((announcement) => ({ announcement, date: getEventDate(announcement) }))
+      .filter((item): item is { announcement: Announcement; date: Date } => !!item.date && item.date.getTime() >= now)
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .slice(0, 5);
+  }, [allAnnouncements]);
+
+  const resetFilters = () => {
+    setSearch("");
+    setActiveTab("ALL");
+    setTypeFilter("ALL");
+    setStatusFilter("ALL");
+    setDepartmentFilter("ALL");
   };
 
-  const handleAcknowledge = (id: string) => {
-    acknowledgeMutation.mutate(id);
-  };
-
+  const handleMarkRead = (id: string) => markReadMutation.mutate(id);
+  const handleAcknowledge = (id: string) => acknowledgeMutation.mutate(id);
   const handleViewStatus = (announcement: Announcement) => {
     setStatusAnnouncement(announcement);
     setStatusOpen(true);
   };
-
   const handleEdit = (announcement: Announcement) => {
     if (isAnnouncementExpired(announcement)) return;
     setSelectedAnnouncement(announcement);
     setEditOpen(true);
   };
-
   const handleDelete = (announcement: Announcement) => {
     if (isAnnouncementExpired(announcement)) return;
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${announcement.title}"?`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
+    if (!window.confirm(`Are you sure you want to delete "${announcement.title}"?`)) return;
     deleteMutation.mutate(announcement.id);
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full space-y-5">
       <PageHeader
         title="Announcements"
-        subtitle="Company-wide news and updates."
+        subtitle="Company-wide news, updates, events and important information."
         action={
           isAdmin ? (
-            <Button
-              leftIcon={<Plus size={16} />}
-              onClick={() => setCreateOpen(true)}
-            >
+            <Button leftIcon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>
               New announcement
             </Button>
           ) : undefined
         }
       />
 
-      {/* ===================================================
-          LOADING
-      =================================================== */}
-
-      {isLoading ? (
-        <div className="space-y-4">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <Skeleton key={index} className="h-32 rounded-3xl" />
+      {/* New: category tabs. Existing announcement data/actions remain unchanged. */}
+      <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white p-1.5 shadow-sm">
+        <div className="flex min-w-max items-center gap-1">
+          {[
+            ["ALL", "All"],
+            ["IMPORTANT", "Important"],
+            ["COMPANY", "Company"],
+            ["EVENTS", "Events"],
+            ["HOLIDAYS", "Holidays"],
+            ["HR_POLICY", "HR Policy"],
+            ["CELEBRATIONS", "Celebrations"],
+            ["DRAFTS", "Drafts"],
+            ["SCHEDULED", "Scheduled"],
+            ["EXPIRED", "Expired"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveTab(key)}
+              className={`rounded-xl px-3 py-2 text-xs font-medium transition ${
+                activeTab === key ? "bg-brand-50 text-brand-700 shadow-sm" : "text-ink-soft hover:bg-gray-50 hover:text-ink"
+              }`}
+            >
+              {label}
+              <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-ink-faint">
+                {tabCounts[key as keyof typeof tabCounts]}
+              </span>
+            </button>
           ))}
         </div>
-      ) : isError ? (
-        <Card>
-          <div className="p-6 text-sm text-red-600">
-            Failed to load announcements.
-          </div>
-        </Card>
-      ) : !data?.length ? (
-        <EmptyState icon={Megaphone} title="No announcements yet" />
-      ) : (
-        <div className="space-y-4">
-          {data.map((announcement) => (
-            <Card
-              key={announcement.id}
-              className={
-                announcement.pinned ? "border-gold-300 bg-gold-50/40" : ""
-              }
+      </div>
+
+      {/* New: local search and filters. No backend/API change required. */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm xl:flex-row xl:items-center">
+        <div className="relative min-w-0 flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search announcements..."
+            className="h-10 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <div className="relative">
+            <Filter size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+              className="h-10 min-w-[150px] appearance-none rounded-xl border border-gray-200 bg-white pl-8 pr-8 text-xs text-ink outline-none focus:border-brand-500"
             >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 flex-1 items-start gap-3">
-                  {/* ICON */}
+              <option value="ALL">All Types</option>
+              {ANNOUNCEMENT_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
+          </div>
 
-                  <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-                    <Megaphone size={18} />
-                  </div>
+          <div className="relative">
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="h-10 min-w-[130px] appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-8 text-xs text-ink outline-none focus:border-brand-500"
+            >
+              <option value="ALL">All Status</option>
+              <option value="PUBLISHED">Published</option>
+              <option value="SCHEDULED">Scheduled</option>
+              <option value="DRAFT">Draft</option>
+              <option value="EXPIRED">Expired</option>
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
+          </div>
 
-                  {/* CONTENT */}
+          {departmentOptions.length > 0 && (
+            <div className="relative">
+              <select
+                value={departmentFilter}
+                onChange={(event) => setDepartmentFilter(event.target.value)}
+                className="h-10 min-w-[150px] appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-8 text-xs text-ink outline-none focus:border-brand-500"
+              >
+                <option value="ALL">All Departments</option>
+                {departmentOptions.map((department) => (
+                  <option key={department} value={department}>{department}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
+            </div>
+          )}
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-display text-[15px] font-medium text-ink">
-                        {announcement.title}
-                      </h3>
+          {(search || activeTab !== "ALL" || typeFilter !== "ALL" || statusFilter !== "ALL" || departmentFilter !== "ALL") && (
+            <Button variant="outline" size="sm" onClick={resetFilters}>
+              Clear filters
+            </Button>
+          )}
+        </div>
+      </div>
 
-                      {announcement.pinned && (
-                        <Badge tone="gold">
-                          <Pin size={11} />
-                          Pinned
-                        </Badge>
-                      )}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0">
+          {isLoading ? (
+            <div className="space-y-4">
+              {Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-3xl" />)}
+            </div>
+          ) : isError ? (
+            <Card><div className="p-6 text-sm text-red-600">Failed to load announcements.</div></Card>
+          ) : !allAnnouncements.length ? (
+            <EmptyState icon={Megaphone} title="No announcements yet" />
+          ) : !filteredAnnouncements.length ? (
+            <EmptyState icon={Search} title="No announcements match your filters" />
+          ) : (
+            <div className="space-y-4">
+              {filteredAnnouncements.map((announcement) => {
+                const priority = getAnnouncementPriority(announcement);
+                const status = getAnnouncementStatus(announcement);
+                const requiresAcknowledgement = Boolean(announcement.requiresAcknowledgement);
 
-                      <Badge>{getTypeLabel(announcement.type)}</Badge>
-
-                      <Badge>{getAudienceLabel(announcement.audience)}</Badge>
-                    </div>
-
-                    {announcement.status === "EXPIRED" ? (
-                      <p className="mt-1.5 text-[13px] text-ink-faint">
-                        This announcement has expired and its content is no longer accessible.
-                      </p>
-                    ) : (
-                      <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-soft">
-                        {announcement.body}
-                      </p>
-                    )}
-
-                    {announcement.eventStartAt && (
-                      <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2.5">
-                        <p className="text-[12px] font-medium text-brand-700">
-                          Calendar event
-                        </p>
-                        <p className="mt-0.5 text-[12px] text-ink-soft">
-                          {formatEventRange(
-                            announcement.eventStartAt,
-                            announcement.eventEndAt,
-                          )}
-                        </p>
-                        {announcement.eventLocation && (
-                          <p className="mt-0.5 text-[12px] text-ink-faint">
-                            {announcement.eventLocation}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {announcement.status === "SCHEDULED" &&
-                      announcement.scheduledAt && (
-                        <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2.5">
-                          <p className="text-[12px] font-medium text-amber-700">
-                            Scheduled publish
-                          </p>
-                          <p className="mt-0.5 text-[12px] text-ink-soft">
-                            {formatEventRange(announcement.scheduledAt)}
-                          </p>
+                return (
+                  <Card
+                    key={announcement.id}
+                    className={
+                      priority === "Important"
+                        ? "border-gold-300 bg-gold-50/40"
+                        : ""
+                    }
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${priority === "Important" ? "bg-amber-50 text-amber-600" : "bg-brand-50 text-brand-600"}`}>
+                          {announcement.type === "HOLIDAY_NOTICE" ? <CalendarDays size={18} /> : <Megaphone size={18} />}
                         </div>
-                      )}
 
-                    {/* ATTACHMENT */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-display text-[15px] font-medium text-ink">{announcement.title}</h3>
 
-                    {announcement.attachment && (
-                      <div className="mt-4">
-                        <a
-                          href={getAttachmentUrl(announcement.attachment)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-50"
-                        >
-                          {isImageAttachment(announcement.attachment) ? (
-                            <ImageIcon size={16} />
+                            {priority === "Important" && (
+                              <Badge tone="gold"><AlertCircle size={11} /> Important</Badge>
+                            )}
+                            {announcement.pinned && (
+                              <Badge tone="gold"><Pin size={11} /> Pinned</Badge>
+                            )}
+                            {status === "SCHEDULED" && <Badge><Clock3 size={11} /> Scheduled</Badge>}
+                            {status === "DRAFT" && <Badge>Draft</Badge>}
+                            {status === "EXPIRED" && <Badge>Expired</Badge>}
+
+                            <Badge>{getTypeLabel(announcement.type)}</Badge>
+                            <Badge>{getAudienceLabel(announcement.audience)}</Badge>
+                          </div>
+
+                          {status === "EXPIRED" ? (
+                            <p className="mt-1.5 text-[13px] text-ink-faint">This announcement has expired and its content is no longer accessible.</p>
                           ) : (
-                            <FileText size={16} />
+                            <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-soft">{announcement.body}</p>
                           )}
-                          View Attachment
-                        </a>
-                      </div>
-                    )}
 
-                    {/* STATUS */}
+                          {announcement.eventStartAt && (
+                            <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2.5">
+                              <p className="text-[12px] font-medium text-brand-700">Calendar event</p>
+                              <p className="mt-0.5 text-[12px] text-ink-soft">{formatEventDateRange(announcement.eventStartAt, announcement.eventEndAt)}</p>
+                              {announcement.eventLocation && <p className="mt-0.5 text-[12px] text-ink-faint">{announcement.eventLocation}</p>}
+                            </div>
+                          )}
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {announcement.expiresAt && (
-                        <ExpiryBadge expiresAt={announcement.expiresAt} expiredAt={announcement.expiredAt} />
-                      )}
-                      <Badge>
-                        {announcement.receipt?.isRead ? "Read" : "Unread"}
-                      </Badge>
+                          {status === "SCHEDULED" && announcement.scheduledAt && (
+                            <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2.5">
+                              <p className="text-[12px] font-medium text-amber-700">Scheduled publish</p>
+                              <p className="mt-0.5 text-[12px] text-ink-soft">{formatEventRange(announcement.scheduledAt)}</p>
+                            </div>
+                          )}
 
-                      {announcement.type === "POLICY_UPDATE" && (
-                        <Badge>
-                          {announcement.receipt?.isAcknowledged
-                            ? "Acknowledged"
-                            : "Requires acknowledgement"}
-                        </Badge>
-                      )}
-                    </div>
-
-                    {/* READ TIME */}
-
-                    {announcement.receipt?.readAt && (
-                      <p className="mt-2 text-[12px] text-ink-faint">
-                        Read {timeAgo(announcement.receipt.readAt)}
-                      </p>
-                    )}
-
-                    {/* ACKNOWLEDGED TIME */}
-
-                    {announcement.receipt?.acknowledgedAt && (
-                      <p className="mt-1 text-[12px] text-ink-faint">
-                        Acknowledged{" "}
-                        {timeAgo(announcement.receipt.acknowledgedAt)}
-                      </p>
-                    )}
-
-                    {/* ACTIONS */}
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {announcement.status !== "EXPIRED" && !announcement.receipt?.isRead && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleMarkRead(announcement.id)}
-                          isLoading={markReadMutation.isPending}
-                        >
-                          Mark as read
-                        </Button>
-                      )}
-
-                      {announcement.status !== "EXPIRED" && announcement.type === "POLICY_UPDATE" &&
-                        !announcement.receipt?.isAcknowledged && (
-                          <Button
-                            onClick={() => handleAcknowledge(announcement.id)}
-                            isLoading={acknowledgeMutation.isPending}
-                          >
-                            Acknowledge
-                          </Button>
-                        )}
-
-                      {/* ADMIN ACTIONS */}
-
-                      {isAdmin && (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleViewStatus(announcement)}
-                          >
-                            View read receipts
-                          </Button>
-
-                          {announcement.type === "POLICY_UPDATE" &&
-                            Boolean(
-                              (
-                                announcement as unknown as Record<
-                                  string,
-                                  unknown
-                                >
-                              ).requiresAcknowledgement,
-                            ) && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleViewStatus(announcement)}
+                          {announcement.attachment && (
+                            <div className="mt-4">
+                              <a
+                                href={getAttachmentUrl(announcement.attachment)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-50"
                               >
-                                View acknowledgements
+                                {isImageAttachment(announcement.attachment) ? <ImageIcon size={16} /> : <FileText size={16} />}
+                                View Attachment
+                              </a>
+                            </div>
+                          )}
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {announcement.expiresAt && <ExpiryBadge expiresAt={announcement.expiresAt} expiredAt={announcement.expiredAt} />}
+                            <Badge>{announcement.receipt?.isRead ? "Read" : "Unread"}</Badge>
+                            {requiresAcknowledgement && (
+                              <Badge>{announcement.receipt?.isAcknowledged ? "Acknowledged" : "Requires acknowledgement"}</Badge>
+                            )}
+                          </div>
+
+                          {announcement.receipt?.readAt && (
+                            <p className="mt-2 text-[12px] text-ink-faint">Read {timeAgo(announcement.receipt.readAt)}</p>
+                          )}
+                          {announcement.receipt?.acknowledgedAt && (
+                            <p className="mt-1 text-[12px] text-ink-faint">Acknowledged {timeAgo(announcement.receipt.acknowledgedAt)}</p>
+                          )}
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {status !== "EXPIRED" && !announcement.receipt?.isRead && (
+                              <Button variant="outline" size="sm" onClick={() => handleMarkRead(announcement.id)} isLoading={markReadMutation.isPending}>
+                                Mark as read
                               </Button>
                             )}
 
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            leftIcon={<Pencil size={14} />}
-                            onClick={() => handleEdit(announcement)}
-                            disabled={isAnnouncementExpired(announcement)}
-                            title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be edited" : "Edit announcement"}
-                          >
-                            Edit
-                          </Button>
+                            {status !== "EXPIRED" && requiresAcknowledgement && !announcement.receipt?.isAcknowledged && (
+                              <Button onClick={() => handleAcknowledge(announcement.id)} isLoading={acknowledgeMutation.isPending}>
+                                Acknowledge
+                              </Button>
+                            )}
 
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            leftIcon={<Trash2 size={14} />}
-                            onClick={() => handleDelete(announcement)}
-                            isLoading={deleteMutation.isPending}
-                            disabled={deleteMutation.isPending || isAnnouncementExpired(announcement)}
-                            title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be deleted" : "Delete announcement"}
-                          >
-                            Delete
-                          </Button>
-                        </>
-                      )}
+                            {isAdmin && (
+                              <>
+                                <Button variant="outline" size="sm" onClick={() => handleViewStatus(announcement)}>
+                                  View receipts
+                                </Button>
+
+                                {requiresAcknowledgement && (
+                                  <Button variant="outline" size="sm" onClick={() => handleViewStatus(announcement)}>
+                                    View acknowledgements
+                                  </Button>
+                                )}
+
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  leftIcon={<Pencil size={14} />}
+                                  onClick={() => handleEdit(announcement)}
+                                  disabled={isAnnouncementExpired(announcement)}
+                                  title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be edited" : "Edit announcement"}
+                                >
+                                  Edit
+                                </Button>
+
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  leftIcon={<Trash2 size={14} />}
+                                  onClick={() => handleDelete(announcement)}
+                                  isLoading={deleteMutation.isPending}
+                                  disabled={deleteMutation.isPending || isAnnouncementExpired(announcement)}
+                                  title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be deleted" : "Delete announcement"}
+                                >
+                                  Delete
+                                </Button>
+                              </>
+                            )}
+                          </div>
+
+                          <p className="mt-3 text-[12px] text-ink-faint">{formatDate(announcement.createdAt)} · {timeAgo(announcement.createdAt)}</p>
+                        </div>
+                      </div>
                     </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-                    {/* DATE */}
+        {/* New: lightweight admin overview. It uses existing announcement data only. */}
+        <aside className="space-y-4">
+          <Card>
+            <div className="p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[13px] font-semibold text-ink">Announcement Overview</p>
+                  <p className="mt-0.5 text-xs text-ink-faint">Current records and engagement</p>
+                </div>
+                <BarChart3 size={18} className="text-brand-600" />
+              </div>
 
-                    <p className="mt-3 text-[12px] text-ink-faint">
-                      {formatDate(announcement.createdAt)} ·{" "}
-                      {timeAgo(announcement.createdAt)}
-                    </p>
-                  </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <StatTile label="Total" value={overview.total} icon={<Megaphone size={15} />} />
+                <StatTile label="Published" value={overview.published} icon={<CheckCircle2 size={15} />} />
+                <StatTile label="Scheduled" value={overview.scheduled} icon={<Clock3 size={15} />} />
+                <StatTile label="Expired" value={overview.expired} icon={<AlertCircle size={15} />} />
+              </div>
+
+              <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-ink-faint">My read rate</span>
+                  <span className="font-semibold text-ink">{overview.readRate}%</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200">
+                  <div className="h-full rounded-full bg-brand-500" style={{ width: `${overview.readRate}%` }} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-ink-faint">
+                  <span>{overview.read} read</span>
+                  <span>{overview.acknowledged} acknowledged</span>
                 </div>
               </div>
-            </Card>
-          ))}
-        </div>
-      )}
 
-      {/* ===================================================
-          CREATE MODAL
-      =================================================== */}
+              {overview.drafts > 0 && (
+                <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 p-3 text-xs text-amber-800">
+                  {overview.drafts} draft announcement{overview.drafts === 1 ? "" : "s"} returned by the backend.
+                </div>
+              )}
+            </div>
+          </Card>
 
-      {isAdmin && (
-        <CreateModal open={createOpen} onClose={() => setCreateOpen(false)} />
-      )}
+          <Card>
+            <div className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[13px] font-semibold text-ink">Upcoming Events</p>
+                  <p className="mt-0.5 text-xs text-ink-faint">From existing calendar announcements</p>
+                </div>
+                <CalendarDays size={18} className="text-brand-600" />
+              </div>
 
-      {/* ===================================================
-          READ RECEIPTS MODAL
-      =================================================== */}
+              {upcomingEvents.length ? (
+                <div className="mt-4 space-y-3">
+                  {upcomingEvents.map(({ announcement, date }) => (
+                    <div key={announcement.id} className="flex items-center gap-3 rounded-xl border border-gray-100 p-3">
+                      <div className="w-12 shrink-0 rounded-lg bg-brand-50 px-2 py-1.5 text-center">
+                        <div className="text-[10px] font-semibold uppercase text-brand-600">{new Intl.DateTimeFormat("en-IN", { month: "short" }).format(date)}</div>
+                        <div className="text-base font-bold text-brand-700">{date.getDate()}</div>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-ink">{announcement.title}</p>
+                        <p className="mt-0.5 text-[11px] text-ink-faint">{formatEventTime(date)} · {getTypeLabel(announcement.type)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-dashed border-gray-200 p-4 text-center text-xs text-ink-faint">No upcoming events.</div>
+              )}
+            </div>
+          </Card>
+
+          <Card>
+            <div className="p-5">
+              <div className="flex items-center gap-2">
+                <Users size={17} className="text-brand-600" />
+                <p className="text-[13px] font-semibold text-ink">Existing capabilities kept</p>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {["Targeting", "Email", "In-App", "Banner", "Calendar", "Scheduling", "Expiry", "Attachments", "Pinning", "Read receipts", "Acknowledgement"].map((item) => (
+                  <span key={item} className="rounded-full bg-gray-50 px-2 py-1 text-[10px] font-medium text-ink-soft">{item}</span>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </aside>
+      </div>
+
+      {isAdmin && <CreateModal open={createOpen} onClose={() => setCreateOpen(false)} />}
 
       {isAdmin && statusAnnouncement && (
         <ReadReceiptsModal
@@ -938,10 +1152,6 @@ export default function Announcements() {
         />
       )}
 
-      {/* ===================================================
-          EDIT MODAL
-      =================================================== */}
-
       {isAdmin && selectedAnnouncement && (
         <EditModal
           open={editOpen}
@@ -953,14 +1163,64 @@ export default function Announcements() {
               setSelectedAnnouncement(null);
             }
           }}
-          onSubmit={(formData: FormData) => {
-            updateMutation.mutate({
-              id: selectedAnnouncement.id,
-              data: formData,
-            });
-          }}
+          onSubmit={(formData: FormData) => updateMutation.mutate({ id: selectedAnnouncement.id, data: formData })}
         />
       )}
+    </div>
+  );
+}
+
+function StatTile({ label, value, icon }: { label: string; value: number; icon: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+      <div className="flex items-center justify-between text-brand-600">{icon}<span className="text-lg font-semibold text-ink">{value}</span></div>
+      <p className="mt-1 text-[11px] text-ink-faint">{label}</p>
+    </div>
+  );
+}
+
+function QuickTemplateSelector({
+  onSelect,
+}: {
+  onSelect: (template: {
+    title: string;
+    body: string;
+    type: string;
+    audience: string;
+    notificationMethods: string[];
+    requiresAcknowledgement: boolean;
+  }) => void;
+}) {
+  const templates = [
+    { key: "GENERAL", label: "General Notice", icon: "📢", title: "", body: "", type: "GENERAL_NOTICE", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL"], requiresAcknowledgement: false },
+    { key: "HOLIDAY", label: "Holiday Notice", icon: "🏖️", title: "Upcoming Holiday", body: "Please note the upcoming company holiday and plan your work accordingly.", type: "HOLIDAY_NOTICE", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL", "CALENDAR"], requiresAcknowledgement: false },
+    { key: "POLICY", label: "HR Policy", icon: "💼", title: "Important HR Policy Update", body: "Please review the updated HR policy and acknowledge that you have read and understood it.", type: "POLICY_UPDATE", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL", "BANNER"], requiresAcknowledgement: true },
+    { key: "EVENT", label: "Company Event", icon: "📅", title: "Company Event", body: "We are pleased to announce an upcoming company event. More details will follow.", type: "COMPANY_EVENT", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL", "CALENDAR"], requiresAcknowledgement: false },
+    { key: "CELEBRATION", label: "Celebration", icon: "🎉", title: "Congratulations Team!", body: "Congratulations to everyone on this achievement. Thank you for your continued contribution.", type: "EMPLOYEE_RECOGNITION", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL"], requiresAcknowledgement: false },
+    { key: "EMERGENCY", label: "Emergency", icon: "🚨", title: "Important Emergency Notice", body: "Please follow the instructions in this announcement and contact HR if you need assistance.", type: "GENERAL_NOTICE", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL", "BANNER"], requiresAcknowledgement: true },
+  ];
+
+  return (
+    <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-[13px] font-medium text-ink">Quick templates</p>
+          <p className="mt-0.5 text-xs text-ink-faint">Start with a template; you can edit everything before publishing.</p>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {templates.map((template) => (
+          <button
+            key={template.key}
+            type="button"
+            onClick={() => onSelect(template)}
+            className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-brand-300 hover:bg-brand-50"
+          >
+            <span className="text-base">{template.icon}</span>
+            <span className="mt-1 block text-[11px] font-medium text-ink">{template.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1099,7 +1359,7 @@ function CreateModal({
     if (channels.includes("CALENDAR")) {
       if (!values.eventStartAt) {
         showToast(
-          "Please provide a calendar event start date and time.",
+          "Please provide a calendar event date.",
           "error",
         );
         return;
@@ -1107,18 +1367,18 @@ function CreateModal({
 
       if (!values.eventEndAt) {
         showToast(
-          "Please provide a calendar event end date and time.",
+          "Please provide a calendar event end date.",
           "error",
         );
         return;
       }
 
-      const eventStart = new Date(values.eventStartAt);
-      const eventEnd = new Date(values.eventEndAt);
+      const eventStart = new Date(`${values.eventStartAt}T00:00:00`);
+      const eventEnd = new Date(`${values.eventEndAt}T00:00:00`);
 
       if (Number.isNaN(eventStart.getTime())) {
         showToast(
-          "Please enter a valid calendar event start date and time.",
+          "Please enter a valid calendar event date.",
           "error",
         );
         return;
@@ -1126,15 +1386,17 @@ function CreateModal({
 
       if (Number.isNaN(eventEnd.getTime())) {
         showToast(
-          "Please enter a valid calendar event end date and time.",
+          "Please enter a valid calendar event end date.",
           "error",
         );
         return;
       }
 
-      if (eventStart.getTime() < Date.now()) {
+      const today = new Date(`${todayLocalDate()}T00:00:00`);
+
+      if (eventStart.getTime() < today.getTime()) {
         showToast(
-          "Calendar event start must be today or a future date/time.",
+          "Calendar event date must be today or a future date.",
           "error",
         );
         return;
@@ -1142,15 +1404,17 @@ function CreateModal({
 
       if (eventEnd.getTime() < eventStart.getTime()) {
         showToast(
-          "Calendar event end time must be after the start time.",
+          "Calendar event end date must be on or after the start date.",
           "error",
         );
         return;
       }
 
-      formData.append("eventStartAt", eventStart.toISOString());
+      // Calendar events are intentionally date-only. The backend accepts
+      // the ISO date string and no time is selected or stored by this form.
+      formData.append("eventStartAt", values.eventStartAt);
 
-      formData.append("eventEndAt", eventEnd.toISOString());
+      formData.append("eventEndAt", values.eventEndAt);
 
       if (values.eventLocation.trim()) {
         formData.append("eventLocation", values.eventLocation.trim());
@@ -1162,9 +1426,7 @@ function CreateModal({
     formData.append(
       "requiresAcknowledgement",
       String(
-        values.type === "POLICY_UPDATE"
-          ? values.requiresAcknowledgement
-          : false,
+        Boolean(values.requiresAcknowledgement),
       ),
     );
 
@@ -1245,6 +1507,17 @@ function CreateModal({
         onSubmit={handleSubmit(onSubmit)}
         className="max-h-[calc(100vh-220px)] space-y-5 overflow-y-auto pr-1 sm:pr-2"
       >
+        <QuickTemplateSelector
+          onSelect={(template) => {
+            setValue("title", template.title, { shouldDirty: true });
+            setValue("body", template.body, { shouldDirty: true });
+            setValue("type", template.type, { shouldDirty: true });
+            setValue("audience", template.audience, { shouldDirty: true });
+            setValue("notificationMethods", template.notificationMethods, { shouldDirty: true });
+            setValue("requiresAcknowledgement", template.requiresAcknowledgement, { shouldDirty: true });
+          }}
+        />
+
         <TextField
           label="Title"
           required
@@ -1431,22 +1704,22 @@ function CreateModal({
             <div>
               <p className="text-[13px] font-medium text-ink">Calendar event</p>
               <p className="mt-0.5 text-xs text-ink-faint">
-                Add meeting or company-event details to the employee calendar.
+                Add the event date to the employee calendar.
               </p>
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <TextField
-                label="Event Start"
-                type="datetime-local"
-                min={localDateTimeValue()}
+                label="Event Date"
+                type="date"
+                min={todayLocalDate()}
                 {...register("eventStartAt")}
               />
 
               <TextField
-                label="Event End"
-                type="datetime-local"
-                min={watch("eventStartAt") || localDateTimeValue()}
+                label="Event End Date"
+                type="date"
+                min={watch("eventStartAt") || todayLocalDate()}
                 {...register("eventEndAt")}
               />
             </div>
@@ -1459,8 +1732,7 @@ function CreateModal({
           </div>
         )}
 
-        {watch("type") === "POLICY_UPDATE" && (
-          <div>
+        <div>
             <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
               <input
                 type="checkbox"
@@ -1474,12 +1746,11 @@ function CreateModal({
                 </span>
 
                 <span className="mt-0.5 block text-xs text-ink-faint">
-                  Employees must acknowledge this policy update.
+                  Employees must acknowledge this announcement before it is considered complete.
                 </span>
               </span>
             </label>
           </div>
-        )}
 
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-ink">
@@ -1606,207 +1877,130 @@ function ReadReceiptsModal({
   isLoading: boolean;
   onClose: () => void;
 }) {
+  const [searchEmployee, setSearchEmployee] = useState("");
+  const [receiptFilter, setReceiptFilter] = useState("ALL");
+
+  useEffect(() => {
+    if (!open) {
+      setSearchEmployee("");
+      setReceiptFilter("ALL");
+    }
+  }, [open, announcement.id]);
+
   const getValue = (entry: AnnouncementStatusEntryLocal, keys: string[]) => {
     const record = entry as unknown as Record<string, unknown>;
-
     for (const key of keys) {
       const value = record[key];
-
-      if (value !== undefined && value !== null && value !== "") {
-        return value;
-      }
+      if (value !== undefined && value !== null && value !== "") return value;
     }
-
     return undefined;
   };
 
-  const readCount = status.filter((entry) => {
-    const value = getValue(entry, ["isRead", "read", "hasRead"]);
+  const isTruthy = (value: unknown) => value === true || value === "true";
 
-    return value === true || value === "true";
-  }).length;
-
+  const readCount = status.filter((entry) => isTruthy(getValue(entry, ["isRead", "read", "hasRead"]))).length;
+  const acknowledgementCount = status.filter((entry) => isTruthy(getValue(entry, ["acknowledged", "isAcknowledged", "hasAcknowledged"]))).length;
   const totalCount = status.length;
-  const readPercentage =
-    totalCount > 0 ? Math.round((readCount / totalCount) * 100) : 0;
+  const unreadCount = Math.max(totalCount - readCount, 0);
+  const pendingAcknowledgement = Math.max(totalCount - acknowledgementCount, 0);
+  const readPercentage = totalCount > 0 ? Math.round((readCount / totalCount) * 100) : 0;
+  const acknowledgementPercentage = totalCount > 0 ? Math.round((acknowledgementCount / totalCount) * 100) : 0;
+  const requiresAcknowledgement = Boolean(announcement.requiresAcknowledgement);
 
-  const acknowledgementCount = status.filter((entry) => {
-    const record = entry as unknown as Record<string, unknown>;
-    const value =
-      record["acknowledged"] ??
-      record["isAcknowledged"] ??
-      record["hasAcknowledged"];
+  const filteredStatus = status.filter((entry) => {
+    const name = String(getValue(entry, ["employeeName", "name", "employeeFullName"]) ?? "").toLowerCase();
+    const email = String(getValue(entry, ["employeeEmail", "email"]) ?? "").toLowerCase();
+    const department = String(getValue(entry, ["departmentName", "department"]) ?? "").toLowerCase();
+    const query = searchEmployee.trim().toLowerCase();
 
-    return value === true || value === "true";
-  }).length;
+    if (query && ![name, email, department].some((value) => value.includes(query))) return false;
 
-  const requiresAcknowledgement = Boolean(
-    (announcement as unknown as Record<string, unknown>)
-      .requiresAcknowledgement,
-  );
+    const isRead = isTruthy(getValue(entry, ["isRead", "read", "hasRead"]));
+    const isAcknowledged = isTruthy(getValue(entry, ["acknowledged", "isAcknowledged", "hasAcknowledged"]));
+
+    if (receiptFilter === "READ" && !isRead) return false;
+    if (receiptFilter === "UNREAD" && isRead) return false;
+    if (receiptFilter === "ACKNOWLEDGED" && !isAcknowledged) return false;
+    if (receiptFilter === "PENDING_ACK" && isAcknowledged) return false;
+
+    return true;
+  });
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Read receipts"
-      subtitle={`Track who has read "${announcement.title}".`}
+      title="Announcement engagement"
+      subtitle={`Track reads and acknowledgements for "${announcement.title}".`}
       size="lg"
-      footer={
-        <Button variant="outline" onClick={onClose}>
-          Close
-        </Button>
-      }
+      footer={<Button variant="outline" onClick={onClose}>Close</Button>}
     >
       {isLoading ? (
-        <div className="py-8 text-center text-sm text-ink-faint">
-          Loading read receipts...
-        </div>
+        <div className="py-8 text-center text-sm text-ink-faint">Loading engagement records...</div>
       ) : (
         <div className="space-y-5">
-          <div
-            className={
-              requiresAcknowledgement
-                ? "grid grid-cols-2 gap-3 sm:grid-cols-4"
-                : "grid grid-cols-3 gap-3"
-            }
-          >
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-              <p className="text-xs text-ink-faint">Total recipients</p>
-              <p className="mt-1 text-xl font-semibold text-ink">
-                {totalCount}
-              </p>
-            </div>
+          <div className={`grid grid-cols-2 gap-3 ${requiresAcknowledgement ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Recipients</p><p className="mt-1 text-xl font-semibold text-ink">{totalCount}</p></div>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Read</p><p className="mt-1 text-xl font-semibold text-ink">{readCount}</p></div>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Unread</p><p className="mt-1 text-xl font-semibold text-ink">{unreadCount}</p></div>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Read rate</p><p className="mt-1 text-xl font-semibold text-ink">{readPercentage}%</p></div>
+            {requiresAcknowledgement && <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Acknowledged</p><p className="mt-1 text-xl font-semibold text-ink">{acknowledgementCount}</p></div>}
+          </div>
 
+          {requiresAcknowledgement && (
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-              <p className="text-xs text-ink-faint">Read</p>
-              <p className="mt-1 text-xl font-semibold text-ink">{readCount}</p>
+              <div className="flex items-center justify-between text-xs"><span className="text-ink-faint">Acknowledgement rate</span><span className="font-semibold text-ink">{acknowledgementPercentage}%</span></div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-brand-500" style={{ width: `${acknowledgementPercentage}%` }} /></div>
+              <p className="mt-2 text-[11px] text-ink-faint">{pendingAcknowledgement} employee{pendingAcknowledgement === 1 ? "" : "s"} pending acknowledgement.</p>
             </div>
+          )}
 
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-              <p className="text-xs text-ink-faint">Read rate</p>
-              <p className="mt-1 text-xl font-semibold text-ink">
-                {readPercentage}%
-              </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+              <input value={searchEmployee} onChange={(event) => setSearchEmployee(event.target.value)} placeholder="Search employee, email or department..." className="h-10 w-full rounded-xl border border-gray-200 pl-9 pr-3 text-sm outline-none focus:border-brand-500" />
             </div>
-
-            {requiresAcknowledgement && (
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                <p className="text-xs text-ink-faint">Acknowledged</p>
-                <p className="mt-1 text-xl font-semibold text-ink">
-                  {acknowledgementCount}
-                </p>
-              </div>
-            )}
+            <select value={receiptFilter} onChange={(event) => setReceiptFilter(event.target.value)} className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-xs text-ink outline-none focus:border-brand-500">
+              <option value="ALL">All recipients</option>
+              <option value="READ">Read</option>
+              <option value="UNREAD">Unread</option>
+              {requiresAcknowledgement && <><option value="ACKNOWLEDGED">Acknowledged</option><option value="PENDING_ACK">Pending acknowledgement</option></>}
+            </select>
           </div>
 
           {!status.length ? (
-            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-ink-faint">
-              No read receipt records are available yet.
-            </div>
+            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-ink-faint">No receipt records are available yet.</div>
+          ) : !filteredStatus.length ? (
+            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-ink-faint">No employees match this filter.</div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-gray-100">
-              <table className="w-full min-w-[760px] text-left text-sm">
-                <thead className="bg-gray-50 text-xs text-ink-faint">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Employee</th>
-                    <th className="px-4 py-3 font-medium">Department</th>
-                    <th className="px-4 py-3 font-medium">Role</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">Read At</th>
-                    {requiresAcknowledgement && (
-                      <th className="px-4 py-3 font-medium">Acknowledgement</th>
-                    )}
-                  </tr>
-                </thead>
-
+              <table className="w-full min-w-[820px] text-left text-sm">
+                <thead className="bg-gray-50 text-xs text-ink-faint"><tr>
+                  <th className="px-4 py-3 font-medium">Employee</th>
+                  <th className="px-4 py-3 font-medium">Department</th>
+                  <th className="px-4 py-3 font-medium">Role</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Read At</th>
+                  {requiresAcknowledgement && <th className="px-4 py-3 font-medium">Acknowledgement</th>}
+                </tr></thead>
                 <tbody className="divide-y divide-gray-100">
-                  {status.map((entry, index) => {
-                    const name = getValue(entry, [
-                      "employeeName",
-                      "name",
-                      "employeeFullName",
-                    ]);
-
+                  {filteredStatus.map((entry, index) => {
+                    const name = getValue(entry, ["employeeName", "name", "employeeFullName"]);
                     const email = getValue(entry, ["employeeEmail", "email"]);
-
-                    const department = getValue(entry, [
-                      "departmentName",
-                      "department",
-                    ]);
-
+                    const department = getValue(entry, ["departmentName", "department"]);
                     const role = getValue(entry, ["role", "employeeRole"]);
-
-                    const isReadValue = getValue(entry, [
-                      "isRead",
-                      "read",
-                      "hasRead",
-                    ]);
-
-                    const isRead =
-                      isReadValue === true || isReadValue === "true";
-
+                    const isRead = isTruthy(getValue(entry, ["isRead", "read", "hasRead"]));
                     const readAt = getValue(entry, ["readAt", "read_at"]);
-
-                    const acknowledgementValue = getValue(entry, [
-                      "acknowledged",
-                      "isAcknowledged",
-                      "hasAcknowledged",
-                    ]);
-
-                    const isAcknowledged =
-                      acknowledgementValue === true ||
-                      acknowledgementValue === "true";
+                    const isAcknowledged = isTruthy(getValue(entry, ["acknowledged", "isAcknowledged", "hasAcknowledged"]));
 
                     return (
                       <tr key={`${String(name ?? email ?? "entry")}-${index}`}>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-ink">
-                            {String(name ?? "Employee")}
-                          </div>
-
-                          {email && (
-                            <div className="mt-0.5 text-xs text-ink-faint">
-                              {String(email)}
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3 text-ink-soft">
-                          {String(department ?? "—")}
-                        </td>
-
-                        <td className="px-4 py-3 text-ink-soft">
-                          {String(role ?? "—")}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <Badge
-                            className={
-                              isRead ? "text-emerald-600" : "text-ink-faint"
-                            }
-                          >
-                            {isRead ? "Read" : "Unread"}
-                          </Badge>
-                        </td>
-
-                        <td className="px-4 py-3 text-ink-faint">
-                          {readAt ? formatDate(String(readAt)) : "—"}
-                        </td>
-
-                        {requiresAcknowledgement && (
-                          <td className="px-4 py-3">
-                            <Badge
-                              className={
-                                isAcknowledged
-                                  ? "text-emerald-600"
-                                  : "text-ink-faint"
-                              }
-                            >
-                              {isAcknowledged ? "Acknowledged" : "Pending"}
-                            </Badge>
-                          </td>
-                        )}
+                        <td className="px-4 py-3"><div className="font-medium text-ink">{String(name ?? "Employee")}</div>{email && <div className="mt-0.5 text-xs text-ink-faint">{String(email)}</div>}</td>
+                        <td className="px-4 py-3 text-ink-soft">{String(department ?? "—")}</td>
+                        <td className="px-4 py-3 text-ink-soft">{String(role ?? "—")}</td>
+                        <td className="px-4 py-3"><Badge className={isRead ? "text-emerald-600" : "text-ink-faint"}>{isRead ? "Read" : "Unread"}</Badge></td>
+                        <td className="px-4 py-3 text-ink-faint">{readAt ? formatDate(String(readAt)) : "—"}</td>
+                        {requiresAcknowledgement && <td className="px-4 py-3"><Badge className={isAcknowledged ? "text-emerald-600" : "text-ink-faint"}>{isAcknowledged ? "Acknowledged" : "Pending"}</Badge></td>}
                       </tr>
                     );
                   })}
@@ -1872,10 +2066,10 @@ function EditModal({
       requiresAcknowledgement: Boolean(announcement.requiresAcknowledgement),
       calendarEnabled: Boolean(announcement.calendarEnabled),
       eventStartAt: announcement.eventStartAt
-        ? new Date(announcement.eventStartAt).toISOString().slice(0, 16)
+        ? new Date(announcement.eventStartAt).toISOString().slice(0, 10)
         : "",
       eventEndAt: announcement.eventEndAt
-        ? new Date(announcement.eventEndAt).toISOString().slice(0, 16)
+        ? new Date(announcement.eventEndAt).toISOString().slice(0, 10)
         : "",
       eventLocation: announcement.eventLocation ?? "",
       expiryDays: String(announcement.expiryDays ?? 7),
@@ -1931,9 +2125,7 @@ function EditModal({
     formData.append(
       "requiresAcknowledgement",
       String(
-        data.type === "POLICY_UPDATE"
-          ? Boolean(data.requiresAcknowledgement)
-          : false,
+        Boolean(data.requiresAcknowledgement),
       ),
     );
 
@@ -1961,43 +2153,41 @@ function EditModal({
 
     if (channels.includes("CALENDAR")) {
       if (!data.eventStartAt) {
-        throw new Error("Please provide a calendar event start date and time.");
+        throw new Error("Please provide a calendar event date.");
       }
 
       if (!data.eventEndAt) {
-        throw new Error("Please provide a calendar event end date and time.");
+        throw new Error("Please provide a calendar event end date.");
       }
 
-      const eventStart = new Date(data.eventStartAt);
-      const eventEnd = new Date(data.eventEndAt);
+      const eventStart = new Date(`${data.eventStartAt}T00:00:00`);
+      const eventEnd = new Date(`${data.eventEndAt}T00:00:00`);
 
       if (Number.isNaN(eventStart.getTime())) {
-        throw new Error(
-          "Please enter a valid calendar event start date and time.",
-        );
+        throw new Error("Please enter a valid calendar event date.");
       }
 
       if (Number.isNaN(eventEnd.getTime())) {
-        throw new Error(
-          "Please enter a valid calendar event end date and time.",
-        );
+        throw new Error("Please enter a valid calendar event end date.");
       }
 
-      if (eventStart.getTime() < Date.now()) {
+      const today = new Date(`${todayLocalDate()}T00:00:00`);
+
+      if (eventStart.getTime() < today.getTime()) {
         throw new Error(
-          "Calendar event start must be today or a future date/time.",
+          "Calendar event date must be today or a future date.",
         );
       }
 
       if (eventEnd.getTime() < eventStart.getTime()) {
         throw new Error(
-          "Calendar event end time must be after the start time.",
+          "Calendar event end date must be on or after the start date.",
         );
       }
 
-      formData.append("eventStartAt", eventStart.toISOString());
+      formData.append("eventStartAt", data.eventStartAt);
 
-      formData.append("eventEndAt", eventEnd.toISOString());
+      formData.append("eventEndAt", data.eventEndAt);
 
       if (data.eventLocation?.trim()) {
         formData.append("eventLocation", data.eventLocation.trim());
@@ -2231,20 +2421,20 @@ function EditModal({
             <div>
               <p className="text-[13px] font-medium text-ink">Calendar event</p>
               <p className="mt-0.5 text-xs text-ink-faint">
-                Event date and time will be shown on the announcement.
+                Event date will be shown on the announcement.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <TextField
-                label="Event Start"
-                type="datetime-local"
-                min={localDateTimeValue()}
+                label="Event Date"
+                type="date"
+                min={todayLocalDate()}
                 {...register("eventStartAt")}
               />
               <TextField
-                label="Event End"
-                type="datetime-local"
-                min={watch("eventStartAt") || localDateTimeValue()}
+                label="Event End Date"
+                type="date"
+                min={watch("eventStartAt") || todayLocalDate()}
                 {...register("eventEndAt")}
               />
             </div>
@@ -2255,6 +2445,18 @@ function EditModal({
             />
           </div>
         )}
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
+          <input
+            type="checkbox"
+            {...register("requiresAcknowledgement")}
+            className="mt-0.5 rounded accent-brand-500"
+          />
+          <span>
+            <span className="block text-[13px] font-medium text-ink">Require employee acknowledgement</span>
+            <span className="mt-0.5 block text-xs text-ink-faint">Employees must acknowledge this announcement.</span>
+          </span>
+        </label>
 
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-ink">

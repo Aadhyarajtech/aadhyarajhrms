@@ -1,5 +1,10 @@
 import { Announcement } from "./announcement.model";
-import { AnnouncementReceipt, Employee, Department } from "@/db/models";
+import {
+  AnnouncementReceipt,
+  Employee,
+  Department,
+  User,
+} from "@/db/models";
 import { env } from "@/config/env";
 
 /* =========================================================
@@ -683,7 +688,7 @@ export async function acknowledgePolicyAnnouncement(
  * IMPORTANT:
  *
  * The Read Receipts screen must show ALL eligible recipients,
- * not just users who already have AnnouncementReceipt records.
+ * not only employees who already have AnnouncementReceipt records.
  *
  * Therefore:
  *
@@ -692,15 +697,21 @@ export async function acknowledgePolicyAnnouncement(
  * AnnouncementReceipt
  *
  * No receipt = unread.
+ *
+ * Employee.userId is linked to User._id.
+ * The authoritative application role is stored in User.role.
  */
-export async function listAnnouncementReadStatus(announcementId: string) {
+export async function listAnnouncementReadStatus(
+  announcementId: string,
+) {
   /* -------------------------------------------------------
      GET ANNOUNCEMENT
   ------------------------------------------------------- */
 
-  const announcement = (await Announcement.findById(
-    announcementId,
-  ).lean()) as any;
+  const announcement =
+    (await Announcement.findById(
+      announcementId,
+    ).lean()) as any;
 
   if (!announcement) {
     return [];
@@ -710,7 +721,8 @@ export async function listAnnouncementReadStatus(announcementId: string) {
      GET ALL EMPLOYEES
   ------------------------------------------------------- */
 
-  const employees = (await Employee.find({}).lean()) as any[];
+  const employees =
+    (await Employee.find({}).lean()) as any[];
 
   if (employees.length === 0) {
     return [];
@@ -720,39 +732,121 @@ export async function listAnnouncementReadStatus(announcementId: string) {
      GET DEPARTMENTS ONCE
   ------------------------------------------------------- */
 
-  const departments = (await Department.find({}).lean()) as any[];
+  const departments =
+    (await Department.find({}).lean()) as any[];
 
-  const departmentMap = new Map<string, any>(
-    departments.map((department: any) => [String(department._id), department]),
-  );
+  const departmentMap =
+    new Map<string, any>(
+      departments.map(
+        (department: any) => [
+          String(department._id),
+          department,
+        ],
+      ),
+    );
+
+  /* -------------------------------------------------------
+     GET USER ROLES
+
+     Employee.userId -> User._id
+
+     User.role is the authoritative role used by the
+     authentication/authorization system.
+  ------------------------------------------------------- */
+
+  const userIds = employees
+    .map((employee: any) =>
+      employee.userId
+        ? String(employee.userId)
+        : "",
+    )
+    .filter(Boolean);
+
+  const users =
+    userIds.length > 0
+      ? ((await User.find({
+          _id: {
+            $in: userIds,
+          },
+        })
+          .select("_id role")
+          .lean()) as any[])
+      : [];
+
+  const userRoleMap =
+    new Map<string, string>(
+      users.map(
+        (user: any) => [
+          String(user._id),
+          String(user.role ?? ""),
+        ],
+      ),
+    );
 
   /* -------------------------------------------------------
      GET EXISTING RECEIPTS
+
+     New receipts use authenticated USER ID.
+     Legacy installations may contain Employee._id.
   ------------------------------------------------------- */
 
-  const receipts = (await AnnouncementReceipt.find({
-    announcementId,
-  }).lean()) as any[];
+  const receipts =
+    (await AnnouncementReceipt.find({
+      announcementId,
+    }).lean()) as any[];
 
-  const receiptMap = new Map<string, any>(
-    receipts.map((receipt: any) => [String(receipt.userId), receipt]),
-  );
+  const receiptMap =
+    new Map<string, any>();
+
+  for (const receipt of receipts) {
+    const key = String(
+      receipt.userId,
+    );
+
+    const existing =
+      receiptMap.get(key);
+
+    /* Prefer the newest receipt if duplicate
+       legacy records exist. */
+    if (
+      !existing ||
+      new Date(
+        receipt.updatedAt ??
+          receipt.createdAt ??
+          0,
+      ).getTime() >
+        new Date(
+          existing.updatedAt ??
+            existing.createdAt ??
+            0,
+        ).getTime()
+    ) {
+      receiptMap.set(
+        key,
+        receipt,
+      );
+    }
+  }
 
   /* -------------------------------------------------------
-     BUILD RECIPIENT STATUS
+     BUILD ELIGIBLE RECIPIENTS
   ------------------------------------------------------- */
 
   const status: any[] = [];
 
   for (const employee of employees) {
     /*
-     * AnnouncementReceipt.userId stores USER ID.
+     * AnnouncementReceipt.userId stores
+     * the authenticated USER ID.
      */
-    const userId = employee.userId ? String(employee.userId) : "";
+    const userId =
+      employee.userId
+        ? String(employee.userId)
+        : "";
 
     /*
-     * Employees without an authenticated user account
-     * cannot mark an announcement as read.
+     * Employees without a user account cannot
+     * receive/read an announcement.
      */
     if (!userId) {
       continue;
@@ -760,118 +854,213 @@ export async function listAnnouncementReadStatus(announcementId: string) {
 
     /* -----------------------------------------------------
        ROLE
+
+       IMPORTANT:
+       Employee does not have the authoritative role field.
+       User.role does.
+
+       Keep the Employee fallbacks for compatibility with
+       any old records/data structures.
     ----------------------------------------------------- */
 
     const role =
-      employee.role ?? employee.designation ?? employee.jobTitle ?? "";
+      userRoleMap.get(userId) ??
+      employee.role ??
+      employee.designation ??
+      employee.jobTitle ??
+      "";
 
     /* -----------------------------------------------------
-       DEPARTMENT
+       DEPARTMENT VALUES
     ----------------------------------------------------- */
 
-    const departmentValues = new Set<string>();
+    const departmentValues =
+      new Set<string>();
 
     if (employee.departmentId) {
-      departmentValues.add(normalize(employee.departmentId));
+      departmentValues.add(
+        normalize(
+          employee.departmentId,
+        ),
+      );
 
-      const department = departmentMap.get(String(employee.departmentId));
+      const department =
+        departmentMap.get(
+          String(
+            employee.departmentId,
+          ),
+        );
 
       if (department) {
         if (department.name) {
-          departmentValues.add(normalize(department.name));
+          departmentValues.add(
+            normalize(
+              department.name,
+            ),
+          );
         }
 
         if (department.code) {
-          departmentValues.add(normalize(department.code));
+          departmentValues.add(
+            normalize(
+              department.code,
+            ),
+          );
         }
       }
     }
 
     /*
-     * Support direct departmentName.
+     * Support direct departmentName
+     * for compatibility.
      */
     if (employee.departmentName) {
-      departmentValues.add(normalize(employee.departmentName));
+      departmentValues.add(
+        normalize(
+          employee.departmentName,
+        ),
+      );
     }
 
     /* -----------------------------------------------------
-       LOCATION
+       LOCATION VALUES
     ----------------------------------------------------- */
 
-    const locationValues = new Set<string>();
+    const locationValues =
+      new Set<string>();
 
     if (employee.city) {
-      locationValues.add(normalize(employee.city));
+      locationValues.add(
+        normalize(
+          employee.city,
+        ),
+      );
     }
 
     if (employee.state) {
-      locationValues.add(normalize(employee.state));
+      locationValues.add(
+        normalize(
+          employee.state,
+        ),
+      );
     }
 
     if (employee.country) {
-      locationValues.add(normalize(employee.country));
+      locationValues.add(
+        normalize(
+          employee.country,
+        ),
+      );
     }
 
     if (employee.location) {
-      locationValues.add(normalize(employee.location));
+      locationValues.add(
+        normalize(
+          employee.location,
+        ),
+      );
     }
 
     /* -----------------------------------------------------
        ROLE VALUES
     ----------------------------------------------------- */
 
-    const normalizedRole = normalize(role);
+    const normalizedRole =
+      normalize(role);
 
-    const roleAliases: Record<string, string[]> = {
-      super_admin: ["super_admin", "superadmin"],
+    const roleValues =
+      new Set<string>();
 
-      hr_admin: ["hr_admin", "hr", "human_resources", "human_resources_team"],
+    if (normalizedRole) {
+      roleValues.add(
+        normalizedRole,
+      );
 
-      finance: ["finance", "finance_payroll", "finance_team", "payroll"],
+      /*
+       * Keep compatibility with role aliases used by
+       * the existing targeting implementation.
+       */
+      const roleAliases: Record<
+        string,
+        string[]
+      > = {
+        super_admin: [
+          "super admin",
+          "superadmin",
+          "administrator",
+          "admin",
+        ],
+        hr_admin: [
+          "hr admin",
+          "hr",
+          "human resources",
+          "human resource",
+        ],
+        manager: [
+          "manager",
+          "people manager",
+          "team manager",
+        ],
+        recruiter: [
+          "recruiter",
+          "recruitment",
+          "talent acquisition",
+        ],
+        finance: [
+          "finance",
+          "financial",
+          "accounts",
+        ],
+        it_support: [
+          "it support",
+          "it",
+          "support",
+        ],
+        employee: [
+          "employee",
+          "staff",
+        ],
+      };
 
-      manager: ["manager", "managers", "management"],
-
-      recruiter: [
-        "recruiter",
-        "recruiters",
-        "recruitment",
-        "recruitment_team",
-        "talent_acquisition",
-        "talent_acquisition_team",
-      ],
-
-      it_support: [
-        "it_support",
-        "it_support_team",
-        "it support",
-        "itsupport",
-        "it",
-        "technical_support",
-        "technical_support_team",
-      ],
-
-      employee: ["employee", "employees"],
-    };
-
-    const roleValues = Array.from(
-      new Set([normalizedRole, ...(roleAliases[normalizedRole] ?? [])]),
-    ).filter(Boolean);
+      for (
+        const alias of
+          roleAliases[
+            normalizedRole
+          ] ?? []
+      ) {
+        roleValues.add(
+          normalize(alias),
+        );
+      }
+    }
 
     const targeting = {
-      departmentValues: Array.from(departmentValues),
+      departmentValues:
+        Array.from(
+          departmentValues,
+        ),
 
-      locationValues: Array.from(locationValues),
+      locationValues:
+        Array.from(
+          locationValues,
+        ),
 
-      roleValues,
+      roleValues:
+        Array.from(
+          roleValues,
+        ),
     };
 
     /* -----------------------------------------------------
        AUDIENCE MATCH
     ----------------------------------------------------- */
 
-    const audienceMatches = matchesAudience(announcement.audience, role);
-
-    if (!audienceMatches) {
+    if (
+      !matchesAudience(
+        announcement.audience,
+        role,
+      )
+    ) {
       continue;
     }
 
@@ -879,29 +1068,62 @@ export async function listAnnouncementReadStatus(announcementId: string) {
        TARGETING MATCH
     ----------------------------------------------------- */
 
-    const targetingMatches = matchesTargeting(announcement, targeting);
-
-    if (!targetingMatches) {
+    if (
+      !matchesTargeting(
+        announcement,
+        targeting,
+      )
+    ) {
       continue;
     }
 
     /* -----------------------------------------------------
        RECEIPT
+
+       Primary:
+         authenticated User ID
+
+       Compatibility fallback:
+         Employee ID
     ----------------------------------------------------- */
 
-    const receipt = receiptMap.get(userId);
+    let receipt =
+      receiptMap.get(
+        userId,
+      );
+
+    if (
+      !receipt &&
+      employee._id
+    ) {
+      receipt =
+        receiptMap.get(
+          String(
+            employee._id,
+          ),
+        );
+    }
 
     /* -----------------------------------------------------
        EMPLOYEE NAME
     ----------------------------------------------------- */
 
-    const firstName = employee.firstName ?? employee.first_name ?? "";
+    const firstName =
+      employee.firstName ??
+      employee.first_name ??
+      "";
 
-    const lastName = employee.lastName ?? employee.last_name ?? "";
+    const lastName =
+      employee.lastName ??
+      employee.last_name ??
+      "";
 
-    const composedName = `${String(firstName).trim()} ${String(
-      lastName,
-    ).trim()}`.trim();
+    const composedName =
+      `${String(
+        firstName,
+      ).trim()} ${String(
+        lastName,
+      ).trim()}`.trim();
 
     const employeeName =
       employee.name ??
@@ -915,72 +1137,154 @@ export async function listAnnouncementReadStatus(announcementId: string) {
        DEPARTMENT DISPLAY NAME
     ----------------------------------------------------- */
 
-    let departmentName = "";
+    let departmentName =
+      "";
 
-    if (employee.departmentId) {
-      const department = departmentMap.get(String(employee.departmentId));
+    if (
+      employee.departmentId
+    ) {
+      const department =
+        departmentMap.get(
+          String(
+            employee.departmentId,
+          ),
+        );
 
-      if (department?.name) {
-        departmentName = String(department.name);
+      if (department) {
+        departmentName =
+          department.name ??
+          department.code ??
+          "";
       }
     }
 
-    if (!departmentName && employee.departmentName) {
-      departmentName = String(employee.departmentName);
+    if (
+      !departmentName &&
+      employee.departmentName
+    ) {
+      departmentName =
+        employee.departmentName;
     }
 
     /* -----------------------------------------------------
-       PUSH STATUS
+       READ STATUS
+
+       No receipt = UNREAD.
+    ----------------------------------------------------- */
+
+    const isRead =
+      receipt
+        ? Boolean(
+            receipt.isRead,
+          )
+        : false;
+
+    const isAcknowledged =
+      receipt
+        ? Boolean(
+            receipt.isAcknowledged,
+          )
+        : false;
+
+    /* -----------------------------------------------------
+       PUSH RESULT
     ----------------------------------------------------- */
 
     status.push({
-      id: employee._id ? String(employee._id) : userId,
+      id: receipt?._id
+        ? String(
+            receipt._id,
+          )
+        : `${announcementId}:${userId}`,
 
-      announcementId: String(announcementId),
+      announcementId:
+        String(
+          announcementId,
+        ),
 
       userId,
 
-      employeeId: employee._id ? String(employee._id) : null,
+      employeeId:
+        employee._id
+          ? String(
+              employee._id,
+            )
+          : null,
 
-      employeeName: String(employeeName).trim() || "Employee",
+      employeeName:
+        String(
+          employeeName,
+        ).trim() ||
+        "Employee",
 
-      name: String(employeeName).trim() || "Employee",
+      name:
+        String(
+          employeeName,
+        ).trim() ||
+        "Employee",
 
-      department: String(departmentName).trim() || "—",
+      department:
+        String(
+          departmentName,
+        ).trim() ||
+        "—",
 
-      role: String(role).trim() || "—",
+      role:
+        String(
+          role,
+        ).trim() ||
+        "—",
 
-      /*
-       * NO RECEIPT = UNREAD
-       */
-      isRead: receipt ? Boolean(receipt.isRead) : false,
+      isRead,
 
-      isAcknowledged: receipt ? Boolean(receipt.isAcknowledged) : false,
+      isAcknowledged,
 
-      readAt: receipt?.readAt ?? null,
+      readAt:
+        receipt?.readAt ??
+        null,
 
-      acknowledgedAt: receipt?.acknowledgedAt ?? null,
+      acknowledgedAt:
+        receipt?.acknowledgedAt ??
+        null,
 
-      createdAt: receipt?.createdAt ?? null,
+      createdAt:
+        receipt?.createdAt ??
+        null,
 
-      updatedAt: receipt?.updatedAt ?? null,
+      updatedAt:
+        receipt?.updatedAt ??
+        null,
     });
   }
 
   /* -------------------------------------------------------
      SORT
 
-     Unread users first.
-     Then alphabetical by employee name.
+     Unread first, then employee name.
   ------------------------------------------------------- */
 
-  status.sort((a: any, b: any) => {
-    if (a.isRead !== b.isRead) {
-      return a.isRead ? 1 : -1;
-    }
+  status.sort(
+    (a, b) => {
+      if (
+        a.isRead !==
+        b.isRead
+      ) {
+        return a.isRead
+          ? 1
+          : -1;
+      }
 
-    return String(a.employeeName).localeCompare(String(b.employeeName));
-  });
+      return String(
+        a.employeeName ??
+          "",
+      ).localeCompare(
+        String(
+          b.employeeName ??
+            "",
+        ),
+      );
+    },
+  );
 
   return status;
 }
