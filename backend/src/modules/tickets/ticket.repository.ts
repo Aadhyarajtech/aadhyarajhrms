@@ -146,6 +146,7 @@ export function assignDepartment(category: string) {
     case "Leave":
     case "Attendance":
     case "Employee Referral":
+      return "RECRUITER";
     case "Other":
       return "HR_ADMIN";
 
@@ -168,7 +169,7 @@ export function assignDepartment(category: string) {
       return "HR_ADMIN";
 
     case "Recruitment":
-      return "MANAGER";
+      return "RECRUITER";
 
     case "Complaint":
       return "HR_ADMIN";
@@ -464,6 +465,17 @@ export async function getTicketsForDepartment(
       .lean();
   }
 
+  if (role === "RECRUITER") {
+    return Ticket.find({
+      $or: [
+        { assignedTo: "RECRUITER" },
+        { category: { $in: ["Recruitment", "Employee Referral"] } },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
   if (role === "MANAGER") {
     if (!managerEmployeeId) return [];
     return getTeamGrievanceTickets(managerEmployeeId);
@@ -503,7 +515,22 @@ export function isUserAuthorizedForTicket(
 
   // Finance can only access Payroll/Finance tickets
   if (role === "FINANCE") {
-    return ticket.assignedTo === "FINANCE" || ticket.category === "Payroll";
+    return (
+      ticket.assignedTo === "FINANCE" ||
+      ticket.category === "Payroll" ||
+      ticket.category === "Payroll Issue"
+    );
+  }
+
+  // Recruiters own recruitment and employee-referral tickets. Category
+  // matching keeps older tickets visible even if they were historically
+  // assigned to HR/Admin/Manager.
+  if (role === "RECRUITER") {
+    return (
+      ticket.assignedTo === "RECRUITER" ||
+      ticket.category === "Recruitment" ||
+      ticket.category === "Employee Referral"
+    );
   }
 
   return false;

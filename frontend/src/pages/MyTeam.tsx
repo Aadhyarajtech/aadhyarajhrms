@@ -6,11 +6,12 @@ import {
   CalendarDays,
   Check,
   Clock3,
+  RefreshCw,
   Users,
   X,
 } from "lucide-react";
 
-import { EmployeesApi, AttendanceApi, LeaveApi } from "@/lib/endpoints";
+import { EmployeesApi, AttendanceApi, LeaveApi, PerformanceApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -24,7 +25,7 @@ import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
 
 import { formatDate, formatTime } from "@/lib/format";
 
-type TeamTab = "team" | "leave" | "attendance";
+type TeamTab = "team" | "leave" | "attendance" | "performance";
 
 export default function MyTeam() {
   const { user } = useAuth();
@@ -60,6 +61,10 @@ export default function MyTeam() {
     {
       key: "attendance",
       label: "Attendance",
+    },
+    {
+      key: "performance",
+      label: "Performance",
     },
   ];
 
@@ -104,6 +109,8 @@ export default function MyTeam() {
       {tab === "leave" && <TeamLeaveRequests managerId={managerId} />}
 
       {tab === "attendance" && <TeamAttendance managerId={managerId} />}
+
+      {tab === "performance" && <TeamPerformance managerId={managerId} />}
     </div>
   );
 }
@@ -122,11 +129,17 @@ function TeamMembers({
   const {
     data: teamMembers,
     isLoading,
+    isFetching,
     isError,
+    error,
+    refetch,
   } = useQuery({
     queryKey: ["my-team", "members", managerId],
     queryFn: () => EmployeesApi.directReports(managerId),
     enabled: !!managerId,
+    retry: 2,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const [search, setSearch] = useState("");
@@ -134,11 +147,17 @@ function TeamMembers({
   const filteredTeamMembers = useMemo(() => {
     const query = search.trim().toLowerCase();
 
+    // A manager must never appear as their own direct report, even if the
+    // backend accidentally returns the current employee in the response.
+    const directReports = (teamMembers ?? []).filter(
+      (employee) => employee.id !== managerId,
+    );
+
     if (!query) {
-      return teamMembers ?? [];
+      return directReports;
     }
 
-    return (teamMembers ?? []).filter((employee) => {
+    return directReports.filter((employee) => {
       const name = `${employee.firstName} ${employee.lastName}`.toLowerCase();
       const code = employee.employeeCode?.toLowerCase() ?? "";
       const designation = employee.designationTitle?.toLowerCase() ?? "";
@@ -151,7 +170,7 @@ function TeamMembers({
         department.includes(query)
       );
     });
-  }, [teamMembers, search]);
+  }, [teamMembers, managerId, search]);
 
   return (
     <Card className="border-violet-100/80 shadow-[0_18px_45px_-32px_rgba(79,70,229,0.55)]">
@@ -179,11 +198,42 @@ function TeamMembers({
       )}
 
       {isError && (
-        <EmptyState
-          icon={AlertCircle}
-          title="Unable to load team"
-          description="We couldn't retrieve your direct team members."
-        />
+        <div className="rounded-2xl border border-red-200 bg-red-50/60 px-4 py-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-xl bg-white p-2 text-red-600 shadow-sm">
+                <AlertCircle size={18} />
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-red-900">
+                  Unable to load team
+                </p>
+                <p className="mt-1 text-xs text-red-700">
+                  We couldn't retrieve the direct reports for this manager.
+                  Please try again. If the problem continues, the manager's
+                  reporting relationship or team API needs to be checked.
+                </p>
+
+                {error && (
+                  <p className="mt-2 break-words text-[11px] text-red-600/80">
+                    {getErrorMessage(error)}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<RefreshCw size={14} />}
+              isLoading={isFetching}
+              onClick={() => refetch()}
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
       )}
 
       {!isLoading && !isError && (!teamMembers || teamMembers.length === 0) && (
@@ -800,5 +850,241 @@ function TeamAttendance({ managerId }: { managerId: string }) {
           )}
       </Card>
     </div>
+  );
+}
+
+
+/* =========================================================
+   TEAM PERFORMANCE
+========================================================= */
+
+function TeamPerformance({ managerId }: { managerId: string }) {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const [openReviewId, setOpenReviewId] = useState<string | null>(null);
+  const [managerRating, setManagerRating] = useState(0);
+  const [technicalRating, setTechnicalRating] = useState(0);
+  const [deliveryRating, setDeliveryRating] = useState(0);
+  const [behaviorRating, setBehaviorRating] = useState(0);
+  const [comments, setComments] = useState("");
+
+  const { data: teamMembers, isLoading: teamLoading } = useQuery({
+    queryKey: ["my-team", "members", managerId],
+    queryFn: () => EmployeesApi.directReports(managerId),
+    enabled: !!managerId,
+  });
+
+  const {
+    data: reviews,
+    isLoading: reviewsLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ["my-team", "performance", managerId],
+    queryFn: () => PerformanceApi.reviews({ scope: "team" }),
+    enabled: !!managerId,
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: () => {
+      if (!openReviewId) throw new Error("Select a performance review first.");
+      if (![managerRating, technicalRating, deliveryRating, behaviorRating].every((value) => value >= 1 && value <= 5)) {
+        throw new Error("Please provide all manager ratings from 1 to 5.");
+      }
+      if (comments.trim().length < 2) {
+        throw new Error("Manager comments are required.");
+      }
+
+      return PerformanceApi.submitManager(
+        openReviewId,
+        managerRating,
+        comments.trim(),
+        technicalRating,
+        deliveryRating,
+        behaviorRating,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-team", "performance", managerId] });
+      setOpenReviewId(null);
+      setManagerRating(0);
+      setTechnicalRating(0);
+      setDeliveryRating(0);
+      setBehaviorRating(0);
+      setComments("");
+      showToast("Performance review submitted.");
+    },
+    onError: (error) => showToast(getErrorMessage(error), "error"),
+  });
+
+  const teamIds = useMemo(
+    () => new Set((teamMembers ?? []).map((employee) => employee.id)),
+    [teamMembers],
+  );
+
+  const teamReviews = useMemo(
+    () => (reviews ?? []).filter((review) => teamIds.has(review.revieweeId)),
+    [reviews, teamIds],
+  );
+
+  const openReview = (review: (typeof teamReviews)[number]) => {
+    setOpenReviewId(review.id);
+    setManagerRating(review.managerRating ?? 0);
+    setTechnicalRating(0);
+    setDeliveryRating(0);
+    setBehaviorRating(0);
+    setComments(review.managerComments ?? "");
+  };
+
+  if (teamLoading || reviewsLoading) {
+    return (
+      <Card>
+        <Skeleton className="h-24 rounded-2xl" />
+        <div className="mt-3 space-y-3">
+          <Skeleton className="h-20 rounded-2xl" />
+          <Skeleton className="h-20 rounded-2xl" />
+        </div>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <EmptyState
+          icon={AlertCircle}
+          title="Unable to load performance reviews"
+          description={getErrorMessage(error)}
+        />
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-violet-100/80 shadow-[0_18px_45px_-32px_rgba(79,70,229,0.45)]">
+      <CardHeader
+        title="Team performance"
+        subtitle="View performance reviews for your direct reports and complete the manager review."
+      />
+
+      {teamReviews.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No performance reviews"
+          description="Performance reviews for your direct reports will appear here when assigned to the active review cycle."
+        />
+      ) : (
+        <div className="space-y-3">
+          {teamReviews.map((review) => {
+            const isOpen = openReviewId === review.id;
+            return (
+              <div key={review.id} className="rounded-2xl border border-line/60 bg-white px-4 py-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <Avatar
+                      firstName={review.revieweeFirstName}
+                      lastName={review.revieweeLastName}
+                      src={review.revieweeAvatar}
+                      size="sm"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-ink">
+                        {review.revieweeFirstName} {review.revieweeLastName}
+                      </p>
+                      <p className="text-xs text-ink-faint">
+                        {review.revieweeDesignation} · {review.revieweeDepartment}
+                      </p>
+                      <p className="mt-1 text-xs text-ink-faint">
+                        {review.cycleName} · {review.status.replaceAll("_", " ")}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={review.status} />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openReview(review)}
+                    >
+                      {review.managerRating !== null ? "Review / Update" : "Review"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl bg-slate-50 px-3 py-2">
+                    <p className="text-[11px] text-ink-faint">Self rating</p>
+                    <p className="mt-1 text-sm font-semibold text-ink">{review.selfRating ?? "—"}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 px-3 py-2">
+                    <p className="text-[11px] text-ink-faint">Manager rating</p>
+                    <p className="mt-1 text-sm font-semibold text-ink">{review.managerRating ?? "—"}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 px-3 py-2">
+                    <p className="text-[11px] text-ink-faint">Final rating</p>
+                    <p className="mt-1 text-sm font-semibold text-ink">{review.finalRating ?? "—"}</p>
+                  </div>
+                </div>
+
+                {isOpen && (
+                  <div className="mt-4 rounded-2xl border border-violet-100 bg-violet-50/30 p-4">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      {(
+                        [
+                          ["Overall", managerRating, setManagerRating],
+                          ["Technical", technicalRating, setTechnicalRating],
+                          ["Delivery", deliveryRating, setDeliveryRating],
+                          ["Behavior", behaviorRating, setBehaviorRating],
+                        ] as Array<
+                          [
+                            string,
+                            number,
+                            React.Dispatch<React.SetStateAction<number>>,
+                          ]
+                        >
+                      ).map(([label, value, setter]) => (
+                        <label key={String(label)} className="text-xs font-medium text-ink-soft">
+                          {label} rating
+                          <select
+                            value={String(value)}
+                            onChange={(event) => (setter as (value: number) => void)(Number(event.target.value))}
+                            className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3 text-sm"
+                          >
+                            <option value="0">Select</option>
+                            <option value="1">1 - Needs improvement</option>
+                            <option value="2">2</option>
+                            <option value="3">3 - Meets expectations</option>
+                            <option value="4">4</option>
+                            <option value="5">5 - Outstanding</option>
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+
+                    <textarea
+                      value={comments}
+                      onChange={(event) => setComments(event.target.value)}
+                      placeholder="Manager feedback"
+                      rows={4}
+                      className="mt-3 w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                    />
+
+                    <div className="mt-3 flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setOpenReviewId(null)}>
+                        Cancel
+                      </Button>
+                      <Button size="sm" isLoading={submitMutation.isPending} onClick={() => submitMutation.mutate()}>
+                        Submit Review
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
   );
 }

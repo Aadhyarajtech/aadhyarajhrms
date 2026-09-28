@@ -17,6 +17,7 @@ export interface AuthEmployee {
   departmentId: string;
   departmentName: string;
   designationTitle: string;
+  isManager: boolean;
 }
 
 export interface AuthUser {
@@ -25,6 +26,7 @@ export interface AuthUser {
   role: Role;
   isActive: boolean;
   mustResetPwd: boolean;
+  isManager: boolean;
   employee: AuthEmployee | null;
 }
 
@@ -72,16 +74,16 @@ export interface Employee {
   managerLastName: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
   status:
+    | "ONBOARDING"
+    | "ON_PROBATION"
+    | "ACTIVE"
+    | "ON_LEAVE"
+    | "NOTICE_PERIOD"
+    | "TERMINATED"
+    | "RESIGNED"
+    | "INACTIVE"
+    | "ON_HOLD";
 
-  | "ONBOARDING"
-  | "ON_PROBATION"
-  | "ACTIVE"
-  | "ON_LEAVE"
-  | "NOTICE_PERIOD"
-  | "TERMINATED"
-  | "RESIGNED"
-  | "INACTIVE"
-  | "ON_HOLD";
   dateOfJoining: string;
   dateOfExit: string | null;
   probationPeriodMonths?: number | null;
@@ -524,16 +526,7 @@ export interface Candidate {
   resumeParsingError?: string | null;
   resumeParsedAt?: string | null;
   extractedSkills?: string[];
-  extractedExperience?:
-  | number
-  | null
-  | {
-    company: string | null;
-    position: string | null;
-    startDate: string | null;
-    endDate: string | null;
-    description: string;
-  }[];
+  extractedExperience?: number | null;
   extractedEducation?: string[];
 
   jobFitScore?: number | null;
@@ -786,6 +779,11 @@ export interface PayrollRun {
   processedAt: string | null;
   attendanceLockedAt: string | null;
   attendanceLockedDepartmentIds: string[];
+  /** All departments included in this single payroll period/run. */
+  departments?: Array<{ id: string; name: string }>;
+  /** Legacy single-department fields kept for backwards compatibility. */
+  departmentId?: string | null;
+  departmentName?: string | null;
   reviewedAt: string | null;
   reviewedByUserId: string | null;
   approvedAt: string | null;

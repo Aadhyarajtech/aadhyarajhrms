@@ -437,7 +437,7 @@ export async function runSeed() {
     { name: "Independence Day", date: `${year}-08-15` },
     { name: "Ganesh Chaturthi", date: `${year}-08-27`, isOptional: true },
     { name: "Gandhi Jayanti", date: `${year}-10-02` },
-    { name: "Diwali", date: `${year}-11-08` },
+    { name: "Diwali", date: `${year}-11-09` },
     { name: "Christmas Day", date: `${year}-12-25` },
   ];
   await Holiday.insertMany(
@@ -691,13 +691,21 @@ export async function runSeed() {
   }
 
   // Process the last 3 months as PAID runs (reuses the same logic the API exposes)
-  const { processPayrollRun, markRunPaid } = await import("../modules/payroll/payroll.repository.js");
+  const { lockAttendanceForPayroll, processPayrollRun, markRunPaid } = await import("../modules/payroll/payroll.repository.js");
+  const departmentIds = [
+    ...new Set(
+      allEmployees
+        .map((employee) => deptIds[employee.departmentCode])
+        .filter(Boolean),
+    ),
+  ];
   for (let i = 3; i >= 1; i--) {
     const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
     const startDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
     const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
     const endDate = `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, "0")}-${String(monthEnd.getDate()).padStart(2, "0")}`;
-    const runRecord = (await processPayrollRun(startDate, endDate)) as any;
+    await lockAttendanceForPayroll(startDate, endDate, departmentIds);
+    const runRecord = (await processPayrollRun(startDate, endDate, departmentIds)) as any;
     if (runRecord) await markRunPaid(runRecord.id);
   }
 

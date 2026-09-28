@@ -25,7 +25,7 @@ recruitmentRouter.use(authenticate);
 
 recruitmentRouter.get(
   "/jobs",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const status =
@@ -47,7 +47,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/jobs/:id",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const job = await repo.getJobPosting(req.params.id);
@@ -420,7 +420,7 @@ recruitmentRouter.patch(
 
 recruitmentRouter.get(
   "/candidates",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const jobPostingId =
@@ -437,30 +437,8 @@ recruitmentRouter.get(
   },
 );
 recruitmentRouter.get(
-  "/candidates/ranked",
-  requirePermission("recruitment.manage"),
-  async (req, res, next) => {
-    try {
-      const jobPostingId =
-        typeof req.query.jobPostingId === "string"
-          ? req.query.jobPostingId
-          : undefined;
-
-      if (!jobPostingId) {
-        throw AppError.badRequest("jobPostingId is required.");
-      }
-
-      const candidates = await repo.getRankedCandidates(jobPostingId);
-
-      res.json({ candidates });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-recruitmentRouter.get(
   "/candidates/:id",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const candidate = await repo.getCandidate(req.params.id);
@@ -526,7 +504,7 @@ recruitmentRouter.post(
           err.message.startsWith("Applications are only accepted for open, approved jobs.") ||
           err.message === "Job posting not found." ||
           err.message ===
-          "A candidate with this email already applied for this job."
+            "A candidate with this email already applied for this job."
         )
       ) {
         next(AppError.badRequest(err.message));
@@ -722,11 +700,6 @@ recruitmentRouter.post(
 
       try {
         const parsed = await parseResumeFile(candidate.resumeUrl);
-        console.log("RESUME PARSER RESULT:", {
-          experience: parsed.experience,
-          skills: parsed.skills,
-          education: parsed.education,
-        });
 
         const updated = await repo.updateParsedResume(req.params.id, {
           resumeText: parsed.text,
@@ -1105,53 +1078,12 @@ recruitmentRouter.post(
   },
 );
 // ============================================================================
-// AI INTERVIEW EVALUATION
-// ============================================================================
-
-recruitmentRouter.post(
-  "/interviews/:id/ai-evaluation",
-  requirePermission("recruitment.manage"),
-  async (req, res, next) => {
-    try {
-      const result = await repo.evaluateInterviewWithAI(req.params.id);
-
-      if (!result) {
-        throw AppError.notFound("Interview not found.");
-      }
-
-      res.json(result);
-    } catch (err) {
-      if (err instanceof Error) {
-        if (
-          err.message ===
-          "Complete the interview feedback before generating an AI evaluation."
-        ) {
-          next(AppError.badRequest(err.message));
-          return;
-        }
-
-        if (err.message === "Candidate not found.") {
-          next(AppError.notFound(err.message));
-          return;
-        }
-
-        if (err.message === "Job posting not found.") {
-          next(AppError.notFound(err.message));
-          return;
-        }
-      }
-
-      next(err);
-    }
-  },
-);
-// ============================================================================
 // INTERVIEWS
 // ============================================================================
 
 recruitmentRouter.get(
   "/interviews",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (req, res, next) => {
     try {
       const candidateId =
@@ -1267,7 +1199,7 @@ recruitmentRouter.post(
 
 recruitmentRouter.get(
   "/analytics/pipeline",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getPipelineSummary();
@@ -1281,7 +1213,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/sources",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getSourceAnalytics();
@@ -1295,7 +1227,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/referrals",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getReferralAnalytics();
@@ -1309,7 +1241,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/volume-hiring",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getVolumeHiringAnalytics();
@@ -1323,7 +1255,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/open-roles",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const count = await repo.getOpenRolesCount();
@@ -1337,7 +1269,7 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/analytics/metrics",
-  requirePermission("recruitment.manage"),
+  requirePermission("recruitment.view"),
   async (_req, res, next) => {
     try {
       const data = await repo.getRecruitmentMetrics();

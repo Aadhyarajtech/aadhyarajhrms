@@ -119,8 +119,12 @@ export async function listNotifications(
 
   return {
     notifications: notifications.map((notification: any) => ({
-      ...notification,
-      isExpired: notification.status === "EXPIRED" || (notification.expiresAt ? new Date(notification.expiresAt).getTime() <= Date.now() : false),
+      ...toApiDoc(notification),
+      isExpired:
+        notification.status === "EXPIRED" ||
+        (notification.expiresAt
+          ? new Date(notification.expiresAt).getTime() <= Date.now()
+          : false),
     })),
     total,
     limit,

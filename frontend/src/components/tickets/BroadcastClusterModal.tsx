@@ -141,6 +141,8 @@ export default function BroadcastClusterModal({
       queryClient.invalidateQueries({ queryKey: ["ticket-recurring-issues"] });
       queryClient.invalidateQueries({ queryKey: ["ticket-analytics"] });
       queryClient.invalidateQueries({ queryKey: ["ticket-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["ticket-similar"] });
+      queryClient.invalidateQueries({ queryKey: ["ticket"] });
 
       setMessage("");
       onSuccess?.();

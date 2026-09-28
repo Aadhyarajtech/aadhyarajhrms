@@ -132,7 +132,7 @@ async function callGroq(
         },
 
         body: JSON.stringify({
-          model: GROQ_MODEL,
+          model: process.env.GROQ_MODEL || GROQ_MODEL,
 
           messages: [
             {
@@ -157,39 +157,17 @@ Rules:
 - Do not change the reason or add assumptions.
 - Use professional workplace language.
 - Avoid unnecessary repetition.
-- Return only the JSON object.
+- Return only the JSON object in format: {"reason": "..."}.
 `,
             },
           ],
 
           temperature: 0.2,
 
-          max_completion_tokens: 300,
-
-          reasoning_effort: "low",
+          max_tokens: 300,
 
           response_format: {
-            type: "json_schema",
-
-            json_schema: {
-              name: "leave_reason",
-
-              strict: true,
-
-              schema: {
-                type: "object",
-
-                properties: {
-                  reason: {
-                    type: "string",
-                  },
-                },
-
-                required: ["reason"],
-
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
 
@@ -470,38 +448,17 @@ Rules:
 - Do not recommend rejection.
 - Do not approve or reject the leave.
 - Keep the explanation professional and easy to understand.
-- Return only the JSON object.
+- Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
           ],
 
           temperature: 0.2,
 
-          max_completion_tokens: 300,
-
-          reasoning_effort: "low",
+          max_tokens: 300,
 
           response_format: {
-            type: "json_schema",
-
-            json_schema: {
-              name: "leave_conflict",
-              strict: true,
-
-              schema: {
-                type: "object",
-
-                properties: {
-                  explanation: {
-                    type: "string",
-                  },
-                },
-
-                required: ["explanation"],
-
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
 
@@ -806,8 +763,8 @@ export async function analyzeLeaveConflict(input: {
         } = getOverlapRange(
           startDate,
           endDate,
-          request.startDate,
-          request.endDate,
+          request.startDate || "",
+          request.endDate || "",
         );
 
         return {
@@ -824,9 +781,9 @@ export async function analyzeLeaveConflict(input: {
 
           status: request.status,
 
-          startDate: request.startDate,
+          startDate: request.startDate || "",
 
-          endDate: request.endDate,
+          endDate: request.endDate || "",
 
           overlappingDays,
 
@@ -1186,38 +1143,17 @@ Rules:
 - Do not approve or reject the leave.
 - Do not mention information that is not supplied.
 - Keep the explanation professional and concise.
-- Return only the JSON object.
+- Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
           ],
 
           temperature: 0.2,
 
-          max_completion_tokens: 300,
-
-          reasoning_effort: "low",
+          max_tokens: 300,
 
           response_format: {
-            type: "json_schema",
-
-            json_schema: {
-              name: "leave_approval",
-              strict: true,
-
-              schema: {
-                type: "object",
-
-                properties: {
-                  explanation: {
-                    type: "string",
-                  },
-                },
-
-                required: ["explanation"],
-
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
 
@@ -1857,39 +1793,17 @@ Rules:
 - Do not infer employee performance or attendance quality.
 - Do not make approval or rejection recommendations.
 - Keep the explanation concise and professional.
-- Return only the JSON object.
+- Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
           ],
 
           temperature: 0.2,
 
-          max_completion_tokens: 400,
-
-          reasoning_effort: "low",
+          max_tokens: 400,
 
           response_format: {
-            type: "json_schema",
-
-            json_schema: {
-              name: "leave_analytics",
-
-              strict: true,
-
-              schema: {
-                type: "object",
-
-                properties: {
-                  explanation: {
-                    type: "string",
-                  },
-                },
-
-                required: ["explanation"],
-
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
 
@@ -2199,11 +2113,11 @@ export async function analyzeLeaveAnalytics(
     typeData.requestCount += 1;
 
     const requestStart = parseAnalyticsDate(
-      request.startDate,
+      request.startDate || "",
     );
 
     const requestEnd = parseAnalyticsDate(
-      request.endDate,
+      request.endDate || "",
     );
 
     if (requestStart.getTime() > requestEnd.getTime()) {
@@ -2211,8 +2125,8 @@ export async function analyzeLeaveAnalytics(
     }
 
     const overlapDays = getInclusiveOverlapDays(
-      request.startDate,
-      request.endDate,
+      request.startDate || "",
+      request.endDate || "",
       startDate,
       endDate,
     );
@@ -2302,8 +2216,8 @@ export async function analyzeLeaveAnalytics(
 
           const approvedMonthDays =
             getInclusiveOverlapDays(
-              request.startDate,
-              request.endDate,
+              request.startDate || "",
+              request.endDate || "",
               monthStart,
               monthEnd,
             );
@@ -2665,29 +2579,14 @@ Rules:
 - Do not accuse employees of misuse or misconduct.
 - Do not recommend approval or rejection.
 - State that findings are for HR review when appropriate.
-- Return only the JSON object.
+- Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
           ],
           temperature: 0.2,
-          max_completion_tokens: 300,
-          reasoning_effort: "low",
+          max_tokens: 300,
           response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "leave_pattern_detection",
-              strict: true,
-              schema: {
-                type: "object",
-                properties: {
-                  explanation: {
-                    type: "string",
-                  },
-                },
-                required: ["explanation"],
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
         signal: controller.signal,
@@ -2916,14 +2815,17 @@ export async function analyzeLeavePatterns(
 
     const id = String(request.employeeId);
 
+    const reqStart = request.startDate || "";
+    const reqEnd = request.endDate || "";
+
     const effectiveStart =
-      request.startDate > startDate
-        ? request.startDate
+      reqStart > startDate
+        ? reqStart
         : startDate;
 
     const effectiveEnd =
-      request.endDate < endDate
-        ? request.endDate
+      reqEnd < endDate
+        ? reqEnd
         : endDate;
 
     const dates = getDatesBetween(

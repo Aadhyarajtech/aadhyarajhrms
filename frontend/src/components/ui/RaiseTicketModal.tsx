@@ -25,7 +25,7 @@ interface AIClassification {
 export default function RaiseTicketModal({ open, onClose }: Props) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [category, setCategory] = useState("HR");
+  const [category, setCategory] = useState("");
   const [priority, setPriority] = useState<"CRITICAL" | "LOW" | "MEDIUM" | "HIGH">("MEDIUM");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -38,6 +38,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
   const [aiLoading, setAiLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userChangedPriorityRef = useRef(false);
+  const userChangedCategoryRef = useRef(false);
 
   // Debounced AI classification call
   useEffect(() => {
@@ -46,8 +47,8 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       clearTimeout(debounceRef.current);
     }
 
-    // Need minimum content to classify
-    if (subject.trim().length < 3 || description.trim().length < 10) {
+    // Need minimum content to classify (e.g. subject >= 3 or description >= 5)
+    if (subject.trim().length < 3 && description.trim().length < 5) {
       setAiResult(null);
       return;
     }
@@ -60,13 +61,17 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
           {
             subject: subject.trim(),
             description: description.trim(),
-            category,
+            category: category || undefined,
           },
         );
         setAiResult(data);
-        // Automatically sync priority with AI's recommendation unless the employee manually selected a priority
+        // Automatically sync priority with AI recommendation if user hasn't explicitly changed it
         if (!userChangedPriorityRef.current && data?.priority) {
           setPriority(data.priority);
+        }
+        // Automatically set category if user hasn't selected one yet
+        if (!userChangedCategoryRef.current && data?.category) {
+          setCategory(data.category);
         }
       } catch {
         // AI classification failure is non-critical — silently ignore
@@ -74,7 +79,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       } finally {
         setAiLoading(false);
       }
-    }, 800);
+    }, 500);
 
     return () => {
       if (debounceRef.current) {
@@ -86,6 +91,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) {
       userChangedPriorityRef.current = false;
+      userChangedCategoryRef.current = false;
       return;
     }
 
@@ -111,10 +117,12 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
     let updated = false;
     if (aiResult?.category) {
       setCategory(aiResult.category);
+      userChangedCategoryRef.current = true;
       updated = true;
     }
     if (aiResult?.priority && aiResult.priority !== priority) {
       setPriority(aiResult.priority);
+      userChangedPriorityRef.current = true;
       updated = true;
     }
     if (updated) {
@@ -125,6 +133,11 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
   }
 
   async function handleSubmit() {
+    if (!category) {
+      showToast("Please select a category.", "error");
+      return;
+    }
+
     if (!subject.trim()) {
       showToast("Please enter a subject.", "error");
       return;
@@ -160,9 +173,10 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       queryClient.invalidateQueries({ queryKey: ["my-tickets"] });
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
 
-      setCategory("HR");
+      setCategory("");
       setPriority("MEDIUM");
       userChangedPriorityRef.current = false;
+      userChangedCategoryRef.current = false;
       setSubject("");
       setDescription("");
       setExpiryDate("");
@@ -244,6 +258,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
               onChange={(e) => {
                 const val = e.target.value;
                 setCategory(val);
+                userChangedCategoryRef.current = Boolean(val);
                 if (val === "Harassment Complaint") {
                   setPriority("CRITICAL");
                   userChangedPriorityRef.current = true;

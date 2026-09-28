@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { requirePermission } from "@/middleware/permissions";
+import { requirePermission, requirePermissionOrManager } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./attendance.repository";
@@ -327,13 +327,13 @@ attendanceRouter.get("/me", async (req, res, next) => {
 
 attendanceRouter.get(
   "/employee/:employeeId",
-  requirePermission("attendance.manage"),
+  requirePermissionOrManager("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId: requesterEmployeeId } = req.user!;
 
       // Managers can only view attendance of their direct reports
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager) {
         if (!requesterEmployeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -379,7 +379,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/by-date/:date",
-  requirePermission("attendance.manage"),
+  requirePermissionOrManager("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -389,7 +389,7 @@ attendanceRouter.get(
       // accepted from query/body input.
       let managerId: string | undefined;
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -463,7 +463,7 @@ attendanceRouter.get("/export/me", async (req, res, next) => {
 
 attendanceRouter.get(
   "/export/team",
-  requirePermission("attendance.manage"),
+  requirePermissionOrManager("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -475,7 +475,7 @@ attendanceRouter.get(
       const format = parseExportFormat(req.query.format);
       const records = await repo.listForDate(
         date,
-        role === "MANAGER" ? (employeeId ?? undefined) : undefined,
+        (role === "MANAGER" || req.user!.isManager) ? (employeeId ?? undefined) : undefined,
       );
       await sendAttendanceExport(
         res,
@@ -510,7 +510,7 @@ attendanceRouter.get(
       const records = await repo.listForMonth(
         month,
         year,
-        role === "MANAGER" ? (employeeId ?? undefined) : undefined,
+        (role === "MANAGER" || req.user!.isManager) ? (employeeId ?? undefined) : undefined,
       );
       await sendAttendanceExport(
         res,
@@ -552,7 +552,9 @@ attendanceRouter.get(
       const { role, employeeId } = req.user!;
 
       const managerId =
-        role === "MANAGER" && employeeId ? employeeId : undefined;
+        (role === "MANAGER" || req.user!.isManager) && employeeId
+          ? employeeId
+          : undefined;
 
       res.json({
         data: await repo.getMonthlyAttendanceTrend(months, managerId),
@@ -1271,13 +1273,13 @@ attendanceRouter.get("/ai-patterns", async (req, res, next) => {
 
 attendanceRouter.get(
   "/employee/:employeeId",
-  requirePermission("attendance.manage"),
+  requirePermissionOrManager("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId: requesterEmployeeId } = req.user!;
 
       // Managers can only view attendance of their direct reports
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager) {
         if (!requesterEmployeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -1324,7 +1326,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/by-date/:date",
-  requirePermission("attendance.manage"),
+  requirePermissionOrManager("attendance.manage"),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
@@ -1334,7 +1336,7 @@ attendanceRouter.get(
       // accepted from query/body input.
       let managerId: string | undefined;
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -1395,7 +1397,9 @@ attendanceRouter.get(
       const { role, employeeId } = req.user!;
 
       const managerId =
-        role === "MANAGER" && employeeId ? employeeId : undefined;
+        (role === "MANAGER" || req.user!.isManager) && employeeId
+          ? employeeId
+          : undefined;
 
       res.json({
         data: await repo.getMonthlyAttendanceTrend(months, managerId),

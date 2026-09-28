@@ -62,19 +62,28 @@ export interface HelpdeskAnalyticsSummary {
 }
 
 export async function getHelpdeskExecutiveAnalytics(
-  departmentFilter?: { assignedTo?: string[]; categories?: string[] },
+  departmentFilter?: {
+    assignedTo?: string[];
+    categories?: string[];
+    managerEmployeeId?: string | null;
+  },
 ): Promise<HelpdeskAnalyticsSummary> {
   const query: any = {};
   if (departmentFilter) {
-    const conditions: any[] = [];
-    if (departmentFilter.assignedTo && departmentFilter.assignedTo.length > 0) {
-      conditions.push({ assignedTo: { $in: departmentFilter.assignedTo } });
-    }
-    if (departmentFilter.categories && departmentFilter.categories.length > 0) {
-      conditions.push({ category: { $in: departmentFilter.categories } });
-    }
-    if (conditions.length > 0) {
-      query.$or = conditions;
+    if (departmentFilter.managerEmployeeId) {
+      query.category = "Complaint";
+      query.assignedManagerId = departmentFilter.managerEmployeeId;
+    } else {
+      const conditions: any[] = [];
+      if (departmentFilter.assignedTo && departmentFilter.assignedTo.length > 0) {
+        conditions.push({ assignedTo: { $in: departmentFilter.assignedTo } });
+      }
+      if (departmentFilter.categories && departmentFilter.categories.length > 0) {
+        conditions.push({ category: { $in: departmentFilter.categories } });
+      }
+      if (conditions.length > 0) {
+        query.$or = conditions;
+      }
     }
   }
 
@@ -170,10 +179,12 @@ export async function getHelpdeskExecutiveAnalytics(
     else if (t.status === "RESOLVED") resolvedTickets++;
     else if (t.status === "CLOSED") closedTickets++;
 
-    // 2. Priority breakdown
-    const prio = (t.priority as keyof typeof priorityCounts) || "MEDIUM";
-    if (priorityCounts[prio] !== undefined) {
-      priorityCounts[prio]++;
+    // 2. Priority breakdown (CRITICAL and HIGH both grouped in top urgent tier)
+    const prio = (t.priority || "").toUpperCase();
+    if (prio === "CRITICAL" || prio === "HIGH") {
+      priorityCounts.HIGH++;
+    } else if (prio === "LOW") {
+      priorityCounts.LOW++;
     } else {
       priorityCounts.MEDIUM++;
     }

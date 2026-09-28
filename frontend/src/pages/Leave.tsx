@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -36,6 +36,8 @@ import { ProgressRing } from "@/components/ui/ProgressRing";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, monthName, cx } from "@/lib/format";
 import ExpiryBadge from "@/components/common/ExpiryBadge";
+import { AiLeaveAssistantView } from "@/components/leave/AiLeaveAssistantView";
+import { AiLeaveApprovalModal } from "@/components/leave/AiLeaveApprovalModal";
 
 const MANAGER_ROLES: string[] = [
   "SUPER_ADMIN",
@@ -43,12 +45,144 @@ const MANAGER_ROLES: string[] = [
   "MANAGER",
 ];
 
-const applySchema = z.object({
-  leaveTypeId: z.string().min(1, "Select a leave type"),
-  startDate: z.string().min(1, "Required"),
-  endDate: z.string().min(1, "Required"),
-  reason: z.string().min(3, "Add a short reason"),
-});
+/**
+ * Leave application rules are shared by the form UI and validation:
+ * - past dates are not allowed
+ * - Saturday/Sunday are not allowed
+ */
+const getTodayIso = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+  }).format(new Date());
+
+const isWeekendIso = (iso: string) => {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return false;
+
+  const weekday = new Date(year, month - 1, day).getDay();
+  return weekday === 0 || weekday === 6;
+};
+
+const getDateRange = (startDate: string, endDate: string) => {
+  const dates: string[] = [];
+  const [startYear, startMonth, startDay] = startDate.split("-").map(Number);
+  const [endYear, endMonth, endDay] = endDate.split("-").map(Number);
+
+  if (
+    !startYear ||
+    !startMonth ||
+    !startDay ||
+    !endYear ||
+    !endMonth ||
+    !endDay
+  ) {
+    return dates;
+  }
+
+  const cursor = new Date(startYear, startMonth - 1, startDay);
+  const end = new Date(endYear, endMonth - 1, endDay);
+
+  while (cursor <= end) {
+    dates.push(
+      [
+        cursor.getFullYear(),
+        String(cursor.getMonth() + 1).padStart(2, "0"),
+        String(cursor.getDate()).padStart(2, "0"),
+      ].join("-"),
+    );
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return dates;
+};
+
+const getCalendarDateIso = (date: Date) =>
+  [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+
+const getLeaveEmployeeName = (entry: any, employee?: any) =>
+  [
+    entry?.firstName ?? employee?.firstName,
+    entry?.lastName ?? employee?.lastName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim() ||
+  entry?.employeeName ||
+  entry?.employee?.fullName ||
+  entry?.employee?.name ||
+  entry?.fullName ||
+  "Team member";
+
+const applySchema = z
+  .object({
+    leaveTypeId: z.string().min(1, "Select a leave type"),
+    startDate: z.string().min(1, "Required"),
+    endDate: z.string().min(1, "Required"),
+    halfDay: z.boolean().optional().default(false),
+    halfDayType: z.enum(["FIRST_HALF", "SECOND_HALF"]).nullable().optional(),
+    reason: z.string().min(3, "Add a short reason"),
+  })
+  .superRefine((value, ctx) => {
+    const today = getTodayIso();
+
+    if (value.startDate < today) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["startDate"],
+        message: "Leave cannot be applied for a previous date",
+      });
+    }
+
+    if (value.endDate < today) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "Leave cannot be applied for a previous date",
+      });
+    }
+
+    if (value.endDate < value.startDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "End date cannot be before start date",
+      });
+    }
+
+    if (value.startDate <= value.endDate) {
+      const weekendDates = getDateRange(value.startDate, value.endDate).filter(
+        isWeekendIso,
+      );
+
+      if (weekendDates.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["startDate"],
+          message: "Leave can only be applied on working days. Weekends are not allowed.",
+        });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["endDate"],
+          message: "Select a working day (Monday-Friday)",
+        });
+      }
+    }
+
+    if (value.halfDay) {
+      if (value.startDate !== value.endDate) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "Half-day leave can only be applied for one day" });
+      }
+      if (!value.halfDayType) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["halfDayType"], message: "Select first half or second half" });
+      }
+    } else if (value.halfDayType) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["halfDayType"], message: "Half-day type is only allowed for half-day leave" });
+    }
+  });
 
 type ApplyForm = z.infer<typeof applySchema>;
 
@@ -66,9 +200,16 @@ export default function Leave() {
   );
 
   const [applyOpen, setApplyOpen] = useState(false);
+  const [applyPrefill, setApplyPrefill] = useState<{
+    startDate?: string;
+    endDate?: string;
+    reason?: string;
+    leaveTypeId?: string;
+  } | null>(null);
 
   const tabs = [
     { key: "mine", label: "My Leave" },
+    { key: "assistant", label: "AI Leave Assistant ✦" },
     ...(isManager
       ? [
           { key: "team", label: "Team Approvals" },
@@ -87,7 +228,10 @@ export default function Leave() {
         action={
           <Button
             leftIcon={<Plus size={16} />}
-            onClick={() => setApplyOpen(true)}
+            onClick={() => {
+              setApplyPrefill(null);
+              setApplyOpen(true);
+            }}
           >
             Apply for leave
           </Button>
@@ -102,6 +246,14 @@ export default function Leave() {
       />
 
       {tab === "mine" && <MyLeave />}
+      {tab === "assistant" && (
+        <AiLeaveAssistantView
+          onApplyWithDates={(payload) => {
+            setApplyPrefill(payload);
+            setApplyOpen(true);
+          }}
+        />
+      )}
       {tab === "team" && isManager && <TeamApprovals />}
       {tab === "analytics" && isManager && <LeaveAnalytics />}
       {tab === "patterns" && isManager && <LeavePatternDetection />}
@@ -109,7 +261,11 @@ export default function Leave() {
 
       <ApplyModal
         open={applyOpen}
-        onClose={() => setApplyOpen(false)}
+        onClose={() => {
+          setApplyOpen(false);
+          setApplyPrefill(null);
+        }}
+        prefillData={applyPrefill}
       />
     </div>
   );
@@ -267,6 +423,17 @@ function TeamApprovals() {
   const { showToast } = useToast();
 
   const [filter, setFilter] = useState("PENDING");
+  const [selectedAiRequest, setSelectedAiRequest] = useState<{
+    id: string;
+    employeeName: string;
+    employeeCode?: string;
+    avatarUrl?: string | null;
+    leaveTypeName: string;
+    startDate: string;
+    endDate: string;
+    totalDays: number;
+    reason: string;
+  } | null>(null);
 
   const {
     data: requests,
@@ -290,16 +457,18 @@ function TeamApprovals() {
     mutationFn: ({
       id,
       status,
+      decisionNote,
     }: {
       id: string;
       status: "APPROVED" | "REJECTED";
-    }) => LeaveApi.decide(id, status),
+      decisionNote?: string;
+    }) => LeaveApi.decide(id, status, decisionNote),
 
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["leave"],
       });
-
+      setSelectedAiRequest(null);
       showToast("Decision recorded.");
     },
 
@@ -341,78 +510,157 @@ function TeamApprovals() {
           description="Requests from your direct reports will show up here."
         />
       ) : (
-        <div className="space-y-2">
-          {(activeRequests ?? []).map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50/60 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200/70 hover:shadow-[0_10px_24px_rgba(91,79,229,0.08)]"
-            >
-              <div className="flex items-center gap-3">
-                <Avatar
-                  firstName={r.firstName}
-                  lastName={r.lastName}
-                  src={r.avatarUrl}
-                  size="sm"
-                />
+        <div className="space-y-3">
+          {(activeRequests ?? []).map((r) => {
+            const daysCount =
+              r.totalDays && r.totalDays > 0
+                ? r.totalDays
+                : Math.max(
+                    1,
+                    Math.round(
+                      (new Date(r.endDate).getTime() -
+                        new Date(r.startDate).getTime()) /
+                        (1000 * 60 * 60 * 24),
+                    ) + 1,
+                  );
 
-                <div>
-                  <p className="text-[13px] font-medium text-ink">
-                    {r.firstName} {r.lastName}
-                  </p>
+            const durationLabel = (r as any).halfDay
+              ? "0.5 day (Half Day)"
+              : `${daysCount} ${daysCount === 1 ? "day" : "days"}`;
 
-                  <p className="text-[12px] text-ink-faint">
-                    {r.leaveTypeName} ·{" "}
-                    {formatDate(r.startDate)} –{" "}
-                    {formatDate(r.endDate)} ({r.totalDays}d)
-                  </p>
+            return (
+              <div
+                key={r.id}
+                className="group relative rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition-all duration-200 hover:border-brand-200 hover:shadow-md"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  {/* Employee info & details */}
+                  <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                    <div className="shrink-0 ring-2 ring-slate-100 ring-offset-1 rounded-full overflow-hidden mt-0.5">
+                      <Avatar
+                        firstName={r.firstName}
+                        lastName={r.lastName}
+                        src={r.avatarUrl}
+                        size="md"
+                      />
+                    </div>
 
-                  <p className="text-[12px] text-ink-faint">
-                    "{r.reason}"
-                  </p>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[14px] font-semibold text-slate-900">
+                          {r.firstName} {r.lastName}
+                        </span>
+                        {r.employeeCode && (
+                          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-600">
+                            {r.employeeCode}
+                          </span>
+                        )}
+                        <span className="inline-flex items-center rounded-full bg-brand-50 px-2.5 py-0.5 text-[11px] font-medium text-brand-700 border border-brand-200/60">
+                          {r.leaveTypeName}
+                        </span>
+                        <span className="inline-flex items-center rounded-md bg-amber-50/90 px-2 py-0.5 text-[11px] font-semibold text-amber-800 border border-amber-200/60">
+                          {durationLabel}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[12px] text-slate-500 font-medium">
+                        <CalendarDays size={13} className="text-slate-400 shrink-0" />
+                        <span>
+                          {formatDate(r.startDate)}
+                          {r.startDate !== r.endDate ? ` – ${formatDate(r.endDate)}` : ""}
+                        </span>
+                      </div>
+
+                      {r.reason && (
+                        <p className="mt-1 rounded-xl bg-slate-50/80 border border-slate-100 px-3 py-1.5 text-[12.5px] italic text-slate-600 leading-relaxed">
+                          "{r.reason}"
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  {r.status === "PENDING" ? (
+                    <div className="flex items-center gap-2 shrink-0 self-end lg:self-center pt-2 lg:pt-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedAiRequest({
+                            id: r.id,
+                            employeeName: `${r.firstName} ${r.lastName}`,
+                            employeeCode: r.employeeCode,
+                            avatarUrl: r.avatarUrl,
+                            leaveTypeName: r.leaveTypeName,
+                            startDate: r.startDate,
+                            endDate: r.endDate,
+                            totalDays: daysCount,
+                            reason: r.reason,
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200/90 bg-gradient-to-r from-violet-50 via-indigo-50 to-purple-50 px-3.5 py-1.5 text-[12px] font-semibold text-indigo-700 shadow-xs transition-all hover:border-indigo-300 hover:from-violet-100 hover:to-indigo-100 hover:shadow-sm active:scale-[0.98] whitespace-nowrap shrink-0"
+                      >
+                        <Sparkles size={13} className="text-amber-500 animate-pulse shrink-0" />
+                        AI Analysis
+                      </button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        leftIcon={<X size={14} />}
+                        isLoading={decideMutation.isPending}
+                        className="border-slate-200 text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                        onClick={() =>
+                          decideMutation.mutate({
+                            id: r.id,
+                            status: "REJECTED",
+                          })
+                        }
+                      >
+                        Reject
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        leftIcon={<Check size={14} />}
+                        isLoading={decideMutation.isPending}
+                        onClick={() =>
+                          decideMutation.mutate({
+                            id: r.id,
+                            status: "APPROVED",
+                          })
+                        }
+                      >
+                        Approve
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <StatusBadge status={r.status} />
+                      <ExpiryBadge
+                        expiresAt={r.expiresAt}
+                        expiredAt={r.expiredAt}
+                        status={r.status}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {r.status === "PENDING" ? (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    leftIcon={<X size={14} />}
-                    isLoading={decideMutation.isPending}
-                    onClick={() =>
-                      decideMutation.mutate({
-                        id: r.id,
-                        status: "REJECTED",
-                      })
-                    }
-                  >
-                    Reject
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    leftIcon={<Check size={14} />}
-                    isLoading={decideMutation.isPending}
-                    onClick={() =>
-                      decideMutation.mutate({
-                        id: r.id,
-                        status: "APPROVED",
-                      })
-                    }
-                  >
-                    Approve
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-end gap-2">
-                  <StatusBadge status={r.status} />
-                  <ExpiryBadge expiresAt={r.expiresAt} expiredAt={r.expiredAt} status={r.status} />
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
+
+      {/* AI Approval Recommendation Modal */}
+      <AiLeaveApprovalModal
+        open={!!selectedAiRequest}
+        onClose={() => setSelectedAiRequest(null)}
+        request={selectedAiRequest}
+        onDecide={(id, status, note) =>
+          decideMutation.mutate({ id, status, decisionNote: note })
+        }
+        isDeciding={decideMutation.isPending}
+      />
     </Card>
   );
 }
@@ -1100,223 +1348,548 @@ function LeavePatternDetection() {
 }
 
 function LeaveCalendar() {
+  const { user } = useAuth();
+  const employeeId = user?.employee?.id;
   const [cursor, setCursor] = useState(new Date());
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
   const month = cursor.getMonth() + 1;
   const year = cursor.getFullYear();
+  const todayIso = getTodayIso();
+  const currentYear = Number(todayIso.slice(0, 4));
+  const [balanceYear, setBalanceYear] = useState(currentYear);
 
-  const {
-    data: entries,
-    isLoading,
-  } = useQuery({
+  const { data: entries = [], isLoading } = useQuery({
     queryKey: ["leave", "calendar", month, year],
     queryFn: () => LeaveApi.calendar(month, year),
+    staleTime: 30_000,
+  });
+
+  const { data: employeeData } = useQuery({
+    queryKey: ["leave", "calendar", "employees"],
+    queryFn: () =>
+      EmployeesApi.list({
+        page: 1,
+        pageSize: 100,
+      }),
+    staleTime: 5 * 60_000,
+  });
+
+  const employeeMap = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const employee of employeeData?.employees ?? []) {
+      if (employee?.id) map.set(employee.id, employee);
+    }
+    return map;
+  }, [employeeData?.employees]);
+
+  const { data: balances = [], isFetching: balancesLoading } = useQuery({
+    queryKey: ["leave", "balances", "calendar", employeeId, balanceYear],
+    queryFn: () => LeaveApi.balances(employeeId, balanceYear),
+    enabled: !!employeeId,
+    staleTime: 30_000,
+  });
+
+  const leaveTypes = Array.from(
+    new Set(
+      entries
+        .map((entry: any) => entry.leaveTypeName ?? entry.leaveType ?? "")
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => String(a).localeCompare(String(b)));
+
+  const filteredEntries = entries.filter((entry: any) => {
+    const type = String(entry.type ?? "LEAVE").toUpperCase();
+    const leaveType = entry.leaveTypeName ?? entry.leaveType ?? "";
+    const status = String(entry.status ?? "APPROVED").toUpperCase();
+
+    if (type === "HOLIDAY") return true;
+
+    return (
+      (leaveTypeFilter === "ALL" || leaveType === leaveTypeFilter) &&
+      (statusFilter === "ALL" || status === statusFilter)
+    );
   });
 
   const days = useMemo(() => {
-    const firstDay = new Date(
-      year,
-      month - 1,
-      1,
-    );
+    const firstDay = new Date(year, month - 1, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const previousMonthDays = firstDay.getDay();
+    const cells: Date[] = [];
 
-    const daysInMonth = new Date(
-      year,
-      month,
-      0,
-    ).getDate();
-
-    const startOffset = firstDay.getDay();
-
-    const cells: {
-      date: Date | null;
-    }[] = [];
-
-    for (let i = 0; i < startOffset; i++) {
-      cells.push({ date: null });
+    for (let i = 0; i < previousMonthDays; i++) {
+      cells.push(new Date(year, month - 1, -previousMonthDays + i + 1));
     }
 
-    for (
-      let d = 1;
-      d <= daysInMonth;
-      d++
-    ) {
-      cells.push({
-        date: new Date(
-          year,
-          month - 1,
-          d,
-        ),
-      });
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push(new Date(year, month - 1, d));
+    }
+
+    while (cells.length < 42) {
+      const nextDay = cells.length - previousMonthDays - daysInMonth + 1;
+      cells.push(new Date(year, month, nextDay));
     }
 
     return cells;
   }, [month, year]);
 
   function entriesForDay(date: Date) {
-  if (!Array.isArray(entries)) return [];
+    const iso = getCalendarDateIso(date);
+    return filteredEntries.filter((entry: any) => {
+      if (String(entry.type).toUpperCase() === "HOLIDAY") {
+        return String(entry.date).slice(0, 10) === iso;
+      }
+      return String(entry.startDate).slice(0, 10) <= iso && String(entry.endDate).slice(0, 10) >= iso;
+    });
+  }
 
-  const iso = date.toISOString().slice(0, 10);
+  const isCurrentMonth = (date: Date) => date.getMonth() === month - 1;
 
-  return entries.filter((e: any) => {
-    // Only leave entries have startDate/endDate.
-    // Holiday entries use `date` instead and must not be
-    // processed by the leave-range calculation.
-    if (String(e?.type ?? "").toUpperCase() !== "LEAVE") {
-      return false;
-    }
-
-    const startDate = String(e?.startDate ?? "").slice(0, 10);
-    const endDate = String(e?.endDate ?? "").slice(0, 10);
-
-    if (!startDate || !endDate) {
-      return false;
-    }
-
-    return startDate <= iso && endDate >= iso;
+  const monthEntries = filteredEntries.filter((entry: any) => {
+    if (String(entry.type).toUpperCase() === "HOLIDAY") return false;
+    const start = String(entry.startDate).slice(0, 10);
+    const end = String(entry.endDate).slice(0, 10);
+    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+    const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`;
+    return start <= monthEnd && end >= monthStart;
   });
-}
+
+  const onLeaveToday = entries.filter((entry: any) => {
+    if (String(entry.type).toUpperCase() !== "LEAVE") return false;
+    const start = String(entry.startDate).slice(0, 10);
+    const end = String(entry.endDate).slice(0, 10);
+    return start <= todayIso && end >= todayIso;
+  }).length;
+
+  const upcomingLeaves = entries
+    .filter(
+      (entry: any) =>
+        String(entry.type).toUpperCase() === "LEAVE" &&
+        String(entry.endDate).slice(0, 10) >= todayIso,
+    )
+    .sort(
+      (a: any, b: any) =>
+        new Date(String(a.startDate).slice(0, 10)).getTime() -
+        new Date(String(b.startDate).slice(0, 10)).getTime(),
+    )
+    .slice(0, 5);
+
+  const holidayEntries = entries.filter(
+    (entry: any) => String(entry.type).toUpperCase() === "HOLIDAY",
+  );
+
+  const goToday = () => setCursor(new Date());
+  const goThisYear = () => {
+    setBalanceYear(currentYear);
+    setCursor(new Date());
+  };
+  const goPrevious = () => setCursor(new Date(year, month - 2, 1));
+  const goNext = () => setCursor(new Date(year, month, 1));
+
+  const statusOptions = Array.from(
+    new Set(
+      entries
+        .map((entry: any) => String(entry.status ?? "APPROVED").toUpperCase())
+        .filter(Boolean),
+    ),
+  );
 
   return (
-    <Card>
-      <CardHeader
-        title={`${monthName(month)} ${year}`}
-        subtitle="Approved leave across the organization"
-        action={
-          <div className="flex gap-1">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                setCursor(
-                  new Date(
-                    year,
-                    month - 2,
-                    1,
-                  ),
-                )
-              }
-            >
-              <ChevronLeft size={14} />
-            </Button>
+    <div className="space-y-5">
+      {/* Calendar header */}
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h2 className="font-display text-2xl font-semibold text-ink">
+            Leave Calendar
+          </h2>
+          <p className="mt-1 text-[13px] text-ink-faint">
+            View team leaves, company holidays, and plan your time better.
+          </p>
+        </div>
 
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                setCursor(
-                  new Date(
-                    year,
-                    month,
-                    1,
-                  ),
-                )
-              }
-            >
-              <ChevronRight size={14} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={goToday}>
+            Today
+          </Button>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="outline" onClick={goPrevious}>
+              <ChevronLeft size={15} />
+            </Button>
+            <Button size="sm" variant="outline" onClick={goNext}>
+              <ChevronRight size={15} />
             </Button>
           </div>
-        }
-      />
-
-      {isLoading ? (
-        <Skeleton className="h-80 rounded-2xl" />
-      ) : (
-        <div className="grid grid-cols-7 gap-1.5 rounded-2xl bg-slate-50/80 p-2 text-center">
-          {[
-            "Sun",
-            "Mon",
-            "Tue",
-            "Wed",
-            "Thu",
-            "Fri",
-            "Sat",
-          ].map((d) => (
-            <div
-              key={d}
-              className="pb-1 text-[11px] font-medium text-ink-faint"
-            >
-              {d}
-            </div>
-          ))}
-
-          {days.map((cell, i) => {
-            if (!cell.date) {
-              return <div key={i} />;
-            }
-
-            const dayEntries =
-              entriesForDay(cell.date);
-
-            const isToday =
-              cell.date.toDateString() ===
-              new Date().toDateString();
-
-            return (
-              <div
-                key={i}
-                className={cx(
-                  "min-h-[72px] rounded-xl border border-line/50 p-1.5 text-left",
-                  isToday &&
-                    "border-brand-300 bg-brand-50/40",
-                )}
-              >
-                <p
-                  className={cx(
-                    "text-[11px]",
-                    isToday
-                      ? "font-semibold text-brand-600"
-                      : "text-ink-faint",
-                  )}
-                >
-                  {cell.date.getDate()}
-                </p>
-
-                <div className="mt-1 flex flex-wrap gap-0.5">
-                  {dayEntries
-                    .slice(0, 3)
-                    .map((e: any) => (
-                      <span
-                        key={e.id}
-                        title={`${e.firstName} ${e.lastName} — ${e.leaveTypeName}`}
-                        className="h-4 w-4 overflow-hidden rounded-full"
-                      >
-                        <Avatar
-                          firstName={e.firstName}
-                          lastName={e.lastName}
-                          src={e.avatarUrl}
-                          size="xs"
-                        />
-                      </span>
-                    ))}
-
-                  {dayEntries.length > 3 && (
-                    <span className="text-[9px] text-ink-faint">
-                      +{dayEntries.length - 3}
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          <div className="rounded-xl border border-line/60 bg-white px-3 py-2 text-[12px] font-semibold text-ink">
+            {monthName(month)} {year}
+          </div>
         </div>
-      )}
-    </Card>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="bg-gradient-to-br from-brand-50 to-white">
+          <p className="text-[11px] font-medium text-ink-faint">Total leave entries</p>
+          <p className="mt-1 text-2xl font-semibold text-ink">{monthEntries.length}</p>
+          <p className="mt-1 text-[10px] text-ink-faint">For {monthName(month)}</p>
+        </Card>
+        <Card className="bg-gradient-to-br from-success-50 to-white">
+          <p className="text-[11px] font-medium text-ink-faint">On leave today</p>
+          <p className="mt-1 text-2xl font-semibold text-ink">{onLeaveToday}</p>
+          <p className="mt-1 text-[10px] text-ink-faint">Across the organization</p>
+        </Card>
+        <Card className="bg-gradient-to-br from-blue-50 to-white">
+          <p className="text-[11px] font-medium text-ink-faint">Upcoming leaves</p>
+          <p className="mt-1 text-2xl font-semibold text-ink">{upcomingLeaves.length}</p>
+          <p className="mt-1 text-[10px] text-ink-faint">Next scheduled requests</p>
+        </Card>
+        <Card className="bg-gradient-to-br from-gold-50 to-white">
+          <p className="text-[11px] font-medium text-ink-faint">Holidays & festivals</p>
+          <p className="mt-1 text-2xl font-semibold text-ink">{holidayEntries.length}</p>
+          <p className="mt-1 text-[10px] text-ink-faint">Available in calendar data</p>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-line/60 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <select
+          value={leaveTypeFilter}
+          onChange={(event) => setLeaveTypeFilter(event.target.value)}
+          className="rounded-xl border border-line/60 bg-white px-3 py-2 text-[11px] font-medium text-ink outline-none focus:border-brand-300"
+        >
+          <option value="ALL">All Leave Types</option>
+          {leaveTypes.map((leaveType) => (
+            <option key={String(leaveType)} value={String(leaveType)}>
+              {String(leaveType)}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+          className="rounded-xl border border-line/60 bg-white px-3 py-2 text-[11px] font-medium text-ink outline-none focus:border-brand-300"
+        >
+          <option value="ALL">All Statuses</option>
+          {statusOptions.map((status) => (
+            <option key={status} value={status}>
+              {status.replace(/_/g, " ")}
+            </option>
+          ))}
+        </select>
+
+        <div className="ml-auto flex flex-wrap items-center gap-3 text-[10px] text-ink-faint">
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" /> My Leave</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-success-500" /> Team Leave</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-400" /> Holiday</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-gold-500" /> Festival</span>
+        </div>
+      </div>
+
+      {/* Calendar + side panels */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-line/60 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-display text-[15px] font-semibold text-ink">
+                  {monthName(month)} {year}
+                </p>
+                <p className="text-[10px] text-ink-faint">
+                  Approved leave and calendar events
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={goToday}
+                title="Go to current month"
+                aria-label="Go to current month"
+                className="rounded-lg p-1.5 text-brand-600 transition hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              >
+                <CalendarDays size={18} />
+              </button>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <Skeleton className="m-4 h-[560px] rounded-2xl" />
+          ) : (
+            <div className="grid grid-cols-7">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                <div
+                  key={day}
+                  className="border-b border-line/60 bg-canvas/60 px-2 py-2.5 text-center text-[10px] font-semibold text-ink-faint"
+                >
+                  {day}
+                </div>
+              ))}
+
+              {days.map((date) => {
+                const iso = getCalendarDateIso(date);
+                const dayEntries = entriesForDay(date);
+                const currentMonth = isCurrentMonth(date);
+                const isToday = iso === todayIso;
+                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+                return (
+                  <div
+                    key={iso}
+                    className={cx(
+                      "min-h-[112px] border-b border-r border-line/50 p-2 text-left transition",
+                      !currentMonth && "bg-slate-50/70",
+                      isWeekend && currentMonth && "bg-slate-50/80",
+                      isToday && "bg-brand-50/60",
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={cx(
+                          "flex h-6 w-6 items-center justify-center rounded-full text-[11px]",
+                          isToday
+                            ? "bg-brand-600 font-semibold text-white"
+                            : currentMonth
+                              ? isWeekend
+                                ? "font-semibold text-slate-500"
+                                : "font-semibold text-slate-800"
+                              : "font-medium text-slate-400",
+                        )}
+                      >
+                        {date.getDate()}
+                      </span>
+                      {dayEntries.length > 0 ? (
+                        <span className="text-[9px] font-medium text-slate-500">
+                          {dayEntries.length} leave{dayEntries.length > 1 ? "s" : ""}
+                        </span>
+                      ) : isWeekend && currentMonth ? (
+                        <span className="text-[8px] font-medium uppercase tracking-wide text-slate-400">
+                          Weekend
+                        </span>
+                      ) : !currentMonth ? (
+                        <span className="text-[8px] font-medium text-slate-400">
+                          Outside month
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-2 space-y-1">
+                      {dayEntries.slice(0, 3).map((entry: any) => {
+                        const employee = employeeMap.get(entry.employeeId);
+                        const employeeName = getLeaveEmployeeName(entry, employee);
+                        const type = String(
+                          entry.category ?? entry.type ?? entry.leaveTypeName ?? "LEAVE",
+                        ).toUpperCase();
+                        const isHoliday = type.includes("HOLIDAY");
+                        const isFestival = type.includes("FESTIVAL");
+                        const isMine = employeeId && entry.employeeId === employeeId;
+
+                        return (
+                          <div
+                            key={entry.id}
+                            title={`${employeeName} · ${entry.leaveTypeName ?? entry.type ?? "Leave"}`}
+                            className={cx(
+                              "truncate rounded-lg px-2 py-1 text-[9px] font-medium",
+                              isHoliday
+                                ? "bg-red-50 text-red-700"
+                                : isFestival
+                                  ? "bg-gold-50 text-gold-700"
+                                  : isMine
+                                    ? "bg-brand-50 text-brand-700"
+                                    : "bg-success-50 text-success-700",
+                            )}
+                          >
+                            {isHoliday || isFestival
+                              ? entry.name ?? "Holiday"
+                              : `${isMine ? "You" : employeeName} · ${entry.leaveTypeName ?? "Leave"}`}
+                          </div>
+                        );
+                      })}
+                      {dayEntries.length > 3 && (
+                        <p className="px-1 text-[9px] font-medium text-brand-600">
+                          +{dayEntries.length - 3} more
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        <div className="space-y-5">
+          {/* Leave balance */}
+          <Card>
+            <div className="flex items-center justify-between">
+              <CardHeader title="My Leave Balance" />
+              <button
+                type="button"
+                className="rounded-lg px-2 py-1 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-50 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-100"
+                onClick={goThisYear}
+                aria-label={`Show leave balance for ${currentYear}`}
+              >
+                This year
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {balancesLoading ? (
+                Array.from({ length: 4 }).map((_, index) => (
+                  <Skeleton key={index} className="h-20 rounded-xl" />
+                ))
+              ) : balances.length ? (
+                balances.slice(0, 4).map((balance: any) => {
+                  const allotted = Math.max(0, Number(balance.allotted ?? 0));
+                  const used = Math.max(0, Number(balance.used ?? 0));
+                  const available = Math.max(0, allotted - used);
+                  const percentage =
+                    allotted > 0
+                      ? Math.min(100, Math.round((available / allotted) * 100))
+                      : 0;
+
+                  return (
+                    <div
+                      key={balance.id}
+                      className="rounded-xl border border-slate-200 bg-slate-50/60 p-3"
+                    >
+                      <p className="truncate text-[10px] font-semibold text-slate-800">
+                        {balance.name}
+                      </p>
+                      <p className="mt-1 text-[14px] font-bold text-slate-900">
+                        {available}{" "}
+                        <span className="font-medium text-slate-500">
+                          / {allotted}
+                        </span>
+                      </p>
+                      <p className="mt-0.5 text-[9px] font-medium text-slate-500">
+                        days available
+                      </p>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                        <div
+                          className="h-full rounded-full bg-brand-500 transition-all duration-300"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="col-span-2 py-3 text-[11px] font-medium text-slate-500">
+                  No leave balance is available for {balanceYear}.
+                </p>
+              )}
+            </div>
+          </Card>
+
+          {/* Upcoming leaves */}
+          <Card>
+            <div className="flex items-center justify-between">
+              <CardHeader title="Upcoming Leaves" />
+              <span className="text-[11px] font-medium text-brand-600">
+                {upcomingLeaves.length}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {upcomingLeaves.map((entry: any) => {
+                const employee = employeeMap.get(entry.employeeId);
+                const employeeName = getLeaveEmployeeName(entry, employee);
+
+                return (
+                  <div
+                    key={entry.id}
+                    className="flex items-center gap-2.5 rounded-xl border border-slate-200/70 bg-white px-2.5 py-2"
+                  >
+                    <Avatar
+                      firstName={entry.firstName ?? employee?.firstName ?? ""}
+                      lastName={entry.lastName ?? employee?.lastName ?? ""}
+                      src={entry.avatarUrl ?? employee?.avatarUrl}
+                      size="sm"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12px] font-semibold text-slate-900">
+                        {employeeName}
+                      </p>
+                      <p className="truncate text-[10px] font-medium text-slate-600">
+                        {entry.leaveTypeName ?? entry.leaveType ?? "Leave"}
+                      </p>
+                      <p className="text-[9px] font-medium text-slate-500">
+                        {formatDate(entry.startDate)} – {formatDate(entry.endDate)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {!upcomingLeaves.length && (
+                <p className="py-3 text-[11px] text-ink-faint">
+                  No upcoming leaves.
+                </p>
+              )}
+            </div>
+          </Card>
+
+          {/* Holidays */}
+          <Card>
+            <div className="flex items-center justify-between">
+              <CardHeader title="Holidays & Festivals" />
+              <span className="text-[11px] font-medium text-brand-600">
+                {holidayEntries.length}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {holidayEntries.slice(0, 5).map((entry: any) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center gap-2.5 rounded-xl border border-line/50 bg-canvas/30 p-2.5"
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold-50 text-gold-700">
+                    <CalendarDays size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-medium text-ink">
+                      {entry.name ?? "Holiday"}
+                    </p>
+                    <p className="text-[9px] text-ink-faint">
+                      {formatDate(entry.date)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              {!holidayEntries.length && (
+                <p className="py-3 text-[11px] text-ink-faint">
+                  No holiday entries available for this month.
+                </p>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
   );
 }
 
 function ApplyModal({
   open,
   onClose,
+  prefillData,
 }: {
   open: boolean;
   onClose: () => void;
+  prefillData?: {
+    startDate?: string;
+    endDate?: string;
+    reason?: string;
+    leaveTypeId?: string;
+  } | null;
 }) {
   const { user } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
   const employeeId = user?.employee?.id;
+  const todayIso = getTodayIso();
 
   const [generatingReason, setGeneratingReason] =
     useState(false);
@@ -1341,7 +1914,21 @@ function ApplyModal({
     formState: { errors },
   } = useForm<ApplyForm>({
     resolver: zodResolver(applySchema),
+    defaultValues: { halfDay: false, halfDayType: null },
   });
+
+  useEffect(() => {
+    if (open) {
+      if (prefillData) {
+        if (prefillData.startDate) setValue("startDate", prefillData.startDate);
+        if (prefillData.endDate) setValue("endDate", prefillData.endDate);
+        if (prefillData.reason) setValue("reason", prefillData.reason);
+        if (prefillData.leaveTypeId) setValue("leaveTypeId", prefillData.leaveTypeId);
+      } else {
+        reset();
+      }
+    }
+  }, [open, prefillData, setValue, reset]);
 
   /*
    * Watch the selected dates so the conflict analysis
@@ -1446,6 +2033,8 @@ function ApplyModal({
           values.startDate,
         endDate:
           values.endDate,
+        halfDay: values.halfDay === true,
+        halfDayType: values.halfDay ? values.halfDayType ?? null : null,
         reason:
           values.reason,
       });
@@ -1526,6 +2115,7 @@ function ApplyModal({
             label="Start date"
             type="date"
             required
+            min={todayIso}
             error={
               errors.startDate?.message
             }
@@ -1536,11 +2126,31 @@ function ApplyModal({
             label="End date"
             type="date"
             required
+            min={startDate || todayIso}
             error={
               errors.endDate?.message
             }
             {...register("endDate")}
           />
+        </div>
+
+        <p className="text-[11px] font-medium text-slate-500">
+          Leave can be applied only for today or future working days. Previous
+          dates and Saturdays/Sundays are not available for leave application.
+        </p>
+
+        <div className="space-y-2 rounded-xl border border-line/60 bg-canvas/30 p-3">
+          <label className="flex items-center gap-2 text-[12px] font-medium text-ink">
+            <input type="checkbox" className="h-4 w-4 rounded border-line" {...register("halfDay")} />
+            Apply as half-day
+          </label>
+          {watch("halfDay") && (
+            <SelectField label="Half-day" required error={errors.halfDayType?.message} {...register("halfDayType")}>
+              <option value="">Select half-day</option>
+              <option value="FIRST_HALF">First half</option>
+              <option value="SECOND_HALF">Second half</option>
+            </SelectField>
+          )}
         </div>
 
         {/* ------------------------------------------------------------- */}

@@ -19,6 +19,7 @@ export interface GovernanceRoleDoc {
   label: string;
   description: string;
   permissions: string[];
+  permissionVersion?: number;
   isSystem: boolean;
   createdAt: string;
   updatedAt: string;
@@ -36,6 +37,10 @@ const governanceRoleSchema = new Schema<GovernanceRoleDoc>(
     label: { type: String, required: true },
     description: { type: String, required: true },
     permissions: { type: [String], default: [] },
+    // Version of the built-in access migration applied to this role.
+    // This lets production databases receive new required permissions once
+    // without overwriting later Governance UI customizations.
+    permissionVersion: { type: Number, default: 0 },
     isSystem: { type: Boolean, default: true },
     createdAt: { type: String, required: true },
     updatedAt: { type: String, required: true },
