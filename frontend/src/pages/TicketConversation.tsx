@@ -19,7 +19,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import BroadcastClusterModal from "@/components/tickets/BroadcastClusterModal";
 
-const STAFF_ROLES = ["HR_ADMIN", "FINANCE", "IT_SUPPORT", "SUPER_ADMIN", "MANAGER"];
+const STAFF_ROLES = ["HR_ADMIN", "FINANCE", "IT_SUPPORT", "SUPER_ADMIN", "MANAGER", "RECRUITER"];
 
 type ReplyTone = "empathetic" | "formal" | "concise";
 

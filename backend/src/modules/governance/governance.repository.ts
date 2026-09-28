@@ -52,8 +52,12 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   ],
   RECRUITER: [
     "employees.view",
+    "attendance.view",
+    "leave.view",
+    "payroll.view",
     "recruitment.view",
     "recruitment.manage",
+    "performance.view",
     "documents.view",
     "tickets.view",
     "announcements.view",
@@ -65,6 +69,8 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "leave.view",
     "payroll.view",
     "payroll.manage",
+    "performance.view",
+    "documents.view",
     "tickets.view",
     "tickets.manage",
     "reports.view",
@@ -195,6 +201,28 @@ function toApi(doc: any) {
   return { id: _id, ...rest };
 }
 
+const BUILTIN_PERMISSION_VERSION = 2;
+
+// Permissions that are required by the current application navigation.
+// Existing production role records are migrated additively once so we do not
+// overwrite permissions customized through Governance/Settings.
+const REQUIRED_PERMISSION_MIGRATIONS: Record<number, Record<string, string[]>> = {
+  2: {
+    RECRUITER: [
+      "attendance.view",
+      "leave.view",
+      "payroll.view",
+      "performance.view",
+      "documents.view",
+      "tickets.view",
+    ],
+    FINANCE: [
+      "performance.view",
+      "documents.view",
+    ],
+  },
+};
+
 export async function ensureDefaults() {
   const now = nowIso();
   await Promise.all(
@@ -208,6 +236,7 @@ export async function ensureDefaults() {
             label: meta.label,
             description: meta.description,
             permissions,
+            permissionVersion: BUILTIN_PERMISSION_VERSION,
             isSystem: true,
             createdAt: now,
             updatedAt: now,
@@ -216,13 +245,34 @@ export async function ensureDefaults() {
         { upsert: true },
       );
 
-      // Employees directory access is required for these standard roles.
-      // Add only the missing view permission so existing custom permissions
-      // are preserved.
+      // Apply additive built-in permission migrations to existing production
+      // role documents. The version marker prevents us from re-adding a
+      // permission after an administrator intentionally customizes a role.
       if (["MANAGER", "RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"].includes(role)) {
         await GovernanceRole.updateOne(
           { role },
           { $addToSet: { permissions: "employees.view" }, $set: { updatedAt: now } },
+        );
+      }
+
+      const roleDoc = await GovernanceRole.findOne({ role }).select("permissionVersion").lean();
+      const currentVersion = roleDoc?.permissionVersion ?? 0;
+      if (currentVersion < BUILTIN_PERMISSION_VERSION) {
+        const requiredPermissions = Object.entries(REQUIRED_PERMISSION_MIGRATIONS)
+          .filter(([version]) => Number(version) > currentVersion)
+          .flatMap(([, rolePermissions]) => rolePermissions[role] ?? []);
+
+        await GovernanceRole.updateOne(
+          { role },
+          {
+            ...(requiredPermissions.length > 0
+              ? { $addToSet: { permissions: { $each: requiredPermissions } } }
+              : {}),
+            $set: {
+              permissionVersion: BUILTIN_PERMISSION_VERSION,
+              updatedAt: now,
+            },
+          },
         );
       }
     }),
