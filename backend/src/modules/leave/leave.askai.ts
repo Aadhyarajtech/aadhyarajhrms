@@ -51,6 +51,7 @@ export interface AskLeaveAIResult {
       startDate: string;
       endDate: string;
       days: number;
+      status?: string;
     }>;
   };
 }
@@ -78,6 +79,63 @@ function formatDateIso(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/**
+ * Extract target date mentioned in natural language questions (e.g. "28 sep", "monday", "tomorrow").
+ */
+function extractDateFromQuery(query: string, todayIso: string): string | null {
+  const q = query.toLowerCase();
+  const today = new Date(`${todayIso}T00:00:00`);
+
+  if (q.includes("today")) {
+    return todayIso;
+  }
+  if (q.includes("tomorrow")) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + 1);
+    return formatDateIso(d);
+  }
+
+  // ISO date format (YYYY-MM-DD)
+  const isoMatch = q.match(/\b(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
+  if (isoMatch) return isoMatch[0];
+
+  // Month day patterns: "28 sep", "28th sep", "sep 28", "october 2", "2 oct"
+  const monthNames = [
+    { name: "jan", num: "01" }, { name: "feb", num: "02" }, { name: "mar", num: "03" },
+    { name: "apr", num: "04" }, { name: "may", num: "05" }, { name: "jun", num: "06" },
+    { name: "jul", num: "07" }, { name: "aug", num: "08" }, { name: "sep", num: "09" },
+    { name: "oct", num: "10" }, { name: "nov", num: "11" }, { name: "dec", num: "12" },
+  ];
+
+  for (const m of monthNames) {
+    if (q.includes(m.name)) {
+      const m1 = q.match(new RegExp(`(\\b\\d{1,2})(?:st|nd|rd|th)?\\s+${m.name}`));
+      const m2 = q.match(new RegExp(`${m.name}\\w*\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`));
+      const dayNum = m1 ? parseInt(m1[1], 10) : m2 ? parseInt(m2[1], 10) : null;
+      if (dayNum && dayNum >= 1 && dayNum <= 31) {
+        const year = today.getFullYear();
+        return `${year}-${m.num}-${String(dayNum).padStart(2, "0")}`;
+      }
+    }
+  }
+
+  // Weekdays: "monday", "tuesday", etc. in the coming 7 days
+  const weekdayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  for (let i = 0; i < weekdayNames.length; i++) {
+    if (q.includes(weekdayNames[i])) {
+      const targetDay = i;
+      const currentDay = today.getDay();
+      let diff = targetDay - currentDay;
+      if (diff <= 0) diff += 7;
+      const d = new Date(today);
+      d.setDate(d.getDate() + diff);
+      return formatDateIso(d);
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -265,24 +323,37 @@ export async function buildLeaveAssistantContext(params: {
     holidays.map((h) => ({ name: h.name, date: h.date })),
   );
 
-  // Fetch Team context if Manager or Admin
+  // Fetch Team context for all roles (Admins, Managers, and Employees)
   let teamSummary = undefined;
-  if (requesterRole === "MANAGER" || requesterRole === "SUPER_ADMIN" || requesterRole === "HR_ADMIN") {
-    let teamMemberIds: string[] = [];
-    if (requesterRole === "MANAGER") {
-      const teamEmployees = await Employee.find({ managerId: requesterId }).select("_id").lean();
-      teamMemberIds = teamEmployees.map((e) => String(e._id));
-    } else {
-      const allEmps = await Employee.find({ status: "ACTIVE" }).select("_id").limit(50).lean();
-      teamMemberIds = allEmps.map((e) => String(e._id));
-    }
+  let teamMemberIds: string[] = [];
 
-    if (teamMemberIds.length > 0) {
+  if (requesterRole === "SUPER_ADMIN" || requesterRole === "HR_ADMIN") {
+    const allEmps = await Employee.find({ status: "ACTIVE" }).select("_id").limit(50).lean();
+    teamMemberIds = allEmps.map((e) => String(e._id));
+  } else if (requesterRole === "MANAGER" || employee?.isManager) {
+    const teamEmployees = await Employee.find({ managerId: requesterId }).select("_id").lean();
+    teamMemberIds = teamEmployees.map((e) => String(e._id));
+  } else if (employee) {
+    // For regular employees: their team is their department peers and manager peers
+    const query: any = { status: "ACTIVE" };
+    if (employee.managerId) {
+      query.managerId = employee.managerId;
+    } else if (employee.departmentId) {
+      query.departmentId = employee.departmentId;
+    }
+    const teamEmployees = await Employee.find(query).select("_id").limit(30).lean();
+    teamMemberIds = teamEmployees.map((e) => String(e._id));
+  }
+
+  // Filter out requester themselves so team coverage focuses on colleagues
+  teamMemberIds = teamMemberIds.filter((id) => id !== requesterId);
+
+  if (teamMemberIds.length > 0) {
       // Upcoming 30 days leaves
       const nextMonthIso = formatDateIso(new Date(Date.now() + 30 * 86400000));
       const upcomingTeamLeaves = await LeaveRequest.find({
         employeeId: { $in: teamMemberIds },
-        status: "APPROVED",
+        status: { $in: ["APPROVED", "PENDING"] },
         startDate: { $lte: nextMonthIso },
         endDate: { $gte: todayIso },
       }).lean();
@@ -292,10 +363,19 @@ export async function buildLeaveAssistantContext(params: {
       }).lean();
       const teamEmpMap = new Map(uniqueTeamEmployees.map((e) => [String(e._id), e]));
 
+      // Deduplicate leaves with same employee, startDate, endDate, and leaveTypeId
+      const seenLeaves = new Set<string>();
+      const dedupedUpcoming = upcomingTeamLeaves.filter((r) => {
+        const key = `${r.employeeId}_${r.startDate}_${r.endDate}_${r.leaveTypeId}`;
+        if (seenLeaves.has(key)) return false;
+        seenLeaves.add(key);
+        return true;
+      });
+
       teamSummary = {
         totalTeamMembers: teamMemberIds.length,
-        membersOnLeaveSoon: new Set(upcomingTeamLeaves.map((r) => r.employeeId)).size,
-        upcomingLeaves: upcomingTeamLeaves.slice(0, 8).map((r) => {
+        membersOnLeaveSoon: new Set(dedupedUpcoming.map((r) => r.employeeId)).size,
+        upcomingLeaves: dedupedUpcoming.slice(0, 30).map((r) => {
           const emp = teamEmpMap.get(r.employeeId);
           const type = leaveTypeMap.get(r.leaveTypeId);
           return {
@@ -304,11 +384,11 @@ export async function buildLeaveAssistantContext(params: {
             startDate: r.startDate || "",
             endDate: r.endDate || "",
             days: r.totalDays,
+            status: r.status || "APPROVED",
           };
         }),
       };
     }
-  }
 
   return {
     employee: employee
@@ -425,6 +505,110 @@ export async function askLeaveAI(params: {
         return {
           answer: `Here are the upcoming public holidays:\n\n${upcomingList.join("\n")}`,
           quickActions: ["Check my leave balance", "Draft a leave application"],
+        };
+      }
+    }
+
+    // Same-day leave or date-specific conflict query (e.g. "is anyone on leave on 28 sep", "can I take leave on the same day")
+    const targetDate = extractDateFromQuery(q, context.todayIso);
+    const isSameDayQuery =
+      q.includes("same day") ||
+      q.includes("conflict") ||
+      q.includes("anyone on leave") ||
+      q.includes("who is on leave on") ||
+      q.includes("can i take leave on") ||
+      q.includes("leave on the same day") ||
+      q.includes("on leave on");
+
+    if (isSameDayQuery || (targetDate && (q.includes("leave") || q.includes("who")))) {
+      const checkDate = targetDate || context.todayIso;
+      const sameDayLeaves = (context.teamSummary?.upcomingLeaves || []).filter(
+        (l) => l.startDate <= checkDate && l.endDate >= checkDate,
+      );
+
+      if (sameDayLeaves.length > 0) {
+        const rows = sameDayLeaves.map((l) => {
+          const dateStr = l.startDate === l.endDate ? l.startDate : `${l.startDate} – ${l.endDate}`;
+          const durationStr = l.days > 0 ? `${l.days}d` : "1d (Weekend/Holiday)";
+          return `| ${l.employeeName} | ${l.leaveTypeName} | ${dateStr} (${durationStr}) | **${l.status || "APPROVED"}** |`;
+        });
+        const rolePrefix =
+          params.requesterRole === "SUPER_ADMIN" || params.requesterRole === "HR_ADMIN"
+            ? "Across the organization / department"
+            : "In your team";
+
+        return {
+          answer: `⚠️ **Same-Day Leave Alert for ${checkDate}:**\n\n${rolePrefix}, **${sameDayLeaves.length} colleague${sameDayLeaves.length === 1 ? " is" : "s are"}** on leave on this date:\n\n| Employee | Leave Type | Date Range | Status |\n|---|---|---|---|\n${rows.join(
+            "\n",
+          )}\n\n*Note: Taking leave on the same day may reduce team coverage.*`,
+          quickActions: [
+            "What is my remaining leave balance?",
+            "Who in my team is scheduled to be on leave during the next 14 days?",
+            "Find upcoming holiday bridge opportunities",
+          ],
+          balances: context.balances,
+          holidayBridges: context.holidayBridges,
+          teamSummary: context.teamSummary,
+        };
+      } else if (targetDate) {
+        return {
+          answer: `✅ **No Same-Day Conflicts for ${checkDate}:**\n\nNone of your team members are currently on leave on **${checkDate}**. Team coverage is at **100%**, so you can plan your leave smoothly!`,
+          quickActions: [
+            `Apply for leave on ${checkDate}`,
+            "What is my remaining leave balance?",
+            "Find upcoming holiday bridge opportunities",
+          ],
+          suggestedLeave: {
+            startDate: checkDate,
+            endDate: checkDate,
+            reason: "Personal time off",
+          },
+          balances: context.balances,
+          holidayBridges: context.holidayBridges,
+          teamSummary: context.teamSummary,
+        };
+      }
+    }
+
+    // Team & Coverage query (e.g. "Who in my team is scheduled to be on leave during the next 14 days?")
+    if (
+      q.includes("team") ||
+      q.includes("colleague") ||
+      q.includes("who is on leave") ||
+      q.includes("who in my team") ||
+      q.includes("scheduled to be on leave") ||
+      q.includes("coverage")
+    ) {
+      if (context.teamSummary && context.teamSummary.upcomingLeaves.length > 0) {
+        const rows = context.teamSummary.upcomingLeaves.map((l) => {
+          const dateStr = l.startDate === l.endDate ? l.startDate : `${l.startDate} – ${l.endDate}`;
+          const durationStr = l.days > 0 ? `${l.days}d` : "1d (Weekend/Holiday)";
+          return `| ${l.employeeName} | ${l.leaveTypeName} | ${dateStr} (${durationStr}) |`;
+        });
+        return {
+          answer: `Here are the team members scheduled to be on leave in the upcoming days:\n\n| Employee | Leave Type | Dates |\n|---|---|---|\n${rows.join(
+            "\n",
+          )}\n\nAll dates fall on working days (Monday-Friday). All other team members are available.`,
+          quickActions: [
+            "What is my remaining leave balance?",
+            "Plan a holiday bridge vacation",
+            "Check upcoming public holidays",
+          ],
+          balances: context.balances,
+          holidayBridges: context.holidayBridges,
+          teamSummary: context.teamSummary,
+        };
+      } else {
+        return {
+          answer: `Good news! None of your team members are currently scheduled to be on approved leave during this upcoming period. Your team coverage is at 100%.`,
+          quickActions: [
+            "What is my remaining leave balance?",
+            "Plan a holiday bridge vacation",
+            "Check upcoming public holidays",
+          ],
+          balances: context.balances,
+          holidayBridges: context.holidayBridges,
+          teamSummary: context.teamSummary,
         };
       }
     }
@@ -568,6 +752,13 @@ INSTRUCTIONS:
    - If asking for balances, list available days per leave type.
    - If asking for long weekends or bridge vacations, suggest exact dates from Discovered Holiday Bridges.
    - If asking to draft a leave application or reason, provide a polite, formal reason ready for copy-pasting.
+   - SAME-DAY LEAVE & CONFLICT ALERTS (CRUCIAL):
+     * When a user (HR or Employee) asks about taking leave on a specific day/date (or asks "Is anyone on leave on the same day?", "Who is on leave on [date]?", "Can I take leave on [date]?"):
+     * Cross-reference the requested date with "Team Coverage & Leaves".
+     * If ANY colleague has approved or pending leave on that date, you MUST explicitly alert the user:
+       "⚠️ **Same-day Leave Alert**: On [Date], [Colleague Name] is scheduled for [Leave Type] (Status: [Status]). Taking leave on this day will reduce your team coverage."
+     * If NO colleagues have leave on that date, confirm: "✅ **No Conflicts**: No team members are currently on leave on [Date]. Team coverage is at 100%."
+     * For HR POV: Always provide a full Markdown table of every employee on leave on that date with their status (Approved or Pending).
 3. If the user's question suggests planning or taking leave, populate "suggestedLeave" with { "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "leaveTypeId": "...", "leaveTypeName": "...", "reason": "..." }. Otherwise set "suggestedLeave": null.
 4. Provide 3-4 concise, relevant follow-up "quickActions".
 5. Return ONLY a valid JSON object with keys: "answer" (string), "quickActions" (string array), and "suggestedLeave" (object or null).

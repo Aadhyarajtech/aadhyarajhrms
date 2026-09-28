@@ -112,6 +112,85 @@ export function FormattedMarkdown({
         continue;
       }
 
+      // Table block detection (| col1 | col2 | followed by |---|---|)
+      if (
+        trimmed.startsWith("|") &&
+        i + 1 < rawLines.length &&
+        /^\|?\s*[-:]+[-| :]*\|?$/.test(rawLines[i + 1].trim())
+      ) {
+        flushList();
+        const parseRow = (rowStr: string) => {
+          let s = rowStr.trim();
+          if (s.startsWith("|")) s = s.slice(1);
+          if (s.endsWith("|")) s = s.slice(0, -1);
+          return s.split("|").map((c) => c.trim());
+        };
+
+        const headers = parseRow(trimmed);
+        const separatorRow = parseRow(rawLines[i + 1].trim());
+        const alignments = separatorRow.map((sep) => {
+          const l = sep.startsWith(":");
+          const r = sep.endsWith(":");
+          if (l && r) return "text-center";
+          if (r) return "text-right";
+          return "text-left";
+        });
+
+        i += 2; // skip header and separator lines
+        const bodyRows: string[][] = [];
+        while (i < rawLines.length && rawLines[i].trim().startsWith("|")) {
+          bodyRows.push(parseRow(rawLines[i]));
+          i++;
+        }
+        i--; // compensate for loop's increment
+
+        nodes.push(
+          <div
+            key={`table-${i}`}
+            className="my-2.5 overflow-x-auto rounded-xl border border-slate-200/90 bg-white/80 shadow-xs"
+          >
+            <table className="w-full text-left text-[11.5px] border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-100/90 text-slate-800 font-semibold">
+                  {headers.map((h, hIdx) => (
+                    <th
+                      key={hIdx}
+                      className={cx(
+                        "px-3 py-2 border-r border-slate-200/60 last:border-r-0 whitespace-nowrap",
+                        alignments[hIdx] || "text-left",
+                      )}
+                    >
+                      {renderInline(h)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {bodyRows.map((row, rIdx) => (
+                  <tr
+                    key={rIdx}
+                    className="hover:bg-brand-50/40 transition-colors"
+                  >
+                    {row.map((cell, cIdx) => (
+                      <td
+                        key={cIdx}
+                        className={cx(
+                          "px-3 py-2 border-r border-slate-100 last:border-r-0 leading-relaxed",
+                          alignments[cIdx] || "text-left",
+                        )}
+                      >
+                        {renderInline(cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>,
+        );
+        continue;
+      }
+
       // Heading 3 (### )
       if (trimmed.startsWith("### ")) {
         flushList();
