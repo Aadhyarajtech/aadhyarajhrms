@@ -158,15 +158,7 @@ export default function App() {
           <Route
             path="tickets"
             element={
-              <ProtectedRoute
-                roles={[
-                  "SUPER_ADMIN",
-                  "HR_ADMIN",
-                  "MANAGER",
-                  "FINANCE",
-                  "IT_SUPPORT",
-                ]}
-              >
+              <ProtectedRoute permissions={["tickets.view"]}>
                 <Tickets />
               </ProtectedRoute>
             }

@@ -59,14 +59,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/tickets",
     label: "Tickets",
     icon: ClipboardList,
-    roles: [
-      "SUPER_ADMIN",
-      "HR_ADMIN",
-      "MANAGER",
-      "RECRUITER",
-      "FINANCE",
-      "IT_SUPPORT",
-    ],
+    permission: "tickets.view",
     section: "workspace",
   },
 
@@ -74,15 +67,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/attendance",
     label: "Attendance",
     icon: Clock,
-    roles: [
-      "SUPER_ADMIN",
-      "HR_ADMIN",
-      "MANAGER",
-      "RECRUITER",
-      "FINANCE",
-      "IT_SUPPORT",
-      "EMPLOYEE",
-    ],
+    permission: "attendance.view",
     section: "workspace",
   },
 
@@ -90,15 +75,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/leave",
     label: "Leave",
     icon: CalendarDays,
-    roles: [
-      "SUPER_ADMIN",
-      "HR_ADMIN",
-      "MANAGER",
-      "RECRUITER",
-      "FINANCE",
-      "IT_SUPPORT",
-      "EMPLOYEE",
-    ],
+    permission: "leave.view",
     section: "workspace",
   },
 
@@ -122,15 +99,7 @@ const NAV_ITEMS: NavItem[] = [
   to: "/app/performance",
   label: "Performance",
   icon: Target,
-  roles: [
-    "SUPER_ADMIN",
-    "HR_ADMIN",
-    "MANAGER",
-    "RECRUITER",
-    "FINANCE",
-    "IT_SUPPORT",
-    "EMPLOYEE",
-  ],
+  permission: "performance.view",
   section: "workspace",
 },
 
@@ -138,15 +107,7 @@ const NAV_ITEMS: NavItem[] = [
   to: "/app/payroll",
   label: "Payroll",
   icon: Wallet,
-  roles: [
-    "SUPER_ADMIN",
-    "HR_ADMIN",
-    "MANAGER",
-    "RECRUITER",
-    "FINANCE",
-    "IT_SUPPORT",
-    "EMPLOYEE",
-  ],
+  permission: "payroll.view",
   section: "workspace",
 },
 
@@ -154,15 +115,7 @@ const NAV_ITEMS: NavItem[] = [
   to: "/app/documents",
   label: "Documents",
   icon: Briefcase,
-  roles: [
-    "SUPER_ADMIN",
-    "HR_ADMIN",
-    "MANAGER",
-    "RECRUITER",
-    "FINANCE",
-    "IT_SUPPORT",
-    "EMPLOYEE",
-  ],
+  permission: "documents.view",
   section: "workspace",
 },
 
@@ -294,7 +247,7 @@ export function Sidebar({
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }) {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
 
   const role = user?.role;
 
@@ -316,6 +269,10 @@ export function Sidebar({
         user?.isManager === true ||
         user?.employee?.isManager === true
       );
+    }
+
+    if (item.permission && !hasPermission(item.permission)) {
+      return false;
     }
 
     if (!item.roles) {
