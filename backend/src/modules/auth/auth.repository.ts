@@ -31,6 +31,7 @@ export interface AuthProfileRow extends UserRow {
   departmentId: string | null;
   departmentName: string | null;
   designationTitle: string | null;
+  isManager: boolean;
 }
 
 export async function findUserByEmail(
@@ -61,6 +62,21 @@ export async function findAuthProfile(
   if (!user) return undefined;
 
   const employee = await Employee.findOne({ userId }).lean();
+
+  const hasDirectReports = employee
+    ? !!(await Employee.exists({
+        managerId: employee._id,
+        status: {
+          $in: [
+            "ACTIVE",
+            "ON_PROBATION",
+            "ON_LEAVE",
+            "NOTICE_PERIOD",
+            "ON_HOLD",
+          ],
+        },
+      }))
+    : false;
 
   let departmentName: string | null = null;
   let designationTitle: string | null = null;
@@ -99,6 +115,9 @@ export async function findAuthProfile(
     departmentId: employee?.departmentId ?? null,
     departmentName,
     designationTitle,
+    isManager:
+      !!employee &&
+      (employee.isManager === true || hasDirectReports || user.role === "MANAGER"),
   };
 }
 

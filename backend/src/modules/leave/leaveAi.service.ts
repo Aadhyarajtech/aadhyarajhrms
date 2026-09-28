@@ -132,7 +132,7 @@ async function callGroq(
         },
 
         body: JSON.stringify({
-          model: GROQ_MODEL,
+          model: process.env.GROQ_MODEL || GROQ_MODEL,
 
           messages: [
             {
@@ -806,8 +806,8 @@ export async function analyzeLeaveConflict(input: {
         } = getOverlapRange(
           startDate,
           endDate,
-          request.startDate,
-          request.endDate,
+          request.startDate || "",
+          request.endDate || "",
         );
 
         return {
@@ -824,9 +824,9 @@ export async function analyzeLeaveConflict(input: {
 
           status: request.status,
 
-          startDate: request.startDate,
+          startDate: request.startDate || "",
 
-          endDate: request.endDate,
+          endDate: request.endDate || "",
 
           overlappingDays,
 
@@ -2199,11 +2199,11 @@ export async function analyzeLeaveAnalytics(
     typeData.requestCount += 1;
 
     const requestStart = parseAnalyticsDate(
-      request.startDate,
+      request.startDate || "",
     );
 
     const requestEnd = parseAnalyticsDate(
-      request.endDate,
+      request.endDate || "",
     );
 
     if (requestStart.getTime() > requestEnd.getTime()) {
@@ -2211,8 +2211,8 @@ export async function analyzeLeaveAnalytics(
     }
 
     const overlapDays = getInclusiveOverlapDays(
-      request.startDate,
-      request.endDate,
+      request.startDate || "",
+      request.endDate || "",
       startDate,
       endDate,
     );
@@ -2302,8 +2302,8 @@ export async function analyzeLeaveAnalytics(
 
           const approvedMonthDays =
             getInclusiveOverlapDays(
-              request.startDate,
-              request.endDate,
+              request.startDate || "",
+              request.endDate || "",
               monthStart,
               monthEnd,
             );
@@ -2916,14 +2916,17 @@ export async function analyzeLeavePatterns(
 
     const id = String(request.employeeId);
 
+    const reqStart = request.startDate || "";
+    const reqEnd = request.endDate || "";
+
     const effectiveStart =
-      request.startDate > startDate
-        ? request.startDate
+      reqStart > startDate
+        ? reqStart
         : startDate;
 
     const effectiveEnd =
-      request.endDate < endDate
-        ? request.endDate
+      reqEnd < endDate
+        ? reqEnd
         : endDate;
 
     const dates = getDatesBetween(

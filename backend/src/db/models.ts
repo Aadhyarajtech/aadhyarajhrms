@@ -3565,6 +3565,7 @@ export interface PayrollRunDoc {
   processedAt: string | null;
   attendanceLockedAt: string | null;
   attendanceLockedDepartmentIds: string[];
+  departmentId: string | null;
   reviewedAt: string | null;
   reviewedByUserId: string | null;
   approvedAt: string | null;
@@ -3617,6 +3618,7 @@ const payrollRunSchema = new Schema<PayrollRunDoc>(
     },
     attendanceLockedAt: { type: String, default: null },
     attendanceLockedDepartmentIds: { type: [String], default: [] },
+    departmentId: { type: String, default: null, index: true },
     reviewedAt: { type: String, default: null },
     reviewedByUserId: { type: String, default: null },
     approvedAt: { type: String, default: null },
@@ -4535,6 +4537,7 @@ export interface TicketDoc {
   | "RESOLVED"
   | "CLOSED"
   | "EXPIRED";
+
   // Ticket lifecycle / expiry
   expiryDays: number;
   expiresAt: string | null;

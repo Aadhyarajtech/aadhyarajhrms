@@ -34,6 +34,7 @@ import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import GovernanceSettings from "./GovernanceSettings";
+import AccountSettings from "./AccountSettings";
 
 export default function Settings() {
   const { hasPermission } = useAuth();
@@ -48,9 +49,12 @@ export default function Settings() {
         ? "cycles"
         : canManageShifts
           ? "shifts"
-          : "governance",
+          : canManageGovernance
+            ? "governance"
+            : "account",
   );
   const tabs = [
+    { key: "account", label: "Account" },
     ...(canManageOrganization
       ? [
           { key: "departments", label: "Departments" },
@@ -72,6 +76,7 @@ export default function Settings() {
         subtitle="Configure the organization structure and HR calendar."
       />
       <Tabs tabs={tabs} active={tab} onChange={setTab} className="mb-6 w-fit" />
+      {tab === "account" && <AccountSettings />}
       {tab === "departments" && canManageOrganization && <DepartmentsTab />}
       {tab === "designations" && canManageOrganization && <DesignationsTab />}
       {tab === "holidays" && canManageOrganization && <HolidaysTab />}

@@ -341,14 +341,26 @@ export function Topbar({
 
 
   const handleNotifClick = async (notification: any) => {
-    const id = String(notification?.id ?? "");
+    const id = String(
+      notification?.id ??
+        notification?._id ??
+        notification?.notificationId ??
+        "",
+    ).trim();
     const link = resolveNotificationLink(notification);
     /*
      * Reading and opening are independent actions.
      * A read-status failure must never prevent navigation.
      */
     try {
-      await markNotificationRead(id);
+      if (id) {
+        await markNotificationRead(id);
+      } else {
+        console.warn(
+          "[Notification] Missing notification id; opening destination without marking read.",
+          notification,
+        );
+      }
     } catch (error) {
       console.error(
         "[Notification] Failed to mark as read:",

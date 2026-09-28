@@ -48,8 +48,23 @@ export const isAdminOrRecruiterOrManager = requireRole(
   "MANAGER"
 );
 
-export const isManagerOrAbove = requireRole(
-  "SUPER_ADMIN",
-  "HR_ADMIN",
-  "MANAGER"
-);
+export function isManagerOrAbove(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
+  if (!req.user) return next(AppError.unauthorized());
+  if (
+    req.user.role === "SUPER_ADMIN" ||
+    req.user.role === "HR_ADMIN" ||
+    req.user.role === "MANAGER" ||
+    req.user.isManager
+  ) {
+    return next();
+  }
+  return next(
+    AppError.forbidden(
+      "This action requires an administrator or an employee marked as a manager.",
+    ),
+  );
+}

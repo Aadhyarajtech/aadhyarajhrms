@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { requirePermission } from "@/middleware/permissions";
+import { requirePermission, requirePermissionOrManager } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./performance.repository";
@@ -53,7 +53,8 @@ performanceRouter.get(
         req.user!.employeeId === req.params.employeeId ||
         ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(
           req.user!.role,
-        );
+        ) ||
+        req.user!.isManager;
 
       if (!allowed) {
         throw AppError.forbidden();
@@ -175,14 +176,14 @@ performanceRouter.get("/reviews", async (req, res, next) => {
 
     if (isTeamScope) {
       // Team Reviews are available to Managers, HR Admins, and Super Admins.
-      if (!["MANAGER", "HR_ADMIN", "SUPER_ADMIN"].includes(role)) {
+      if (!["MANAGER", "HR_ADMIN", "SUPER_ADMIN"].includes(role) && !req.user!.isManager) {
         throw AppError.forbidden(
           "You are not authorized to view team performance reviews.",
         );
       }
 
       // A Manager can only see reviews for employees assigned to them.
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -240,7 +241,7 @@ performanceRouter.get("/team/direct-reports", async (req, res, next) => {
       throw AppError.forbidden("Employee profile not found.");
     }
 
-    if (!["MANAGER", "HR_ADMIN", "SUPER_ADMIN"].includes(role)) {
+    if (!["MANAGER", "HR_ADMIN", "SUPER_ADMIN"].includes(role) && !req.user!.isManager) {
       throw AppError.forbidden(
         "You are not authorized to view direct reports.",
       );
@@ -344,13 +345,13 @@ const ensureSchema = z.object({
 });
 performanceRouter.post(
   "/reviews",
-  requirePermission("performance.manage"),
+  requirePermissionOrManager("performance.manage"),
   validate(ensureSchema),
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -425,7 +426,7 @@ const managerReviewSchema = z.object({
 });
 performanceRouter.post(
   "/reviews/:id/manager",
-  requirePermission("performance.manage"),
+  requirePermissionOrManager("performance.manage"),
   validate(managerReviewSchema),
   async (req, res, next) => {
     try {
@@ -437,7 +438,7 @@ performanceRouter.post(
 
       const { role, employeeId } = req.user!;
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -1148,7 +1149,7 @@ performanceRouter.patch(
 
       const { role, employeeId } = req.user!;
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -1406,7 +1407,7 @@ performanceRouter.post(
 
       if (!employee) throw AppError.notFound("Employee not found.");
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
