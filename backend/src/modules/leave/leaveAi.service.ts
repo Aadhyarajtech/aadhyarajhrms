@@ -157,39 +157,17 @@ Rules:
 - Do not change the reason or add assumptions.
 - Use professional workplace language.
 - Avoid unnecessary repetition.
-- Return only the JSON object.
+- Return only the JSON object in format: {"reason": "..."}.
 `,
             },
           ],
 
           temperature: 0.2,
 
-          max_completion_tokens: 300,
-
-          reasoning_effort: "low",
+          max_tokens: 300,
 
           response_format: {
-            type: "json_schema",
-
-            json_schema: {
-              name: "leave_reason",
-
-              strict: true,
-
-              schema: {
-                type: "object",
-
-                properties: {
-                  reason: {
-                    type: "string",
-                  },
-                },
-
-                required: ["reason"],
-
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
 
@@ -470,38 +448,17 @@ Rules:
 - Do not recommend rejection.
 - Do not approve or reject the leave.
 - Keep the explanation professional and easy to understand.
-- Return only the JSON object.
+- Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
           ],
 
           temperature: 0.2,
 
-          max_completion_tokens: 300,
-
-          reasoning_effort: "low",
+          max_tokens: 300,
 
           response_format: {
-            type: "json_schema",
-
-            json_schema: {
-              name: "leave_conflict",
-              strict: true,
-
-              schema: {
-                type: "object",
-
-                properties: {
-                  explanation: {
-                    type: "string",
-                  },
-                },
-
-                required: ["explanation"],
-
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
 
@@ -1186,38 +1143,17 @@ Rules:
 - Do not approve or reject the leave.
 - Do not mention information that is not supplied.
 - Keep the explanation professional and concise.
-- Return only the JSON object.
+- Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
           ],
 
           temperature: 0.2,
 
-          max_completion_tokens: 300,
-
-          reasoning_effort: "low",
+          max_tokens: 300,
 
           response_format: {
-            type: "json_schema",
-
-            json_schema: {
-              name: "leave_approval",
-              strict: true,
-
-              schema: {
-                type: "object",
-
-                properties: {
-                  explanation: {
-                    type: "string",
-                  },
-                },
-
-                required: ["explanation"],
-
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
 
@@ -1857,39 +1793,17 @@ Rules:
 - Do not infer employee performance or attendance quality.
 - Do not make approval or rejection recommendations.
 - Keep the explanation concise and professional.
-- Return only the JSON object.
+- Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
           ],
 
           temperature: 0.2,
 
-          max_completion_tokens: 400,
-
-          reasoning_effort: "low",
+          max_tokens: 400,
 
           response_format: {
-            type: "json_schema",
-
-            json_schema: {
-              name: "leave_analytics",
-
-              strict: true,
-
-              schema: {
-                type: "object",
-
-                properties: {
-                  explanation: {
-                    type: "string",
-                  },
-                },
-
-                required: ["explanation"],
-
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
 
@@ -2665,29 +2579,14 @@ Rules:
 - Do not accuse employees of misuse or misconduct.
 - Do not recommend approval or rejection.
 - State that findings are for HR review when appropriate.
-- Return only the JSON object.
+- Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
           ],
           temperature: 0.2,
-          max_completion_tokens: 300,
-          reasoning_effort: "low",
+          max_tokens: 300,
           response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "leave_pattern_detection",
-              strict: true,
-              schema: {
-                type: "object",
-                properties: {
-                  explanation: {
-                    type: "string",
-                  },
-                },
-                required: ["explanation"],
-                additionalProperties: false,
-              },
-            },
+            type: "json_object",
           },
         }),
         signal: controller.signal,

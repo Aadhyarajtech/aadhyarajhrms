@@ -1378,6 +1378,14 @@ export interface AskLeaveAIResult {
       days: number;
       status?: string;
     }>;
+    allTeamLeaves?: Array<{
+      employeeName: string;
+      leaveTypeName: string;
+      startDate: string;
+      endDate: string;
+      days: number;
+      status?: string;
+    }>;
   };
 }
 

@@ -53,6 +53,14 @@ export interface AskLeaveAIResult {
       days: number;
       status?: string;
     }>;
+    allTeamLeaves?: Array<{
+      employeeName: string;
+      leaveTypeName: string;
+      startDate: string;
+      endDate: string;
+      days: number;
+      status?: string;
+    }>;
   };
 }
 
@@ -96,12 +104,26 @@ function extractDateFromQuery(query: string, todayIso: string): string | null {
     d.setDate(d.getDate() + 1);
     return formatDateIso(d);
   }
+  if (q.includes("yesterday")) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 1);
+    return formatDateIso(d);
+  }
 
   // ISO date format (YYYY-MM-DD)
   const isoMatch = q.match(/\b(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
   if (isoMatch) return isoMatch[0];
 
-  // Month day patterns: "28 sep", "28th sep", "sep 28", "october 2", "2 oct"
+  // Slash/dash format: DD/MM/YYYY or DD-MM-YYYY or DD/MM
+  const dmyMatch = q.match(/\b([0-2]?\d|3[01])[\/\-](0?[1-9]|1[0-2])(?:[\/\-](20\d{2}))?\b/);
+  if (dmyMatch) {
+    const day = String(dmyMatch[1]).padStart(2, "0");
+    const month = String(dmyMatch[2]).padStart(2, "0");
+    const year = dmyMatch[3] || String(today.getFullYear());
+    return `${year}-${month}-${day}`;
+  }
+
+  // Month day patterns: "28 sep", "28th sep", "1st of oct", "sep 28", "october 2", "2 oct"
   const monthNames = [
     { name: "jan", num: "01" }, { name: "feb", num: "02" }, { name: "mar", num: "03" },
     { name: "apr", num: "04" }, { name: "may", num: "05" }, { name: "jun", num: "06" },
@@ -111,7 +133,7 @@ function extractDateFromQuery(query: string, todayIso: string): string | null {
 
   for (const m of monthNames) {
     if (q.includes(m.name)) {
-      const m1 = q.match(new RegExp(`(\\b\\d{1,2})(?:st|nd|rd|th)?\\s+${m.name}`));
+      const m1 = q.match(new RegExp(`(\\b\\d{1,2})(?:st|nd|rd|th)?(?:\\s+of)?\\s+${m.name}`));
       const m2 = q.match(new RegExp(`${m.name}\\w*\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`));
       const dayNum = m1 ? parseInt(m1[1], 10) : m2 ? parseInt(m2[1], 10) : null;
       if (dayNum && dayNum >= 1 && dayNum <= 31) {
@@ -349,44 +371,50 @@ export async function buildLeaveAssistantContext(params: {
   teamMemberIds = teamMemberIds.filter((id) => id !== requesterId);
 
   if (teamMemberIds.length > 0) {
-      // Upcoming 30 days leaves
+      // 30 days past and 30 days upcoming leaves to support historical & future queries
+      const pastMonthIso = formatDateIso(new Date(Date.now() - 30 * 86400000));
       const nextMonthIso = formatDateIso(new Date(Date.now() + 30 * 86400000));
-      const upcomingTeamLeaves = await LeaveRequest.find({
+      const teamLeaveDocs = await LeaveRequest.find({
         employeeId: { $in: teamMemberIds },
         status: { $in: ["APPROVED", "PENDING"] },
         startDate: { $lte: nextMonthIso },
-        endDate: { $gte: todayIso },
+        endDate: { $gte: pastMonthIso },
       }).lean();
 
       const uniqueTeamEmployees = await Employee.find({
-        _id: { $in: upcomingTeamLeaves.map((r) => r.employeeId) },
+        _id: { $in: teamLeaveDocs.map((r) => r.employeeId) },
       }).lean();
       const teamEmpMap = new Map(uniqueTeamEmployees.map((e) => [String(e._id), e]));
 
       // Deduplicate leaves with same employee, startDate, endDate, and leaveTypeId
       const seenLeaves = new Set<string>();
-      const dedupedUpcoming = upcomingTeamLeaves.filter((r) => {
+      const dedupedTeamLeaves = teamLeaveDocs.filter((r) => {
         const key = `${r.employeeId}_${r.startDate}_${r.endDate}_${r.leaveTypeId}`;
         if (seenLeaves.has(key)) return false;
         seenLeaves.add(key);
         return true;
       });
 
+      const allMapped = dedupedTeamLeaves.map((r) => {
+        const emp = teamEmpMap.get(r.employeeId);
+        const type = leaveTypeMap.get(r.leaveTypeId);
+        return {
+          employeeName: emp ? `${emp.firstName} ${emp.lastName}` : "Team Member",
+          leaveTypeName: type?.name || "Leave",
+          startDate: r.startDate || "",
+          endDate: r.endDate || "",
+          days: r.totalDays,
+          status: r.status || "APPROVED",
+        };
+      });
+
+      const upcomingOnly = allMapped.filter((l) => l.endDate >= todayIso);
+
       teamSummary = {
         totalTeamMembers: teamMemberIds.length,
-        membersOnLeaveSoon: new Set(dedupedUpcoming.map((r) => r.employeeId)).size,
-        upcomingLeaves: dedupedUpcoming.slice(0, 30).map((r) => {
-          const emp = teamEmpMap.get(r.employeeId);
-          const type = leaveTypeMap.get(r.leaveTypeId);
-          return {
-            employeeName: emp ? `${emp.firstName} ${emp.lastName}` : "Team Member",
-            leaveTypeName: type?.name || "Leave",
-            startDate: r.startDate || "",
-            endDate: r.endDate || "",
-            days: r.totalDays,
-            status: r.status || "APPROVED",
-          };
-        }),
+        membersOnLeaveSoon: new Set(upcomingOnly.map((r) => r.employeeName)).size,
+        upcomingLeaves: upcomingOnly.slice(0, 30),
+        allTeamLeaves: allMapped.slice(0, 60),
       };
     }
 
@@ -509,7 +537,118 @@ export async function askLeaveAI(params: {
       }
     }
 
-    // Same-day leave or date-specific conflict query (e.g. "is anyone on leave on 28 sep", "can I take leave on the same day")
+    // Leave Policy & Rules query (e.g. "Review Leave Policy", "what is the leave policy", "leave rules", "how many leaves")
+    if (
+      q.includes("policy") ||
+      q.includes("rule") ||
+      q.includes("guideline") ||
+      q.includes("handbook") ||
+      q.includes("how many days") ||
+      q.includes("types of leave") ||
+      q.includes("leave type") ||
+      q.includes("carry forward")
+    ) {
+      return {
+        answer: `### 📋 Aadhyaraj HRMS Leave Policy & Entitlements\n\nOur company provides structured paid and statutory leaves to maintain employee well-being, work-life balance, and operational continuity:\n\n| Leave Type | Annual Allotment | Carry Forward | Purpose & Key Rules |\n|---|---|---|---|\n| **Privilege Leave (PL)** | **18 Days** | Up to 10 Days | Planned vacations and personal rest. Apply at least 3 business days in advance. |\n| **Sick Leave (SL)** | **12 Days** | No (Lapses Dec 31) | Medical conditions and doctor-advised recovery. Medical certificate required if > 2 consecutive days. |\n| **Casual Leave (CL)** | **8 Days** | No (Lapses Dec 31) | Urgent or unforeseen personal obligations. Can be taken as half-day. |\n| **Maternity Leave** | **182 Days (26 Weeks)** | Statutory | Fully paid leave for eligible female employees as per statutory norms. |\n| **Paternity Leave** | **15 Days** | N/A | Fully paid leave for new fathers, applicable within 6 months of childbirth/adoption. |\n| **Loss of Pay (LOP)** | Discretionary | N/A | Applied when all paid leave quotas are exhausted. Requires HR and manager approval. |\n\n#### 📌 Key Policy Highlights:\n1. **5-Day Work Week:** Working days are **Monday to Friday**. Saturdays and Sundays are regular weekly offs and are **never** deducted from your leave balances.\n2. **Public Holidays:** Any official company holiday falling within your approved leave dates is excluded from the leave count.\n3. **Half-Day Option:** Supported for both **First Half** (morning) and **Second Half** (afternoon) for Casual and Sick leave.\n4. **Approval Flow:** All leave requests must be submitted through this portal and approved by your reporting manager.\n\nWould you like me to check your available balances or draft a formal leave application for you?`,
+        quickActions: [
+          "What is my remaining leave balance?",
+          "Find upcoming holiday bridge opportunities",
+          "Who in my team is scheduled to be on leave during the next 14 days?",
+          "Draft a 2-day medical leave application",
+        ],
+        balances: context.balances,
+        holidayBridges: context.holidayBridges,
+        teamSummary: context.teamSummary,
+      };
+    }
+
+    // Draft leave application / letter query (e.g. "Help me draft a formal 3-day leave request", "draft medical leave", "leave application")
+    if (
+      q.includes("draft") ||
+      q.includes("write a leave") ||
+      q.includes("leave application") ||
+      q.includes("leave letter") ||
+      q.includes("leave request for") ||
+      q.includes("email to manager") ||
+      q.includes("family event") ||
+      q.includes("reason for leave")
+    ) {
+      // Determine duration (e.g. "3-day", "2 days", etc.)
+      const daysMatch = q.match(/(\d+)\s*[- ]?(?:day|days)/);
+      const requestedDays = daysMatch ? Math.min(30, Math.max(1, parseInt(daysMatch[1], 10))) : 1;
+
+      // Determine leave type and reason
+      let selectedType = "Casual Leave";
+      let reasonText = "personal family commitments";
+
+      if (
+        q.includes("medical") ||
+        q.includes("sick") ||
+        q.includes("doctor") ||
+        q.includes("health") ||
+        q.includes("fever") ||
+        q.includes("surgery")
+      ) {
+        selectedType = "Sick Leave";
+        reasonText = "medical rest and recovery";
+      } else if (
+        q.includes("vacation") ||
+        q.includes("trip") ||
+        q.includes("holiday") ||
+        q.includes("travel")
+      ) {
+        selectedType = "Privilege Leave";
+        reasonText = "annual vacation with family";
+      } else if (
+        q.includes("family") ||
+        q.includes("wedding") ||
+        q.includes("function") ||
+        q.includes("emergency")
+      ) {
+        selectedType = "Casual Leave";
+        reasonText = "an important family event";
+      }
+
+      const matchingBalance =
+        context.balances.find((b) =>
+          b.leaveTypeName.toLowerCase().includes(selectedType.toLowerCase()),
+        ) || context.balances[0];
+
+      // Calculate future working dates (starting from tomorrow or next Monday if weekend)
+      const startDateObj = new Date(`${context.todayIso}T00:00:00`);
+      startDateObj.setDate(startDateObj.getDate() + 1);
+      if (startDateObj.getDay() === 0) startDateObj.setDate(startDateObj.getDate() + 1);
+      if (startDateObj.getDay() === 6) startDateObj.setDate(startDateObj.getDate() + 2);
+
+      const endDateObj = new Date(startDateObj);
+      endDateObj.setDate(startDateObj.getDate() + (requestedDays - 1));
+
+      const startIso = formatDateIso(startDateObj);
+      const endIso = formatDateIso(endDateObj);
+      const empName = context.employee?.name || "Employee";
+
+      return {
+        answer: `### ✉️ Formal Leave Application Draft\n\nHere is a professionally written leave application tailored for **${empName}** ready to submit to your manager:\n\n---\n\n**Subject:** Leave Application: ${selectedType} – ${empName} (${startIso} to ${endIso})\n\nDear [Manager Name],\n\nI am writing to formally request **${requestedDays} working day${requestedDays > 1 ? "s" : ""} of ${selectedType}** from **${startIso}** to **${endIso}** due to **${reasonText}**.\n\nI have planned my work schedule to ensure all deliverables are up-to-date prior to my departure. I will hand over critical ongoing tasks to my team members and will remain reachable via phone or email for any urgent escalations.\n\nThank you for considering and approving my leave request.\n\nWarm regards,  \n**${empName}**  \n${context.employee?.code ? `Employee Code: ${context.employee.code}` : "Aadhyaraj Technologies"}\n\n---\n\n💡 *Tip: You can click the quick action below to immediately apply for this leave.*`,
+        quickActions: [
+          `Apply for ${requestedDays}-day ${selectedType}`,
+          "What is my remaining leave balance?",
+          "Who in my team is scheduled to be on leave during the next 14 days?",
+          "Review Leave Policy",
+        ],
+        suggestedLeave: {
+          startDate: startIso,
+          endDate: endIso,
+          leaveTypeId: matchingBalance?.leaveTypeId,
+          leaveTypeName: matchingBalance?.leaveTypeName || selectedType,
+          reason: `Requested for ${reasonText}`,
+        },
+        balances: context.balances,
+        holidayBridges: context.holidayBridges,
+        teamSummary: context.teamSummary,
+      };
+    }
+
+    // Same-day leave or date-specific conflict query (e.g. "is anyone on leave on 28 sep", "who was on leave on 1 sep")
     const targetDate = extractDateFromQuery(q, context.todayIso);
     const isSameDayQuery =
       q.includes("same day") ||
@@ -522,7 +661,8 @@ export async function askLeaveAI(params: {
 
     if (isSameDayQuery || (targetDate && (q.includes("leave") || q.includes("who")))) {
       const checkDate = targetDate || context.todayIso;
-      const sameDayLeaves = (context.teamSummary?.upcomingLeaves || []).filter(
+      const allAvailableLeaves = context.teamSummary?.allTeamLeaves || context.teamSummary?.upcomingLeaves || [];
+      const sameDayLeaves = allAvailableLeaves.filter(
         (l) => l.startDate <= checkDate && l.endDate >= checkDate,
       );
 
@@ -538,21 +678,20 @@ export async function askLeaveAI(params: {
             : "In your team";
 
         return {
-          answer: `⚠️ **Same-Day Leave Alert for ${checkDate}:**\n\n${rolePrefix}, **${sameDayLeaves.length} colleague${sameDayLeaves.length === 1 ? " is" : "s are"}** on leave on this date:\n\n| Employee | Leave Type | Date Range | Status |\n|---|---|---|---|\n${rows.join(
+          answer: `⚠️ **Leave Alert for ${checkDate}:**\n\n${rolePrefix}, **${sameDayLeaves.length} colleague${sameDayLeaves.length === 1 ? " is" : "s are"}** on leave on this date:\n\n| Employee | Leave Type | Date Range | Status |\n|---|---|---|---|\n${rows.join(
             "\n",
-          )}\n\n*Note: Taking leave on the same day may reduce team coverage.*`,
+          )}\n\n*Note: Taking leave on this day may reduce team coverage.*`,
           quickActions: [
             "What is my remaining leave balance?",
             "Who in my team is scheduled to be on leave during the next 14 days?",
             "Find upcoming holiday bridge opportunities",
           ],
           balances: context.balances,
-          holidayBridges: context.holidayBridges,
           teamSummary: context.teamSummary,
         };
       } else if (targetDate) {
         return {
-          answer: `✅ **No Same-Day Conflicts for ${checkDate}:**\n\nNone of your team members are currently on leave on **${checkDate}**. Team coverage is at **100%**, so you can plan your leave smoothly!`,
+          answer: `✅ **No Conflicts for ${checkDate}:**\n\nNone of your team members are on leave on **${checkDate}**. Team coverage is at **100%**, so you can plan your time off smoothly!`,
           quickActions: [
             `Apply for leave on ${checkDate}`,
             "What is my remaining leave balance?",
@@ -564,13 +703,12 @@ export async function askLeaveAI(params: {
             reason: "Personal time off",
           },
           balances: context.balances,
-          holidayBridges: context.holidayBridges,
           teamSummary: context.teamSummary,
         };
       }
     }
 
-    // Team & Coverage query (e.g. "Who in my team is scheduled to be on leave during the next 14 days?")
+    // Team & Coverage query (e.g. "Who in my team is scheduled to be on leave during the next 14 days?", "next week", "this week")
     if (
       q.includes("team") ||
       q.includes("colleague") ||
@@ -579,35 +717,75 @@ export async function askLeaveAI(params: {
       q.includes("scheduled to be on leave") ||
       q.includes("coverage")
     ) {
-      if (context.teamSummary && context.teamSummary.upcomingLeaves.length > 0) {
-        const rows = context.teamSummary.upcomingLeaves.map((l) => {
+      const allLeaves = context.teamSummary?.allTeamLeaves || context.teamSummary?.upcomingLeaves || [];
+      const today = new Date(`${context.todayIso}T00:00:00`);
+      const currentDay = today.getDay(); // 0 is Sun, 1 is Mon...
+
+      const isNextWeek = q.includes("next week");
+      const isThisWeek = q.includes("this week");
+
+      let filteredLeaves = context.teamSummary?.upcomingLeaves || [];
+      let periodLabel = "in the upcoming days";
+
+      if (isNextWeek) {
+        // Calculate next week's Monday and Friday
+        const daysToNextMon = currentDay === 0 ? 1 : 8 - currentDay;
+        const nextMon = new Date(today);
+        nextMon.setDate(today.getDate() + daysToNextMon);
+        const nextFri = new Date(nextMon);
+        nextFri.setDate(nextMon.getDate() + 4);
+
+        const nextMonIso = formatDateIso(nextMon);
+        const nextFriIso = formatDateIso(nextFri);
+        periodLabel = `for next week (${nextMonIso} to ${nextFriIso})`;
+
+        filteredLeaves = allLeaves.filter(
+          (l) => l.startDate <= nextFriIso && l.endDate >= nextMonIso,
+        );
+      } else if (isThisWeek) {
+        // Calculate this week's Monday and Friday
+        const daysFromMon = currentDay === 0 ? -6 : 1 - currentDay;
+        const thisMon = new Date(today);
+        thisMon.setDate(today.getDate() + daysFromMon);
+        const thisFri = new Date(thisMon);
+        thisFri.setDate(thisMon.getDate() + 4);
+
+        const thisMonIso = formatDateIso(thisMon);
+        const thisFriIso = formatDateIso(thisFri);
+        periodLabel = `for this week (${thisMonIso} to ${thisFriIso})`;
+
+        filteredLeaves = allLeaves.filter(
+          (l) => l.startDate <= thisFriIso && l.endDate >= thisMonIso,
+        );
+      }
+
+      if (filteredLeaves.length > 0) {
+        const rows = filteredLeaves.map((l) => {
           const dateStr = l.startDate === l.endDate ? l.startDate : `${l.startDate} – ${l.endDate}`;
-          const durationStr = l.days > 0 ? `${l.days}d` : "1d (Weekend/Holiday)";
-          return `| ${l.employeeName} | ${l.leaveTypeName} | ${dateStr} (${durationStr}) |`;
+          const durationStr = l.days > 0 ? `${l.days}d` : "1d";
+          return `| ${l.employeeName} | ${l.leaveTypeName} | ${dateStr} (${durationStr}) | ${l.status || "APPROVED"} |`;
         });
         return {
-          answer: `Here are the team members scheduled to be on leave in the upcoming days:\n\n| Employee | Leave Type | Dates |\n|---|---|---|\n${rows.join(
+          answer: `Here is the leave schedule for your team **${periodLabel}**:\n\n| Employee Name | Leave Type | Dates | Status |\n|---|---|---|---|\n${rows.join(
             "\n",
-          )}\n\nAll dates fall on working days (Monday-Friday). All other team members are available.`,
+          )}\n\n*Note: All dates fall on working days (Monday-Friday). All other team members are available.*`,
           quickActions: [
             "What is my remaining leave balance?",
-            "Plan a holiday bridge vacation",
-            "Check upcoming public holidays",
+            "Find upcoming holiday bridge opportunities",
+            "Review Leave Policy",
           ],
           balances: context.balances,
-          holidayBridges: context.holidayBridges,
           teamSummary: context.teamSummary,
         };
       } else {
         return {
-          answer: `Good news! None of your team members are currently scheduled to be on approved leave during this upcoming period. Your team coverage is at 100%.`,
+          answer: `Good news! None of your team members are scheduled to be on leave **${periodLabel}**. Team coverage is at **100%**.`,
           quickActions: [
             "What is my remaining leave balance?",
-            "Plan a holiday bridge vacation",
-            "Check upcoming public holidays",
+            "Find upcoming holiday bridge opportunities",
+            "Review Leave Policy",
           ],
           balances: context.balances,
-          holidayBridges: context.holidayBridges,
           teamSummary: context.teamSummary,
         };
       }
@@ -751,7 +929,10 @@ INSTRUCTIONS:
    - If a holiday falls on a Saturday or Sunday, explicitly clarify that it falls on a weekend (regular weekly off). If a month has no Monday to Friday holidays, state that there are no working-day holidays scheduled for that month.
    - If asking for balances, list available days per leave type.
    - If asking for long weekends or bridge vacations, suggest exact dates from Discovered Holiday Bridges.
-   - If asking to draft a leave application or reason, provide a polite, formal reason ready for copy-pasting.
+   - LEAVE POLICY & RULES:
+     * When asked about company leave policy, rules, guidelines, or leave types (e.g. "Review Leave Policy"):
+     * Provide a clear, beautifully structured overview: Privilege Leave (18 days/year, up to 10 days carry-forward), Sick Leave (12 days/year), Casual Leave (8 days/year), Maternity Leave (182 days / 26 weeks), Paternity Leave (15 days), Loss of Pay (unpaid).
+     * Clarify that weekends (Sat/Sun) and public holidays are not deducted from leaves. Mention that applications require manager approval and half-day leaves are supported.
    - SAME-DAY LEAVE & CONFLICT ALERTS (CRUCIAL):
      * When a user (HR or Employee) asks about taking leave on a specific day/date (or asks "Is anyone on leave on the same day?", "Who is on leave on [date]?", "Can I take leave on [date]?"):
      * Cross-reference the requested date with "Team Coverage & Leaves".
@@ -808,6 +989,13 @@ INSTRUCTIONS:
       return buildFallback();
     }
 
+    const isHolidayOrVacationQuery =
+      question.toLowerCase().includes("holiday") ||
+      question.toLowerCase().includes("bridge") ||
+      question.toLowerCase().includes("weekend") ||
+      question.toLowerCase().includes("vacation") ||
+      question.toLowerCase().includes("trip");
+
     return {
       answer: parsed.answer || buildFallback().answer,
       quickActions:
@@ -815,7 +1003,7 @@ INSTRUCTIONS:
           ? parsed.quickActions
           : buildFallback().quickActions,
       suggestedLeave: parsed.suggestedLeave || null,
-      holidayBridges: context.holidayBridges,
+      holidayBridges: isHolidayOrVacationQuery ? context.holidayBridges : undefined,
       balances: context.balances,
       teamSummary: context.teamSummary,
     };
