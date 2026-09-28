@@ -1322,15 +1322,44 @@ function PostJobModal({
           }
         })}
       >
-        <div className="sm:col-span-2">
-          <p className="mb-1 text-sm font-semibold text-ink">
-            Basic information
-          </p>
+        <div className="sm:col-span-2 flex items-start justify-between gap-4">
+          <div>
+            <p className="mb-1 text-sm font-semibold text-ink">
+              Basic information
+            </p>
 
-          <p className="text-xs text-ink-faint">
-            Define the role, organizational details and recruitment
-            requirements.
-          </p>
+            <p className="text-xs text-ink-faint">
+              Define the role, organizational details and recruitment
+              requirements.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            size="sm"
+            variant="primary"
+            leftIcon={<Sparkles size={14} />}
+            onClick={() =>
+              aiJobDescriptionMutation.mutate({
+                jobTitle: watch("title"),
+                departmentId: watch("departmentId"),
+                designationId: watch("designationId"),
+                roleCategory: watch("roleCategory"),
+                employmentType: watch("employmentType"),
+                location: watch("location"),
+                experienceMin: watch("experienceMin"),
+                experienceMax: watch("experienceMax"),
+                skills: watch("skillsText"),
+              })
+            }
+            isLoading={aiJobDescriptionMutation.isPending}
+            disabled={
+              !watch("title")?.trim() ||
+              aiJobDescriptionMutation.isPending
+            }
+          >
+            Generate with AI
+          </Button>
         </div>
 
         <TextField
@@ -1774,32 +1803,7 @@ function PostJobModal({
           error={errors.screeningQuestionsText?.message}
           {...register("screeningQuestionsText")}
         />
-        <div className="sm:col-span-2 -mt-2 flex justify-end">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              aiJobDescriptionMutation.mutate({
-                jobTitle: watch("title"),
-                departmentId: watch("departmentId"),
-                designationId: watch("designationId"),
-                roleCategory: watch("roleCategory"),
-                employmentType: watch("employmentType"),
-                location: watch("location"),
-                experienceMin: watch("experienceMin"),
-                experienceMax: watch("experienceMax"),
-                skills: watch("skillsText"),
-              })
-            }
-            isLoading={aiJobDescriptionMutation.isPending}
-            disabled={
-              !watch("title")?.trim() || aiJobDescriptionMutation.isPending
-            }
-          >
-            Generate with AI
-          </Button>
-        </div>
+
 
         <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
           Enter one question per line.
