@@ -60,6 +60,14 @@ const NAV_ITEMS: NavItem[] = [
     label: "Tickets",
     icon: ClipboardList,
     permission: "tickets.view",
+    roles: [
+      "SUPER_ADMIN",
+      "HR_ADMIN",
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+    ],
     section: "workspace",
   },
 
@@ -193,6 +201,7 @@ const NAV_ITEMS: NavItem[] = [
   roles: [
     "SUPER_ADMIN",
     "HR_ADMIN",
+    "MANAGER",
     "RECRUITER",
     "FINANCE",
     "IT_SUPPORT",
