@@ -65,10 +65,6 @@ function detectHrCopilotIntent(
     return "LEAVE";
   }
 
-  if (/payroll|salary|payslip|net pay/i.test(text)) {
-    return "PAYROLL";
-  }
-
   if (/performance|rating|goal|review/i.test(text)) {
     return "PERFORMANCE";
   }
@@ -520,64 +516,6 @@ function sanitizeCalendar(
 
 /**
  * ============================================================================
- * PAYROLL SANITIZATION
- * ============================================================================
- */
-
-function sanitizePayroll(
-  value: any[],
-) {
-  if (
-    !Array.isArray(value)
-  ) {
-    return [];
-  }
-
-  return value
-    .slice(0, 6)
-    .map(
-      (item: any) => ({
-        month:
-          item.month ??
-          null,
-
-        year:
-          item.year ??
-          null,
-
-        runStatus:
-          item.runStatus ??
-          null,
-
-        grossEarnings:
-          item.grossEarnings ??
-          null,
-
-        totalDeductions:
-          item.totalDeductions ??
-          null,
-
-        netPay:
-          item.netPay ??
-          null,
-
-        overtimeHours:
-          item.overtimeHours ??
-          null,
-
-        overtimeAmount:
-          item.overtimeAmount ??
-          null,
-
-        lop:
-          item.lop ??
-          null,
-      }),
-    );
-}
-
-/**
- * ============================================================================
  * DOCUMENT SANITIZATION
  * ============================================================================
  */
@@ -885,54 +823,6 @@ function sanitizeReports(
 
             byType:
               report.leave.byType,
-          }
-        : null,
-
-    payroll:
-      report.payroll
-        ? {
-            runs:
-              report.payroll.runs,
-
-            totalGross:
-              report.payroll
-                .totalGross,
-
-            totalDeductions:
-              report.payroll
-                .totalDeductions,
-
-            totalNet:
-              report.payroll
-                .totalNet,
-
-            totalLop:
-              report.payroll
-                .totalLop,
-
-            payslipCount:
-              report.payroll
-                .payslipCount,
-
-            byRun:
-              Array.isArray(
-                report.payroll.byRun,
-              )
-                ? report.payroll.byRun.slice(
-                    -12,
-                  )
-                : [],
-
-            byDepartment:
-              Array.isArray(
-                report.payroll
-                  .byDepartment,
-              )
-                ? report.payroll.byDepartment.slice(
-                    0,
-                    20,
-                  )
-                : [],
           }
         : null,
 
@@ -1759,91 +1649,6 @@ function buildHrCopilotFallbackAnswer(
 
   /**
    * --------------------------------------------------------------------------
-   * PAYROLL
-   * --------------------------------------------------------------------------
-   */
-
-  if (
-    data.payroll
-  ) {
-    const payroll =
-      Array.isArray(
-        data.payroll,
-      )
-        ? data.payroll
-        : Array.isArray(
-            data.payroll.payslips,
-          )
-          ? data.payroll.payslips
-          : [];
-
-    const latest =
-      payroll[0];
-
-    const lines = [
-      "Payroll",
-      "",
-    ];
-
-    if (
-      latest
-    ) {
-      if (
-        latest.month != null ||
-        latest.year != null
-      ) {
-        lines.push(
-          `Pay Period: ${latest.month ?? ""} ${latest.year ?? ""}`.trim(),
-        );
-      }
-
-      if (
-        latest.runStatus
-      ) {
-        lines.push(
-          `Status: ${formatEnum(latest.runStatus)}`,
-        );
-      }
-
-      if (
-        latest.grossEarnings !=
-          null
-      ) {
-        lines.push(
-          `Gross Earnings: ${latest.grossEarnings}`,
-        );
-      }
-
-      if (
-        latest.totalDeductions !=
-          null
-      ) {
-        lines.push(
-          `Total Deductions: ${latest.totalDeductions}`,
-        );
-      }
-
-      if (
-        latest.netPay !=
-          null
-      ) {
-        lines.push(
-          `Net Pay: ${latest.netPay}`,
-        );
-      }
-    } else {
-      lines.push(
-        "No payroll records are available.",
-      );
-    }
-
-    return lines.join(
-      "\n",
-    );
-  }
-
-  /**
-   * --------------------------------------------------------------------------
    * DOCUMENTS
    * --------------------------------------------------------------------------
    */
@@ -1894,6 +1699,14 @@ function buildHrCopilotFallbackAnswer(
   if (
     data.tickets
   ) {
+    if (typeof data.tickets.message === "string") {
+      return data.tickets.message;
+    }
+
+    if (typeof data.tickets.total === "number") {
+      return `There have been ${data.tickets.total} tickets raised in your authorized scope.`;
+    }
+
     const tickets =
       Array.isArray(
         data.tickets,
@@ -2075,6 +1888,21 @@ function buildHrCopilotFallbackAnswer(
    * DASHBOARD
    * --------------------------------------------------------------------------
    */
+
+  if (data.organizationEmployeeCount) {
+    const employeeCount = data.organizationEmployeeCount;
+
+    if (typeof employeeCount.message === "string") {
+      return employeeCount.message;
+    }
+
+    return [
+      "Company Employee Count",
+      "",
+      `Total employees: ${employeeCount.total}`,
+      `Active employees: ${employeeCount.active}`,
+    ].join("\n");
+  }
 
   if (
     data.dashboard
@@ -2328,35 +2156,6 @@ function buildHrCopilotFallbackAnswer(
 
     if (
       Array.isArray(
-        self.payroll,
-      ) &&
-      self.payroll.length
-    ) {
-      const latest =
-        self.payroll[0];
-
-      appendSection(
-        lines,
-        "Latest Payroll",
-        [
-          latest.month != null ||
-          latest.year != null
-            ? `Pay Period: ${latest.month ?? ""} ${latest.year ?? ""}`.trim()
-            : "",
-
-          latest.runStatus
-            ? `Status: ${formatEnum(latest.runStatus)}`
-            : "",
-
-          latest.netPay != null
-            ? `Net Pay: ${latest.netPay}`
-            : "",
-        ],
-      );
-    }
-
-    if (
-      Array.isArray(
         self.documents,
       ) &&
       self.documents.length
@@ -2528,6 +2327,19 @@ export async function askHrCopilot(
         input.conversation,
     });
 
+  if (
+    plan.conditions.includes(
+      "PAYROLL_OUT_OF_SCOPE",
+    )
+  ) {
+    return {
+      answer:
+        "Payroll information is outside the AI HR Copilot's scope.",
+      intent: "GENERAL",
+      sources: [],
+    };
+  }
+
   /**
    * --------------------------------------------------------------------------
    * 4. SECURE DATA EXECUTION
@@ -2565,6 +2377,36 @@ export async function askHrCopilot(
     detectHrCopilotIntent(
       input.message,
     );
+
+  if (plan.conditions.includes("DIRECT_REPORTS")) {
+    const organization = toolResult.data.organization;
+
+    if (typeof organization?.message === "string") {
+      return {
+        answer: organization.message,
+        intent,
+        sources: toolResult.sources,
+      };
+    }
+
+    const managerName =
+      organization?.manager?.name ??
+      plan.targetEmployeeName ??
+      "The employee";
+    const employees = Array.isArray(organization?.employees)
+      ? organization.employees
+      : [];
+
+    return {
+      answer: employees.length
+        ? `Employees who report to ${managerName}:\n${employees
+            .map((employee: any) => `- ${employee.name ?? "Employee"}`)
+            .join("\n")}`
+        : `${managerName} has no direct reports in the authorized HRMS data.`,
+      intent,
+      sources: toolResult.sources,
+    };
+  }
 
   /**
    * --------------------------------------------------------------------------
@@ -2651,8 +2493,6 @@ Never invent attendance values.
 
 Never invent leave balances.
 
-Never invent payroll values.
-
 Never invent performance scores.
 
 Never invent dates.
@@ -2685,7 +2525,7 @@ If the user asks a leave question, use leave data.
 
 If the user asks a performance question, use performance data.
 
-If the user asks a payroll question, use payroll data.
+Payroll, salary, compensation, and payslip information are outside the Copilot's scope.
 
 If the user asks a document question, use document data.
 

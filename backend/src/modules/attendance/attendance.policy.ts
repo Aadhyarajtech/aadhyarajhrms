@@ -17,6 +17,25 @@ export type AttendancePolicyStatus =
   | "LATE"
   | "EARLY_DEPARTURE";
 
+export function getAttendanceEquivalent(
+  status: AttendancePolicyStatus,
+): number {
+  if (
+    status === "PRESENT" ||
+    status === "WORK_FROM_HOME" ||
+    status === "LATE" ||
+    status === "EARLY_DEPARTURE"
+  ) {
+    return 1;
+  }
+
+  if (status === "HALF_DAY") {
+    return 0.5;
+  }
+
+  return 0;
+}
+
 export interface AttendancePolicy {
   shiftStart: string; // HH:mm
   shiftEnd: string; // HH:mm

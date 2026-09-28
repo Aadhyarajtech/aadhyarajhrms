@@ -53,7 +53,6 @@ export const hrCopilotPlanSchema = z.object({
         "PERFORMANCE",
         "GOALS",
         "CALENDAR",
-        "PAYROLL",
         "DOCUMENTS",
         "TICKETS",
         "ANNOUNCEMENTS",
@@ -132,7 +131,6 @@ const CROSS_MODULE_SELF_DOMAINS: HrCopilotPlan["domains"] = [
   "PERFORMANCE",
   "GOALS",
   "CALENDAR",
-  "PAYROLL",
   "DOCUMENTS",
   "TICKETS",
   "ANNOUNCEMENTS",
@@ -234,6 +232,40 @@ function isSelfAttendanceQuestion(
   return self && attendance;
 }
 
+function isSelfLeaveQuestion(
+  message: string,
+): boolean {
+  const text = message.toLowerCase();
+  const self = /\b(my|me|mine|myself|i)\b/.test(text);
+  const leave = /\b(leave|leaves|holiday|holidays|time\s+off|pto|vacation)\b/.test(text);
+
+  return self && leave;
+}
+
+function isPayrollQuestion(message: string): boolean {
+  return /\b(?:payroll|salary|salaries|payslip|pay\s+slip|compensation|earnings|deductions?|net\s+pay|gross\s+pay|ctc)\b/i.test(message);
+}
+
+function getSelfPerformanceDomains(
+  message: string,
+): HrCopilotPlan["domains"] | null {
+  const text = message.toLowerCase();
+  const self = /\b(my|me|mine|myself|i)\b/.test(text);
+  if (!self) return null;
+
+  const domains: HrCopilotPlan["domains"] = [];
+
+  if (/\b(performance|review|reviews|rating|ratings|appraisal|feedback)\b/.test(text)) {
+    domains.push("PERFORMANCE");
+  }
+
+  if (/\b(goal|goals|objective|objectives|okr|kpi|milestone)\b/.test(text)) {
+    domains.push("GOALS");
+  }
+
+  return domains.length ? domains : null;
+}
+
 /**
  * ============================================================================
  * OVERALL SELF SUMMARY
@@ -253,7 +285,7 @@ function isOverallSelfSummary(
     );
 
   const summary =
-    /\b(overall|complete|full|entire|summary|summarize|work\s+status|overall\s+status|complete\s+status|full\s+status|hrms\s+summary|work\s+summary|current\s+status|current\s+work|how\s+am\s+i\s+doing|how\s+am\s+i\s+performing)\b/.test(text);
+    /\b(?:overall|complete|full|entire)\s+(?:hrms\s+)?(?:summary|summari[sz]e|overview|status)\b|\b(?:work|hrms)\s+(?:summary|status)\b|\b(?:current\s+status|current\s+work|how\s+am\s+i\s+doing|how\s+am\s+i\s+performing)\b/.test(text);
 
   return self && summary;
 }
@@ -309,6 +341,32 @@ function extractManagerLookupEmployeeName(
     if (match?.[1]) {
       return match[1]
         .trim()
+        .replace(/\s+/g, " ");
+    }
+  }
+
+  return null;
+}
+
+function extractDirectReportsEmployeeName(
+  message: string,
+): string | null {
+  const patterns = [
+    /\bwho\s+reports?\s+to\s+(.+?)\s*\??$/i,
+    /\bwho\s+works?\s+under\s+(.+?)\s*\??$/i,
+    /\bwho\s+are\s+(?:the\s+)?(?:team\s+members|direct\s+reports)\s+(?:of|under|reporting\s+to)\s+(.+?)\s*\??$/i,
+    /\b(?:team\s+members|direct\s+reports)\s+(?:of|for|under)\s+(.+?)\s*\??$/i,
+    /\b(?:who\s+are\s+)?(.+?)['’]s\s+(?:team\s+members|direct\s+reports)\s*\??$/i,
+    /\b(?:who\s+are\s+)?employees\s+(?:reporting\s+to|under)\s+(.+?)\s*\??$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+
+    if (match?.[1]) {
+      return match[1]
+        .trim()
+        .replace(/[?!.]+$/, "")
         .replace(/\s+/g, " ");
     }
   }
@@ -382,7 +440,9 @@ function extractNamedEmployee(
   );
 
   if (possessive?.[1]) {
-    return possessive[1].trim();
+    return possessive[1]
+      .trim()
+      .replace(/^(?:what\s+is|who\s+is|show\s+me|tell\s+me\s+about)\s+/i, "");
   }
 
   /**
@@ -496,10 +556,6 @@ function detectDomains(
     domains.add("CALENDAR");
   }
 
-  if (/\b(?:payroll|salary|salaries|payslip|pay\s+slip|compensation|earnings|deductions?|net\s+pay|gross\s+pay|ctc)\b/.test(text)) {
-    domains.add("PAYROLL");
-  }
-
   if (/\b(?:document|documents|certificate|certificates|expiry|expired|expiring|compliance|missing\s+documents?)\b/.test(text)) {
     domains.add("DOCUMENTS");
   }
@@ -541,6 +597,24 @@ function detectDomains(
   return Array.from(domains);
 }
 
+function isCountQuestion(message: string): boolean {
+  return /\b(?:how\s+many|number\s+of|count|total)\b/i.test(message);
+}
+
+function isTicketCountQuestion(message: string): boolean {
+  return isCountQuestion(message) && /\btickets?\b/i.test(message);
+}
+
+function isOrganizationEmployeeCountQuestion(
+  message: string,
+): boolean {
+  return (
+    isCountQuestion(message) &&
+    /\b(?:employees?|staff)\b/i.test(message) &&
+    /\b(?:company|organization|organisation|workforce|all|entire)\b/i.test(message)
+  );
+}
+
 /**
  * ============================================================================
  * FALLBACK PLAN
@@ -558,6 +632,19 @@ function buildFallbackHrCopilotPlan(
 ): HrCopilotPlan {
   const message =
     input.message.trim();
+
+  if (isPayrollQuestion(message)) {
+    return {
+      task: "GENERAL",
+      scope: "UNKNOWN",
+      domains: ["EMPLOYEE"],
+      targetEmployeeName: null,
+      timeRange: "UNKNOWN",
+      conditions: ["PAYROLL_OUT_OF_SCOPE"],
+      requestedFields: [],
+      reasoning: "Payroll information is outside the AI HR Copilot scope.",
+    };
+  }
 
   /**
    * 1. Overall self summary
@@ -587,7 +674,6 @@ function buildFallbackHrCopilotPlan(
         "performance",
         "goals",
         "calendar",
-        "payroll",
         "documents",
         "tickets",
         "announcements",
@@ -595,6 +681,34 @@ function buildFallbackHrCopilotPlan(
 
       reasoning:
         "The user requested an overall cross-module summary of their HRMS status.",
+    };
+  }
+
+  if (isOrganizationEmployeeCountQuestion(message)) {
+    return {
+      task: "COUNT",
+      scope: "ORGANIZATION",
+      domains: ["EMPLOYEE", "ORGANIZATION"],
+      targetEmployeeName: null,
+      timeRange: "CURRENT",
+      conditions: ["ORGANIZATION_EMPLOYEE_COUNT"],
+      requestedFields: ["total employees", "active employees"],
+      reasoning:
+        "The user is asking for organization-wide employee headcount.",
+    };
+  }
+
+  if (isTicketCountQuestion(message)) {
+    return {
+      task: "COUNT",
+      scope: "UNKNOWN",
+      domains: ["TICKETS"],
+      targetEmployeeName: null,
+      timeRange: "CURRENT",
+      conditions: ["TICKET_COUNT"],
+      requestedFields: ["ticket count"],
+      reasoning:
+        "The user is asking for a ticket count within their authorized scope.",
     };
   }
 
@@ -641,7 +755,73 @@ function buildFallbackHrCopilotPlan(
   }
 
   /**
-   * 3. Manager lookup
+   * 2.5 Self performance and goals
+   */
+  const selfPerformanceDomains =
+    getSelfPerformanceDomains(message);
+
+  if (selfPerformanceDomains) {
+    return {
+      task: "LOOKUP",
+      scope: "SELF",
+      domains: selfPerformanceDomains,
+      targetEmployeeName: null,
+      timeRange: detectTimeRange(message),
+      conditions: ["SELF_PERFORMANCE"],
+      requestedFields: [],
+      reasoning:
+        "The user is asking about their own performance or goals.",
+    };
+  }
+
+  /**
+   * 2.5 Self leave
+   */
+  if (isSelfLeaveQuestion(message)) {
+    return {
+      task: "LOOKUP",
+      scope: "SELF",
+      domains: ["LEAVE"],
+      targetEmployeeName: null,
+      timeRange: "CURRENT",
+      conditions: ["SELF_LEAVE"],
+      requestedFields: [
+        "leave balance",
+        "leave requests",
+      ],
+      reasoning:
+        "The user is asking about their own leave information.",
+    };
+  }
+
+  /**
+   * 3. Direct reports / named team members
+   */
+  const directReportsManagerName =
+    extractDirectReportsEmployeeName(
+      message,
+    );
+
+  if (directReportsManagerName) {
+    return {
+      task: "LOOKUP",
+      scope: "EMPLOYEE",
+      domains: ["ORGANIZATION"],
+      targetEmployeeName:
+        directReportsManagerName,
+      timeRange: "CURRENT",
+      conditions: ["DIRECT_REPORTS"],
+      requestedFields: [
+        "direct reports",
+        "team members",
+      ],
+      reasoning:
+        "The user is asking for employees who report to a named manager.",
+    };
+  }
+
+  /**
+   * 4. Manager lookup
    */
   const managerName =
     extractManagerLookupEmployeeName(
@@ -678,7 +858,7 @@ function buildFallbackHrCopilotPlan(
   }
 
   /**
-   * 4. Named employee
+  * 5. Named employee
    */
   const namedEmployee =
     extractNamedEmployee(message) ??
@@ -716,7 +896,7 @@ function buildFallbackHrCopilotPlan(
   }
 
   /**
-   * 5. Self employee lookup
+  * 6. Self employee lookup
    */
   if (
     isSelfEmployeeLookupQuestion(
@@ -746,7 +926,7 @@ function buildFallbackHrCopilotPlan(
   }
 
   /**
-   * 6. My team
+  * 7. My team
    */
   if (
     /\bmy\s+team\b/i.test(message)
@@ -856,6 +1036,19 @@ function normalizeAiPlan(
   const message =
     input.message.trim();
 
+  if (isPayrollQuestion(message)) {
+    return {
+      ...aiPlan,
+      task: "GENERAL",
+      scope: "UNKNOWN",
+      domains: ["EMPLOYEE"],
+      targetEmployeeName: null,
+      timeRange: "UNKNOWN",
+      conditions: ["PAYROLL_OUT_OF_SCOPE"],
+      requestedFields: [],
+    };
+  }
+
   /**
    * 1. Overall self summary
    */
@@ -894,11 +1087,46 @@ function normalizeAiPlan(
         "performance",
         "goals",
         "calendar",
-        "payroll",
         "documents",
         "tickets",
         "announcements",
       ],
+    };
+  }
+
+  if (isOrganizationEmployeeCountQuestion(message)) {
+    return {
+      ...aiPlan,
+      task: "COUNT",
+      scope: "ORGANIZATION",
+      domains: ["EMPLOYEE", "ORGANIZATION"],
+      targetEmployeeName: null,
+      timeRange: "CURRENT",
+      conditions: Array.from(
+        new Set([
+          ...(aiPlan.conditions ?? []),
+          "ORGANIZATION_EMPLOYEE_COUNT",
+        ]),
+      ).slice(0, 10),
+      requestedFields: ["total employees", "active employees"],
+    };
+  }
+
+  if (isTicketCountQuestion(message)) {
+    return {
+      ...aiPlan,
+      task: "COUNT",
+      scope: "UNKNOWN",
+      domains: ["TICKETS"],
+      targetEmployeeName: null,
+      timeRange: "CURRENT",
+      conditions: Array.from(
+        new Set([
+          ...(aiPlan.conditions ?? []),
+          "TICKET_COUNT",
+        ]),
+      ).slice(0, 10),
+      requestedFields: ["ticket count"],
     };
   }
 
@@ -950,7 +1178,80 @@ function normalizeAiPlan(
   }
 
   /**
-   * 3. Manager lookup
+   * 2.5 Self performance and goals
+   */
+  const selfPerformanceDomains =
+    getSelfPerformanceDomains(message);
+
+  if (selfPerformanceDomains) {
+    return {
+      ...aiPlan,
+      task: "LOOKUP",
+      scope: "SELF",
+      domains: selfPerformanceDomains,
+      targetEmployeeName: null,
+      timeRange: detectTimeRange(message),
+      conditions: Array.from(
+        new Set([
+          ...(aiPlan.conditions ?? []),
+          "SELF_PERFORMANCE",
+        ]),
+      ).slice(0, 10),
+      requestedFields: [],
+    };
+  }
+
+  /**
+   * 2.5 Self leave
+   */
+  if (isSelfLeaveQuestion(message)) {
+    return {
+      ...aiPlan,
+      task: "LOOKUP",
+      scope: "SELF",
+      domains: ["LEAVE"],
+      targetEmployeeName: null,
+      timeRange: "CURRENT",
+      conditions: Array.from(
+        new Set([
+          ...(aiPlan.conditions ?? []),
+          "SELF_LEAVE",
+        ]),
+      ).slice(0, 10),
+      requestedFields: [
+        "leave balance",
+        "leave requests",
+      ],
+    };
+  }
+
+  /**
+   * 3. Direct reports / named team members
+   */
+  const directReportsManagerName =
+    extractDirectReportsEmployeeName(
+      message,
+    );
+
+  if (directReportsManagerName) {
+    return {
+      ...aiPlan,
+      task: "LOOKUP",
+      scope: "EMPLOYEE",
+      domains: ["ORGANIZATION"],
+      targetEmployeeName:
+        directReportsManagerName,
+      timeRange: "CURRENT",
+      conditions: ["DIRECT_REPORTS"],
+      requestedFields: [
+        "direct reports",
+        "team members",
+      ],
+    };
+  }
+
+  /**
+   * 4. Manager lookup
    */
   const managerName =
     extractManagerLookupEmployeeName(
@@ -992,7 +1293,7 @@ function normalizeAiPlan(
   }
 
   /**
-   * 4. Explicit named employee
+  * 5. Explicit named employee
    */
   const namedEmployee =
     extractNamedEmployee(message) ??
@@ -1040,7 +1341,7 @@ function normalizeAiPlan(
   }
 
   /**
-   * 5. Self employee lookup
+  * 6. Self employee lookup
    */
   if (
     isSelfEmployeeLookupQuestion(
@@ -1075,7 +1376,7 @@ function normalizeAiPlan(
   }
 
   /**
-   * 6. My team
+  * 7. My team
    */
   if (
     /\bmy\s+team\b/i.test(

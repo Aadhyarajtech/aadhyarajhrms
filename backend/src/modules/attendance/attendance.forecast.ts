@@ -1,4 +1,5 @@
 import { Attendance, Employee } from "@/db/models";
+import { getAttendanceEquivalent } from "./attendance.policy";
 
 export interface AttendanceForecastResult {
   period: {
@@ -58,20 +59,7 @@ function calculateAttendanceRate(
   const attendanceEquivalent =
     eligibleRecords.reduce(
       (total, record) => {
-        if (
-          record.status === "PRESENT" ||
-          record.status === "WORK_FROM_HOME"
-        ) {
-          return total + 1;
-        }
-
-        if (
-          record.status === "HALF_DAY"
-        ) {
-          return total + 0.5;
-        }
-
-        return total;
+        return total + getAttendanceEquivalent(record.status);
       },
       0,
     );

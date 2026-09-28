@@ -19,7 +19,6 @@ ATTENDANCE
 LEAVE
 PERFORMANCE
 CALENDAR
-PAYROLL
 DOCUMENTS
 RECRUITMENT
 ORGANIZATION
@@ -47,9 +46,12 @@ Current page: Employee Profile
 Question: "What was my attendance last month?"
 Plan: ATTENDANCE
 
-Current page: Payroll
+Current page: Leave
 Question: "What meetings do I have tomorrow?"
 Plan: CALENDAR
+
+Payroll, salary, compensation, and payslip questions are outside the Copilot's scope.
+Do not request or retrieve payroll information.
 
 The backend executor performs all authorization checks.
 
@@ -194,31 +196,6 @@ Examples:
 "Show my upcoming events."
 "Do I have any meetings tomorrow?"
 
---------------------------------------------------
-PAYROLL
---------------------------------------------------
-
-Use PAYROLL for:
-
-salary
-salary structure
-payslip
-payslips
-payroll
-earnings
-deductions
-gross pay
-net pay
-compensation
-CTC
-
-Examples:
-
-"What is my salary?"
-"Show my latest payslip."
-"What were my deductions?"
-
---------------------------------------------------
 DOCUMENTS
 --------------------------------------------------
 
@@ -401,7 +378,6 @@ ATTENDANCE
 LEAVE
 PERFORMANCE
 CALENDAR
-PAYROLL
 DOCUMENTS
 TICKETS
 

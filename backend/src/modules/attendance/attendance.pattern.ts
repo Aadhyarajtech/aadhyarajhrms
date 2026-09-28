@@ -1,4 +1,5 @@
 import { Attendance, Employee } from "@/db/models";
+import { getAttendanceEquivalent } from "./attendance.policy";
 
 // ===========================================================================
 // ATTENDANCE PATTERN ANALYSIS
@@ -149,16 +150,7 @@ export async function getAttendancePatterns(
     item.totalDays += 1;
 
     // Attendance equivalent
-    if (
-      record.status === "PRESENT" ||
-      record.status === "WORK_FROM_HOME"
-    ) {
-      item.attendedEquivalent += 1;
-    } else if (
-      record.status === "HALF_DAY"
-    ) {
-      item.attendedEquivalent += 0.5;
-    }
+    item.attendedEquivalent += getAttendanceEquivalent(record.status);
 
     // Check-in time
     if (record.checkIn) {
@@ -450,20 +442,7 @@ export async function getAttendancePatterns(
   const totalEquivalent =
     eligibleRecords.reduce(
       (total, record) => {
-        if (
-          record.status === "PRESENT" ||
-          record.status === "WORK_FROM_HOME"
-        ) {
-          return total + 1;
-        }
-
-        if (
-          record.status === "HALF_DAY"
-        ) {
-          return total + 0.5;
-        }
-
-        return total;
+        return total + getAttendanceEquivalent(record.status);
       },
       0,
     );
@@ -498,20 +477,7 @@ export async function getAttendancePatterns(
   const recentEquivalent =
     recentRecords.reduce(
       (total, record) => {
-        if (
-          record.status === "PRESENT" ||
-          record.status === "WORK_FROM_HOME"
-        ) {
-          return total + 1;
-        }
-
-        if (
-          record.status === "HALF_DAY"
-        ) {
-          return total + 0.5;
-        }
-
-        return total;
+        return total + getAttendanceEquivalent(record.status);
       },
       0,
     );

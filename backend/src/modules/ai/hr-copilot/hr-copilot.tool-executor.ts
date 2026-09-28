@@ -4,7 +4,6 @@ import * as leaveRepo from "@/modules/leave/leave.repository";
 import * as performanceRepo from "@/modules/performance/performance.repository";
 import * as organizationRepo from "@/modules/organization/organization.repository";
 import * as calendarRepo from "@/modules/calendar/calendar.repository";
-import * as payrollRepo from "@/modules/payroll/payroll.repository";
 import * as documentsRepo from "@/modules/documents/documents.repository";
 import * as ticketRepo from "@/modules/tickets/ticket.repository";
 import * as announcementRepo from "@/modules/announcements/announcement.repository";
@@ -20,12 +19,6 @@ import type {
 import type {
   HrCopilotPlan,
 } from "./hr-copilot.planner";
-
-/**
- * ============================================================================
- * TYPES
- * ============================================================================
- */
 
 type ExecutorResult = {
   data: Record<string, any>;
@@ -43,34 +36,7 @@ type DateRange = {
   end: string;
 };
 
-/**
- * Executor scope may include internal scope values used by the executor
- * itself. The planner exposes MY_TEAM, while the executor's existing team
- * execution paths use TEAM.
- */
-type HrCopilotExecutorScope =
-  HrCopilotPlan["scope"] |
-  "TEAM";
-
-/**
- * ============================================================================
- * PERMISSIONS
- * ============================================================================
- *
- * IMPORTANT:
- *
- * Role/data scope is intentionally separate from normal UI permissions.
- *
- * SUPER_ADMIN -> ALL
- * HR_ADMIN    -> ALL
- * MANAGER     -> SELF + DIRECT REPORTS
- * EMPLOYEE    -> SELF
- * FINANCE     -> SELF
- * IT_SUPPORT  -> SELF
- * RECRUITER   -> SELF
- *
- * Groq can NEVER grant itself permission.
- */
+type HrCopilotExecutorScope = HrCopilotPlan["scope"] | "TEAM";
 
 function hasPermission(
   user: HrCopilotUserContext,
@@ -117,6 +83,15 @@ function getRoleScope(
   }
 
   return "SELF";
+}
+
+async function executePayroll(
+  _user: HrCopilotUserContext,
+  _plan: HrCopilotPlan,
+) {
+  return {
+    message: "Payroll information is outside the AI HR Copilot scope.",
+  };
 }
 
 /**
@@ -406,8 +381,6 @@ async function findEmployeeMatches(
       : [],
   );
 
-  // For multi-token names, search each token as a fallback because repository
-  // search implementations may match only firstName or lastName individually.
   if (tokens.length >= 2) {
     const tokenResults = await Promise.all(
       tokens.map((token) =>
@@ -732,40 +705,18 @@ async function resolveEmployeeTarget(
    * ========================================================================
    */
 
-  const role =
-    String(
-      user.role,
-    ).toUpperCase();
+  const role = String(user.role ?? "").toUpperCase();
 
-  /**
-   * SUPER_ADMIN / HR_ADMIN
-   *
-   * Organization-wide access.
-   */
-
-  if (
-    role === "SUPER_ADMIN" ||
-    role === "HR_ADMIN"
-  ) {
+  if (role === "SUPER_ADMIN" || role === "HR_ADMIN") {
     return {
-      employee:
-        sanitizeEmployee(
-          enriched,
-        ),
-      employeeId:
-        candidateId,
+      employee: sanitizeEmployee(enriched),
+      employeeId: candidateId,
     };
   }
 
-  /**
-   * SELF
-   */
-
   if (
     user.employeeId &&
-    String(
-      user.employeeId,
-    ) === candidateId
+    String(user.employeeId) === candidateId
   ) {
     return {
       employee:
@@ -1129,6 +1080,57 @@ async function executeLeave(
         )
       : [];
 
+  const pendingRequests =
+    Array.isArray(requests)
+      ? requests.filter(
+          (request: any) =>
+            String(
+              request?.status ??
+                "",
+            ).toUpperCase() ===
+              "PENDING" &&
+            String(
+              request?.startDate ??
+                "",
+            ) <= yearEnd &&
+            String(
+              request?.endDate ??
+                "",
+            ) >= yearStart,
+        )
+      : [];
+
+  const balances =
+    Array.isArray(leave)
+      ? leave.map((balance: any) => {
+          const leaveTypeId = String(
+            balance?.leaveTypeId ?? "",
+          );
+          const pending = pendingRequests
+            .filter(
+              (request: any) =>
+                String(
+                  request?.leaveTypeId ?? "",
+                ) === leaveTypeId,
+            )
+            .reduce(
+              (total: number, request: any) =>
+                total + Number(request?.totalDays ?? 0),
+              0,
+            );
+          const allotted =
+            Number(balance?.allotted ?? 0) +
+            Number(balance?.carriedOver ?? 0);
+          const used = Number(balance?.used ?? 0);
+
+          return {
+            ...balance,
+            pending,
+            available: Math.max(0, allotted - used - pending),
+          };
+        })
+      : [];
+
   const leavesTakenThisYear =
     approvedRequests.reduce(
       (
@@ -1151,7 +1153,13 @@ async function executeLeave(
       leave ??
       [],
 
+    balances,
+
     leaveRequests:
+      requests ??
+      [],
+
+    requests:
       requests ??
       [],
 
@@ -1236,67 +1244,6 @@ async function executeCalendar(
 
     calendar:
       events ??
-      [],
-  };
-}
-
-/**
- * ============================================================================
- * PAYROLL
- * ============================================================================
- */
-
-async function executePayroll(
-  user: HrCopilotUserContext,
-  plan: HrCopilotPlan,
-) {
-  if (
-    !hasPermission(
-      user,
-      "payroll.view",
-    )
-  ) {
-    return {
-      message:
-        "You do not have permission to view payroll information.",
-    };
-  }
-
-  const target =
-    await resolveEmployeeTarget(
-      user,
-      plan,
-    );
-
-  if (
-    target.message &&
-    !target.employeeId
-  ) {
-    return target;
-  }
-
-  if (
-    !target.employeeId
-  ) {
-    return {
-      message:
-        "No employee could be resolved for this payroll request.",
-    };
-  }
-
-  const payslips =
-    await safe<any[]>(
-      payrollRepo.listPayslipsForEmployee(
-        target.employeeId,
-      ),
-    );
-
-  return {
-    employee:
-      target.employee,
-
-    payroll:
-      payslips ??
       [],
   };
 }
@@ -1420,6 +1367,107 @@ async function executeTickets(
     tickets:
       tickets ??
       [],
+  };
+}
+
+async function executeTicketCount(
+  user: HrCopilotUserContext,
+) {
+  if (!hasPermission(user, "tickets.view")) {
+    return {
+      message: "You do not have permission to view ticket information.",
+    };
+  }
+
+  let employeeIds: string[] | undefined;
+  const roleScope = getRoleScope(user);
+
+  if (roleScope === "SELF" || roleScope === "TEAM") {
+    if (!user.employeeId) {
+      return {
+        message: "An employee profile is required to count tickets in your scope.",
+      };
+    }
+
+    employeeIds = [String(user.employeeId)];
+
+    if (roleScope === "TEAM") {
+      const directReports = await safe<any[]>(
+        employeeRepo.listDirectReports(String(user.employeeId)),
+      );
+
+      if (!Array.isArray(directReports)) {
+        return {
+          message: "The authorized team ticket count is currently unavailable.",
+        };
+      }
+
+      employeeIds.push(
+        ...directReports
+          .map((employee: any) =>
+            String(employee?.id ?? employee?._id ?? employee?.employeeId ?? ""),
+          )
+          .filter(Boolean),
+      );
+      employeeIds = Array.from(new Set(employeeIds));
+    }
+  }
+
+  const total = await safe<number>(
+    ticketRepo.countTickets(employeeIds),
+  );
+
+  if (total === null) {
+    return {
+      message: "The authorized ticket count is currently unavailable.",
+    };
+  }
+
+  return {
+    total,
+    scope: roleScope,
+  };
+}
+
+async function executeOrganizationEmployeeCount(
+  user: HrCopilotUserContext,
+) {
+  if (
+    user.role !== "SUPER_ADMIN" &&
+    user.role !== "HR_ADMIN"
+  ) {
+    return {
+      message:
+        "Company-wide employee counts are only available to HR administrators.",
+    };
+  }
+
+  if (!hasPermission(user, "employees.view")) {
+    return {
+      message: "You do not have permission to view employee information.",
+    };
+  }
+
+  const [allEmployees, activeEmployees] = await Promise.all([
+    safe<any>(employeeRepo.listEmployees({ page: 1, pageSize: 1 })),
+    safe<any>(
+      employeeRepo.listEmployees({
+        status: "ACTIVE",
+        page: 1,
+        pageSize: 1,
+      }),
+    ),
+  ]);
+
+  if (!allEmployees || !activeEmployees) {
+    return {
+      message: "Company-wide employee counts are currently unavailable.",
+    };
+  }
+
+  return {
+    total: allEmployees.total,
+    active: activeEmployees.total,
   };
 }
 
@@ -2052,7 +2100,6 @@ async function executeDashboard(
  * Leave
  * Performance
  * Calendar
- * Payroll
  * Documents
  * Tickets
  * Announcements
@@ -2228,28 +2275,6 @@ async function executeSummary(
 
     result.calendar =
       events ??
-      [];
-  }
-
-  /**
-   * Payroll
-   */
-
-  if (
-    hasPermission(
-      user,
-      "payroll.view",
-    )
-  ) {
-    const payroll =
-      await safe<any[]>(
-        payrollRepo.listPayslipsForEmployee(
-          employeeId,
-        ),
-      );
-
-    result.payroll =
-      payroll ??
       [];
   }
 
@@ -2627,41 +2652,25 @@ export async function executeHrCopilotPlan(
             String(
               item,
             ).toUpperCase(),
-        )
+        ).filter((domain) => domain !== "PAYROLL")
       : [];
 
-  const requestedScope =
-    plan.scope;
+  if (plan.conditions?.includes("PAYROLL_OUT_OF_SCOPE")) {
+    return {
+      data: {
+        message: "Payroll information is outside the AI HR Copilot scope.",
+      },
+      sources: [],
+    };
+  }
 
-  const scope =
-    getAuthorizedRequestScope(
-      user,
-      requestedScope,
-    );
+  const requestedScope = plan.scope;
+  const scope = getAuthorizedRequestScope(
+    user,
+    requestedScope,
+  );
 
-  // From this point onward, every executor function receives the effective
-  // server-authorized scope rather than the raw planner scope.
-  // plan = {
-  //   ...plan,
-  //   // TEAM is an executor-internal scope. HrCopilotPlan uses MY_TEAM for the
-  //   // planner representation, so this assertion keeps the existing plan type
-  //   // intact while allowing the executor's established TEAM branches.
-  //   scope: scope as HrCopilotPlan["scope"],
-  // };
-
-  /**
-   * ==========================================================================
-   * SECURITY: TEAM SCOPE
-   * ==========================================================================
-   *
-   * Only MANAGER can use TEAM scope.
-   */
-
-  if (
-    scope === "TEAM" &&
-    user.role !==
-      "MANAGER"
-  ) {
+  if (scope === "TEAM" && user.role !== "MANAGER") {
     return {
       data: {
         message:
@@ -2671,10 +2680,29 @@ export async function executeHrCopilotPlan(
     };
   }
 
+  if (plan.conditions?.includes("TICKET_COUNT")) {
+    data.tickets = await executeTicketCount(user);
+    sources.push({
+      module: "tickets",
+      description: "Ticket count within the authenticated user's authorized scope.",
+    });
+    return { data, sources };
+  }
+
+  if (plan.conditions?.includes("ORGANIZATION_EMPLOYEE_COUNT")) {
+    data.organizationEmployeeCount =
+      await executeOrganizationEmployeeCount(user);
+    sources.push({
+      module: "organization",
+      description: "Authorized organization employee counts.",
+    });
+    return { data, sources };
+  }
+
   /**
-   * ==========================================================================
+   * ===========================================================================
    * SUMMARY
-   * ==========================================================================
+   * ===========================================================================
    *
    * IMPORTANT:
    *
@@ -2697,35 +2725,18 @@ export async function executeHrCopilotPlan(
         "EMPLOYEE"
     )
   ) {
-    const summary =
-      await executeSummary(
-        user,
-        plan,
-      );
-
-    Object.assign(
-      data,
-      summary,
-    );
+    const summary = await executeSummary(user, plan);
+    Object.assign(data, summary);
 
     sources.push({
-      module:
-        "employee",
-      description:
-        "Authorized employee profile information.",
+      module: "employee",
+      description: "Authorized employee profile information.",
     });
 
-    if (
-      domains.includes(
-        "ATTENDANCE",
-      ) ||
-      data.selfSummary?.attendance
-    ) {
+    if (domains.includes("ATTENDANCE") || data.selfSummary?.attendance) {
       sources.push({
-        module:
-          "attendance",
-        description:
-          "Authorized attendance information.",
+        module: "attendance",
+        description: "Authorized attendance information.",
       });
     }
 
@@ -2772,17 +2783,6 @@ export async function executeHrCopilotPlan(
     }
 
     if (
-      data.selfSummary?.payroll
-    ) {
-      sources.push({
-        module:
-          "payroll",
-        description:
-          "Authorized payroll information.",
-      });
-    }
-
-    if (
       data.selfSummary?.documents
     ) {
       sources.push({
@@ -2822,33 +2822,23 @@ export async function executeHrCopilotPlan(
   }
 
   /**
-   * ==========================================================================
+   * ===========================================================================
    * SELF ATTENDANCE
-   * ==========================================================================
+   * ===========================================================================
    */
 
   if (
-    scope ===
-      "SELF" &&
-    domains.includes(
-      "ATTENDANCE",
-    )
+    scope === "SELF" &&
+    domains.includes("ATTENDANCE")
   ) {
-    data.attendance =
-      await executeAttendance(
-        user,
-        {
-          ...plan,
-          scope:
-            "SELF",
-        },
-      );
+    data.attendance = await executeAttendance(user, {
+      ...plan,
+      scope: "SELF",
+    });
 
     sources.push({
-      module:
-        "attendance",
-      description:
-        "Authenticated user's authorized attendance information.",
+      module: "attendance",
+      description: "Authenticated user's authorized attendance information.",
     });
   }
 
@@ -3209,25 +3199,6 @@ export async function executeHrCopilotPlan(
           "calendar",
         description:
           "Authorized calendar information for the requested employee.",
-      });
-    }
-
-    if (
-      domains.includes(
-        "PAYROLL",
-      )
-    ) {
-      data.payroll =
-        await executePayroll(
-          user,
-          plan,
-        );
-
-      sources.push({
-        module:
-          "payroll",
-        description:
-          "Authorized payroll information for the requested employee.",
       });
     }
 

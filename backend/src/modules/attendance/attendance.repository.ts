@@ -9,7 +9,10 @@ import {
 } from "@/db/models";
 import { nowIso } from "@/db/connection";
 import { AppError } from "@/utils/errors";
-import { calculateAttendance } from "@/modules/attendance/attendance.policy";
+import {
+  calculateAttendance,
+  getAttendanceEquivalent,
+} from "@/modules/attendance/attendance.policy";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { sendRegularizationDecisionEmail } from "@/services/email.service";
 
@@ -1837,7 +1840,11 @@ export async function getAiAttendanceInsights(
   // Status counts
   // -------------------------------------------------------------------------
 
-  const presentDays = records.filter((r) => r.status === "PRESENT").length;
+  const presentDays = records.filter(
+    (r) =>
+      r.status !== "WORK_FROM_HOME" &&
+      getAttendanceEquivalent(r.status) === 1,
+  ).length;
 
   const wfhDays = records.filter((r) => r.status === "WORK_FROM_HOME").length;
 
@@ -1874,15 +1881,7 @@ export async function getAiAttendanceInsights(
   // -------------------------------------------------------------------------
 
   const attendanceEquivalent = eligibleRecords.reduce((total, record) => {
-    if (record.status === "PRESENT" || record.status === "WORK_FROM_HOME") {
-      return total + 1;
-    }
-
-    if (record.status === "HALF_DAY") {
-      return total + 0.5;
-    }
-
-    return total;
+    return total + getAttendanceEquivalent(record.status);
   }, 0);
 
   const attendanceRate =
@@ -1896,9 +1895,7 @@ export async function getAiAttendanceInsights(
 
   const workingRecords = records.filter(
     (r) =>
-      (r.status === "PRESENT" ||
-        r.status === "WORK_FROM_HOME" ||
-        r.status === "HALF_DAY") &&
+      getAttendanceEquivalent(r.status) > 0 &&
       r.workHours !== null &&
       r.workHours !== undefined,
   );
@@ -1969,15 +1966,7 @@ export async function getAiAttendanceInsights(
       }
 
       const equivalent = items.reduce((total, record) => {
-        if (record.status === "PRESENT" || record.status === "WORK_FROM_HOME") {
-          return total + 1;
-        }
-
-        if (record.status === "HALF_DAY") {
-          return total + 0.5;
-        }
-
-        return total;
+        return total + getAttendanceEquivalent(record.status);
       }, 0);
 
       return Math.round((equivalent / items.length) * 100);
@@ -2395,7 +2384,11 @@ export async function getAiAttendanceInsightsForEmployees(
   // Status counts
   // -------------------------------------------------------------------------
 
-  const presentDays = validRecords.filter((r) => r.status === "PRESENT").length;
+  const presentDays = validRecords.filter(
+    (r) =>
+      r.status !== "WORK_FROM_HOME" &&
+      getAttendanceEquivalent(r.status) === 1,
+  ).length;
 
   const wfhDays = validRecords.filter(
     (r) => r.status === "WORK_FROM_HOME",
@@ -2433,15 +2426,7 @@ export async function getAiAttendanceInsightsForEmployees(
   // -------------------------------------------------------------------------
 
   const attendanceEquivalent = eligibleRecords.reduce((total, record) => {
-    if (record.status === "PRESENT" || record.status === "WORK_FROM_HOME") {
-      return total + 1;
-    }
-
-    if (record.status === "HALF_DAY") {
-      return total + 0.5;
-    }
-
-    return total;
+    return total + getAttendanceEquivalent(record.status);
   }, 0);
 
   const attendanceRate =
@@ -2455,9 +2440,7 @@ export async function getAiAttendanceInsightsForEmployees(
 
   const workingRecords = validRecords.filter(
     (r) =>
-      (r.status === "PRESENT" ||
-        r.status === "WORK_FROM_HOME" ||
-        r.status === "HALF_DAY") &&
+      getAttendanceEquivalent(r.status) > 0 &&
       r.workHours !== null &&
       r.workHours !== undefined,
   );
@@ -2524,15 +2507,7 @@ export async function getAiAttendanceInsightsForEmployees(
       }
 
       const equivalent = items.reduce((total, record) => {
-        if (record.status === "PRESENT" || record.status === "WORK_FROM_HOME") {
-          return total + 1;
-        }
-
-        if (record.status === "HALF_DAY") {
-          return total + 0.5;
-        }
-
-        return total;
+        return total + getAttendanceEquivalent(record.status);
       }, 0);
 
       return Math.round((equivalent / items.length) * 100);

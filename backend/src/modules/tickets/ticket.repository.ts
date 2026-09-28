@@ -268,6 +268,14 @@ export async function getTickets() {
   return Ticket.find({}).sort({ createdAt: -1 }).lean();
 }
 
+export async function countTickets(employeeIds?: string[]) {
+  const query = employeeIds
+    ? { employeeId: { $in: employeeIds } }
+    : {};
+
+  return Ticket.countDocuments(query);
+}
+
 // =========================================================
 // GET SINGLE TICKET
 // =========================================================

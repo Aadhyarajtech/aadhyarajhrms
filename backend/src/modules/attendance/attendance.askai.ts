@@ -1,4 +1,5 @@
 import { Attendance, Employee } from "@/db/models";
+import { getAttendanceEquivalent } from "./attendance.policy";
 
 interface GroqResponse {
   choices?: Array<{
@@ -69,7 +70,9 @@ function buildAttendanceContext(
   );
 
   const presentDays = filtered.filter(
-    (r) => r.status === "PRESENT",
+    (r) =>
+      r.status !== "WORK_FROM_HOME" &&
+      getAttendanceEquivalent(r.status) === 1,
   ).length;
 
   const wfhDays = filtered.filter(
@@ -119,20 +122,8 @@ function buildAttendanceContext(
 
   const attendanceEquivalent =
     eligibleRecords.reduce(
-      (sum, record) => {
-        if (
-          record.status === "PRESENT" ||
-          record.status === "WORK_FROM_HOME"
-        ) {
-          return sum + 1;
-        }
-
-        if (record.status === "HALF_DAY") {
-          return sum + 0.5;
-        }
-
-        return sum;
-      },
+      (sum, record) =>
+        sum + getAttendanceEquivalent(record.status),
       0,
     );
 

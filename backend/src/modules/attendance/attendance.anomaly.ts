@@ -4,6 +4,7 @@ import {
   Employee,
   EmployeeDoc,
 } from "@/db/models";
+import { getAttendanceEquivalent } from "./attendance.policy";
 
 // ============================================================================
 // TYPES
@@ -81,7 +82,9 @@ function isEligibleRecord(record: AttendanceDoc): boolean {
     record.status === "PRESENT" ||
     record.status === "WORK_FROM_HOME" ||
     record.status === "HALF_DAY" ||
-    record.status === "ABSENT"
+    record.status === "ABSENT" ||
+    record.status === "LATE" ||
+    record.status === "EARLY_DEPARTURE"
   );
 }
 
@@ -270,23 +273,7 @@ function calculateAttendanceRate(
   const equivalent =
     eligible.reduce(
       (sum, record) => {
-        if (
-          record.status ===
-            "PRESENT" ||
-          record.status ===
-            "WORK_FROM_HOME"
-        ) {
-          return sum + 1;
-        }
-
-        if (
-          record.status ===
-          "HALF_DAY"
-        ) {
-          return sum + 0.5;
-        }
-
-        return sum;
+        return sum + getAttendanceEquivalent(record.status);
       },
       0,
     );

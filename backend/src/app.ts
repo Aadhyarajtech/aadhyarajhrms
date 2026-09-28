@@ -257,6 +257,7 @@ export function createApp() {
   // =======================================================
 
   app.use("/api/ai", hrCopilotRouter);
+  app.use("/api/hr-copilot", hrCopilotRouter);
 
   // =======================================================
   // 404 HANDLER
