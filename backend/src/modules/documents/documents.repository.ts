@@ -88,6 +88,22 @@ export async function setDocumentFileUrl(
   );
   return getDocument(id);
 }
+export async function updateDocumentExpiryDate(
+  id: string,
+  expiryDate: string | null,
+) {
+  const doc = await DocumentRecord.findByIdAndUpdate(
+    id,
+    { $set: { expiryDate } },
+    { new: true },
+  );
+
+  if (!doc) {
+    throw AppError.notFound("Document not found.");
+  }
+
+  return toApiDoc(doc);
+}
 
 function safePrivateDocumentPath(storageKey: string) {
   const safeKey = path.basename(storageKey);
@@ -345,6 +361,10 @@ export async function fulfillDocumentRequest(input: {
   requestId: requestRow._id,
   expiryDate: input.expiryDate ?? null,
 });
+
+if (input.storageKey) {
+  await setDocumentFileUrl(document.id, input.storageKey);
+}
 
   const completedAt = nowIso();
   await DocumentRequest.updateOne(

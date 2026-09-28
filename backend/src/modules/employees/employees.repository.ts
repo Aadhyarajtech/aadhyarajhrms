@@ -427,6 +427,7 @@ export async function createEmployee(input: CreateEmployeeInput) {
   const employee = await Employee.create({
     employeeCode,
     userId: user._id,
+    employeeId: employeeCode,
     firstName: input.firstName,
     lastName: input.lastName,
     gender: input.gender ?? null,

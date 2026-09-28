@@ -53,6 +53,7 @@ export const hrCopilotPlanSchema = z.object({
         "PERFORMANCE",
         "GOALS",
         "CALENDAR",
+        "PAYROLL",
         "DOCUMENTS",
         "TICKETS",
         "ANNOUNCEMENTS",
@@ -666,7 +667,6 @@ function buildFallbackHrCopilotPlan(
         "CROSS_MODULE",
         "SELF_SUMMARY",
       ],
-
       requestedFields: [
         "employee profile",
         "attendance",

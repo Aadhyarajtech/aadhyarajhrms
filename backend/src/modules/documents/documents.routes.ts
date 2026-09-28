@@ -258,6 +258,158 @@ documentsRouter.delete("/:id", isAdmin, async (req, res, next) => {
     next(err);
   }
 });
+documentsRouter.patch(
+  "/:id/expiry-date",
+  async (req, res, next) => {
+    try {
+      const document = await repo.updateDocumentExpiryDate(
+        req.params.id,
+        req.body.expiryDate ?? null,
+      );
+
+      res.json({ document });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+documentsRouter.patch(
+  "/:id/review",
+  validate(documentReviewSchema),
+  async (req, res, next) => {
+    try {
+      const isReviewer = ["SUPER_ADMIN", "HR_ADMIN"].includes(
+        req.user!.role,
+      );
+      if (!isReviewer) {
+        throw AppError.forbidden();
+      }
+      if (req.body.status === "REJECTED" && !req.body.rejectionReason) {
+        throw AppError.badRequest("Rejection reason is required.");
+      }
+
+      if (req.user!.role === "MANAGER") {
+        const existing = await repo.getDocument(req.params.id);
+        if (!existing) throw AppError.notFound("Document not found.");
+        const allowed = await repo.isDirectReport(
+          req.user!.employeeId as string,
+          existing.employeeId,
+        );
+        if (!allowed) throw AppError.forbidden();
+      }
+
+      const document = await repo.reviewDocument(
+        req.params.id,
+        req.user!.userId,
+        req.body.status,
+        req.body.rejectionReason ?? null,
+      );
+      res.json({ document });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// --- Document requests (both directions) ---------------------------------
+
+documentsRouter.post(
+  "/requests",
+  validate(documentRequestSchema),
+  async (req, res, next) => {
+    try {
+      const role = req.user!.role;
+      // Direction is decided by whether an employeeId was actually sent,
+      // not by role alone: SUPER_ADMIN/HR_ADMIN/MANAGER are also employees
+      // and use this same endpoint (via "New request") to ask the company
+      // for their own documents, sending no employeeId at all. Branching on
+      // role first would wrongly force that self-request down the
+      // COMPANY_TO_EMPLOYEE path and demand an employeeId it never has.
+      const wantsToRequestFromEmployee = !!req.body.employeeId;
+      const isPrivilegedRequester = REQUESTER_ROLES.includes(role);
+      const isEmployeeRequester = !!req.user!.employeeId;
+
+      let direction: "COMPANY_TO_EMPLOYEE" | "EMPLOYEE_TO_COMPANY";
+      let targetEmployeeId: string;
+
+      if (wantsToRequestFromEmployee) {
+        if (!isPrivilegedRequester) throw AppError.forbidden();
+        direction = "COMPANY_TO_EMPLOYEE";
+        if (!EMPLOYEE_PROVIDED_TYPES.includes(req.body.type)) {
+          throw AppError.badRequest(
+            "This document type cannot be requested from an employee.",
+          );
+        }
+        // A MANAGER may only request documents from employees assigned to
+        // them; SUPER_ADMIN/HR_ADMIN can request from anyone.
+        if (role === "MANAGER") {
+          const allowed = await repo.isDirectReport(
+            req.user!.employeeId as string,
+            req.body.employeeId,
+          );
+          if (!allowed) throw AppError.forbidden();
+        }
+        targetEmployeeId = req.body.employeeId;
+      } else if (isEmployeeRequester) {
+        direction = "EMPLOYEE_TO_COMPANY";
+        if (!COMPANY_ISSUED_TYPES.includes(req.body.type)) {
+          throw AppError.badRequest(
+            "This document type cannot be requested from the company.",
+          );
+        }
+        // The target employee is always the authenticated user's own
+        // employee record. Any employeeId supplied in the request body is
+        // ignored so an employee can never request on behalf of someone
+        // else.
+        targetEmployeeId = req.user!.employeeId as string;
+      } else {
+        throw AppError.forbidden();
+      }
+
+      const request = await repo.createDocumentRequest({
+        employeeId: targetEmployeeId,
+        requestedByUserId: req.user!.userId,
+        type: req.body.type,
+        note: req.body.note ?? null,
+        direction,
+      });
+
+      res.status(201).json({ request });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+documentsRouter.get(
+  "/requests/employee/:employeeId",
+  async (req, res, next) => {
+    try {
+      const isOwner = req.params.employeeId === req.user!.employeeId;
+      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+      if (!isOwner && !isPrivileged) throw AppError.forbidden();
+      res.json({
+        requests: await repo.listDocumentRequestsForEmployee(
+          req.params.employeeId,
+        ),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+documentsRouter.get("/requests/company", async (req, res, next) => {
+  try {
+    const isProcessor = COMPANY_PROCESSOR_ROLES.includes(req.user!.role);
+    if (!isProcessor) throw AppError.forbidden();
+    const status =
+      typeof req.query.status === "string" ? req.query.status : undefined;
+    res.json({ requests: await repo.listCompanyDocumentRequests(status) });
+  } catch (err) {
+    next(err);
+  }
+});
 
 documentsRouter.patch(
   "/:id/review",

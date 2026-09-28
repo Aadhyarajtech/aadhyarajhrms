@@ -1,0 +1,11 @@
+ backend/src/middleware/auth.ts                     |  162 [32m+[m[31m-[m
+ backend/src/modules/dashboard/dashboard.routes.ts  |  133 [32m+[m
+ .../src/modules/employees/employees.repository.ts  |   35 [32m+[m[31m-[m
+ backend/src/modules/employees/employees.routes.ts  |   33 [32m+[m[31m-[m
+ backend/src/modules/leave/leave.repository.ts      |   65 [32m+[m[31m-[m
+ backend/src/modules/leave/leave.routes.ts          |   11 [32m+[m[31m-[m
+ frontend/src/lib/endpoints.ts                      | 3076 [32m+++++++[m[31m-------------[m
+ frontend/src/pages/Dashboard.tsx                   |  431 [32m+[m[31m--[m
+ frontend/src/pages/Leave.tsx                       |  802 [32m+++[m[31m--[m
+ frontend/src/pages/MyTeam.tsx                      |   60 [32m+[m[31m-[m
+ 10 files changed, 2414 insertions(+), 2394 deletions(-)

@@ -306,6 +306,7 @@ export interface EmployeeSensitiveChangeRequest {
   requestedAt: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
   reviewedBy: string | null;
+  reviewedByRole: string | null;
   reviewedAt: string | null;
   reviewComment: string | null;
 }
@@ -4121,6 +4122,7 @@ export interface DocumentRecordDoc {
   _id: string;
 
   employeeId: string;
+  reviewedByRole?: string | null;
 
   expiryDate: string | null;
 

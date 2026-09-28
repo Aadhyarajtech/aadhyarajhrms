@@ -2706,6 +2706,18 @@ export const DocumentsApi = {
       }>(`/documents/employee/${employeeId}`)
       .then((r) => r.data.documents),
 
+  review: (
+    id: string,
+    status: "VERIFIED" | "REJECTED",
+    rejectionReason?: string,
+  ) =>
+    api
+      .patch(`/documents/${id}/review`, {
+        status,
+        rejectionReason,
+      })
+      .then((r) => r.data.document),
+
   upload: (
     employeeId: string,
     file: File,
@@ -2723,11 +2735,7 @@ export const DocumentsApi = {
     }
 
     return api
-      .post(`/documents/employee/${employeeId}`, form, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      })
+      .post(`/documents/employee/${employeeId}`, form)
       .then((r) => r.data.document);
   },
 
@@ -2797,6 +2805,13 @@ export const DocumentsApi = {
         asset: Asset;
       }>("/documents/assets", payload)
       .then((r) => r.data.asset),
+
+  updateExpiryDate: (id: string, expiryDate: string | null) =>
+    api
+      .patch<{
+        document: any;
+      }>(`/documents/${id}/expiry-date`, { expiryDate })
+      .then((r) => r.data.document),
 
   updateAssetStatus: (id: string, status: string) =>
     api
