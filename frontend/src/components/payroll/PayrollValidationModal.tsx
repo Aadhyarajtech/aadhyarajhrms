@@ -599,13 +599,18 @@ export function PayrollValidationModal({
                                     {item.affectedEmployees!.map((emp) => (
                                       <span
                                         key={emp.id}
-                                        className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-700 border border-gray-200/80"
+                                        className="inline-flex items-center gap-1.5 rounded-md bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-700 border border-gray-200/80 shadow-2xs"
                                       >
-                                        <User size={10} className="text-gray-400" />
+                                        <User size={10} className="text-gray-400 shrink-0" />
                                         <span>{emp.name}</span>
                                         {emp.code && (
                                           <span className="text-gray-400 font-mono text-[10px]">
                                             ({emp.code})
+                                          </span>
+                                        )}
+                                        {emp.detail && (
+                                          <span className="ml-0.5 font-mono text-[10px] bg-slate-200/90 text-slate-800 dark:bg-slate-700 dark:text-slate-200 px-1.5 py-0.5 rounded font-semibold tracking-wide">
+                                            {emp.detail}
                                           </span>
                                         )}
                                       </span>
