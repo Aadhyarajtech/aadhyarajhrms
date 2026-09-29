@@ -7,6 +7,7 @@ import { env } from "../config/env";
 import { PayrollRun, Payslip } from "../db/models";
 import { getPayslip } from "../modules/payroll/payroll.repository";
 import { AppError } from "../utils/errors";
+import { sanitizeTextForAI } from "../utils/masking";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const LLM_TIMEOUT_MS = 8000;
@@ -455,7 +456,7 @@ Highlights: ${explanation.keyHighlights.join("; ")}
 Breakdown: ${JSON.stringify(explanation.componentBreakdown)}
 Deltas vs Prior Month: ${JSON.stringify(explanation.deltas)}
 
-Question: "${trimmed}"`,
+Question: "${sanitizeTextForAI(trimmed)}"`,
           },
         ],
         temperature: 0.2,

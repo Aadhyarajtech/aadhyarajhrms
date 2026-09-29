@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import { env } from "@/config/env";
+import { sanitizeTextForAI } from "@/utils/masking";
 
 // =========================================================
 // VALID CATEGORIES (must match the ticket schema exactly)
@@ -615,7 +616,7 @@ function buildUserMessage(
   description: string,
   employeeSelectedCategory?: string,
 ): string {
-  let message = `Classify this HR ticket:\n\nSubject: ${subject}\nDescription: ${description}`;
+  let message = `Classify this HR ticket:\n\nSubject: ${sanitizeTextForAI(subject)}\nDescription: ${sanitizeTextForAI(description)}`;
 
   if (employeeSelectedCategory) {
     message += `\n\nNote: The employee selected category "${employeeSelectedCategory}". Your classification may differ if you believe a different category is more appropriate.`;
@@ -699,14 +700,14 @@ function buildSummarizationUserMessage(
 ): string {
   let text = `Summarize this HR ticket thread:\n\n`;
   text += `Ticket ID: ${ticket.ticketId}\n`;
-  text += `Subject: ${ticket.subject}\n`;
+  text += `Subject: ${sanitizeTextForAI(ticket.subject)}\n`;
   text += `Category: ${ticket.category}\n`;
   text += `Priority: ${ticket.priority}\n`;
   text += `Status: ${ticket.status}\n`;
   if (ticket.employeeName) {
     text += `Employee: ${ticket.employeeName}\n`;
   }
-  text += `Initial Description: ${ticket.description}\n\n`;
+  text += `Initial Description: ${sanitizeTextForAI(ticket.description)}\n\n`;
 
   if (messages.length === 0) {
     text += `Conversation Thread: No follow-up messages yet — only the initial ticket description above.`;
@@ -714,7 +715,7 @@ function buildSummarizationUserMessage(
     text += `Full Conversation Thread (${messages.length} messages in chronological order):\n`;
     messages.forEach((msg, idx) => {
       const role = msg.senderRole === "EMPLOYEE" ? "Employee" : "Support Staff";
-      text += `\n[Message ${idx + 1} of ${messages.length}] [${role} — ${msg.senderName}] (${msg.createdAt}):\n${msg.message}\n`;
+      text += `\n[Message ${idx + 1} of ${messages.length}] [${role} — ${msg.senderName}] (${msg.createdAt}):\n${sanitizeTextForAI(msg.message)}\n`;
     });
   }
 
@@ -913,7 +914,7 @@ function buildReplyUserMessage(
   let text = `Generate a ${tone.toUpperCase()} reply for this IT enterprise HRMS ticket:\n\n`;
   text += `--- TICKET DETAILS ---\n`;
   text += `Ticket ID: ${ticket.ticketId}\n`;
-  text += `Subject: ${ticket.subject}\n`;
+  text += `Subject: ${sanitizeTextForAI(ticket.subject)}\n`;
   text += `Category: ${ticket.category}\n`;
   text += `Priority: ${ticket.priority}\n`;
   text += `Status: ${ticket.status}\n`;
@@ -923,7 +924,7 @@ function buildReplyUserMessage(
   if (ticket.agentName) {
     text += `Agent Name: ${ticket.agentName} (${ticket.agentRole || "Staff"})\n`;
   }
-  text += `Description: ${ticket.description}\n\n`;
+  text += `Description: ${sanitizeTextForAI(ticket.description)}\n\n`;
 
   text += `--- CONVERSATION HISTORY ---\n`;
   if (messages.length === 0) {
@@ -932,14 +933,14 @@ function buildReplyUserMessage(
     text += `Chronological thread (most recent messages at the bottom):\n`;
     for (const msg of messages) {
       const role = msg.senderRole === "EMPLOYEE" ? "Employee" : "Staff";
-      text += `[${role} — ${msg.senderName}]: ${msg.message}\n`;
+      text += `[${role} — ${msg.senderName}]: ${sanitizeTextForAI(msg.message)}\n`;
     }
   }
 
   if (instruction && instruction.trim()) {
     text += `\n--- HR AGENT'S INTENDED REPLY IDEA / INSTRUCTION ---\n`;
     text += `The agent wants the reply to convey the following idea, notes, or directive:\n`;
-    text += `"${instruction.trim()}"\n`;
+    text += `"${sanitizeTextForAI(instruction.trim())}"\n`;
     text += `CRITICAL REQUIREMENT: You MUST build the draft reply around this specific directive. Express the agent's exact idea/points accurately, professionally, and in the specified ${tone.toUpperCase()} tone while addressing the ticket context.\n`;
   }
 

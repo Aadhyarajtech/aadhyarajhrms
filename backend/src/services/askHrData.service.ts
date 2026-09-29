@@ -17,6 +17,7 @@ import {
   Ticket,
 } from "@/db/models";
 import type { ReportFilters } from "../modules/reports/reports.repository";
+import { sanitizeTextForAI } from "@/utils/masking";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const LLM_TIMEOUT_MS = 8000;
@@ -763,12 +764,12 @@ export async function askHrData(
         Array.isArray(history) && history.length > 0
           ? `Conversation history:\n${history
               .slice(-4)
-              .map((h) => `${h.role === "user" ? "User" : "Assistant"}: ${h.content}`)
+              .map((h) => `${h.role === "user" ? "User" : "Assistant"}: ${sanitizeTextForAI(h.content)}`)
               .join("\n")}\n\n`
           : "";
 
       const prompt = `You are an executive HR intelligence assistant for Aadhyaraj HRMS.
-${historyContext}Current user question: "${cleanQ}"
+${historyContext}Current user question: "${sanitizeTextForAI(cleanQ)}"
 Based on our verified database records:
 Summary data: ${rawResult.answerText}
 Key Metric: ${JSON.stringify(rawResult.keyMetric || {})}

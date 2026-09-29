@@ -1102,6 +1102,7 @@ export interface AffectedEmployeeItem {
   id: string;
   name: string;
   code?: string;
+  detail?: string;
 }
 
 export interface PayrollReadinessItem {

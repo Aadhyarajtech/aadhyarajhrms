@@ -109,31 +109,12 @@ function formatDateTime(value?: string | null) {
   return date.toLocaleString();
 }
 
-function isTicketNeedingAttention(ticket: any): boolean {
-  if (!ticket) return false;
-  if (ticket.status === "RESOLVED" || ticket.status === "CLOSED") {
-    return false;
-  }
-  return Boolean(
-    ticket.isBreached ||
-    ticket.slaStatus === "BREACHED" ||
-    ticket.slaStatus === "DUE_SOON" ||
-    ticket.attentionBadge === "BREACHED" ||
-    ticket.attentionBadge === "HIGH_ATTENTION" ||
-    ticket.attentionBadge === "ATTENTION_REQUIRED" ||
-    ticket.slaRiskLevel === "CRITICAL" ||
-    ticket.slaRiskLevel === "ELEVATED" ||
-    ticket.status === "EXPIRED" ||
-    ticket.sentiment === "CRITICAL" ||
-    ticket.aiSentiment === "CRITICAL"
-  );
-}
-
 
 export default function Tickets() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { user } = useAuth();
+  const currentEmployeeId = user?.employee?.id;
   const categoryOptions = getCategoryOptions(user?.role);
   const [activeTab, setActiveTab] = useState<"management" | "analytics">("management");
   const [escalationTicket, setEscalationTicket] = useState<any | null>(null);
@@ -163,7 +144,7 @@ export default function Tickets() {
   });
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["tickets", user?.id, user?.role],
+    queryKey: ["tickets", user?.id, user?.role, currentEmployeeId],
     queryFn: async () => {
       const res = await api.get("/tickets");
 
@@ -184,15 +165,6 @@ export default function Tickets() {
     },
     enabled: activeTab === "analytics",
     refetchInterval: 45000,
-  });
-
-  const { data: recurringGroups = [] } = useQuery<any[]>({
-    queryKey: ["ticket-recurring-issues"],
-    queryFn: async () => {
-      const res = await api.get("/tickets/recurring-issues");
-      return res.data?.groups || [];
-    },
-    refetchInterval: 30000,
   });
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -216,15 +188,16 @@ export default function Tickets() {
       );
     }
     if (user?.role === "MANAGER") {
-      // Managers only see standard complaints assigned to them.
-      return ticket.category === "Complaint";
+      // The backend already scopes /tickets to the authenticated manager
+      // using assignedManagerId plus the legacy direct-report Complaint rule.
+      // Do not apply a second assignedManagerId-only filter here, because that
+      // would hide valid legacy Complaint tickets returned by the backend.
+      return ["Complaint", "Manager Concern"].includes(ticket.category);
     }
     if (user?.role === "RECRUITER") {
-      return (
-        ticket.category === "Recruitment" ||
-        ticket.category === "Employee Referral" ||
-        ticket.assignedTo === "RECRUITER"
-      );
+      // Recruitment ownership is category-based so legacy recruitment
+      // tickets remain visible, while HR/Payroll/IT/Manager tickets do not.
+      return ["Recruitment", "Employee Referral"].includes(ticket.category);
     }
     return true;
   });
@@ -233,14 +206,28 @@ export default function Tickets() {
   const openCount = departmentScopedTickets.filter((t: any) => t.status === "OPEN").length;
   const inProgressCount = departmentScopedTickets.filter((t: any) => t.status === "IN_PROGRESS").length;
   const resolvedCount = departmentScopedTickets.filter((t: any) => t.status === "RESOLVED").length;
-  const atRiskCount = departmentScopedTickets.filter(isTicketNeedingAttention).length;
+  const atRiskCount = departmentScopedTickets.filter(
+    (t: any) =>
+      t.status === "OPEN" &&
+      (t.slaRiskLevel === "ELEVATED" ||
+        t.slaRiskLevel === "CRITICAL" ||
+        t.attentionBadge === "HIGH_ATTENTION" ||
+        t.attentionBadge === "ATTENTION_REQUIRED" ||
+        t.isBreached),
+  ).length;
 
   const filteredTickets = departmentScopedTickets.filter((ticket: any) => {
     if (statusFilter === "NEEDS_ATTENTION") {
-      if (!isTicketNeedingAttention(ticket)) {
+      const isNeedsAttention =
+        ticket.status === "OPEN" &&
+        (ticket.slaRiskLevel === "ELEVATED" ||
+          ticket.slaRiskLevel === "CRITICAL" ||
+          ticket.attentionBadge === "HIGH_ATTENTION" ||
+          ticket.attentionBadge === "ATTENTION_REQUIRED" ||
+          ticket.isBreached);
+      if (!isNeedsAttention) {
         return false;
-      }
-    } else if (statusFilter !== "ALL" && ticket.status !== statusFilter) {
+      }    } else if (statusFilter !== "ALL" && ticket.status !== statusFilter) {
       return false;
     }
     if (categoryFilter !== "ALL" && ticket.category !== categoryFilter) {
@@ -385,20 +372,11 @@ export default function Tickets() {
           >
             <BarChart3 className="h-3.5 w-3.5" />
             <span>Executive Analytics</span>
-            {recurringGroups.length > 0 && (
-              <span
-                className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  activeTab === "analytics"
-                    ? "bg-amber-300 text-slate-950"
-                    : "bg-amber-100 text-amber-900 border border-amber-300"
-                }`}
-              >
-                {recurringGroups.length} Incident{recurringGroups.length > 1 ? "s" : ""}
-              </span>
-            )}
           </button>
         </div>
       </div>
+
+
 
       {activeTab === "analytics" ? (
         <ExecutiveHelpdeskAnalytics
@@ -412,37 +390,6 @@ export default function Tickets() {
         />
       ) : (
         <>
-          {/* Active Recurring Incident Quick Alert Banner */}
-          {recurringGroups.length > 0 && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50/90 px-4 py-3 shadow-xs">
-              <div className="flex items-center gap-2.5">
-                <span className="text-base">🚨</span>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-amber-950">
-                      Recurring Issue Detected: {recurringGroups[0].issueTitle}
-                    </span>
-                    <span className="rounded bg-amber-200/90 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                      {recurringGroups[0].ticketCount} Matching Tickets
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-amber-800 mt-0.5">
-                    Multiple employees report identical symptoms in {recurringGroups[0].category}.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("analytics")}
-                className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs transition cursor-pointer"
-              >
-                <BarChart3 className="h-3 w-3" />
-                <span>View Executive Analytics &rarr;</span>
-              </button>
-            </div>
-          )}
-
           {updateStatus.isError && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               Failed to update the ticket status. Please try again.
@@ -668,10 +615,11 @@ export default function Tickets() {
                   </td>
 
                   {/* Assigned To */}
-                  <td className="py-2.5 px-2 text-gray-600 max-w-[110px] truncate" title={ticket.category === "Complaint" ? ticket.assignedManagerId || "Not Assigned" : ticket.assignedTo || "Not Assigned"}>
-                    {ticket.category === "Complaint"
-                      ? ticket.assignedManagerId || "—"
-                      : ticket.assignedTo || "—"}
+                  <td
+                    className="py-2.5 px-2 text-gray-600 max-w-[110px] truncate"
+                    title={ticket.assignedTo || "Not Assigned"}
+                  >
+                    {ticket.assignedTo || "—"}
                   </td>
 
                   {/* Attachment */}
@@ -727,28 +675,27 @@ export default function Tickets() {
                       </span>
 
                       {/* AI Ticket Attention & Stagnation Risk */}
-                      {isTicketNeedingAttention(ticket) ? (
-                        ticket.slaRiskLevel === "CRITICAL" ||
+                      {ticket.status === "OPEN" &&
+                      (ticket.slaRiskLevel === "CRITICAL" ||
                         ticket.attentionBadge === "HIGH_ATTENTION" ||
-                        ticket.attentionBadge === "BREACHED" ||
-                        ticket.isBreached ||
-                        ticket.slaStatus === "BREACHED" ? (
-                          <span
-                            className="inline-flex items-center gap-1 rounded bg-red-100 text-red-800 px-2 py-0.5 text-[10px] font-bold border border-red-300 shadow-2xs animate-pulse cursor-help"
-                            title={ticket.attentionReason || ticket.factors?.join(" • ") || "High attention required: SLA breached or critical risk"}
-                          >
-                            <AlertTriangle className="h-2.5 w-2.5 shrink-0 text-red-700" />
-                            <span>🔴 High Attention</span>
-                          </span>
-                        ) : (
-                          <span
-                            className="inline-flex items-center gap-1 rounded bg-amber-100 text-amber-900 px-2 py-0.5 text-[10px] font-semibold border border-amber-300 shadow-2xs cursor-help"
-                            title={ticket.attentionReason || ticket.factors?.join(" • ") || "Attention required"}
-                          >
-                            <Clock className="h-2.5 w-2.5 shrink-0 text-amber-700" />
-                            <span>🟡 Needs Attention</span>
-                          </span>
-                        )
+                        ticket.isBreached) ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded bg-red-100 text-red-800 px-2 py-0.5 text-[10px] font-bold border border-red-300 shadow-2xs animate-pulse cursor-help"
+                          title={ticket.attentionReason || ticket.factors?.join(" • ") || "High attention required"}
+                        >
+                          <AlertTriangle className="h-2.5 w-2.5 shrink-0 text-red-700" />
+                          <span>🔴 High Attention</span>
+                        </span>
+                      ) : ticket.status === "OPEN" &&
+                        (ticket.slaRiskLevel === "ELEVATED" ||
+                          ticket.attentionBadge === "ATTENTION_REQUIRED") ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded bg-amber-100 text-amber-900 px-2 py-0.5 text-[10px] font-semibold border border-amber-300 shadow-2xs cursor-help"
+                          title={ticket.attentionReason || ticket.factors?.join(" • ") || "Attention required"}
+                        >
+                          <Clock className="h-2.5 w-2.5 shrink-0 text-amber-700" />
+                          <span>🟡 Needs Attention</span>
+                        </span>
                       ) : ticket.status === "IN_PROGRESS" ? (
                         <span className="inline-flex items-center gap-1 rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[10px] font-medium border border-blue-200">
                           <span>In Progress</span>
@@ -773,7 +720,7 @@ export default function Tickets() {
                           <span>Chat</span>
                         </Link>
 
-                      {ticket.category === "Complaint" && !ticket.isEscalated && (
+                      {["Complaint", "Manager Concern"].includes(ticket.category) && !ticket.isEscalated && (
                         <button
                           type="button"
                           onClick={() => {
@@ -790,7 +737,7 @@ export default function Tickets() {
                         </button>
                       )}
 
-                      {ticket.category === "Complaint" && ticket.isEscalated && (
+                      {["Complaint", "Manager Concern"].includes(ticket.category) && ticket.isEscalated && (
                         <>
                           <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">
                             Escalated

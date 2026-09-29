@@ -7,6 +7,7 @@ import {
   Attendance,
   LeaveRequest,
 } from "@/db/models";
+import { maskBankAccount, maskPan, maskAadhaar } from "@/utils/masking";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const LLM_TIMEOUT_MS = 8000;
@@ -15,6 +16,7 @@ export interface AffectedEmployeeItem {
   id: string;
   name: string;
   code?: string;
+  detail?: string;
 }
 
 export interface PayrollReadinessItem {
@@ -133,6 +135,7 @@ export async function validatePayrollReadiness(
         id: String(e._id),
         name: `${e.firstName} ${e.lastName}`,
         code: e.employeeCode,
+        detail: "No Structure",
       })),
     });
   }
@@ -149,6 +152,7 @@ export async function validatePayrollReadiness(
         id: String(e._id),
         name: `${e.firstName} ${e.lastName}`,
         code: e.employeeCode,
+        detail: "₹0 Base",
       })),
     });
   }
@@ -196,11 +200,32 @@ export async function validatePayrollReadiness(
       title: "Incomplete Bank Account Details",
       description: `${employeesMissingBank.length} employee(s) lack a valid bank account number or IFSC code for direct disbursement.`,
       count: employeesMissingBank.length,
-      affectedEmployees: employeesMissingBank.map((e) => ({
-        id: String(e._id),
-        name: `${e.firstName} ${e.lastName}`,
-        code: e.employeeCode,
-      })),
+      affectedEmployees: employeesMissingBank.map((e) => {
+        const hasAccount =
+          e.bankAccountNumber &&
+          e.bankAccountNumber.trim() !== "" &&
+          e.bankAccountNumber !== "0000000000";
+        const hasIfsc =
+          e.bankIfscCode &&
+          e.bankIfscCode.trim() !== "" &&
+          e.bankIfscCode.length >= 8;
+
+        let detail = "No Account";
+        if (hasAccount && !hasIfsc) {
+          detail = `${maskBankAccount(e.bankAccountNumber)} (Missing IFSC)`;
+        } else if (hasAccount) {
+          detail = maskBankAccount(e.bankAccountNumber);
+        } else if (hasIfsc) {
+          detail = "No A/C (IFSC Present)";
+        }
+
+        return {
+          id: String(e._id),
+          name: `${e.firstName} ${e.lastName}`,
+          code: e.employeeCode,
+          detail,
+        };
+      }),
     });
   }
 
@@ -216,6 +241,7 @@ export async function validatePayrollReadiness(
         id: String(e._id),
         name: `${e.firstName} ${e.lastName}`,
         code: e.employeeCode,
+        detail: e.employeePan ? maskPan(e.employeePan) : "No PAN",
       })),
     });
   }
@@ -232,6 +258,7 @@ export async function validatePayrollReadiness(
         id: String(e._id),
         name: `${e.firstName} ${e.lastName}`,
         code: e.employeeCode,
+        detail: e.employeeAadhaar ? maskAadhaar(e.employeeAadhaar) : "No Aadhaar",
       })),
     });
   }
@@ -248,6 +275,7 @@ export async function validatePayrollReadiness(
         id: String(e._id),
         name: `${e.firstName} ${e.lastName}`,
         code: e.employeeCode,
+        detail: "Regime Undeclared",
       })),
     });
   }

@@ -9,6 +9,8 @@ const TicketMessage: any =
 
 const Employee: any = (Models as any).Employee || (Models as any).employee;
 
+const User: any = (Models as any).User || (Models as any).user;
+
 const TicketEscalationHistory: any =
   (Models as any).TicketEscalationHistory ||
   (Models as any).ticketEscalationHistory;
@@ -145,34 +147,27 @@ export function assignDepartment(category: string) {
     case "Leave Issue":
     case "Leave":
     case "Attendance":
-    case "Employee Referral":
-      return "RECRUITER";
+    case "Harassment Complaint":
+    case "Infrastructure":
     case "Other":
       return "HR_ADMIN";
+
+    case "Employee Referral":
+    case "Recruitment":
+      return "RECRUITER";
 
     case "Payroll Issue":
     case "Payroll":
       return "FINANCE";
 
     case "Manager Concern":
-      // Manager concerns route to Senior Leadership / Super Admin
-      return "SUPER_ADMIN";
-
-    case "Harassment Complaint":
-      // POSH & Workplace harassment complaints route to dedicated HR / Legal / Super Admin
-      return "HR_ADMIN";
+    case "Complaint":
+      // Manager-scoped grievances are assigned to the selected manager.
+      // The employee id is stored in assignedManagerId.
+      return "MANAGER";
 
     case "IT Support":
       return "IT_SUPPORT";
-
-    case "Infrastructure":
-      return "HR_ADMIN";
-
-    case "Recruitment":
-      return "RECRUITER";
-
-    case "Complaint":
-      return "HR_ADMIN";
 
     default:
       return "HR_ADMIN";
@@ -185,7 +180,6 @@ export function assignDepartment(category: string) {
 
 export async function createTicket(data: {
   employeeId: string;
-  managerId?: string | null;
   category: string;
   priority: string;
   subject: string;
@@ -203,14 +197,29 @@ export async function createTicket(data: {
 
   // Enforce CRITICAL priority and POSH isolation for Harassment Complaints
   let effectivePriority = data.priority;
+
   if (data.category === "Harassment Complaint") {
     effectivePriority = "CRITICAL";
   }
 
-  // Manager isolation: Manager Concern and Harassment Complaint MUST NOT be assigned to direct manager
+  // Manager ownership is always derived from the employee's existing
+  // reporting relationship. The employee must never choose a manager.
   let assignedManagerId: string | null = null;
-  if (data.category === "Complaint") {
-    assignedManagerId = data.managerId || null;
+
+  if (data.category === "Complaint" || data.category === "Manager Concern") {
+    const employee = await Employee.findById(data.employeeId)
+      .select("_id managerId")
+      .lean();
+
+    assignedManagerId = employee?.managerId
+      ? String(employee.managerId)
+      : null;
+
+    if (!assignedManagerId) {
+      throw new Error(
+        "This employee does not have a manager assigned. Please assign a manager before raising this ticket.",
+      );
+    }
   }
 
   const ticket = await Ticket.create({
@@ -235,21 +244,32 @@ export async function createTicket(data: {
     status: "OPEN",
 
     slaDueAt: calculateSlaDueAt(now, effectivePriority),
+
     slaStatus: "ON_TRACK",
 
     isEscalated: false,
+
     escalatedAt: null,
+
     escalatedById: null,
+
     escalatedTo: null,
+
     escalationReason: null,
 
     // AI classification metadata
     aiCategory: data.aiCategory ?? null,
+
     aiIntent: data.aiIntent ?? null,
+
     aiConfidence: data.aiConfidence ?? null,
+
     aiReason: data.aiReason ?? null,
+
     aiPriority: data.aiPriority ?? null,
+
     aiPriorityReason: data.aiPriorityReason ?? null,
+
     aiSentiment: data.aiSentiment ?? null,
 
     createdAt: now,
@@ -265,15 +285,82 @@ export async function createTicket(data: {
 // =========================================================
 
 export async function getTickets() {
-  return Ticket.find({}).sort({ createdAt: -1 }).lean();
+  return Ticket.find({})
+    .sort({ createdAt: -1 })
+    .lean();
 }
 
-export async function countTickets(employeeIds?: string[]) {
-  const query = employeeIds
-    ? { employeeId: { $in: employeeIds } }
-    : {};
+// =========================================================
+// GET MANAGERS AVAILABLE FOR TICKET ASSIGNMENT
+// =========================================================
 
-  return Ticket.countDocuments(query);
+export interface TicketManager {
+  id: string;
+  name: string;
+  employeeCode: string | null;
+  userId: string | null;
+}
+
+export async function getTicketManagers(): Promise<TicketManager[]> {
+  const activeEmployees = await Employee.find({
+    status: {
+      $in: [
+        "ACTIVE",
+        "ON_PROBATION",
+        "ON_LEAVE",
+        "NOTICE_PERIOD",
+        "ON_HOLD",
+      ],
+    },
+  })
+    .select("_id firstName lastName employeeCode userId isManager")
+    .lean();
+
+  const employeeIds = activeEmployees.map((employee: any) => employee._id);
+  const userIds = activeEmployees
+    .map((employee: any) => employee.userId)
+    .filter(Boolean);
+
+  const [users, directReportCounts] = await Promise.all([
+    User.find({ _id: { $in: userIds } })
+      .select("_id role")
+      .lean(),
+    Employee.aggregate([
+      { $match: { managerId: { $in: employeeIds } } },
+      { $group: { _id: "$managerId", count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const userMap = new Map<string, { _id: unknown; role?: string }>(
+    users.map((user: any) => [
+      String(user._id),
+      { _id: user._id, role: user.role },
+    ]),
+  );
+
+  const reportMap = new Map<string, number>(
+    directReportCounts.map((row: any) => [
+      String(row._id),
+      Number(row.count) || 0,
+    ]),
+  );
+
+  return activeEmployees
+    .filter((employee: any) => {
+      const role = userMap.get(String(employee.userId))?.role;
+      const hasDirectReports =
+        (reportMap.get(String(employee._id)) ?? 0) > 0;
+
+      return employee.isManager === true || hasDirectReports || role === "MANAGER";
+    })
+    .map((employee: any) => ({
+      id: String(employee._id),
+      name: `${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim() ||
+        employee.employeeCode ||
+        "Manager",
+      employeeCode: employee.employeeCode ?? null,
+      userId: employee.userId ? String(employee.userId) : null,
+    }));
 }
 
 // =========================================================
@@ -283,7 +370,9 @@ export async function countTickets(employeeIds?: string[]) {
 export async function getTicket(id: string) {
   const ticket = await Ticket.findById(id).lean();
 
-  if (!ticket) return ticket;
+  if (!ticket) {
+    return ticket;
+  }
 
   return refreshTicketSla(ticket);
 }
@@ -292,7 +381,10 @@ export async function getTicket(id: string) {
 // UPDATE TICKET STATUS
 // =========================================================
 
-export async function updateTicketStatus(id: string, status: string) {
+export async function updateTicketStatus(
+  id: string,
+  status: string,
+) {
   if (!isTicketStatus(status)) {
     throw new Error("Invalid ticket status.");
   }
@@ -316,7 +408,10 @@ export async function updateTicketStatus(id: string, status: string) {
 // =========================================================
 
 export async function getMyTickets(employeeId: string) {
-  console.log("[Tickets] Loading tickets for employee:", employeeId);
+  console.log(
+    "[Tickets] Loading tickets for employee:",
+    employeeId,
+  );
 
   const tickets = await Ticket.find({
     employeeId: employeeId,
@@ -329,6 +424,7 @@ export async function getMyTickets(employeeId: string) {
   console.log(
     `[Tickets] Found ${tickets.length} ticket(s) for employee ${employeeId}`,
   );
+
   return tickets;
 }
 
@@ -336,7 +432,9 @@ export async function getMyTickets(employeeId: string) {
 // GET TICKETS BY ASSIGNED ROLE
 // =========================================================
 
-export async function getTicketsByAssignees(assignees: string[]) {
+export async function getTicketsByAssignees(
+  assignees: string[],
+) {
   return Ticket.find({
     assignedTo: {
       $in: assignees,
@@ -349,49 +447,93 @@ export async function getTicketsByAssignees(assignees: string[]) {
 }
 
 // =========================================================
+// COUNT TICKETS FOR EMPLOYEE(S)
+// =========================================================
+// Kept for HR Copilot / existing callers.
+// =========================================================
+
+export async function countTickets(employeeIds: string[]) {
+  if (
+    !Array.isArray(employeeIds) ||
+    employeeIds.length === 0
+  ) {
+    return 0;
+  }
+
+  return Ticket.countDocuments({
+    employeeId: {
+      $in: employeeIds,
+    },
+  });
+}
+
+// =========================================================
 // GET MANAGER'S TEAM GRIEVANCE TICKETS
 // =========================================================
 //
-// Manager grievance access is scoped by the actual manager
-// employee id stored in assignedManagerId. This prevents one
-// manager from seeing complaints belonging to another manager.
-// =========================================================
+// Manager access is scoped by:
+//
+// 1. Tickets explicitly assigned to the manager through
+//    assignedManagerId.
+//
+// 2. Legacy Complaint tickets created by the manager's
+//    direct reports.
+//
+// This allows existing Complaint records to continue working
+// without rewriting historical ticket ownership.
+//
 
-export async function getTeamGrievanceTickets(managerId: string) {
+export async function getTeamGrievanceTickets(
+  managerId: string,
+) {
   if (!managerId) {
     return [];
   }
 
+  const normalizedManagerId = String(managerId).trim();
+
+  if (!normalizedManagerId) {
+    return [];
+  }
+
   const directReports = await Employee.find({
-    managerId,
+    managerId: normalizedManagerId,
   })
     .select("_id")
     .lean();
 
-  const employeeIds = directReports.map((employee: any) => employee._id);
+  const directReportIds = directReports
+    .map((employee: any) => String(employee._id))
+    .filter(Boolean);
 
-  if (employeeIds.length === 0) {
-    return [];
+  const ownershipConditions: any[] = [
+    {
+      assignedManagerId: normalizedManagerId,
+      category: { $in: ["Complaint", "Manager Concern"] },
+    },
+  ];
+
+  if (directReportIds.length > 0) {
+    ownershipConditions.push({
+      category: "Complaint",
+      employeeId: {
+        $in: directReportIds,
+      },
+    });
   }
 
-  return Ticket.find({
-    category: "Complaint",
-    assignedManagerId: managerId,
-    employeeId: { $in: employeeIds },
+  const tickets = await Ticket.find({
+    $or: ownershipConditions,
   })
-    .sort({
-      createdAt: -1,
-    })
+    .sort({ createdAt: -1 })
     .lean();
-}
 
-// =========================================================
-// GET SINGLE TEAM GRIEVANCE TICKET
-// =========================================================
-//
-// Used by manager-only routes before returning a ticket or
-// allowing a manager to act on it.
-// =========================================================
+  console.log(
+    `[Tickets] Manager ${normalizedManagerId} -> ${tickets.length} team ticket(s)`,
+  );
+
+  return tickets;
+}
 
 export async function getTeamGrievanceTicket(
   ticketId: string,
@@ -401,23 +543,41 @@ export async function getTeamGrievanceTicket(
     return undefined;
   }
 
+  const normalizedManagerId = String(managerId).trim();
+
+  if (!normalizedManagerId) {
+    return undefined;
+  }
+
   const directReports = await Employee.find({
-    managerId,
+    managerId: normalizedManagerId,
   })
     .select("_id")
     .lean();
 
-  const employeeIds = directReports.map((employee: any) => employee._id);
+  const directReportIds = directReports
+    .map((employee: any) => String(employee._id))
+    .filter(Boolean);
 
-  if (employeeIds.length === 0) {
-    return undefined;
+  const ownershipConditions: any[] = [
+    {
+      assignedManagerId: normalizedManagerId,
+      category: { $in: ["Complaint", "Manager Concern"] },
+    },
+  ];
+
+  if (directReportIds.length > 0) {
+    ownershipConditions.push({
+      category: "Complaint",
+      employeeId: {
+        $in: directReportIds,
+      },
+    });
   }
 
   return Ticket.findOne({
     _id: ticketId,
-    category: "Complaint",
-    assignedManagerId: managerId,
-    employeeId: { $in: employeeIds },
+    $or: ownershipConditions,
   }).lean();
 }
 
@@ -444,106 +604,243 @@ export async function getTicketsForDepartment(
   role: string,
   managerEmployeeId?: string | null,
 ) {
-  // Super Admin and HR Admin have enterprise-wide oversight over all tickets
-  if (role === "SUPER_ADMIN" || role === "HR_ADMIN") {
-    return Ticket.find({}).sort({ createdAt: -1 }).lean();
+  const normalizedRole = String(role || "").trim();
+
+  // =======================================================
+  // SUPER ADMIN
+  // =======================================================
+  // Only SUPER_ADMIN gets enterprise-wide visibility.
+
+  if (normalizedRole === "SUPER_ADMIN") {
+    return Ticket.find({})
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
   }
 
-  // IT Support sees IT Support and Infrastructure tickets
-  if (role === "IT_SUPPORT") {
+  // =======================================================
+  // HR ADMIN
+  // =======================================================
+  // HR_ADMIN sees ONLY tickets assigned to HR_ADMIN.
+
+  if (normalizedRole === "HR_ADMIN") {
     return Ticket.find({
-      $or: [
-        { assignedTo: "IT_SUPPORT" },
-        { category: { $in: ["IT Support", "Infrastructure"] } },
-      ],
+      assignedTo: "HR_ADMIN",
+    })
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
+  }
+
+  // IT Support sees only tickets explicitly assigned to IT_SUPPORT.
+  if (normalizedRole === "IT_SUPPORT") {
+    return Ticket.find({
+      assignedTo: "IT_SUPPORT",
+      category: { $in: ["IT Support", "Infrastructure"] },
     })
       .sort({ createdAt: -1 })
       .lean();
   }
 
-  // Finance sees Payroll / Finance tickets
-  if (role === "FINANCE") {
+  // Finance sees only tickets explicitly assigned to FINANCE.
+  if (normalizedRole === "FINANCE") {
     return Ticket.find({
-      $or: [
-        { assignedTo: "FINANCE" },
-        { category: { $in: ["Payroll", "Payroll Issue"] } },
-      ],
+      assignedTo: "FINANCE",
+      category: { $in: ["Payroll", "Payroll Issue"] },
     })
       .sort({ createdAt: -1 })
       .lean();
   }
 
-  if (role === "RECRUITER") {
+  // =======================================================
+  // RECRUITER
+  // =======================================================
+  // RECRUITER sees only recruitment tickets assigned to RECRUITER.
+
+  if (normalizedRole === "RECRUITER") {
     return Ticket.find({
-      $or: [
-        { assignedTo: "RECRUITER" },
-        { category: { $in: ["Recruitment", "Employee Referral"] } },
-      ],
+      assignedTo: "RECRUITER",
+      category: { $in: ["Recruitment", "Employee Referral"] },
     })
-      .sort({ createdAt: -1 })
+      .sort({
+        createdAt: -1,
+      })
       .lean();
   }
 
-  if (role === "MANAGER") {
-    if (!managerEmployeeId) return [];
-    return getTeamGrievanceTickets(managerEmployeeId);
+  // =======================================================
+  // IT SUPPORT
+  // =======================================================
+
+  if (normalizedRole === "IT_SUPPORT") {
+    return Ticket.find({
+      assignedTo: "IT_SUPPORT",
+    })
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
   }
+
+  // =======================================================
+  // FINANCE
+  // =======================================================
+
+  if (normalizedRole === "FINANCE") {
+    return Ticket.find({
+      assignedTo: "FINANCE",
+    })
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
+  }
+
+  // =======================================================
+  // MANAGER
+  // =======================================================
+  // Managers receive only their own assigned manager tickets
+  // plus legacy Complaint tickets belonging to direct reports.
+
+  if (normalizedRole === "MANAGER") {
+    if (!managerEmployeeId) {
+      return [];
+    }
+
+    return getTeamGrievanceTickets(
+      String(managerEmployeeId),
+    );
+  }
+
+  // =======================================================
+  // EMPLOYEE / UNKNOWN ROLE
+  // =======================================================
+  // Employee ticket visibility is handled by getMyTickets()
+  // from the authenticated employee context.
+  //
+  // Do NOT return all tickets for unknown roles.
 
   return [];
 }
 
+// =========================================================
+// AUTHORIZATION FOR A SINGLE TICKET
+// =========================================================
+
 export function isUserAuthorizedForTicket(
   ticket: any,
-  user: { role: string; employeeId?: string | null },
+  user: {
+    role: string;
+    employeeId?: string | null;
+  },
 ): boolean {
-  if (!ticket || !user) return false;
-  const role = String(user.role);
+  if (!ticket || !user) {
+    return false;
+  }
 
-  // Super Admin and HR Admin have enterprise-wide access
-  if (role === "SUPER_ADMIN" || role === "HR_ADMIN") return true;
+  const role = String(user.role || "").trim();
 
-  // The ticket creator can always view their own ticket
-  if (user.employeeId && ticket.employeeId === user.employeeId) return true;
+  // =======================================================
+  // SUPER ADMIN
+  // =======================================================
 
-  // Manager can only access Complaint/Grievance tickets assigned to them
+  if (role === "SUPER_ADMIN") {
+    return true;
+  }
+
+  // =======================================================
+  // EMPLOYEE SELF ACCESS
+  // =======================================================
+  //
+  // The employee who created the ticket can view their own
+  // ticket regardless of assigned department.
+  //
+  // This is required so employees can track their requests.
+
+  if (
+    user.employeeId &&
+    String(ticket.employeeId) === String(user.employeeId)
+  ) {
+    return true;
+  }
+
+  // =======================================================
+  // HR ADMIN
+  // =======================================================
+
+  if (role === "HR_ADMIN") {
+    return ticket.assignedTo === "HR_ADMIN";
+  }
+
+  // =======================================================
+  // RECRUITER
+  // =======================================================
+
+  if (role === "RECRUITER") {
+    return ticket.assignedTo === "RECRUITER";
+  }
+
+  // =======================================================
+  // IT SUPPORT
+  // =======================================================
+
+  if (role === "IT_SUPPORT") {
+    return ticket.assignedTo === "IT_SUPPORT";
+  }
+
+  // =======================================================
+  // FINANCE
+  // =======================================================
+
+  if (role === "FINANCE") {
+    return ticket.assignedTo === "FINANCE";
+  }
+
+  // =======================================================
+  // MANAGER
+  // =======================================================
+  //
+  // Explicit manager ownership is checked here.
+  //
+  // Legacy direct-report Complaint fallback is handled by
+  // getTeamGrievanceTicket() in manager-specific routes.
+
   if (role === "MANAGER") {
     return (
-      ticket.category === "Complaint" &&
       !!user.employeeId &&
-      ticket.assignedManagerId === user.employeeId
+      String(ticket.assignedManagerId) ===
+        String(user.employeeId)
     );
   }
 
-  // IT Support can only access IT Support tickets
+  // IT Support can only access IT Support tickets.
   if (role === "IT_SUPPORT") {
     return (
-      ticket.assignedTo === "IT_SUPPORT" || ticket.category === "IT Support"
+      ticket.assignedTo === "IT_SUPPORT" &&
+      ["IT Support", "Infrastructure"].includes(ticket.category)
     );
   }
 
-  // Finance can only access Payroll/Finance tickets
+  // Finance can only access Payroll/Finance tickets.
   if (role === "FINANCE") {
     return (
-      ticket.assignedTo === "FINANCE" ||
-      ticket.category === "Payroll" ||
-      ticket.category === "Payroll Issue"
+      ticket.assignedTo === "FINANCE" &&
+      ["Payroll", "Payroll Issue"].includes(ticket.category)
     );
   }
 
-  // Recruiters own recruitment and employee-referral tickets. Category
-  // matching keeps older tickets visible even if they were historically
-  // assigned to HR/Admin/Manager.
+  // Recruiters only access recruitment tickets assigned to RECRUITER.
   if (role === "RECRUITER") {
     return (
-      ticket.assignedTo === "RECRUITER" ||
-      ticket.category === "Recruitment" ||
-      ticket.category === "Employee Referral"
+      ticket.assignedTo === "RECRUITER" &&
+      ["Recruitment", "Employee Referral"].includes(ticket.category)
     );
   }
 
   return false;
 }
-
 
 // =========================================================
 // ESCALATE MANAGER GRIEVANCE
@@ -561,7 +858,9 @@ export async function escalateTeamGrievance(
   reason: string,
 ) {
   if (!ticketId || !managerId) {
-    throw new Error("Ticket id and manager id are required.");
+    throw new Error(
+      "Ticket id and manager id are required.",
+    );
   }
 
   if (!isTicketEscalationTarget(escalatedTo)) {
@@ -575,49 +874,74 @@ export async function escalateTeamGrievance(
   }
 
   if (normalizedReason.length > 1000) {
-    throw new Error("Escalation reason must not exceed 1000 characters.");
+    throw new Error(
+      "Escalation reason must not exceed 1000 characters.",
+    );
   }
 
-  const teamTicket = await getTeamGrievanceTicket(ticketId, managerId);
+  const teamTicket = await getTeamGrievanceTicket(
+    ticketId,
+    managerId,
+  );
 
   if (!teamTicket) {
-    throw new Error("Grievance not found or not assigned to this manager.");
+    throw new Error(
+      "Grievance not found or not assigned to this manager.",
+    );
   }
 
   const ticket = await refreshTicketSla(teamTicket);
 
   if ((ticket as any).isEscalated) {
-    throw new Error("This grievance has already been escalated.");
+    throw new Error(
+      "This grievance has already been escalated.",
+    );
   }
 
   const now = new Date().toISOString();
+
   const slaStatus = calculateSlaStatus(
     (ticket as any).slaDueAt ?? null,
     (ticket as any).status,
   );
 
-  const escalationReason = slaStatus === "BREACHED" ? "SLA_BREACH" : "MANUAL";
+  const escalationReason =
+    slaStatus === "BREACHED"
+      ? "SLA_BREACH"
+      : "MANUAL";
 
   const updatedTicket = await Ticket.findOneAndUpdate(
     {
       _id: ticketId,
-      category: "Complaint",
+      category: { $in: ["Complaint", "Manager Concern"] },
       assignedManagerId: managerId,
-      isEscalated: { $ne: true },
+
+      isEscalated: {
+        $ne: true,
+      },
     },
     {
       $set: {
         isEscalated: true,
+
         escalatedAt: now,
+
         escalatedById: managerId,
+
         escalatedTo,
+
         escalationReason: normalizedReason,
+
         assignedTo: escalatedTo,
+
         slaStatus,
+
         updatedAt: now,
       },
     },
-    { new: true },
+    {
+      new: true,
+    },
   ).lean();
 
   if (!updatedTicket) {
@@ -630,11 +954,17 @@ export async function escalateTeamGrievance(
   if (TicketEscalationHistory) {
     await TicketEscalationHistory.create({
       ticketId,
+
       escalatedById: managerId,
+
       escalatedFrom: "MANAGER",
+
       escalatedTo,
+
       reason: escalationReason,
+
       note: normalizedReason,
+
       createdAt: now,
     });
   }
@@ -642,39 +972,57 @@ export async function escalateTeamGrievance(
   return updatedTicket;
 }
 
+// =========================================================
+// GRIEVANCE ESCALATION HISTORY
+// =========================================================
+
 export async function getGrievanceEscalationHistory(
   ticketId: string,
   managerId: string,
 ) {
-  const teamTicket = await getTeamGrievanceTicket(ticketId, managerId);
+  const teamTicket = await getTeamGrievanceTicket(
+    ticketId,
+    managerId,
+  );
 
   if (!teamTicket) {
-    throw new Error("Grievance not found or not assigned to this manager.");
+    throw new Error(
+      "Grievance not found or not assigned to this manager.",
+    );
   }
 
   if (!TicketEscalationHistory) {
     return [];
   }
 
-  return TicketEscalationHistory.find({ ticketId })
-    .sort({ createdAt: -1 })
+  return TicketEscalationHistory.find({
+    ticketId,
+  })
+    .sort({
+      createdAt: -1,
+    })
     .lean();
 }
+
+// =========================================================
+// REFRESH OPEN GRIEVANCE SLA
+// =========================================================
 
 /**
  * Refresh SLA state for open complaint tickets.
  *
- * This can be called by a scheduled job as well as by Manager grievance
- * screens. It does not escalate the ticket by itself; it only makes the
- * current SLA state durable. Escalation remains an explicit workflow action.
+ * This can be called by a scheduled job as well as by Manager
+ * grievance screens. It does not escalate the ticket by itself;
+ * it only makes the current SLA state durable.
  */
 export async function refreshOpenGrievanceSla() {
   const tickets = await Ticket.find({
-    category: "Complaint",
+    category: { $in: ["Complaint", "Manager Concern"] },
     status: { $in: ["OPEN", "IN_PROGRESS", "WAITING_FOR_EMPLOYEE"] },
   }).lean();
 
   const now = new Date();
+
   let updated = 0;
 
   for (const ticket of tickets) {
@@ -686,10 +1034,13 @@ export async function refreshOpenGrievanceSla() {
 
     if ((ticket as any).slaStatus !== slaStatus) {
       await Ticket.updateOne(
-        { _id: ticket._id },
+        {
+          _id: ticket._id,
+        },
         {
           $set: {
             slaStatus,
+
             updatedAt: now.toISOString(),
           },
         },
@@ -699,16 +1050,22 @@ export async function refreshOpenGrievanceSla() {
     }
   }
 
-  return { updated };
+  return {
+    updated,
+  };
 }
 
 // =========================================================
 // GET TICKET MESSAGES
 // =========================================================
 
-export async function getTicketMessages(ticketId: string) {
+export async function getTicketMessages(
+  ticketId: string,
+) {
   if (!TicketMessage) {
-    throw new Error("TicketMessage model is not available");
+    throw new Error(
+      "TicketMessage model is not available",
+    );
   }
 
   return TicketMessage.find({
@@ -719,6 +1076,7 @@ export async function getTicketMessages(ticketId: string) {
     })
     .lean();
 }
+
 // =========================================================
 // CREATE TICKET MESSAGE
 // =========================================================
@@ -731,15 +1089,22 @@ export async function createTicketMessage(data: {
   message: string;
 }) {
   if (!TicketMessage) {
-    throw new Error("TicketMessage model is not available");
+    throw new Error(
+      "TicketMessage model is not available",
+    );
   }
 
   const message = await TicketMessage.create({
     ticketId: data.ticketId,
+
     employeeId: data.employeeId,
+
     senderName: data.senderName,
+
     senderRole: data.senderRole,
+
     message: data.message,
+
     createdAt: new Date(),
   });
 

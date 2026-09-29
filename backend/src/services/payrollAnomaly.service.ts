@@ -9,6 +9,7 @@ import {
   LeaveType,
 } from "@/db/models";
 import { AppError } from "@/utils/errors";
+import { maskBankAccount, maskPan } from "@/utils/masking";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const LLM_TIMEOUT_MS = 8000;
@@ -215,13 +216,15 @@ export async function detectPayrollAnomalies(
         (sum, e) => sum + (currentPayslipMap.get(e._id)?.netPay ?? 0),
         0,
       );
+      const maskedBank = maskBankAccount(bank);
       anomalies.push({
         id: `anom_${itemCounter++}`,
         category: "DUPLICATE_ACCOUNT",
         severity: "CRITICAL",
         title: "Duplicate Bank Account Detected",
-        description: `Multiple employees (${emps.map((e) => `${e.firstName} ${e.lastName} (${e.employeeCode || e._id})`).join(", ")}) are registered with identical bank account ending in ...${bank.slice(-4)}.`,
-        currentValue: bank,
+        employeeName: emps.map((e) => `${e.firstName} ${e.lastName}`).join(", "),
+        description: `Multiple employees (${emps.map((e) => `${e.firstName} ${e.lastName} (${e.employeeCode || e._id})`).join(", ")}) are registered with identical bank account ending in ${maskedBank.slice(-4)}.`,
+        currentValue: maskedBank,
         financialExposure: combinedNet,
         recommendation:
           "Verify employee banking documentation with HR before releasing payouts to prevent fraudulent or misdirected salary disbursement.",
@@ -231,15 +234,66 @@ export async function detectPayrollAnomalies(
 
   for (const [pan, emps] of panMap.entries()) {
     if (emps.length > 1) {
+      const maskedPan = maskPan(pan);
       anomalies.push({
         id: `anom_${itemCounter++}`,
         category: "DUPLICATE_ACCOUNT",
         severity: "CRITICAL",
         title: "Duplicate PAN Number Found",
-        description: `Employees ${emps.map((e) => `${e.firstName} ${e.lastName}`).join(", ")} share the same PAN (${pan}).`,
-        currentValue: pan,
+        employeeName: emps.map((e) => `${e.firstName} ${e.lastName}`).join(", "),
+        description: `Employees ${emps.map((e) => `${e.firstName} ${e.lastName}`).join(", ")} share the same PAN (${maskedPan}).`,
+        currentValue: maskedPan,
         recommendation:
           "Verify PAN cards. Duplicate PAN submissions breach tax compliance and TDS reporting under Section 206AA.",
+      });
+    }
+  }
+
+  // --- Check 1b: Incomplete or Missing Bank Account on Active Payslip ---
+  for (const p of currentPayslips) {
+    const emp = empMap.get(p.employeeId);
+    if (!emp) continue;
+    const hasAccount =
+      emp.bankAccountNumber &&
+      emp.bankAccountNumber.trim() !== "" &&
+      emp.bankAccountNumber !== "0000000000";
+    const hasIfsc =
+      emp.bankIfscCode &&
+      emp.bankIfscCode.trim() !== "" &&
+      emp.bankIfscCode.length >= 8;
+
+    if (!hasAccount || !hasIfsc) {
+      const maskedBank = emp.bankAccountNumber ? maskBankAccount(emp.bankAccountNumber) : "No Account";
+      const detail = hasAccount && !hasIfsc ? `${maskedBank} (Missing IFSC)` : maskedBank;
+      anomalies.push({
+        id: `anom_${itemCounter++}`,
+        category: "DUPLICATE_ACCOUNT",
+        severity: "HIGH",
+        title: "Incomplete Bank Details for Disbursement",
+        employeeId: p.employeeId,
+        employeeName: `${emp.firstName} ${emp.lastName}`,
+        employeeCode: emp.employeeCode || p.employeeId,
+        department: deptMap.get(emp.departmentId) || "",
+        currentValue: detail,
+        financialExposure: p.netPay,
+        description: `${emp.firstName} ${emp.lastName} has a payout of ${formatINR(p.netPay)} scheduled, but lacks a valid bank account number or IFSC code for direct deposit.`,
+        recommendation: "Collect verified bank details or IFSC code before initiating direct bank payout.",
+      });
+    }
+
+    if (!emp.employeePan || emp.employeePan.trim() === "") {
+      anomalies.push({
+        id: `anom_${itemCounter++}`,
+        category: "STATUTORY_COMPLIANCE",
+        severity: "MEDIUM",
+        title: "Missing Permanent Account Number (PAN)",
+        employeeId: p.employeeId,
+        employeeName: `${emp.firstName} ${emp.lastName}`,
+        employeeCode: emp.employeeCode || p.employeeId,
+        department: deptMap.get(emp.departmentId) || "",
+        currentValue: "No PAN",
+        description: `${emp.firstName} ${emp.lastName} does not have a registered PAN card on file, creating a statutory 20% TDS withholding compliance penalty risk under Section 206AA.`,
+        recommendation: "Obtain employee PAN card copy to verify tax withholding calculations.",
       });
     }
   }
@@ -416,10 +470,22 @@ export async function detectPayrollAnomalies(
     ? roundMoney((flaggedEmployeesCount / currentPayslips.length) * 100)
     : 0;
 
-  // Deduct points from 100 based on severity
-  const scorePenalty =
-    criticalCount * 22 + highCount * 12 + mediumCount * 4 + lowCount * 1;
-  const healthScore = Math.max(0, Math.min(100, Math.round(100 - scorePenalty)));
+  // Proportional workforce health calculation
+  const cleanEmployeesCount = Math.max(0, currentPayslips.length - flaggedEmployeesCount);
+  const cleanRate = currentPayslips.length
+    ? (cleanEmployeesCount / currentPayslips.length) * 100
+    : 100;
+
+  // Weighted severity penalties (capped so score remains realistic and non-zero)
+  const criticalPenalty = Math.min(30, criticalCount * 12);
+  const highPenalty = Math.min(20, highCount * 3);
+  const mediumPenalty = Math.min(10, mediumCount * 1);
+  const severityPenalty = criticalPenalty + highPenalty + mediumPenalty;
+
+  const rawScore = cleanRate - severityPenalty;
+  const healthScore = anomalies.length === 0
+    ? 100
+    : Math.max(15, Math.min(99, Math.round(rawScore)));
 
   // Generate AI Synthesis
   const { summary: aiSummary, recommendations } = await generateAuditExecutiveSummary(

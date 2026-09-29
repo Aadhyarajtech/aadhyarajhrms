@@ -334,7 +334,7 @@ export function PayrollAnomalyModal({
                     { key: "ALL", label: `All (${audit.anomaliesCount})` },
                     { key: "CRITICAL_ONLY", label: `Critical (${audit.criticalCount})` },
                     { key: "SALARY_VARIANCE", label: "Salary Spikes" },
-                    { key: "DUPLICATE_ACCOUNT", label: "Duplicate Info" },
+                    { key: "DUPLICATE_ACCOUNT", label: "Banking & Duplicates" },
                     { key: "ATTENDANCE_MISMATCH", label: "Attendance / LOP" },
                     { key: "STATUTORY_COMPLIANCE", label: "Statutory" },
                   ].map((tab) => {
@@ -444,8 +444,8 @@ export function PayrollAnomalyModal({
                             {item.description}
                           </p>
 
-                          {/* Employee Info Pills */}
-                          {(item.employeeName || item.department) && (
+                          {/* Employee Info & Masked Value Pills */}
+                          {(item.employeeName || item.department || item.currentValue) && (
                             <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 pt-1">
                               {item.employeeName && (
                                 <span className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-200">
@@ -460,10 +460,17 @@ export function PayrollAnomalyModal({
                                   {item.department}
                                 </span>
                               )}
-                              {item.currentValue && (
-                                <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                                  Current: {item.currentValue}
-                                  {item.expectedValue ? ` | Expected: ${item.expectedValue}` : ""}
+                              {item.currentValue !== undefined && item.currentValue !== null && (
+                                <span className="inline-flex items-center gap-1.5 font-mono text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 px-2 py-0.5 rounded-md shadow-2xs">
+                                  <span className="text-slate-500 dark:text-slate-400 font-sans font-normal text-[10px]">Current:</span>
+                                  <span className="font-semibold text-rose-600 dark:text-rose-400 tracking-wide">{String(item.currentValue)}</span>
+                                  {item.expectedValue ? (
+                                    <>
+                                      <span className="text-slate-300 dark:text-slate-600">|</span>
+                                      <span className="text-slate-500 dark:text-slate-400 font-sans font-normal text-[10px]">Expected:</span>
+                                      <span className="font-medium text-slate-700 dark:text-slate-300">{String(item.expectedValue)}</span>
+                                    </>
+                                  ) : null}
                                 </span>
                               )}
                             </div>
