@@ -279,6 +279,12 @@ function daysBetweenInclusive(
   );
 }
 
+function getNextDateOnly(date: string): string {
+  const nextDate = new Date(`${date.slice(0, 10)}T00:00:00.000Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  return nextDate.toISOString().slice(0, 10);
+}
+
 function getOverlappingDays(
   requestedStart: string,
   requestedEnd: string,
@@ -647,6 +653,7 @@ export async function analyzeLeaveConflict(input: {
   const teamEmployeeIds = teamMembers.map(
     (member) => member._id,
   );
+  const endDateExclusive = getNextDateOnly(endDate);
 
   /*
    * Find leave requests that overlap the requested period.
@@ -665,7 +672,7 @@ export async function analyzeLeaveConflict(input: {
       },
 
       startDate: {
-        $lte: endDate,
+        $lt: endDateExclusive,
       },
 
       endDate: {

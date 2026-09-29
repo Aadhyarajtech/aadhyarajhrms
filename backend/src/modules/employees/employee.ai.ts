@@ -768,7 +768,7 @@ export interface Employee360Input {
 export async function generateEmployee360Summary(
   input: Employee360Input,
 ): Promise<Employee360Summary> {
-  const fallback = employee360SummaryFallback();
+  const fallback = buildEmployee360SummaryFallback(input);
 
   const userMessage = JSON.stringify(
     {
@@ -850,7 +850,7 @@ export async function generateEmployee360Summary(
     2,
   );
 
-  return generateOrganizationAI(
+  const generated = await generateOrganizationAI(
     EMPLOYEE_360_SYSTEM_PROMPT,
     employee360SummarySchema,
     fallback,
@@ -863,5 +863,231 @@ export async function generateEmployee360Summary(
 
       timeoutMs: 9000,
     },
-  ) as Promise<Employee360Summary>;
+  );
+
+  return mergeEmployee360Summary(
+    generated as Employee360Summary,
+    fallback,
+  );
+}
+
+function buildEmployee360SummaryFallback(
+  input: Employee360Input,
+): Employee360Summary {
+  const skills = cleanSkills(input.skills);
+  const performance = input.performance;
+  const attendance = input.attendance;
+  const leave = input.leave;
+  const strengths = safeStringArray(performance?.strengths).slice(0, 6);
+  const developmentAreas = safeStringArray(
+    performance?.developmentAreas,
+  ).slice(0, 6);
+  const strongestSkills = skills
+    .filter((skill) => skill.competencyLevel === "EXPERT" || skill.competencyLevel === "ADVANCED")
+    .map((skill) => skill.name)
+    .slice(0, 8);
+  const developmentSkills = skills
+    .filter((skill) => skill.competencyLevel === "BEGINNER")
+    .map((skill) => skill.name)
+    .slice(0, 8);
+
+  const hasAttendance = Boolean(
+    attendance &&
+      (attendance.attendanceRate !== null && attendance.attendanceRate !== undefined ||
+        (attendance.presentDays ?? 0) > 0 ||
+        (attendance.absentDays ?? 0) > 0 ||
+        (attendance.halfDays ?? 0) > 0 ||
+        (attendance.lateDays ?? 0) > 0 ||
+        attendance.averageWorkHours !== null && attendance.averageWorkHours !== undefined),
+  );
+  const hasLeave = Boolean(
+    leave &&
+      ((leave.totalAllocated ?? 0) > 0 ||
+        (leave.totalUsed ?? 0) > 0 ||
+        (leave.remaining ?? 0) > 0 ||
+        (leave.requests?.length ?? 0) > 0),
+  );
+
+  const attendanceDetails = attendance && hasAttendance
+    ? [
+        attendance.attendanceRate == null
+          ? null
+          : `${attendance.attendanceRate}% attendance`,
+        `${attendance.presentDays ?? 0} present days`,
+        `${attendance.absentDays ?? 0} absent days`,
+        `${attendance.halfDays ?? 0} half days`,
+        `${attendance.lateDays ?? 0} late days`,
+        attendance.averageWorkHours == null
+          ? null
+          : `${attendance.averageWorkHours} average work hours`,
+        attendance.trend ? `trend: ${attendance.trend.toLowerCase()}` : null,
+      ].filter((item): item is string => Boolean(item))
+    : [];
+  const leaveObservations = (leave?.requests ?? [])
+    .slice(0, 6)
+    .map((request) =>
+      `${request.leaveType ?? "Leave"}: ${request.totalDays ?? 0} day(s), ${request.status ?? "status unavailable"}`,
+    );
+
+  const profile = {
+    role: input.designation || "Not available",
+    department: input.department || "Not available",
+    experienceSummary: calculateExperience(input.profile.dateOfJoining),
+  };
+  const performanceAvailable = Boolean(
+    performance &&
+      (performance.latestRating != null || strengths.length > 0 || developmentAreas.length > 0),
+  );
+  const performanceOverview = performanceAvailable
+    ? [
+        performance?.latestRating == null
+          ? null
+          : `Latest performance rating: ${performance.latestRating}.`,
+        strengths.length ? `Recorded strengths: ${strengths.join(", ")}.` : null,
+        developmentAreas.length
+          ? `Recorded development areas: ${developmentAreas.join(", ")}.`
+          : null,
+      ].filter((item): item is string => Boolean(item)).join(" ")
+    : "Performance information is not available.";
+  const skillsOverview = skills.length
+    ? `Skills on record: ${skills.map((skill) => `${skill.name} (${skill.competencyLevel.toLowerCase()})`).join(", ")}.`
+    : "Skill information is not available.";
+  const attendanceOverview = hasAttendance
+    ? `Attendance records include ${attendanceDetails.join(", ")}.`
+    : "Attendance information is not available.";
+  const leaveOverview = hasLeave
+    ? `Leave balance: ${leave?.totalAllocated ?? 0} allocated, ${leave?.totalUsed ?? 0} used, and ${leave?.remaining ?? 0} remaining days.`
+    : "Leave information is not available.";
+
+  const summaryParts = [
+    profile.role !== "Not available" ? `Role: ${profile.role}.` : null,
+    profile.department !== "Not available" ? `Department: ${profile.department}.` : null,
+    skills.length ? skillsOverview : null,
+    performanceAvailable ? performanceOverview : null,
+    hasAttendance ? attendanceOverview : null,
+    hasLeave ? leaveOverview : null,
+  ].filter((item): item is string => Boolean(item));
+
+  return {
+    executiveSummary: summaryParts.length
+      ? summaryParts.join(" ").slice(0, 1200)
+      : employee360SummaryFallback().executiveSummary,
+    profile,
+    skills: {
+      overview: skillsOverview,
+      strongestSkills,
+      developmentSkills,
+    },
+    performance: {
+      overview: performanceOverview,
+      strengths,
+      developmentAreas,
+    },
+    attendance: {
+      overview: attendanceOverview,
+      observations: attendanceDetails.slice(0, 6),
+    },
+    leave: {
+      overview: leaveOverview,
+      observations: hasLeave
+        ? [
+            `Allocated: ${leave?.totalAllocated ?? 0} day(s).`,
+            `Used: ${leave?.totalUsed ?? 0} day(s).`,
+            `Remaining: ${leave?.remaining ?? 0} day(s).`,
+            ...leaveObservations,
+          ].slice(0, 6)
+        : [],
+    },
+    development: {
+      priorities: developmentAreas.slice(0, 6),
+      suggestedActions: [
+        ...developmentAreas.map((area) => `Discuss a practical development goal for ${area}.`),
+        ...developmentSkills.map((skill) => `Explore development opportunities for ${skill}.`),
+      ].slice(0, 6),
+    },
+    managerView: {
+      discussionPoints: [
+        ...strengths.map((strength) => `Discuss how to build on the recorded strength: ${strength}.`),
+        ...developmentAreas.map((area) => `Agree on a measurable next step for ${area}.`),
+      ].slice(0, 6),
+    },
+  };
+}
+
+function mergeEmployee360Summary(
+  generated: Employee360Summary,
+  fallback: Employee360Summary,
+): Employee360Summary {
+  const defaults = employee360SummarySchema.parse({});
+
+  return {
+    executiveSummary:
+      generated.executiveSummary === defaults.executiveSummary ||
+      generated.executiveSummary === employee360SummaryFallback().executiveSummary
+        ? fallback.executiveSummary
+        : generated.executiveSummary,
+    profile: {
+      role: generated.profile.role === defaults.profile.role
+        ? fallback.profile.role
+        : generated.profile.role,
+      department: generated.profile.department === defaults.profile.department
+        ? fallback.profile.department
+        : generated.profile.department,
+      experienceSummary:
+        generated.profile.experienceSummary === defaults.profile.experienceSummary
+          ? fallback.profile.experienceSummary
+          : generated.profile.experienceSummary,
+    },
+    skills: {
+      overview: generated.skills.overview === defaults.skills.overview
+        ? fallback.skills.overview
+        : generated.skills.overview,
+      strongestSkills: generated.skills.strongestSkills.length
+        ? generated.skills.strongestSkills
+        : fallback.skills.strongestSkills,
+      developmentSkills: generated.skills.developmentSkills.length
+        ? generated.skills.developmentSkills
+        : fallback.skills.developmentSkills,
+    },
+    performance: {
+      overview: generated.performance.overview === defaults.performance.overview
+        ? fallback.performance.overview
+        : generated.performance.overview,
+      strengths: generated.performance.strengths.length
+        ? generated.performance.strengths
+        : fallback.performance.strengths,
+      developmentAreas: generated.performance.developmentAreas.length
+        ? generated.performance.developmentAreas
+        : fallback.performance.developmentAreas,
+    },
+    attendance: {
+      overview: generated.attendance.overview === defaults.attendance.overview
+        ? fallback.attendance.overview
+        : generated.attendance.overview,
+      observations: generated.attendance.observations.length
+        ? generated.attendance.observations
+        : fallback.attendance.observations,
+    },
+    leave: {
+      overview: generated.leave.overview === defaults.leave.overview
+        ? fallback.leave.overview
+        : generated.leave.overview,
+      observations: generated.leave.observations.length
+        ? generated.leave.observations
+        : fallback.leave.observations,
+    },
+    development: {
+      priorities: generated.development.priorities.length
+        ? generated.development.priorities
+        : fallback.development.priorities,
+      suggestedActions: generated.development.suggestedActions.length
+        ? generated.development.suggestedActions
+        : fallback.development.suggestedActions,
+    },
+    managerView: {
+      discussionPoints: generated.managerView.discussionPoints.length
+        ? generated.managerView.discussionPoints
+        : fallback.managerView.discussionPoints,
+    },
+  };
 }
