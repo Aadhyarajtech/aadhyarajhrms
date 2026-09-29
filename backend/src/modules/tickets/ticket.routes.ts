@@ -161,10 +161,27 @@ ticketRouter.post(
         ? `${UPLOADS_PUBLIC_PATH}/${uploadedFile.filename}`
         : "";
 
-      // Complaints belong to the employee's direct manager.
-      // Resolve the manager from the employee record so the repository
-      // can store assignedManagerId for manager-scoped grievance access.
-      const employee = await Employee.findById(req.user.employeeId).lean();
+      // Resolve manager ownership from the employee's existing reporting relationship.
+      // Employees never select a manager while raising a ticket.
+      const employee = await Employee.findById(req.user.employeeId)
+        .select("_id managerId")
+        .lean();
+
+      const targetManagerId =
+        employee?.managerId ? String(employee.managerId) : null;
+
+      if (
+        (parsed.data.category === "Manager Concern" ||
+          parsed.data.category === "Complaint") &&
+        !targetManagerId
+      ) {
+        return res.status(400).json({
+          error: {
+            message:
+              "This employee does not have a manager assigned. Please assign a manager before raising this ticket.",
+          },
+        });
+      }
 
       // AI classification (non-blocking — if it fails, we proceed without it)
       const aiResult = await classifyTicket(
@@ -191,7 +208,6 @@ ticketRouter.post(
 
       const ticket = await repo.createTicket({
         employeeId: req.user.employeeId,
-        managerId: employee?.managerId ?? null,
         category: parsed.data.category,
         priority: effectivePriority,
         subject: parsed.data.subject,
@@ -206,50 +222,43 @@ ticketRouter.post(
         aiSentiment: aiResult?.sentiment ?? null,
       });
 
-      // Notify role owners.
+      // Notify the exact manager for manager-scoped tickets. Other tickets use
+      // their assigned role/team notification path.
       try {
-        const recipients = await User.find({
-          role: ticket.assignedTo,
-          isActive: true,
-        }).lean();
-
-        for (const r of recipients) {
-          if (r._id === req.user.userId) continue;
-
-          await notify({
-            userId: r._id,
-            type: "TICKET_MESSAGE",
-            title: `${req.user.name || "Employee"} raised a new ${ticket.category} ticket`,
-            message: `${ticket.ticketId} — ${ticket.subject}`,
-            link: `/app/tickets/${ticket._id}`,
-          });
-        }
-      } catch (err) {
-        console.error("Failed to send ticket notifications", err);
-      }
-
-      // A Complaint is also routed to the employee's direct manager.
-      if (ticket.category === "Complaint" && ticket.assignedManagerId) {
-        try {
-          const manager = await Employee.findById(
-            ticket.assignedManagerId,
-          ).lean();
+        if (ticket.assignedManagerId) {
+          const manager = await Employee.findById(ticket.assignedManagerId)
+            .select("_id userId firstName lastName")
+            .lean();
 
           if (manager?.userId && manager.userId !== req.user.userId) {
             await notify({
               userId: manager.userId,
               type: "TICKET_MESSAGE",
-              title: `${req.user.name || "Employee"} raised a grievance`,
+              title: `${req.user.name || "Employee"} raised a ${ticket.category} ticket`,
               message: `${ticket.ticketId} — ${ticket.subject}`,
               link: `/app/tickets/${ticket._id}`,
             });
           }
-        } catch (err) {
-          console.error(
-            "Failed to notify employee's manager about grievance",
-            err,
-          );
+        } else {
+          const recipients = await User.find({
+            role: ticket.assignedTo,
+            isActive: true,
+          }).lean();
+
+          for (const r of recipients) {
+            if (r._id === req.user.userId) continue;
+
+            await notify({
+              userId: r._id,
+              type: "TICKET_MESSAGE",
+              title: `${req.user.name || "Employee"} raised a new ${ticket.category} ticket`,
+              message: `${ticket.ticketId} — ${ticket.subject}`,
+              link: `/app/tickets/${ticket._id}`,
+            });
+          }
         }
+      } catch (err) {
+        console.error("Failed to send ticket notifications", err);
       }
 
       const risk = calculatePredictiveSlaRisk(ticket);
@@ -260,6 +269,113 @@ ticketRouter.post(
           ...risk,
         },
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   POST /tickets/classify
+   Real-time AI ticket classification for subject & description.
+========================================================= */
+
+const classifyTicketRequestSchema = z.object({
+  subject: z.string().optional().default(""),
+  description: z.string().optional().default(""),
+  category: z.string().optional().default(""),
+});
+
+ticketRouter.post(
+  "/classify",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { message: "Unauthorized" },
+        });
+      }
+
+      const parsed = classifyTicketRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: { message: "Invalid request payload" },
+        });
+      }
+
+      const { subject, description, category } = parsed.data;
+
+      if (!subject.trim() && !description.trim()) {
+        return res.json({
+          classified: false,
+          message: "Insufficient content to classify",
+        });
+      }
+
+      const result = await classifyTicket(
+        subject.trim(),
+        description.trim(),
+        category.trim() || undefined,
+      );
+
+      if (!result) {
+        return res.json({
+          classified: false,
+          message: "Classification unavailable",
+        });
+      }
+
+      // Map to UI-matching category options
+      let suggestedCategory: string = result.category;
+      if (result.category === "Payroll") suggestedCategory = "Payroll Issue";
+      else if (result.category === "Leave") suggestedCategory = "Leave Issue";
+      else if (result.category === "HR") suggestedCategory = "Policy Query";
+      else if (
+        result.category === "Complaint" &&
+        (result.intent === "Workplace Harassment" ||
+          /harassment|posh|abuse|safety/i.test(`${subject} ${description}`))
+      ) {
+        suggestedCategory = "Harassment Complaint";
+      } else if (
+        result.category === "Complaint" &&
+        (result.intent === "Manager Issue" ||
+          /manager|lead|supervisor/i.test(`${subject} ${description}`))
+      ) {
+        suggestedCategory = "Manager Concern";
+      }
+
+      return res.json({
+        classified: true,
+        category: suggestedCategory,
+        rawCategory: result.category,
+        intent: result.intent,
+        confidence: result.confidence,
+        reason: result.reason,
+        priority: result.priority,
+        priorityReason: result.priorityReason,
+        sentiment: result.sentiment,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+
+/* =========================================================
+   GET MANAGERS FOR TICKET ASSIGNMENT
+========================================================= */
+
+ticketRouter.get(
+  "/managers",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: { message: "Unauthorized" } });
+      }
+
+      const managers = await repo.getTicketManagers();
+      return res.json({ managers });
     } catch (err) {
       next(err);
     }

@@ -1414,7 +1414,9 @@ async function executeTicketCount(
   }
 
   const total = await safe<number>(
-    ticketRepo.countTickets(employeeIds),
+    roleScope === "ALL"
+      ? ticketRepo.getTickets().then((tickets) => tickets.length)
+      : ticketRepo.countTickets(employeeIds ?? []),
   );
 
   if (total === null) {

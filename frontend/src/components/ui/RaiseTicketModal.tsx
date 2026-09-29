@@ -95,6 +95,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       return;
     }
 
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -110,6 +111,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       document.body.style.overflow = previousOverflow;
     };
   }, [open, onClose]);
+
 
   if (!open) return null;
 
@@ -147,6 +149,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       showToast("Please enter a description.", "error");
       return;
     }
+
 
     try {
       setLoading(true);
@@ -325,19 +328,6 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
                   <p className="font-semibold text-rose-950">Confidential POSH Grievance Routing</p>
                   <p className="mt-0.5 text-rose-800 leading-relaxed">
                     This ticket is routed strictly to the dedicated <strong>POSH Committee & HR Leadership</strong> with maximum urgency (<strong>1-Hour SLA</strong>). Your reporting manager and regular staff will <strong>not</strong> have visibility into this case.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Manager Concern Special Notice */}
-            {category === "Manager Concern" && (
-              <div className="mt-2 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50/90 p-3 text-xs text-amber-900 animate-fade-in">
-                <span className="text-base leading-none">🛡️</span>
-                <div>
-                  <p className="font-semibold text-amber-950">Independent Leadership Review</p>
-                  <p className="mt-0.5 text-amber-800 leading-relaxed">
-                    Manager concern tickets bypass your direct reporting manager and are routed directly to <strong>Senior Leadership & HR Head</strong> for impartial mediation (3 Business Days SLA).
                   </p>
                 </div>
               </div>

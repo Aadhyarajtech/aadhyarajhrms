@@ -9,6 +9,8 @@ const TicketMessage: any =
 
 const Employee: any = (Models as any).Employee || (Models as any).employee;
 
+const User: any = (Models as any).User || (Models as any).user;
+
 const TicketEscalationHistory: any =
   (Models as any).TicketEscalationHistory ||
   (Models as any).ticketEscalationHistory;
@@ -145,35 +147,27 @@ export function assignDepartment(category: string) {
     case "Leave Issue":
     case "Leave":
     case "Attendance":
-    case "Employee Referral":
-      return "RECRUITER";
-
+    case "Harassment Complaint":
+    case "Infrastructure":
     case "Other":
       return "HR_ADMIN";
+
+    case "Employee Referral":
+    case "Recruitment":
+      return "RECRUITER";
 
     case "Payroll Issue":
     case "Payroll":
       return "FINANCE";
 
     case "Manager Concern":
-      // Manager concerns route to Senior Leadership / Super Admin
-      return "SUPER_ADMIN";
-
-    case "Harassment Complaint":
-      // POSH & Workplace harassment complaints route to dedicated HR / Legal / Super Admin
-      return "HR_ADMIN";
+    case "Complaint":
+      // Manager-scoped grievances are assigned to the selected manager.
+      // The employee id is stored in assignedManagerId.
+      return "MANAGER";
 
     case "IT Support":
       return "IT_SUPPORT";
-
-    case "Infrastructure":
-      return "HR_ADMIN";
-
-    case "Recruitment":
-      return "RECRUITER";
-
-    case "Complaint":
-      return "HR_ADMIN";
 
     default:
       return "HR_ADMIN";
@@ -186,7 +180,6 @@ export function assignDepartment(category: string) {
 
 export async function createTicket(data: {
   employeeId: string;
-  managerId?: string | null;
   category: string;
   priority: string;
   subject: string;
@@ -209,13 +202,24 @@ export async function createTicket(data: {
     effectivePriority = "CRITICAL";
   }
 
-  // Manager isolation:
-  // Complaint tickets can retain the employee's manager relationship.
-  // Manager Concern and Harassment Complaint are not assigned to direct managers.
+  // Manager ownership is always derived from the employee's existing
+  // reporting relationship. The employee must never choose a manager.
   let assignedManagerId: string | null = null;
 
-  if (data.category === "Complaint") {
-    assignedManagerId = data.managerId || null;
+  if (data.category === "Complaint" || data.category === "Manager Concern") {
+    const employee = await Employee.findById(data.employeeId)
+      .select("_id managerId")
+      .lean();
+
+    assignedManagerId = employee?.managerId
+      ? String(employee.managerId)
+      : null;
+
+    if (!assignedManagerId) {
+      throw new Error(
+        "This employee does not have a manager assigned. Please assign a manager before raising this ticket.",
+      );
+    }
   }
 
   const ticket = await Ticket.create({
@@ -284,6 +288,79 @@ export async function getTickets() {
   return Ticket.find({})
     .sort({ createdAt: -1 })
     .lean();
+}
+
+// =========================================================
+// GET MANAGERS AVAILABLE FOR TICKET ASSIGNMENT
+// =========================================================
+
+export interface TicketManager {
+  id: string;
+  name: string;
+  employeeCode: string | null;
+  userId: string | null;
+}
+
+export async function getTicketManagers(): Promise<TicketManager[]> {
+  const activeEmployees = await Employee.find({
+    status: {
+      $in: [
+        "ACTIVE",
+        "ON_PROBATION",
+        "ON_LEAVE",
+        "NOTICE_PERIOD",
+        "ON_HOLD",
+      ],
+    },
+  })
+    .select("_id firstName lastName employeeCode userId isManager")
+    .lean();
+
+  const employeeIds = activeEmployees.map((employee: any) => employee._id);
+  const userIds = activeEmployees
+    .map((employee: any) => employee.userId)
+    .filter(Boolean);
+
+  const [users, directReportCounts] = await Promise.all([
+    User.find({ _id: { $in: userIds } })
+      .select("_id role")
+      .lean(),
+    Employee.aggregate([
+      { $match: { managerId: { $in: employeeIds } } },
+      { $group: { _id: "$managerId", count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const userMap = new Map<string, { _id: unknown; role?: string }>(
+    users.map((user: any) => [
+      String(user._id),
+      { _id: user._id, role: user.role },
+    ]),
+  );
+
+  const reportMap = new Map<string, number>(
+    directReportCounts.map((row: any) => [
+      String(row._id),
+      Number(row.count) || 0,
+    ]),
+  );
+
+  return activeEmployees
+    .filter((employee: any) => {
+      const role = userMap.get(String(employee.userId))?.role;
+      const hasDirectReports =
+        (reportMap.get(String(employee._id)) ?? 0) > 0;
+
+      return employee.isManager === true || hasDirectReports || role === "MANAGER";
+    })
+    .map((employee: any) => ({
+      id: String(employee._id),
+      name: `${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim() ||
+        employee.employeeCode ||
+        "Manager",
+      employeeCode: employee.employeeCode ?? null,
+      userId: employee.userId ? String(employee.userId) : null,
+    }));
 }
 
 // =========================================================
@@ -432,6 +509,7 @@ export async function getTeamGrievanceTickets(
   const ownershipConditions: any[] = [
     {
       assignedManagerId: normalizedManagerId,
+      category: { $in: ["Complaint", "Manager Concern"] },
     },
   ];
 
@@ -447,9 +525,7 @@ export async function getTeamGrievanceTickets(
   const tickets = await Ticket.find({
     $or: ownershipConditions,
   })
-    .sort({
-      createdAt: -1,
-    })
+    .sort({ createdAt: -1 })
     .lean();
 
   console.log(
@@ -486,6 +562,7 @@ export async function getTeamGrievanceTicket(
   const ownershipConditions: any[] = [
     {
       assignedManagerId: normalizedManagerId,
+      category: { $in: ["Complaint", "Manager Concern"] },
     },
   ];
 
@@ -557,14 +634,35 @@ export async function getTicketsForDepartment(
       .lean();
   }
 
+  // IT Support sees only tickets explicitly assigned to IT_SUPPORT.
+  if (normalizedRole === "IT_SUPPORT") {
+    return Ticket.find({
+      assignedTo: "IT_SUPPORT",
+      category: { $in: ["IT Support", "Infrastructure"] },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  // Finance sees only tickets explicitly assigned to FINANCE.
+  if (normalizedRole === "FINANCE") {
+    return Ticket.find({
+      assignedTo: "FINANCE",
+      category: { $in: ["Payroll", "Payroll Issue"] },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
   // =======================================================
   // RECRUITER
   // =======================================================
-  // RECRUITER sees ONLY tickets assigned to RECRUITER.
+  // RECRUITER sees only recruitment tickets assigned to RECRUITER.
 
   if (normalizedRole === "RECRUITER") {
     return Ticket.find({
       assignedTo: "RECRUITER",
+      category: { $in: ["Recruitment", "Employee Referral"] },
     })
       .sort({
         createdAt: -1,
@@ -717,6 +815,30 @@ export function isUserAuthorizedForTicket(
     );
   }
 
+  // IT Support can only access IT Support tickets.
+  if (role === "IT_SUPPORT") {
+    return (
+      ticket.assignedTo === "IT_SUPPORT" &&
+      ["IT Support", "Infrastructure"].includes(ticket.category)
+    );
+  }
+
+  // Finance can only access Payroll/Finance tickets.
+  if (role === "FINANCE") {
+    return (
+      ticket.assignedTo === "FINANCE" &&
+      ["Payroll", "Payroll Issue"].includes(ticket.category)
+    );
+  }
+
+  // Recruiters only access recruitment tickets assigned to RECRUITER.
+  if (role === "RECRUITER") {
+    return (
+      ticket.assignedTo === "RECRUITER" &&
+      ["Recruitment", "Employee Referral"].includes(ticket.category)
+    );
+  }
+
   return false;
 }
 
@@ -791,9 +913,7 @@ export async function escalateTeamGrievance(
   const updatedTicket = await Ticket.findOneAndUpdate(
     {
       _id: ticketId,
-
-      category: "Complaint",
-
+      category: { $in: ["Complaint", "Manager Concern"] },
       assignedManagerId: managerId,
 
       isEscalated: {
@@ -897,15 +1017,8 @@ export async function getGrievanceEscalationHistory(
  */
 export async function refreshOpenGrievanceSla() {
   const tickets = await Ticket.find({
-    category: "Complaint",
-
-    status: {
-      $in: [
-        "OPEN",
-        "IN_PROGRESS",
-        "WAITING_FOR_EMPLOYEE",
-      ],
-    },
+    category: { $in: ["Complaint", "Manager Concern"] },
+    status: { $in: ["OPEN", "IN_PROGRESS", "WAITING_FOR_EMPLOYEE"] },
   }).lean();
 
   const now = new Date();
