@@ -8,7 +8,10 @@ import * as repo from "./attendance.repository";
 import { askAttendanceAI } from "./attendance.askai";
 import { getEmployeeAttendanceAnomalies } from "./attendance.anomaly";
 import { generateAttendanceAnomalyInsights } from "./attendance.ai";
-import { getAttendanceForecast } from "./attendance.forecast";
+import {
+  getAttendanceForecast,
+  type AttendanceForecastResult,
+} from "./attendance.forecast";
 import { generateAttendanceForecastInsights } from "./attendance.forecast.ai";
 import { getAttendancePatterns } from "./attendance.pattern";
 import { analyzeAttendanceForRegularization } from "./attendance.regularization.ai";
@@ -725,7 +728,7 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
     // -----------------------------------------------------------------------
 
     if (forecastResults.length === 0) {
-      return res.json({
+      const emptyForecast: AttendanceForecastResult = {
         period: {
           month: new Date().getMonth() + 1,
           year: new Date().getFullYear(),
@@ -743,6 +746,12 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
         },
         recommendation:
           "There is not enough attendance data to generate a reliable forecast.",
+      };
+      const ai = await generateAttendanceForecastInsights(emptyForecast);
+
+      return res.json({
+        ...emptyForecast,
+        ai,
         scope: {
           mode: scope.mode,
           employeeId: scope.employeeId,
@@ -759,8 +768,32 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
     // -----------------------------------------------------------------------
 
     if (forecastResults.length === 1) {
+      const result = forecastResults[0];
+      const ai = await generateAttendanceForecastInsights(result);
+
       return res.json({
-        ...forecastResults[0],
+        ...result,
+        ai,
+        scope: {
+          mode: scope.mode,
+          employeeId: scope.employeeId,
+          label: scope.label,
+          employeeCount: scope.employeeIds.length,
+        },
+      });
+    }
+
+    const forecastResultsWithData = forecastResults.filter((result) =>
+      result.historicalData.some((item) => item.workingDays > 0),
+    );
+
+    if (forecastResultsWithData.length === 0) {
+      const result = forecastResults[0];
+      const ai = await generateAttendanceForecastInsights(result);
+
+      return res.json({
+        ...result,
+        ai,
         scope: {
           mode: scope.mode,
           employeeId: scope.employeeId,
@@ -785,8 +818,10 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
       }
     >();
 
-    for (const result of forecastResults) {
+    for (const result of forecastResultsWithData) {
       for (const item of result.historicalData) {
+        if (item.workingDays === 0) continue;
+
         const existing = historicalMap.get(item.month) ?? {
           totalRate: 0,
           count: 0,
@@ -815,17 +850,17 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
     // -----------------------------------------------------------------------
 
     const predictedAttendanceRate = Math.round(
-      forecastResults.reduce(
+      forecastResultsWithData.reduce(
         (sum, result) => sum + result.forecast.predictedAttendanceRate,
         0,
-      ) / forecastResults.length,
+      ) / forecastResultsWithData.length,
     );
 
-    const improvingCount = forecastResults.filter(
+    const improvingCount = forecastResultsWithData.filter(
       (result) => result.forecast.direction === "IMPROVING",
     ).length;
 
-    const decliningCount = forecastResults.filter(
+    const decliningCount = forecastResultsWithData.filter(
       (result) => result.forecast.direction === "DECLINING",
     ).length;
 
@@ -837,11 +872,11 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
       direction = "DECLINING";
     }
 
-    const highConfidenceCount = forecastResults.filter(
+    const highConfidenceCount = forecastResultsWithData.filter(
       (result) => result.forecast.confidence === "HIGH",
     ).length;
 
-    const mediumOrHighConfidenceCount = forecastResults.filter(
+    const mediumOrHighConfidenceCount = forecastResultsWithData.filter(
       (result) =>
         result.forecast.confidence === "HIGH" ||
         result.forecast.confidence === "MEDIUM",
@@ -849,7 +884,7 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
 
     let confidence: "HIGH" | "MEDIUM" | "LOW" = "LOW";
 
-    if (highConfidenceCount === forecastResults.length) {
+    if (highConfidenceCount === forecastResultsWithData.length) {
       confidence = "HIGH";
     } else if (mediumOrHighConfidenceCount > 0) {
       confidence = "MEDIUM";
@@ -893,34 +928,32 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
         "The forecast indicates lower attendance consistency. Review recent attendance patterns and focus on improving consistency.";
     }
 
-    const firstResult = forecastResults[0];
-
-    return res.json({
-      period: firstResult.period,
-
+    const aggregateForecast: AttendanceForecastResult = {
+      period: forecastResultsWithData[0].period,
       historicalData,
-
       forecast: {
         predictedAttendanceRate,
         direction,
         confidence,
       },
-
       summary: {
         averageAttendanceRate: Math.round(
-          forecastResults.reduce(
+          forecastResultsWithData.reduce(
             (sum, result) => sum + result.summary.averageAttendanceRate,
             0,
-          ) / forecastResults.length,
+          ) / forecastResultsWithData.length,
         ),
 
         bestMonth: best?.month ?? null,
-
         lowestMonth: lowest?.month ?? null,
       },
-
       recommendation,
+    };
+    const ai = await generateAttendanceForecastInsights(aggregateForecast);
 
+    return res.json({
+      ...aggregateForecast,
+      ai,
       scope: {
         mode: scope.mode,
         employeeId: scope.employeeId,

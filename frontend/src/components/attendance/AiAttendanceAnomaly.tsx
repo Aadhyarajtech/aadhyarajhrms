@@ -30,7 +30,7 @@ type AnomalyResponse = {
   };
   anomalies: Anomaly[];
   summary: {
-    totalAnomalies: number;
+    total: number;
     high: number;
     medium: number;
     low: number;
@@ -226,7 +226,7 @@ export default function AiAttendanceAnomaly({
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
             {error}
           </div>
-        ) : !data || data.anomalies.length === 0 ? (
+        ) : !data ? (
           <div className="flex min-h-[180px] flex-col items-center justify-center text-center">
             <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
               <Sparkles className="h-6 w-6 text-green-600" />
@@ -247,7 +247,7 @@ export default function AiAttendanceAnomaly({
               <div className="rounded-xl bg-gray-50 p-4">
                 <p className="text-xs text-gray-500">Total Anomalies</p>
                 <p className="mt-1 text-2xl font-semibold text-gray-900">
-                  {data.summary.totalAnomalies}
+                  {data.summary.total}
                 </p>
               </div>
 
@@ -301,51 +301,66 @@ export default function AiAttendanceAnomaly({
               </div>
             )}
 
-            {/* Anomalies */}
-            <div className="space-y-3">
-              {data.anomalies.map((anomaly) => (
-                <div
-                  key={anomaly.id}
-                  className="rounded-xl border border-gray-200 p-4"
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${getSeverityClasses(
-                        anomaly.severity,
-                      )}`}
-                    >
-                      {getAnomalyIcon(anomaly.type)}
-                    </div>
+            {data.anomalies.length === 0 ? (
+              <div className="flex min-h-[180px] flex-col items-center justify-center text-center">
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                  <Sparkles className="h-6 w-6 text-green-600" />
+                </div>
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-medium text-gray-900">
-                          {anomaly.title}
-                        </h3>
+                <h3 className="font-medium text-gray-900">
+                  No attendance anomalies detected
+                </h3>
 
-                        <span
-                          className={`rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getSeverityClasses(
-                            anomaly.severity,
-                          )}`}
-                        >
-                          {anomaly.severity}
-                        </span>
+                <p className="mt-1 max-w-md text-sm text-gray-500">
+                  Your attendance records look consistent for the selected period.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {data.anomalies.map((anomaly) => (
+                  <div
+                    key={anomaly.id}
+                    className="rounded-xl border border-gray-200 p-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${getSeverityClasses(
+                          anomaly.severity,
+                        )}`}
+                      >
+                        {getAnomalyIcon(anomaly.type)}
                       </div>
 
-                      {anomaly.date && (
-                        <p className="mt-1 text-xs text-gray-400">
-                          {new Date(anomaly.date).toLocaleDateString()}
-                        </p>
-                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-medium text-gray-900">
+                            {anomaly.title}
+                          </h3>
 
-                      <p className="mt-2 text-sm leading-6 text-gray-600">
-                        {anomaly.description}
-                      </p>
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getSeverityClasses(
+                              anomaly.severity,
+                            )}`}
+                          >
+                            {anomaly.severity}
+                          </span>
+                        </div>
+
+                        {anomaly.date && (
+                          <p className="mt-1 text-xs text-gray-400">
+                            {new Date(anomaly.date).toLocaleDateString()}
+                          </p>
+                        )}
+
+                        <p className="mt-2 text-sm leading-6 text-gray-600">
+                          {anomaly.description}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>

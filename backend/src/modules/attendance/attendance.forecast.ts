@@ -117,8 +117,8 @@ export async function getAttendanceForecast(
   // -------------------------------------------------------------------------
 
   for (
-    let index = months;
-    index >= 1;
+    let index = months - 1;
+    index >= 0;
     index--
   ) {
     const date = new Date(
@@ -139,14 +139,11 @@ export async function getAttendanceForecast(
         "0",
       )}-01`;
 
-    const endDate =
-      new Date(
-        year,
-        month,
-        0,
-      )
-        .toISOString()
-        .slice(0, 10);
+    const lastDay =
+      index === 0
+        ? today.getDate()
+        : new Date(year, month, 0).getDate();
+    const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
     const records =
       await Attendance.find({

@@ -12,6 +12,7 @@ import { AppError } from "@/utils/errors";
 import {
   calculateAttendance,
   getAttendanceEquivalent,
+  type AttendancePolicyStatus,
 } from "@/modules/attendance/attendance.policy";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { sendRegularizationDecisionEmail } from "@/services/email.service";
@@ -40,6 +41,43 @@ function isValidDateString(date: string): boolean {
 
 function roundHours(value: number): number {
   return Math.round(Math.max(0, value) * 100) / 100;
+}
+
+function getAttendanceTiming(records: Array<{
+  status: AttendancePolicyStatus;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  lateMinutes?: number | null;
+  earlyDepartureMinutes?: number | null;
+}>) {
+  const checkedInRecords = records.filter(
+    (record) =>
+      Boolean(record.checkIn) && getAttendanceEquivalent(record.status) > 0,
+  );
+  const checkedOutRecords = checkedInRecords.filter((record) =>
+    Boolean(record.checkOut),
+  );
+  const lateCheckIns = checkedInRecords.filter(
+    (record) => Number(record.lateMinutes ?? 0) > 0 || record.status === "LATE",
+  ).length;
+  const earlyCheckOuts = checkedOutRecords.filter(
+    (record) =>
+      Number(record.earlyDepartureMinutes ?? 0) > 0 ||
+      record.status === "EARLY_DEPARTURE",
+  ).length;
+
+  return {
+    lateCheckIns,
+    lateCheckInRate:
+      checkedInRecords.length > 0
+        ? Math.round((lateCheckIns / checkedInRecords.length) * 100)
+        : 0,
+    earlyCheckOuts,
+    earlyCheckoutRate:
+      checkedOutRecords.length > 0
+        ? Math.round((earlyCheckOuts / checkedOutRecords.length) * 100)
+        : 0,
+  };
 }
 
 function toApiRecord(doc: any): AttendanceApiRecord | undefined {
@@ -1910,24 +1948,10 @@ export async function getAiAttendanceInsights(
       ? Math.round((totalHours / workingRecords.length) * 100) / 100
       : 0;
 
-  // -------------------------------------------------------------------------
-  // Timing analysis
-  //
-  // IMPORTANT:
-  // We do NOT assume a universal 9:30 AM / 5:30 PM schedule.
-  //
-  // Therefore:
-  // - lateCheckIns = 0
-  // - earlyCheckOuts = 0
-  //
-  // until actual employee shift/grace-period data is available.
-  // -------------------------------------------------------------------------
-
-  const lateCheckIns = 0;
-  const lateCheckInRate = 0;
-
-  const earlyCheckOuts = 0;
-  const earlyCheckoutRate = 0;
+  // Timing values are calculated against the employee's configured shift
+  // when the attendance record is created or updated.
+  const { lateCheckIns, lateCheckInRate, earlyCheckOuts, earlyCheckoutRate } =
+    getAttendanceTiming(records);
 
   // -------------------------------------------------------------------------
   // Missing checkout
@@ -2455,17 +2479,10 @@ export async function getAiAttendanceInsightsForEmployees(
       ? Math.round((totalHours / workingRecords.length) * 100) / 100
       : 0;
 
-  // -------------------------------------------------------------------------
-  // Timing
-  //
-  // We intentionally do not assume a universal shift time.
-  // -------------------------------------------------------------------------
-
-  const lateCheckIns = 0;
-  const lateCheckInRate = 0;
-
-  const earlyCheckOuts = 0;
-  const earlyCheckoutRate = 0;
+  // Timing values are calculated against each employee's configured shift
+  // when the attendance record is created or updated.
+  const { lateCheckIns, lateCheckInRate, earlyCheckOuts, earlyCheckoutRate } =
+    getAttendanceTiming(validRecords);
 
   // -------------------------------------------------------------------------
   // Missing checkout
