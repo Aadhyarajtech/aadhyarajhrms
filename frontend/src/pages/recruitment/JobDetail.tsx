@@ -156,12 +156,6 @@ type InterviewEvaluation = {
   suggestedNextStep: string;
 };
 
-const rankedCandidatesApi = (jobPostingId: string) =>
-  api
-    .get<{ candidates: Candidate[] }>("/recruitment/candidates/ranked", {
-      params: { jobPostingId },
-    })
-    .then((response) => response.data.candidates);
 
 const evaluateInterviewApi = (interviewId: string) =>
   api
@@ -290,12 +284,13 @@ export default function JobDetail() {
     queryFn: () => RecruitmentApi.candidates(jobId!),
     enabled: !!jobId,
   });
-  const { data: rankedCandidates, isLoading: rankedCandidatesLoading } =
-    useQuery({
-      queryKey: ["ranked-candidates", jobId],
-      queryFn: () => rankedCandidatesApi(jobId!),
-      enabled: !!jobId,
-    });
+  const rankedCandidates = [...(candidates ?? [])]
+    .filter((candidate) => candidate.jobFitScore != null)
+    .sort(
+      (a, b) =>
+        (b.jobFitScore ?? 0) - (a.jobFitScore ?? 0),
+    )
+    .slice(0, 5);
   const stageMutation = useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: string }) =>
       RecruitmentApi.moveStage(id, stage),
@@ -839,14 +834,10 @@ export default function JobDetail() {
                   </p>
                 </div>
 
-                {rankedCandidatesLoading && (
-                  <span className="text-xs text-ink-faint">
-                    Loading ranking...
-                  </span>
-                )}
+
               </div>
 
-              {!rankedCandidatesLoading && rankedCandidates?.length ? (
+              {rankedCandidates.length ? (
                 <div className="mt-3 space-y-2">
                   {rankedCandidates.slice(0, 5).map((candidate: any) => {
                     const score =
@@ -886,11 +877,11 @@ export default function JobDetail() {
                     );
                   })}
                 </div>
-              ) : !rankedCandidatesLoading ? (
+              ) : (
                 <p className="mt-3 text-xs text-ink-faint">
                   No screened candidates available for ranking.
                 </p>
-              ) : null}
+              )}
             </div>
             <div className="mt-4 rounded-2xl border border-line/60 bg-ink/[0.015] p-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12">
