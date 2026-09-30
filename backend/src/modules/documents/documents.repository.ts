@@ -18,7 +18,7 @@ import {
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
   const { _id, ...rest } = doc;
-  return { id: _id, ...rest };
+  return { id: String(_id), ...rest };
 }
 
 function formatDocType(type: string) {
@@ -29,12 +29,10 @@ function formatDocType(type: string) {
 }
 
 // --- Authorization helpers ---
-// Used to scope a MANAGER's reach to only the employees assigned to them
-// (i.e. Employee.managerId === managerId), so a manager can request/upload
-// documents for their own reports but not for the whole company.
 export async function isDirectReport(managerId: string, employeeId: string) {
+  if (!managerId || !employeeId) return false;
   const emp = await Employee.findById(employeeId).lean();
-  return !!emp && emp.managerId === managerId;
+  return !!emp && String(emp.managerId) === String(managerId);
 }
 
 // --- Documents ---
@@ -42,7 +40,30 @@ export async function listDocuments(employeeId: string) {
   const rows = await DocumentRecord.find({ employeeId })
     .sort({ uploadedAt: -1 })
     .lean();
-  return rows.map(toApiDoc);
+
+  const reviewerIds = rows
+    .map((doc) => doc.reviewedBy)
+    .filter(Boolean);
+
+  const reviewers = await Employee.find({
+    userId: { $in: reviewerIds },
+  })
+    .select("userId firstName lastName")
+    .lean();
+
+  const reviewerMap = new Map(
+    reviewers.map((user) => [
+      String(user.userId),
+      `${user.firstName} ${user.lastName}`.trim(),
+    ])
+  );
+
+  return rows.map((doc) => ({
+    ...toApiDoc(doc),
+    reviewedBy: doc.reviewedBy
+      ? reviewerMap.get(String(doc.reviewedBy)) ?? doc.reviewedBy
+      : null,
+  }));
 }
 
 export async function addDocument(input: {
@@ -72,7 +93,6 @@ export async function addDocument(input: {
   );
 }
 
-
 export async function setDocumentFileUrl(
   id: string,
   storageKey: string,
@@ -88,6 +108,7 @@ export async function setDocumentFileUrl(
   );
   return getDocument(id);
 }
+
 export async function updateDocumentExpiryDate(
   id: string,
   expiryDate: string | null,
@@ -118,15 +139,29 @@ function safePrivateDocumentPath(storageKey: string) {
 export async function getPrivateDocumentPath(id: string) {
   const row = await DocumentRecord.findById(id).lean();
   if (!row) throw AppError.notFound("Document not found.");
-  if (!row.storageKey) {
+
+  let key = row.storageKey;
+  if (!key && row.fileUrl) {
+    key = path.basename(row.fileUrl);
+  }
+
+  if (!key) {
     throw AppError.notFound("This document is not available through secure storage yet.");
   }
-  const filePath = safePrivateDocumentPath(row.storageKey);
+
+  let filePath = safePrivateDocumentPath(key);
   try {
     await fs.access(filePath);
   } catch {
-    throw AppError.notFound("Document file not found.");
+    const fallbackPath = path.resolve(UPLOAD_DIR_ABSOLUTE, key);
+    try {
+      await fs.access(fallbackPath);
+      filePath = fallbackPath;
+    } catch {
+      throw AppError.notFound("Document file not found on disk.");
+    }
   }
+
   return { row: toApiDoc(row), filePath };
 }
 
@@ -195,7 +230,6 @@ export async function migrateLegacyDocumentsToPrivateStorage() {
       );
       migrated += 1;
     } catch {
-      // Never break application startup because one legacy file is missing.
       skipped += 1;
     }
   }
@@ -261,7 +295,6 @@ export async function createDocumentRequest(input: {
   const request = toApiDoc((await DocumentRequest.findById(doc._id).lean())!);
 
   if (input.direction === "COMPANY_TO_EMPLOYEE") {
-    // Notify the employee that a document has been requested from them.
     const employee = await Employee.findById(input.employeeId).lean();
     if (employee) {
       await notify({
@@ -273,10 +306,8 @@ export async function createDocumentRequest(input: {
       });
     }
   } else {
-    // Notify the appropriate company/HR recipients that an employee has
-    // requested a company-issued document.
     const recipients = await User.find({
-      role: { $in: ["SUPER_ADMIN", "HR_ADMIN"] },
+      role: { $in: ["SUPER_ADMIN", "HR_ADMIN", "ADMIN"] },
       isActive: true,
     }).lean();
     for (const recipient of recipients) {
@@ -311,13 +342,13 @@ export async function listCompanyDocumentRequests(status?: string) {
 
   const employeeIds = [...new Set(rows.map((r) => r.employeeId))];
   const employees = await Employee.find({ _id: { $in: employeeIds } }).lean();
-  const empMap = new Map(employees.map((e) => [e._id, e]));
+  const empMap = new Map(employees.map((e) => [String(e._id), e]));
 
   return rows.map((r) => {
-    const emp = empMap.get(r.employeeId);
+    const emp = empMap.get(String(r.employeeId));
     const { _id, ...rest } = r;
     return {
-      id: _id,
+      id: String(_id),
       ...rest,
       firstName: emp?.firstName ?? null,
       lastName: emp?.lastName ?? null,
@@ -339,8 +370,6 @@ export async function fulfillDocumentRequest(input: {
   uploadedByUserId: string;
   expiryDate?: string | null;
 }) {
-
-
   const requestRow = await DocumentRequest.findById(input.requestId).lean();
   if (!requestRow) throw AppError.notFound("Document request not found.");
   if (requestRow.status !== "PENDING") {
@@ -349,22 +378,20 @@ export async function fulfillDocumentRequest(input: {
     );
   }
 
-  // The document type is always taken from the request itself, never from
-  // the uploader's payload, so the requested type cannot be changed silently.
   const document = await addDocument({
-  employeeId: requestRow.employeeId,
-  type: requestRow.type,
-  fileName: input.fileName,
-  fileUrl: input.fileUrl,
-  storageKey: input.storageKey,
-  uploadedBy: input.uploadedByUserId,
-  requestId: requestRow._id,
-  expiryDate: input.expiryDate ?? null,
-});
+    employeeId: requestRow.employeeId,
+    type: requestRow.type,
+    fileName: input.fileName,
+    fileUrl: input.storageKey || "pending",
+    storageKey: input.storageKey,
+    uploadedBy: input.uploadedByUserId,
+    requestId: requestRow._id,
+    expiryDate: input.expiryDate ?? null,
+  });
 
-if (input.storageKey) {
-  await setDocumentFileUrl(document.id, input.storageKey);
-}
+  if (input.storageKey) {
+    await setDocumentFileUrl(document.id, input.storageKey);
+  }
 
   const completedAt = nowIso();
   await DocumentRequest.updateOne(
@@ -383,7 +410,6 @@ if (input.storageKey) {
   );
 
   if (requestRow.direction === "COMPANY_TO_EMPLOYEE") {
-    // Notify only the exact person who originally requested this document.
     await notify({
       userId: requestRow.requestedByUserId,
       type: "DOCUMENT_UPLOADED",
@@ -392,7 +418,6 @@ if (input.storageKey) {
       link: "/documents",
     });
   } else {
-    // Notify the employee that their requested company document is ready.
     const employee = await Employee.findById(requestRow.employeeId).lean();
     if (employee) {
       await notify({
@@ -420,12 +445,12 @@ export async function listAssets(employeeId?: string) {
   if (rows.length === 0) return [];
   const employeeIds = [...new Set(rows.map((r) => r.employeeId))];
   const employees = await Employee.find({ _id: { $in: employeeIds } }).lean();
-  const empMap = new Map(employees.map((e) => [e._id, e]));
+  const empMap = new Map(employees.map((e) => [String(e._id), e]));
   return rows.map((r) => {
-    const emp = empMap.get(r.employeeId);
+    const emp = empMap.get(String(r.employeeId));
     const { _id, ...rest } = r;
     return {
-      id: _id,
+      id: String(_id),
       ...rest,
       firstName: emp?.firstName ?? null,
       lastName: emp?.lastName ?? null,
