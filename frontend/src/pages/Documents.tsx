@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileText,
@@ -44,6 +44,52 @@ const DOC_TYPES = [
   { value: "OTHER", label: "Other" },
 ] as const;
 
+// -----------------------------------------------------------------------------
+// NEW FEATURE: Smart Document Compliance
+// -----------------------------------------------------------------------------
+type DocumentRequirement = {
+  type: (typeof DOC_TYPES)[number]["value"];
+  label: string;
+  required: boolean;
+};
+
+const EXPIRING_SOON_DAYS = 30;
+
+function getDocumentExpiryStatus(expiryDate?: string | null) {
+  if (!expiryDate) return "NONE" as const;
+
+  const expiry = new Date(`${expiryDate}T23:59:59`);
+  if (Number.isNaN(expiry.getTime())) return "NONE" as const;
+
+  const now = new Date();
+  if (expiry.getTime() < now.getTime()) return "EXPIRED" as const;
+
+  const daysRemaining = Math.ceil(
+    (expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  return daysRemaining <= EXPIRING_SOON_DAYS
+    ? ("EXPIRING_SOON" as const)
+    : ("VALID" as const);
+}
+
+function formatExpiryDate(expiryDate?: string | null) {
+  if (!expiryDate) return null;
+  const value = String(expiryDate).slice(0, 10);
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
+const DOCUMENT_REQUIREMENTS: DocumentRequirement[] = [
+  { type: "ID_PROOF", label: "ID proof", required: true },
+  { type: "ADDRESS_PROOF", label: "Address proof", required: true },
+  { type: "EDUCATIONAL", label: "Educational certificate", required: true },
+  { type: "CONTRACT", label: "Employment contract", required: true },
+  { type: "OFFER_LETTER", label: "Offer letter", required: true },
+];
+
 // Documents that can be requested FROM an employee (COMPANY_TO_EMPLOYEE).
 const EMPLOYEE_PROVIDED_TYPES: {
   value: EmployeeProvidedDocType;
@@ -72,18 +118,93 @@ function typeLabel(value: string) {
   return match ? match.label : String(value).replace(/_/g, " ");
 }
 
+const DOCUMENT_REJECTION_REASONS = [
+  "Document is unclear",
+  "Wrong document uploaded",
+  "Document has expired",
+  "Details do not match",
+  "Document is incomplete",
+] as const;
+
+// Helper function to safely fetch and view private document blobs
+async function openPrivateDocument(
+  id: string,
+  fileName: string,
+  showToast: (message: string, variant?: "success" | "error" | "info") => void,
+) {
+  // Open synchronously to avoid popup blockers, then populate it after the
+  // authenticated API request completes.
+  const popup = window.open("about:blank", "_blank");
+
+  try {
+    const blob = await DocumentsApi.download(id);
+    const extension = fileName.split(".").pop()?.toLowerCase();
+
+    const mimeType =
+      extension === "pdf"
+        ? "application/pdf"
+        : extension === "png"
+        ? "image/png"
+        : extension === "jpg" || extension === "jpeg"
+        ? "image/jpeg"
+        : extension === "txt"
+        ? "text/plain"
+        : blob.type || "application/octet-stream";
+
+    const viewableBlob = new Blob([blob], { type: mimeType });
+    const objectUrl = URL.createObjectURL(viewableBlob);
+
+    if (popup) {
+      popup.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } else {
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    }
+  } catch (err) {
+    popup?.close();
+    showToast(getErrorMessage(err), "error");
+  }
+}
+
 export default function Documents() {
-  const { user } = useAuth();
+  const [showInsights, setShowInsights] = useState(false);
+  const { user, hasPermission } = useAuth();
+
   const employeeId = user?.employee?.id ?? "";
   const role = user?.role;
+  const canManageDocuments =
+    !!role && ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
 
-  // Can directly upload any document / delete documents / edit asset status.
-  const canManage =
-    !!role && ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role);
-  // Can create a COMPANY_TO_EMPLOYEE request against another employee.
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(employeeId);
+
+  useEffect(() => {
+    if (employeeId && !selectedEmployeeId) {
+      setSelectedEmployeeId(employeeId);
+    }
+  }, [employeeId, selectedEmployeeId]);
+
+  const { data: employeesData } = useQuery({
+    queryKey: ["employees", "documents-management"],
+    queryFn: () => EmployeesApi.list({ pageSize: 100 }),
+    enabled: canManageDocuments,
+  });
+
+  const documentEmployeeId = canManageDocuments
+    ? selectedEmployeeId
+    : employeeId;
+
+  const canManage = hasPermission("documents.manage");
+  const canUploadOwn = !!employeeId;
+
   const canRequestFromEmployee =
     !!role && ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role);
-  // Can view/process EMPLOYEE_TO_COMPANY requests raised by employees.
+
   const canProcessCompanyRequests =
     !!role && ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
 
@@ -98,15 +219,16 @@ export default function Documents() {
   const queryClient = useQueryClient();
 
   const { data: documents = [], isLoading: docsLoading } = useQuery({
-    queryKey: ["documents", employeeId],
-    queryFn: () => DocumentsApi.list(employeeId),
-    enabled: !!employeeId,
+    queryKey: ["documents", documentEmployeeId],
+    queryFn: () => DocumentsApi.list(documentEmployeeId),
+    enabled: !!documentEmployeeId,
+    refetchInterval: 5000,
   });
 
   const { data: assets = [], isLoading: assetsLoading } = useQuery({
     queryKey: ["assets", employeeId],
     queryFn: () => DocumentsApi.assetsForEmployee(employeeId),
-    enabled: !!employeeId,
+    enabled: !!documentEmployeeId,
   });
 
   const { data: documentRequests = [], isLoading: requestsLoading } = useQuery({
@@ -129,6 +251,7 @@ export default function Documents() {
       ),
     [documentRequests],
   );
+
   const requestedByMe = useMemo(
     () =>
       documentRequests.filter(
@@ -137,34 +260,77 @@ export default function Documents() {
     [documentRequests],
   );
 
+  const compliance = useMemo(() => {
+    const requiredDocuments = DOCUMENT_REQUIREMENTS.filter(
+      (requirement) => requirement.required,
+    );
+
+    const complianceItems = requiredDocuments.map((requirement) => {
+      const document = documents.find(
+        (item: any) => item.type === requirement.type,
+      );
+
+      return {
+        ...requirement,
+        document: document ?? null,
+        status: document ? "COMPLETE" : "MISSING",
+        expiryStatus: getDocumentExpiryStatus(document?.expiryDate),
+      };
+    });
+
+    const completed = complianceItems.filter(
+      (item) =>
+        item.status === "COMPLETE" && item.expiryStatus !== "EXPIRED",
+    ).length;
+
+    const expiringDocuments = documents.filter(
+      (document: any) =>
+        getDocumentExpiryStatus(document.expiryDate) === "EXPIRING_SOON",
+    );
+
+    const expiredDocuments = documents.filter(
+      (document: any) =>
+        getDocumentExpiryStatus(document.expiryDate) === "EXPIRED",
+    );
+
+    const total = complianceItems.length;
+    const missingDocuments = complianceItems.filter(
+      (item) => item.status === "MISSING",
+    );
+
+    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    return {
+      total,
+      completed,
+      missing: total - completed,
+      percentage,
+      isComplete: completed === total,
+      missingDocuments,
+      complianceItems,
+      expiringDocuments,
+      expiredDocuments,
+    };
+  }, [documents]);
+
   const documentForRequest = (requestId: string) =>
     documents.find((d: any) => d.requestId === requestId);
 
-  const pendingIncoming = requestedFromMe.filter(
-    (request: any) =>
-      request.status === "PENDING" || request.status === "OPEN",
-  ).length;
-
-  const pendingOutgoing = requestedByMe.filter(
-    (request: any) =>
-      request.status === "PENDING" || request.status === "OPEN",
-  ).length;
-
-  const invalidateAfterFulfillment = (targetEmployeeId: string) => {
+  const invalidateAfterFulfillment = (targetEmpId: string) => {
     queryClient.invalidateQueries({
-      queryKey: ["documents", targetEmployeeId],
+      queryKey: ["documents", targetEmpId],
     });
     queryClient.invalidateQueries({ queryKey: ["document-requests"] });
     queryClient.invalidateQueries({ queryKey: ["company-document-requests"] });
   };
 
   return (
-    <div className="premium-page space-y-6">
+    <div className="space-y-6">
       <PageHeader
         title="Documents"
         subtitle="Uploaded employee records, compliance files, and assigned company assets."
         action={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             {canRequestFromEmployee && (
               <Button
                 size="sm"
@@ -175,7 +341,7 @@ export default function Documents() {
                 Request document
               </Button>
             )}
-            {canManage && (
+            {(canManage || canUploadOwn) && (
               <Button
                 size="sm"
                 leftIcon={<Upload size={14} />}
@@ -188,70 +354,137 @@ export default function Documents() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="group relative overflow-hidden rounded-[22px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(79,70,229,0.07)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(79,70,229,0.11)]">
-          <div className="absolute -right-7 -top-7 h-20 w-20 rounded-full bg-indigo-100/50 blur-2xl" />
-          <div className="relative flex items-start justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Documents</p>
-              <p className="mt-1 font-display text-2xl font-semibold tracking-[-0.02em] text-slate-900">{documents.length}</p>
-              <p className="mt-1 text-[11px] text-slate-500">Secure records available</p>
-            </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
-              <FileText size={17} />
-            </div>
-          </div>
-        </div>
+      {/* Document Insights */}
+      {!!employeeId && (
+        <Card id="document-compliance" className="mb-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-ink">
+                  Document Insights
+                </h2>
+                <p className="mt-1 text-sm text-ink-soft">
+                  Review document compliance and identify important issues.
+                </p>
+              </div>
 
-        <div className="group relative overflow-hidden rounded-[22px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(16,185,129,0.06)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(16,185,129,0.10)]">
-          <div className="absolute -right-7 -top-7 h-20 w-20 rounded-full bg-emerald-100/50 blur-2xl" />
-          <div className="relative flex items-start justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Assets</p>
-              <p className="mt-1 font-display text-2xl font-semibold tracking-[-0.02em] text-slate-900">{assets.length}</p>
-              <p className="mt-1 text-[11px] text-slate-500">Assigned equipment</p>
+              <Button
+                size="sm"
+                onClick={() => setShowInsights((value) => !value)}
+              >
+                ✨ {showInsights ? "Hide insights" : "Show insights"}
+              </Button>
             </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm ring-1 ring-emerald-100">
-              <Briefcase size={17} />
-            </div>
-          </div>
-        </div>
 
-        <div className="group relative overflow-hidden rounded-[22px] border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(245,158,11,0.06)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(245,158,11,0.10)]">
-          <div className="absolute -right-7 -top-7 h-20 w-20 rounded-full bg-amber-100/50 blur-2xl" />
-          <div className="relative flex items-start justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Action needed</p>
-              <p className="mt-1 font-display text-2xl font-semibold tracking-[-0.02em] text-slate-900">{pendingIncoming}</p>
-              <p className="mt-1 text-[11px] text-slate-500">Requests from HR / manager</p>
-            </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm ring-1 ring-amber-100">
-              <Inbox size={17} />
-            </div>
-          </div>
-        </div>
+            {showInsights && (
+              <div className="space-y-4">
+                {canManageDocuments && (
+                  <div>
+                    <label className="text-sm font-medium text-ink">
+                      Employee
+                    </label>
 
-        <div className="group relative overflow-hidden rounded-[22px] border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(124,58,237,0.06)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(124,58,237,0.10)]">
-          <div className="absolute -right-7 -top-7 h-20 w-20 rounded-full bg-violet-100/50 blur-2xl" />
-          <div className="relative flex items-start justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">My requests</p>
-              <p className="mt-1 font-display text-2xl font-semibold tracking-[-0.02em] text-slate-900">{pendingOutgoing}</p>
-              <p className="mt-1 text-[11px] text-slate-500">Awaiting company documents</p>
-            </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm ring-1 ring-violet-100">
-              <ClipboardList size={17} />
-            </div>
-          </div>
-        </div>
-      </div>
+                    <select
+                      value={selectedEmployeeId}
+                      onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                      className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none focus:border-brand-400"
+                    >
+                      {employeesData?.employees?.map((employee: any) => (
+                        <option key={employee.id} value={employee.id}>
+                          {employee.firstName} {employee.lastName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Card className="overflow-hidden border-indigo-100/80 bg-gradient-to-br from-white via-white to-[#F7F5FF] shadow-[0_10px_30px_rgba(79,70,229,0.055)]">
-          <CardHeader
-            title="My documents"
-            subtitle="All documents visible to the employee and HR admins."
-          />
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-line bg-surface p-4">
+                    <p className="text-xs font-medium text-ink-faint">
+                      Overall compliance
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-ink">
+                      {compliance.percentage}%
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-line bg-surface p-4">
+                    <p className="text-xs font-medium text-ink-faint">
+                      Missing documents
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-danger-700">
+                      {compliance.missing}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-line bg-surface p-4">
+                    <p className="text-xs font-medium text-ink-faint">
+                      Valid documents
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-emerald-700">
+                      {compliance.completed}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-amber-100 bg-amber-50/40 p-4">
+                    <p className="text-xs font-medium text-amber-700">
+                      Expiring soon
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-ink">
+                      {compliance.expiringDocuments.length}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-danger-100 bg-danger-50/40 p-4">
+                    <p className="text-xs font-medium text-danger-700">
+                      Expired documents
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-ink">
+                      {compliance.expiredDocuments.length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {canRequestFromEmployee && (
+                    <Button
+                      size="sm"
+                      onClick={() => setIsRequestOpen(true)}
+                    >
+                      Request missing documents
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      <div className="grid gap-6">
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardHeader
+              title="My documents"
+              subtitle="All documents visible to the employee and HR admins."
+            />
+            {canManageDocuments && (
+              <select
+                value={selectedEmployeeId}
+                onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                className="h-9 rounded-lg border border-line bg-white px-3 text-sm text-ink outline-none focus:border-brand-400"
+              >
+                {employeesData?.employees?.map((employee: any) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.firstName} {employee.lastName}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
           {docsLoading ? (
             <Skeleton className="h-40 rounded-2xl" />
           ) : !documents.length ? (
@@ -261,19 +494,20 @@ export default function Documents() {
               description="Offer letters, identity proof, and employee records will appear here."
             />
           ) : (
-            <div className="space-y-2">
+            <div id="documents-list" className="space-y-2">
               {documents.map((doc: any) => (
-                <DocumentRow key={doc.id} doc={doc} canManage={canManage} />
+                <DocumentRow key={doc.id} doc={doc} />
               ))}
             </div>
           )}
         </Card>
 
-        <Card className="overflow-hidden border-sky-100/80 bg-gradient-to-br from-white via-white to-[#F4FAFF] shadow-[0_10px_30px_rgba(14,165,233,0.05)]">
+        <Card>
           <CardHeader
             title="Assigned assets"
             subtitle="Laptop, phone, and other equipment allocated to the employee."
           />
+
           {assetsLoading ? (
             <Skeleton className="h-40 rounded-2xl" />
           ) : !assets.length ? (
@@ -284,7 +518,7 @@ export default function Documents() {
             />
           ) : (
             <div className="space-y-2">
-              {assets.map((asset: Asset) => (
+              {assets.map((asset) => (
                 <AssetRow key={asset.id} asset={asset} canManage={canManage} />
               ))}
             </div>
@@ -293,12 +527,13 @@ export default function Documents() {
       </div>
 
       {!!employeeId && (
-        <div className="grid gap-5 xl:grid-cols-2">
-          <Card className="overflow-hidden border-slate-200/70 bg-gradient-to-br from-white to-[#FBFAFF]">
+        <div className="grid gap-6">
+          <Card>
             <CardHeader
               title="Documents requested from me"
               subtitle="Document requests raised by HR, admins, or your manager."
             />
+
             {requestsLoading ? (
               <Skeleton className="h-32 rounded-2xl" />
             ) : !requestedFromMe.length ? (
@@ -320,12 +555,13 @@ export default function Documents() {
             )}
           </Card>
 
-          <Card className="overflow-hidden border-slate-200/70 bg-gradient-to-br from-white to-[#F8FBFF]">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          <Card>
+            <div className="flex items-center justify-between gap-3">
               <CardHeader
                 title="Documents I requested"
                 subtitle="Company-issued documents you've requested from HR."
               />
+
               <Button
                 size="sm"
                 variant="outline"
@@ -336,6 +572,7 @@ export default function Documents() {
                 New request
               </Button>
             </div>
+
             {requestsLoading ? (
               <Skeleton className="h-32 rounded-2xl" />
             ) : !requestedByMe.length ? (
@@ -360,11 +597,12 @@ export default function Documents() {
       )}
 
       {canProcessCompanyRequests && (
-        <Card className="overflow-hidden border-slate-200/70 bg-gradient-to-br from-white to-[#FFFCF7]">
+        <Card>
           <CardHeader
             title="Company document requests"
             subtitle="Company-issued documents employees have requested. Upload the completed document to fulfil each request."
           />
+
           {companyRequestsLoading ? (
             <Skeleton className="h-32 rounded-2xl" />
           ) : !companyRequests.length ? (
@@ -425,40 +663,19 @@ export default function Documents() {
   );
 }
 
-async function openPrivateDocument(
-  id: string,
-  fileName: string,
-  showToast: (message: string, variant?: "success" | "error" | "info") => void,
-) {
-  // Open synchronously to avoid popup blockers, then populate it after the
-  // authenticated API request completes.
-  const popup = window.open("about:blank", "_blank");
-
-  try {
-    const blob = await DocumentsApi.download(id);
-    const objectUrl = URL.createObjectURL(blob);
-
-    if (popup) {
-      popup.location.href = objectUrl;
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-    } else {
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = fileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-    }
-  } catch (err) {
-    popup?.close();
-    showToast(getErrorMessage(err), "error");
-  }
-}
-
-function DocumentRow({ doc, canManage }: { doc: any; canManage: boolean }) {
+function DocumentRow({ doc }: { doc: any }): JSX.Element {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { user, hasPermission } = useAuth();
+
+  const canDelete =
+    user?.role !== "EMPLOYEE" &&
+    (doc.uploadedBy === user?.id || hasPermission("documents.manage"));
+
+  const canReview =
+    hasPermission("documents.manage") &&
+    String(doc.status).trim().toUpperCase() === "PENDING";
+
   const deleteMutation = useMutation({
     mutationFn: () => DocumentsApi.delete(doc.id),
     onSuccess: () => {
@@ -470,10 +687,52 @@ function DocumentRow({ doc, canManage }: { doc: any; canManage: boolean }) {
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
+  const reviewMutation = useMutation({
+    mutationFn: ({
+      status,
+      rejectionReason,
+    }: {
+      status: "VERIFIED" | "REJECTED";
+      rejectionReason?: string;
+    }) => DocumentsApi.review(doc.id, status, rejectionReason),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["documents", doc.employeeId],
+      });
+      showToast(
+        variables.status === "REJECTED"
+          ? "Document rejected."
+          : "Document verified.",
+        variables.status === "REJECTED" ? "error" : "success",
+      );
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const expiryMutation = useMutation({
+    mutationFn: (expiryDate: string | null) =>
+      DocumentsApi.updateExpiryDate(doc.id, expiryDate),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["documents", doc.employeeId],
+      });
+      showToast("Expiry date updated.", "success");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
+  const [expiryDateInput, setExpiryDateInput] = useState(
+    doc.expiryDate
+      ? String(doc.expiryDate).slice(0, 10).split("-").reverse().join("/")
+      : "",
+  );
+
+  const [showRejectOptions, setShowRejectOptions] = useState(false);
+
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_10px_22px_rgba(79,70,229,0.07)]">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 p-2.5 text-indigo-600 ring-1 ring-indigo-100">
+        <div className="rounded-xl bg-brand-50 p-2 text-brand-600">
           <FileText size={16} />
         </div>
         <div className="min-w-0">
@@ -483,22 +742,68 @@ function DocumentRow({ doc, canManage }: { doc: any; canManage: boolean }) {
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-faint">
             <Badge tone="neutral">{String(doc.type).replace(/_/g, " ")}</Badge>
             <span>{new Date(doc.uploadedAt).toLocaleDateString()}</span>
+
+            {getDocumentExpiryStatus(doc.expiryDate) === "EXPIRED" && (
+              <span className="rounded-full bg-danger-50 px-2 py-0.5 font-semibold text-danger-700">
+                Expired
+              </span>
+            )}
+            {getDocumentExpiryStatus(doc.expiryDate) === "EXPIRING_SOON" && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+                Expires {formatExpiryDate(doc.expiryDate)}
+              </span>
+            )}
+            {getDocumentExpiryStatus(doc.expiryDate) === "VALID" && (
+              <span>Expires {formatExpiryDate(doc.expiryDate)}</span>
+            )}
+
+            {doc.status === "PENDING" && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+                Verification Pending
+              </span>
+            )}
+            {doc.status === "VERIFIED" && (
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
+                ✓ Verified
+              </span>
+            )}
+            {doc.status === "REJECTED" && (
+              <span className="rounded-full bg-danger-50 px-2 py-0.5 font-semibold text-danger-700">
+                ✕ Rejected
+              </span>
+            )}
+
+            {doc.status !== "PENDING" && doc.reviewedAt && (
+              <div className="mt-2 text-xs text-muted">
+                <div>
+                  Reviewed by:{" "}
+                  <span className="font-medium text-ink">
+                    {doc.reviewedBy ?? ""}
+                  </span>
+                </div>
+                <div>
+                  Reviewed on:{" "}
+                  <span className="font-medium text-ink">
+                    {new Date(doc.reviewedAt).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() =>
-            void openPrivateDocument(doc.id, doc.fileName, showToast)
-          }
+          onClick={() => openPrivateDocument(doc.id, doc.fileName, showToast)}
           className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
         >
           <Download size={14} className="mr-1.5" />
           Open
         </button>
-        {canManage && (
+
+        {canDelete && (
           <button
             type="button"
             onClick={() => deleteMutation.mutate()}
@@ -508,6 +813,100 @@ function DocumentRow({ doc, canManage }: { doc: any; canManage: boolean }) {
             <Trash2 size={14} className="mr-1.5" />
             Delete
           </button>
+        )}
+
+        {canReview && (
+          <button
+            type="button"
+            onClick={() => reviewMutation.mutate({ status: "VERIFIED" })}
+            disabled={reviewMutation.isPending}
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-green-200 bg-green-50 px-2.5 text-[12px] font-medium text-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Verify
+          </button>
+        )}
+
+        {canReview && (
+          <button
+            type="button"
+            onClick={() => setShowRejectOptions(true)}
+            disabled={reviewMutation.isPending}
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-danger-200 bg-danger-50 px-2.5 text-[12px] font-medium text-danger-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Reject
+          </button>
+        )}
+
+        {canReview && (
+          <div className="inline-flex flex-col gap-1">
+            <label className="text-[12px] font-medium text-slate-600">
+              Expiry date
+            </label>
+
+            <input
+              type="text"
+              value={expiryDateInput}
+              onChange={(e) => {
+                let value = e.target.value.replace(/\D/g, "");
+
+                if (value.length > 8) {
+                  value = value.slice(0, 8);
+                }
+
+                let formatted = value;
+
+                if (value.length > 4) {
+                  formatted =
+                    value.slice(0, 2) +
+                    "/" +
+                    value.slice(2, 4) +
+                    "/" +
+                    value.slice(4, 8);
+                } else if (value.length > 2) {
+                  formatted =
+                    value.slice(0, 2) + "/" + value.slice(2, 4);
+                }
+
+                setExpiryDateInput(formatted);
+
+                if (value.length === 8) {
+                  const day = value.slice(0, 2);
+                  const month = value.slice(2, 4);
+                  const year = value.slice(4, 8);
+
+                  const date = `${year}-${month}-${day}`;
+
+                  expiryMutation.mutate(date);
+                }
+              }}
+              placeholder="DD/MM/YYYY"
+              maxLength={10}
+              inputMode="numeric"
+              disabled={expiryMutation.isPending}
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-brand-400 focus:ring-0"
+            />
+          </div>
+        )}
+
+        {showRejectOptions && (
+          <div className="col-span-2 mt-2 grid gap-2 rounded-xl border border-line bg-white p-3 shadow-lg">
+            {DOCUMENT_REJECTION_REASONS.map((reason) => (
+              <button
+                key={reason}
+                type="button"
+                onClick={() => {
+                  reviewMutation.mutate({
+                    status: "REJECTED",
+                    rejectionReason: reason,
+                  });
+                  setShowRejectOptions(false);
+                }}
+                className="block w-full rounded-lg border border-line bg-surface px-3 py-3 text-left text-xs font-medium text-ink shadow-sm hover:border-brand-300 hover:bg-white"
+              >
+                {reason}
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -523,16 +922,17 @@ function AssetRow({ asset, canManage }: { asset: Asset; canManage: boolean }) {
     mutationFn: (nextStatus: string) =>
       DocumentsApi.updateAssetStatus(asset.id, nextStatus),
     onSuccess: (updated) => {
-      const updatedAsset = updated as Asset;
-      setStatus(updatedAsset.status);
-      queryClient.invalidateQueries({ queryKey: ["assets", asset.employeeId] });
+      setStatus(updated.status);
+      queryClient.invalidateQueries({
+        queryKey: ["assets", asset.employeeId],
+      });
       showToast("Asset status updated.");
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_10px_22px_rgba(14,165,233,0.07)]">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">{asset.name}</p>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-faint">
@@ -573,7 +973,7 @@ function IncomingRequestRow({
   onUpload: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_10px_22px_rgba(14,165,233,0.07)]">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">
           {typeLabel(request.type)}
@@ -603,12 +1003,19 @@ function OutgoingRequestRow({
   document,
 }: {
   request: any;
-  document: any;
+  document?: any;
 }) {
   const { showToast } = useToast();
+  const activeDoc = document || request?.document;
+  const isFulfilled = [
+    "UPLOADED",
+    "COMPLETED",
+    "FULFILLED",
+    "APPROVED",
+  ].includes(String(request?.status).toUpperCase());
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_10px_22px_rgba(14,165,233,0.07)]">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">
           {typeLabel(request.type)}
@@ -622,16 +1029,17 @@ function OutgoingRequestRow({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <StatusBadge status={request.status} />
-        {request.status === "UPLOADED" && document && (
+        {isFulfilled && activeDoc && (
           <button
             type="button"
-            onClick={() =>
-              void openPrivateDocument(
-                document.id,
-                document.fileName,
-                showToast,
-              )
-            }
+            onClick={() => {
+              const docId = activeDoc.id || activeDoc._id;
+              const fileName =
+                activeDoc.fileName || activeDoc.name || "Document";
+              if (docId) {
+                openPrivateDocument(docId, fileName, showToast);
+              }
+            }}
             className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
           >
             <Download size={14} className="mr-1.5" />
@@ -643,8 +1051,7 @@ function OutgoingRequestRow({
   );
 }
 
-// An EMPLOYEE_TO_COMPANY request, shown to HR/admin users who need to
-// fulfil it.
+// An EMPLOYEE_TO_COMPANY request, shown to HR/admin users who need to fulfill it.
 function CompanyRequestRow({
   request,
   onUpload,
@@ -653,7 +1060,7 @@ function CompanyRequestRow({
   onUpload: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white px-3.5 py-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.025)] transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_10px_22px_rgba(14,165,233,0.07)]">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">
           {typeLabel(request.type)}
@@ -682,10 +1089,6 @@ function CompanyRequestRow({
 }
 
 // Direct, non-request-based upload — give (upload) a document to an employee.
-// Only opened for SUPER_ADMIN /
-// HR_ADMIN / MANAGER (see canManage), so the employee picker below is
-// always shown. Defaults to the current user's own record; MANAGERs are
-// scoped to only the employees assigned to them, HR/Admin can pick anyone.
 function UploadDocumentModal({
   open,
   onClose,
@@ -703,8 +1106,19 @@ function UploadDocumentModal({
   const [type, setType] =
     useState<(typeof DOC_TYPES)[number]["value"]>("OFFER_LETTER");
   const [targetEmployeeId, setTargetEmployeeId] = useState(selfEmployeeId);
+  const [expiryDate, setExpiryDate] = useState("");
 
   const isManager = role === "MANAGER";
+
+  // Sync target employee ID when modal opens or selfEmployeeId becomes available
+  useEffect(() => {
+    if (open) {
+      setTargetEmployeeId(selfEmployeeId || "");
+      setFile(null);
+      setType("OFFER_LETTER");
+      setExpiryDate("");
+    }
+  }, [open, selfEmployeeId]);
 
   const { data: employeesData } = useQuery({
     queryKey: ["employees", "for-document-upload", isManager, selfEmployeeId],
@@ -719,18 +1133,39 @@ function UploadDocumentModal({
   const employees = employeesData?.employees ?? [];
 
   const mutation = useMutation({
-    mutationFn: () => DocumentsApi.upload(targetEmployeeId, file!, type),
+    mutationFn: async () => {
+      if (!file || !targetEmployeeId) {
+        throw new Error("Please select a file and target employee.");
+      }
+      const uploaded = await DocumentsApi.upload(
+        targetEmployeeId,
+        file,
+        type,
+      );
+
+      if (expiryDate && uploaded?.id) {
+        await DocumentsApi.updateExpiryDate(uploaded.id, expiryDate);
+      }
+
+      return uploaded;
+    },
+
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["documents", targetEmployeeId],
+        queryKey: ["documents"],
       });
       setFile(null);
       setType("OFFER_LETTER");
       setTargetEmployeeId(selfEmployeeId);
+      setExpiryDate("");
       showToast("Document uploaded.");
       onClose();
     },
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+
+    onError: (err: any) => {
+      console.error("DOCUMENT UPLOAD ERROR:", err);
+      showToast(getErrorMessage(err), "error");
+    },
   });
 
   return (
@@ -765,13 +1200,15 @@ function UploadDocumentModal({
             className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink outline-none focus:border-brand-400"
           >
             <option value={selfEmployeeId}>Myself</option>
-            {employees
-              .filter((emp: any) => emp.id !== selfEmployeeId)
-              .map((emp: any) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.firstName} {emp.lastName}
-                </option>
-              ))}
+            {role &&
+              ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role) &&
+              employees
+                .filter((emp: any) => emp.id !== selfEmployeeId)
+                .map((emp: any) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.firstName} {emp.lastName}
+                  </option>
+                ))}
           </select>
         </div>
         <div>
@@ -792,6 +1229,26 @@ function UploadDocumentModal({
             ))}
           </select>
         </div>
+
+        {role !== "EMPLOYEE" && (
+          <div>
+            <label className="text-[13px] font-medium text-ink-soft">
+              Expiry date <span className="text-ink-faint">(optional)</span>
+            </label>
+            <input
+              type="date"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-brand-400 focus:ring-0"
+            />
+            <p className="mt-1 text-[11px] text-ink-faint">
+              Select the date this document expires. This is used by Smart
+              Document Compliance to identify expired and soon-to-expire
+              documents.
+            </p>
+          </div>
+        )}
+
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
             File <span className="text-danger-500">*</span>
@@ -807,9 +1264,7 @@ function UploadDocumentModal({
   );
 }
 
-// Upload against an existing request (either direction). The document type
-// is locked to the request's type, and requestId is always sent so the
-// backend associates and completes the correct request.
+// Upload against an existing request (either direction).
 function FulfillRequestModal({
   open,
   onClose,
@@ -826,16 +1281,37 @@ function FulfillRequestModal({
   const { showToast } = useToast();
   const [file, setFile] = useState<File | null>(null);
 
+  useEffect(() => {
+    if (!open) {
+      setFile(null);
+    }
+  }, [open]);
+
+  const targetEmpId =
+    request?.employeeId || request?.requestedById || employeeId;
+
   const mutation = useMutation({
-    mutationFn: () =>
-      DocumentsApi.upload(employeeId, file!, request!.type, request!.id),
+    mutationFn: () => {
+      if (!file || !request) {
+        throw new Error("File or request information missing.");
+      }
+      return DocumentsApi.upload(
+        targetEmpId,
+        file,
+        request.type,
+        request.id,
+      );
+    },
     onSuccess: () => {
       setFile(null);
       showToast("Document uploaded.");
       onSuccess();
       onClose();
     },
-    onError: (err) => showToast(getErrorMessage(err), "error"),
+    onError: (err: any) => {
+      console.error("REQUESTED DOCUMENT UPLOAD ERROR:", err);
+      showToast(getErrorMessage(err), "error");
+    },
   });
 
   if (!request) return null;
@@ -878,6 +1354,7 @@ function FulfillRequestModal({
             <p className="mt-1.5 text-sm text-ink-soft">{request.note}</p>
           </div>
         )}
+
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
             File <span className="text-danger-500">*</span>
@@ -914,8 +1391,6 @@ function RequestDocumentModal({
 
   const isManager = role === "MANAGER";
 
-  // A MANAGER can only request documents from employees assigned to them;
-  // SUPER_ADMIN/HR_ADMIN can request from anyone in the company.
   const { data: employeesData, isLoading: employeesLoading } = useQuery({
     queryKey: [
       "employees",
@@ -1040,7 +1515,9 @@ function RequestDocumentModal({
           </label>
           <select
             value={type}
-            onChange={(e) => setType(e.target.value as EmployeeProvidedDocType)}
+            onChange={(e) =>
+              setType(e.target.value as EmployeeProvidedDocType)
+            }
             className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink outline-none focus:border-brand-400"
           >
             {EMPLOYEE_PROVIDED_TYPES.map((option) => (

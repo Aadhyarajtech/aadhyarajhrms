@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import path from "node:path";
 import { authenticate } from "@/middleware/auth";
 import { isAdmin } from "@/middleware/rbac";
 import { validate } from "@/middleware/validate";
@@ -10,11 +11,39 @@ import * as repo from "./documents.repository";
 export const documentsRouter = Router();
 documentsRouter.use(authenticate);
 
+// --- Helper to get standard MIME types without external libraries ---
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".pdf":
+      return "application/pdf";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".png":
+      return "image/png";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".svg":
+      return "image/svg+xml";
+    case ".txt":
+      return "text/plain";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+// --- Helper function to resolve "myself" or empty string to actual user employeeId ---
+function resolveEmployeeId(paramId: string, currentUserEmployeeId?: string | null): string {
+  if (paramId === "myself" || !paramId) {
+    return String(currentUserEmployeeId || "");
+  }
+  return String(paramId);
+}
+
 // --- Document types -----------------------------------------------------
-// Mirrors DocumentRecordType in db/models.ts exactly. Kept in two groups so
-// requests can be validated against the correct direction: employees are
-// only ever asked for the "employee-provided" set, and can only ever
-// request the "company-issued" set back from HR.
 const EMPLOYEE_PROVIDED_TYPES = [
   "ID_PROOF",
   "ADDRESS_PROOF",
@@ -48,24 +77,22 @@ const ALL_DOC_TYPES = [
 ] as const;
 
 const REQUESTER_ROLES = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
-// Only these roles process EMPLOYEE_TO_COMPANY requests, matching the
-// recipient list the repository already notifies when such a request is
-// created.
 const COMPANY_PROCESSOR_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
 
 // --- Schemas ---
 const directUploadTypeSchema = z.enum(ALL_DOC_TYPES);
 
-const expiryDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid expiry date.")
-  .optional()
-  .nullable();
+// Preprocess empty string "" to undefined so optional date checks pass cleanly
+const expiryDateSchema = z.preprocess(
+  (val) => (val === "" ? undefined : val),
+  z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid expiry date.")
+    .optional()
+    .nullable()
+);
 
 const documentRequestSchema = z.object({
-  // Only required/used when a privileged user is requesting a document
-  // from an employee. Ignored for employee-originated requests: the
-  // employee's own id is always derived from the authenticated session.
   employeeId: z.string().min(1).optional(),
   type: z.enum(ALL_DOC_TYPES),
   note: z.string().trim().max(500).optional(),
@@ -90,10 +117,11 @@ const assetStatusSchema = z.object({
 // --- Documents ---
 documentsRouter.get("/employee/:employeeId", async (req, res, next) => {
   try {
-    const isOwner = req.params.employeeId === req.user!.employeeId;
+    const targetEmployeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
+    const isOwner = targetEmployeeId === String(req.user!.employeeId ?? "");
     const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
     if (!isOwner && !isPrivileged) throw AppError.forbidden();
-    res.json({ documents: await repo.listDocuments(req.params.employeeId) });
+    res.json({ documents: await repo.listDocuments(targetEmployeeId) });
   } catch (err) {
     next(err);
   }
@@ -104,7 +132,7 @@ documentsRouter.post(
   privateDocumentUpload.single("file"),
   async (req, res, next) => {
     try {
-      const employeeId = req.params.employeeId;
+      const employeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
       if (!req.file) {
         throw AppError.badRequest("Please attach a file.");
       }
@@ -116,7 +144,7 @@ documentsRouter.post(
         if (!request) {
           throw AppError.notFound("Document request not found.");
         }
-        if (request.employeeId !== employeeId) {
+        if (String(request.employeeId) !== employeeId) {
           throw AppError.badRequest(
             "This request does not belong to the specified employee.",
           );
@@ -128,50 +156,44 @@ documentsRouter.post(
         }
 
         if (request.direction === "COMPANY_TO_EMPLOYEE") {
-          // Only the employee the document was requested from may fulfil it.
-          const isOwner = employeeId === req.user!.employeeId;
+          const isOwner = employeeId === String(req.user!.employeeId ?? "");
           if (!isOwner) throw AppError.forbidden();
         } else {
-          // EMPLOYEE_TO_COMPANY: only HR/company users may fulfil it.
           const isProcessor = COMPANY_PROCESSOR_ROLES.includes(req.user!.role);
           if (!isProcessor) throw AppError.forbidden();
         }
 
-        // The type is intentionally taken from the request by the
-        // repository, not from this payload, so it cannot be overridden.
-        const parsedExpiryDate =
-  expiryDateSchema.safeParse(req.body.expiryDate);
+        const parsedExpiryDate = expiryDateSchema.safeParse(req.body.expiryDate);
 
-if (!parsedExpiryDate.success) {
-  throw AppError.badRequest("Invalid expiry date.");
-}
+        if (!parsedExpiryDate.success) {
+          throw AppError.badRequest("Invalid expiry date.");
+        }
 
-const { document } = await repo.fulfillDocumentRequest({
-  requestId,
-  fileName: req.file.originalname,
-  fileUrl: "",
-  storageKey: req.file.filename,
-  uploadedByUserId: req.user!.userId,
-  expiryDate: parsedExpiryDate.data ?? null,
-});
+        const { document } = await repo.fulfillDocumentRequest({
+          requestId,
+          fileName: req.file.originalname,
+          fileUrl: "",
+          storageKey: req.file.filename,
+          uploadedByUserId: req.user!.userId,
+          expiryDate: parsedExpiryDate.data ?? null,
+        });
 
-const secureDocument = await repo.setDocumentFileUrl(
-  document.id,
-  req.file.filename,
-);
+        const secureDocument = await repo.setDocumentFileUrl(
+          document.id,
+          req.file.filename,
+        );
 
         res.status(201).json({ document: secureDocument });
         return;
       }
 
       // --- Normal, non-request-based upload ---
-      const isOwner = employeeId === req.user!.employeeId;
+      const isOwner = employeeId === String(req.user!.employeeId ?? "");
       const isAdminPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(
         req.user!.role,
       );
       let isAuthorized = isOwner || isAdminPrivileged;
-      // A MANAGER may give (upload) a document to an employee only if that
-      // employee is assigned to them (Employee.managerId === their id).
+
       if (!isAuthorized && req.user!.role === "MANAGER") {
         isAuthorized = await repo.isDirectReport(
           req.user!.employeeId as string,
@@ -187,30 +209,29 @@ const secureDocument = await repo.setDocumentFileUrl(
       );
       const type = parsedType.success ? parsedType.data : "OTHER";
 
-      const parsedExpiryDate =
-  expiryDateSchema.safeParse(req.body.expiryDate);
+      const parsedExpiryDate = expiryDateSchema.safeParse(req.body.expiryDate);
 
-if (!parsedExpiryDate.success) {
-  throw AppError.badRequest("Invalid expiry date.");
-}
+      if (!parsedExpiryDate.success) {
+        throw AppError.badRequest("Invalid expiry date.");
+      }
 
-const document = await repo.addDocument({
-  employeeId,
-  uploadedBy: req.user!.userId,
-  requestId: null,
-  type,
-  fileName: req.file.originalname,
-  fileUrl: "",
-  storageKey: req.file.filename,
-  expiryDate: parsedExpiryDate.data ?? null,
-});
+      const document = await repo.addDocument({
+        employeeId,
+        uploadedBy: req.user!.userId,
+        requestId: null,
+        type,
+        fileName: req.file.originalname,
+        fileUrl: "",
+        storageKey: req.file.filename,
+        expiryDate: parsedExpiryDate.data ?? null,
+      });
 
-const secureDocument = await repo.setDocumentFileUrl(
-  document.id,
-  req.file.filename,
-);
+      const secureDocument = await repo.setDocumentFileUrl(
+        document.id,
+        req.file.filename,
+      );
 
-res.status(201).json({ document: secureDocument });
+      res.status(201).json({ document: secureDocument });
     } catch (error) {
       next(error);
     }
@@ -222,7 +243,7 @@ documentsRouter.get("/:id/download", async (req, res, next) => {
     const document = await repo.getDocument(req.params.id);
     if (!document) throw AppError.notFound("Document not found.");
 
-    const isOwner = document.employeeId === req.user!.employeeId;
+    const isOwner = String(document.employeeId) === String(req.user!.employeeId ?? "");
     const isAdminPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(
       req.user!.role,
     );
@@ -231,14 +252,16 @@ documentsRouter.get("/:id/download", async (req, res, next) => {
     if (!isAuthorized && req.user!.role === "MANAGER") {
       isAuthorized = await repo.isDirectReport(
         req.user!.employeeId as string,
-        document.employeeId,
+        String(document.employeeId),
       );
     }
 
     if (!isAuthorized) throw AppError.forbidden();
 
     const { filePath, row } = await repo.getPrivateDocumentPath(req.params.id);
-    res.setHeader("Content-Type", "application/octet-stream");
+
+    const mimeType = getMimeType(filePath);
+    res.setHeader("Content-Type", mimeType);
     res.setHeader(
       "Content-Disposition",
       `inline; filename="${String(row.fileName).replace(/[^a-zA-Z0-9._ -]/g, "_")}"`,
@@ -258,6 +281,7 @@ documentsRouter.delete("/:id", isAdmin, async (req, res, next) => {
     next(err);
   }
 });
+
 documentsRouter.patch(
   "/:id/expiry-date",
   async (req, res, next) => {
@@ -273,6 +297,7 @@ documentsRouter.patch(
     }
   },
 );
+
 documentsRouter.patch(
   "/:id/review",
   validate(documentReviewSchema),
@@ -293,7 +318,7 @@ documentsRouter.patch(
         if (!existing) throw AppError.notFound("Document not found.");
         const allowed = await repo.isDirectReport(
           req.user!.employeeId as string,
-          existing.employeeId,
+          String(existing.employeeId),
         );
         if (!allowed) throw AppError.forbidden();
       }
@@ -319,12 +344,6 @@ documentsRouter.post(
   async (req, res, next) => {
     try {
       const role = req.user!.role;
-      // Direction is decided by whether an employeeId was actually sent,
-      // not by role alone: SUPER_ADMIN/HR_ADMIN/MANAGER are also employees
-      // and use this same endpoint (via "New request") to ask the company
-      // for their own documents, sending no employeeId at all. Branching on
-      // role first would wrongly force that self-request down the
-      // COMPANY_TO_EMPLOYEE path and demand an employeeId it never has.
       const wantsToRequestFromEmployee = !!req.body.employeeId;
       const isPrivilegedRequester = REQUESTER_ROLES.includes(role);
       const isEmployeeRequester = !!req.user!.employeeId;
@@ -340,8 +359,6 @@ documentsRouter.post(
             "This document type cannot be requested from an employee.",
           );
         }
-        // A MANAGER may only request documents from employees assigned to
-        // them; SUPER_ADMIN/HR_ADMIN can request from anyone.
         if (role === "MANAGER") {
           const allowed = await repo.isDirectReport(
             req.user!.employeeId as string,
@@ -357,10 +374,6 @@ documentsRouter.post(
             "This document type cannot be requested from the company.",
           );
         }
-        // The target employee is always the authenticated user's own
-        // employee record. Any employeeId supplied in the request body is
-        // ignored so an employee can never request on behalf of someone
-        // else.
         targetEmployeeId = req.user!.employeeId as string;
       } else {
         throw AppError.forbidden();
@@ -385,12 +398,13 @@ documentsRouter.get(
   "/requests/employee/:employeeId",
   async (req, res, next) => {
     try {
-      const isOwner = req.params.employeeId === req.user!.employeeId;
+      const targetEmployeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
+      const isOwner = targetEmployeeId === String(req.user!.employeeId ?? "");
       const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
       if (!isOwner && !isPrivileged) throw AppError.forbidden();
       res.json({
         requests: await repo.listDocumentRequestsForEmployee(
-          req.params.employeeId,
+          targetEmployeeId,
         ),
       });
     } catch (err) {
@@ -560,10 +574,11 @@ documentsRouter.get("/assets/all", isAdmin, async (_req, res, next) => {
 
 documentsRouter.get("/assets/employee/:employeeId", async (req, res, next) => {
   try {
-    const isOwner = req.params.employeeId === req.user!.employeeId;
+    const targetEmployeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
+    const isOwner = targetEmployeeId === String(req.user!.employeeId ?? "");
     const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
     if (!isOwner && !isPrivileged) throw AppError.forbidden();
-    res.json({ assets: await repo.listAssets(req.params.employeeId) });
+    res.json({ assets: await repo.listAssets(targetEmployeeId) });
   } catch (err) {
     next(err);
   }
