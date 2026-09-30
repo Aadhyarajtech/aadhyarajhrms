@@ -1746,7 +1746,7 @@ async function callGroqForLeaveAnalytics(
             {
               role: "system",
               content:
-                "You are an HRMS leave analytics assistant. Explain leave analytics using only the supplied deterministic HRMS metrics. Do not recalculate, alter, or invent numbers. Do not infer medical, personal, workload, performance, or staffing reasons. Do not make approval or rejection decisions. Identify useful trends and observations in concise professional language. Return only valid JSON.",
+                "You are an HRMS leave analytics assistant. Explain leave analytics using only the supplied deterministic HRMS metrics. Do not recalculate, alter, or invent numbers. Do not infer medical, personal, workload, performance, or staffing reasons. Do not make approval or rejection decisions. Give one concise sentence. Return only valid JSON.",
             },
             {
               role: "user",
@@ -1799,7 +1799,7 @@ Rules:
 - Do not claim a reason for leave unless the data explicitly supports it.
 - Do not infer employee performance or attendance quality.
 - Do not make approval or rejection recommendations.
-- Keep the explanation concise and professional.
+- Keep the explanation to one concise sentence.
 - Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
@@ -1807,7 +1807,7 @@ Rules:
 
           temperature: 0.2,
 
-          max_tokens: 400,
+          max_completion_tokens: 2048,
 
           response_format: {
             type: "json_object",
@@ -2011,12 +2011,13 @@ export async function analyzeLeaveAnalytics(
     await Promise.all([
       employeeIds.length
         ? Employee.find({
-          _id: {
-            $in: employeeIds,
-          },
-        })
-          .select("_id firstName lastName")
-          .lean()
+            $or: [
+              { _id: { $in: employeeIds } },
+              { userId: { $in: employeeIds } },
+            ],
+          })
+            .select("_id userId firstName lastName")
+            .lean()
         : [],
       leaveTypeIds.length
         ? LeaveType.find({
@@ -2030,9 +2031,9 @@ export async function analyzeLeaveAnalytics(
     ]);
 
   const employeeMap = new Map(
-    employees.map((employee) => [
-      String(employee._id),
-      employee,
+    employees.flatMap((employee) => [
+      [String(employee._id), employee] as const,
+      [String(employee.userId), employee] as const,
     ]),
   );
 
@@ -2558,7 +2559,7 @@ async function callGroqForLeavePatterns(
             {
               role: "system",
               content:
-                "You explain objective leave usage patterns for an HRMS. Never accuse an employee, infer intent, misconduct, performance, health, or personal circumstances. Do not change supplied numbers. Do not make approval or rejection recommendations. Keep the explanation concise and professional. Return only the JSON object.",
+                "You explain objective leave usage patterns for an HRMS. Never accuse an employee, infer intent, misconduct, performance, health, or personal circumstances. Do not change supplied numbers. Do not make approval or rejection recommendations. Give one concise sentence. Return only the JSON object.",
             },
             {
               role: "user",
@@ -2585,13 +2586,13 @@ Rules:
 - Do not infer why an employee took leave.
 - Do not accuse employees of misuse or misconduct.
 - Do not recommend approval or rejection.
-- State that findings are for HR review when appropriate.
+- Keep the explanation to one concise sentence and state that findings are for HR review when appropriate.
 - Return only the JSON object in format: {"explanation": "..."}.
 `,
             },
           ],
           temperature: 0.2,
-          max_tokens: 300,
+          max_completion_tokens: 2048,
           response_format: {
             type: "json_object",
           },
