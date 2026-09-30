@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { createHash, randomInt } from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
@@ -13,8 +14,12 @@ import {
   findAuthProfile,
   touchLastLogin,
   updatePassword,
+  savePasswordResetOtp,
+  incrementPasswordResetOtpAttempts,
+  clearPasswordResetOtp,
 } from "./auth.repository";
 import { notify } from "../notifications/notifications.repository";
+import { sendPasswordResetOtpEmail } from "@/services/email.service";
 import { employeesRouter } from "../employees/employees.routes";
 
 export const authRouter = Router();
@@ -227,12 +232,173 @@ authRouter.get("/me", authenticate, async (req, res, next) => {
   }
 });
 
+const forgotPasswordEmailSchema = z.object({
+  email: z.string().email("Enter a valid email address."),
+});
+
+const resetPasswordSchema = z
+  .object({
+    email: z.string().email("Enter a valid email address."),
+    otp: z.string().regex(/^\d{6}$/, "Enter the 6-digit OTP."),
+    newPassword: z
+      .string()
+      .min(8, "Your new password must be at least 8 characters."),
+    confirmPassword: z.string().min(1, "Please confirm your new password."),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  });
+
+const PASSWORD_RESET_OTP_EXPIRY_MINUTES = 10;
+const PASSWORD_RESET_OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5;
+
+function hashPasswordResetOtp(otp: string) {
+  return createHash("sha256").update(otp).digest("hex");
+}
+
+function generatePasswordResetOtp() {
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
+}
+
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z
     .string()
     .min(8, "Your new password must be at least 8 characters."),
 });
+
+/* =========================================================
+   PASSWORD RESET - REQUEST OTP
+   Public endpoint used by the login page.
+========================================================= */
+
+authRouter.post(
+  "/forgot-password/request-otp",
+  validate(forgotPasswordEmailSchema),
+  async (req, res, next) => {
+    try {
+      const { email } = req.body as z.infer<typeof forgotPasswordEmailSchema>;
+      const normalizedEmail = email.toLowerCase().trim();
+      const user = await findUserByEmail(normalizedEmail);
+
+      // Do not reveal whether an email exists in the system.
+      const genericResponse = {
+        message:
+          "If an active account exists, an OTP has been sent to your email.",
+        expiresInSeconds: PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60,
+      };
+
+      if (!user || !user.isActive) {
+        return res.json(genericResponse);
+      }
+
+      // Match the frontend's 60-second resend countdown and prevent OTP spam.
+      if (user.passwordResetOtpRequestedAt) {
+        const requestedAt = Date.parse(user.passwordResetOtpRequestedAt);
+        if (Number.isFinite(requestedAt)) {
+          const elapsed = Date.now() - requestedAt;
+          if (elapsed < PASSWORD_RESET_OTP_RESEND_COOLDOWN_MS) {
+            return res.json(genericResponse);
+          }
+        }
+      }
+
+      const otp = generatePasswordResetOtp();
+      const now = new Date();
+      const expiresAt = new Date(
+        now.getTime() + PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60 * 1000,
+      ).toISOString();
+      const requestedAt = now.toISOString();
+
+      await savePasswordResetOtp({
+        userId: user.id,
+        otpHash: hashPasswordResetOtp(otp),
+        expiresAt,
+        requestedAt,
+      });
+
+      try {
+        await sendPasswordResetOtpEmail({
+          to: user.email,
+          otp,
+          expiresInMinutes: PASSWORD_RESET_OTP_EXPIRY_MINUTES,
+        });
+      } catch (emailError) {
+        // Do not leave a usable OTP behind when the email could not be sent.
+        await clearPasswordResetOtp(user.id);
+        throw emailError;
+      }
+
+      return res.json(genericResponse);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
+   PASSWORD RESET - VERIFY OTP AND SET PASSWORD
+========================================================= */
+
+authRouter.post(
+  "/forgot-password/reset",
+  validate(resetPasswordSchema),
+  async (req, res, next) => {
+    try {
+      const { email, otp, newPassword } = req.body as z.infer<
+        typeof resetPasswordSchema
+      >;
+      const normalizedEmail = email.toLowerCase().trim();
+      const user = await findUserByEmail(normalizedEmail);
+
+      if (!user || !user.isActive) {
+        throw AppError.badRequest(
+          "The OTP is invalid or has expired. Please request a new OTP.",
+        );
+      }
+
+      if (!user.passwordResetOtpHash || !user.passwordResetOtpExpiresAt) {
+        throw AppError.badRequest(
+          "The OTP is invalid or has expired. Please request a new OTP.",
+        );
+      }
+
+      if (user.passwordResetOtpAttempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS) {
+        await clearPasswordResetOtp(user.id);
+        throw AppError.badRequest(
+          "Too many incorrect OTP attempts. Please request a new OTP.",
+        );
+      }
+
+      const expiresAt = Date.parse(user.passwordResetOtpExpiresAt);
+      if (!Number.isFinite(expiresAt) || Date.now() >= expiresAt) {
+        await clearPasswordResetOtp(user.id);
+        throw AppError.badRequest(
+          "The OTP is invalid or has expired. Please request a new OTP.",
+        );
+      }
+
+      const submittedOtpHash = hashPasswordResetOtp(otp);
+      if (submittedOtpHash !== user.passwordResetOtpHash) {
+        await incrementPasswordResetOtpAttempts(user.id);
+        throw AppError.badRequest(
+          "The OTP is invalid or has expired. Please request a new OTP.",
+        );
+      }
+
+      const passwordHash = bcrypt.hashSync(newPassword, 10);
+      await updatePassword(user.id, passwordHash);
+
+      return res.json({
+        message: "Password reset successfully. You can sign in now.",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 authRouter.post(
   "/change-password",

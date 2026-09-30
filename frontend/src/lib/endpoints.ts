@@ -1995,11 +1995,14 @@ export interface PerformanceFeedbackRequest {
   dueDate?: string | null;
   createdAt: string;
   completedAt?: string | null;
+  revieweeName?: string | null;
   revieweeFirstName?: string | null;
   revieweeLastName?: string | null;
   revieweeAvatar?: string | null;
   revieweeDesignation?: string | null;
   revieweeDepartment?: string | null;
+  revieweeDepartmentId?: string | null;
+  revieweeDesignationId?: string | null;
 }
 
 export interface PerformancePip {
@@ -2017,9 +2020,9 @@ export interface PerformancePip {
   checkIns: PipCheckIn[];
   completedAt?: string | null;
   finalOutcome?: string | null;
-  employeeName?: string;
-  employeeFirstName?: string;
-  employeeLastName?: string;
+  employeeName?: string | null;
+  employeeFirstName?: string | null;
+  employeeLastName?: string | null;
 }
 
 // --- Performance ----------------------------------------------------------------

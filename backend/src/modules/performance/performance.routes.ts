@@ -315,19 +315,10 @@ performanceRouter.get("/reviews/mine", async (req, res, next) => {
     }
 
     // HR/Super Admin accounts may not have a manager in the employee
-    // hierarchy. Keep their My Performance page usable by creating a
-    // self-owned review assignment for the active cycle. Privileged users
-    // can subsequently complete the manager/outcome step through the
-    // existing authorization rules.
-    if (["HR_ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
-      const review = await repo.ensureReview(
-        cycleId,
-        employeeId,
-        employeeId,
-      );
-
-      return res.json({ review });
-    }
+    // hierarchy. Do not create a self-review because the repository
+    // intentionally rejects an employee reviewing themselves. Their
+    // privileged Team Reviews workflow can start reviews for employees
+    // using the employee's actual reporting manager.
 
     // A regular employee without a manager cannot receive an automatic
     // manager-review assignment. Return the existing empty state rather than
@@ -350,8 +341,12 @@ performanceRouter.post(
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
+      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
 
-      if (role === "MANAGER" || req.user!.isManager) {
+      // Super Admin and HR Admin can start reviews for any employee.
+      // Their reviewerId is accepted as provided; the manager-only
+      // direct-report restrictions below apply only to regular managers.
+      if (!isPrivileged && (role === "MANAGER" || req.user!.isManager)) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }

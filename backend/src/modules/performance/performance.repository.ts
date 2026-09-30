@@ -219,7 +219,7 @@ export async function getActiveCycle() {
   return toApiDoc(valid);
 }
 
-async function enrichReviews(rows: any[]) {
+async function enrichReviews(rows: any[], options: { requireEmployee?: boolean } = {}) {
   if (rows.length === 0) return [];
 
   const revieweeIds = [...new Set(rows.map((r) => r.revieweeId))];
@@ -239,19 +239,26 @@ async function enrichReviews(rows: any[]) {
     Department.find({ _id: { $in: departmentIds } }).lean(),
   ]);
 
-  const revieweeMap = new Map(reviewees.map((e) => [e._id, e]));
-  const reviewerMap = new Map(reviewers.map((e) => [e._id, e]));
-  const cycleMap = new Map(cycles.map((c) => [c._id, c]));
+  const revieweeMap = new Map(reviewees.map((e) => [String(e._id), e]));
+  const reviewerMap = new Map(reviewers.map((e) => [String(e._id), e]));
+  const cycleMap = new Map(cycles.map((c) => [String(c._id), c]));
+
+  const filteredRows = options.requireEmployee
+    ? rows.filter((r) => revieweeMap.has(String(r.revieweeId)))
+    : rows;
   const desMap = new Map(designations.map((d) => [d._id, d]));
   const deptMap = new Map(departments.map((d) => [d._id, d]));
 
-  return rows.map((r) => {
-    const reviewee = revieweeMap.get(r.revieweeId);
-    const reviewer = reviewerMap.get(r.reviewerId);
-    const cycle = cycleMap.get(r.cycleId);
+  return filteredRows.map((r) => {
+    const reviewee = revieweeMap.get(String(r.revieweeId));
+    const reviewer = reviewerMap.get(String(r.reviewerId));
+    const cycle = cycleMap.get(String(r.cycleId));
     return {
       id: r._id,
       ...r,
+      revieweeName: reviewee
+        ? [reviewee.firstName, reviewee.lastName].filter(Boolean).join(" ").trim() || null
+        : null,
       revieweeFirstName: reviewee?.firstName ?? null,
       revieweeLastName: reviewee?.lastName ?? null,
       revieweeAvatar: reviewee?.avatarUrl ?? null,
@@ -261,6 +268,8 @@ async function enrichReviews(rows: any[]) {
       revieweeDepartment: reviewee
         ? (deptMap.get(reviewee.departmentId)?.name ?? null)
         : null,
+      revieweeDepartmentId: reviewee?.departmentId ?? null,
+      revieweeDesignationId: reviewee?.designationId ?? null,
       reviewerFirstName: reviewer?.firstName ?? null,
       reviewerLastName: reviewer?.lastName ?? null,
       cycleName: cycle?.name ?? null,
@@ -281,13 +290,13 @@ export async function listReviews(filters: {
   const rows = await PerformanceReview.find(query)
     .sort({ submittedAt: -1 })
     .lean();
-  return enrichReviews(rows);
+  return enrichReviews(rows, { requireEmployee: true });
 }
 
 export async function getReview(id: string) {
   const row = await PerformanceReview.findById(id).lean();
   if (!row) return undefined;
-  const [enriched] = await enrichReviews([row]);
+  const [enriched] = await enrichReviews([row], { requireEmployee: true });
   return enriched;
 }
 export async function getPerformanceScorecard(employeeId: string) {
@@ -1206,26 +1215,36 @@ export async function listFeedbackRequests(
     ),
   ];
 
-  const employees = await Employee.find({
-    _id: { $in: employeeIds },
-  })
-    .select("firstName lastName avatarUrl designationId departmentId")
-    .lean();
+  const [employees, validReviews] = await Promise.all([
+    Employee.find({ _id: { $in: employeeIds } })
+      .select("firstName lastName avatarUrl designationId departmentId")
+      .lean(),
+    PerformanceReview.find({
+      _id: { $in: rows.map((row) => row.reviewId) },
+    }).select({ _id: 1 }).lean(),
+  ]);
 
-  const map = new Map(employees.map((employee) => [employee._id, employee]));
+  const map = new Map(employees.map((employee) => [String(employee._id), employee]));
+  const validReviewIds = new Set(validReviews.map((review) => String(review._id)));
+  const validRows = rows.filter(
+    (row) =>
+      map.has(String(row.reviewerEmployeeId)) &&
+      map.has(String(row.revieweeEmployeeId)) &&
+      validReviewIds.has(String(row.reviewId)),
+  );
 
-  return rows.map((row) => ({
+  return validRows.map((row) => ({
     ...toApiDoc(row),
     revieweeFirstName:
-      map.get(row.revieweeEmployeeId)?.firstName ?? null,
+      map.get(String(row.revieweeEmployeeId))?.firstName ?? null,
     revieweeLastName:
-      map.get(row.revieweeEmployeeId)?.lastName ?? null,
+      map.get(String(row.revieweeEmployeeId))?.lastName ?? null,
     revieweeAvatar:
-      map.get(row.revieweeEmployeeId)?.avatarUrl ?? null,
+      map.get(String(row.revieweeEmployeeId))?.avatarUrl ?? null,
     revieweeDesignation:
-      map.get(row.revieweeEmployeeId)?.designationId ?? null,
+      map.get(String(row.revieweeEmployeeId))?.designationId ?? null,
     revieweeDepartment:
-      map.get(row.revieweeEmployeeId)?.departmentId ?? null,
+      map.get(String(row.revieweeEmployeeId))?.departmentId ?? null,
   }));
 }
 
@@ -1411,10 +1430,11 @@ export async function submitFeedback(input: PerformanceFeedbackInput) {
     throw new Error("The selected feedback reviewer does not exist.");
   }
 
-  if (
-    review.reviewerId === input.reviewerEmployeeId ||
-    review.revieweeId === input.reviewerEmployeeId
-  ) {
+  // A 360 reviewer may also be the manager/reviewer of the underlying
+  // performance review. What must be prevented is the employee reviewing
+  // themselves. The reporting manager must therefore be allowed to submit
+  // 360 feedback for their direct report.
+  if (review.revieweeId === input.reviewerEmployeeId) {
     throw new Error(
       "An employee cannot submit 360° feedback for their own review.",
     );
@@ -1658,7 +1678,7 @@ function normalizePipObjective(input: PipObjectiveInput) {
   };
 }
 
-function toPipApiDoc(doc: any, managerId: string | null = null) {
+function toPipApiDoc(doc: any, managerId: string | null = null, employee: any = null) {
   if (!doc) return undefined;
 
   const plain = toApiDoc(doc) as any;
@@ -1694,6 +1714,11 @@ function toPipApiDoc(doc: any, managerId: string | null = null) {
   return {
     ...plain,
     managerId: plain.managerId ?? managerId,
+    employeeName: employee
+      ? [employee.firstName, employee.lastName].filter(Boolean).join(" ").trim() || null
+      : null,
+    employeeFirstName: employee?.firstName ?? null,
+    employeeLastName: employee?.lastName ?? null,
     objectives,
     checkInFrequency:
       plain.pipCheckInFrequency ?? plain.checkInFrequency ?? "MONTHLY",
@@ -1739,11 +1764,16 @@ export async function listPips(filters: {
   const employees = employeeIds.length
     ? await Employee.find({ _id: { $in: employeeIds } }).lean()
     : [];
-  const managerMap = new Map(
-    employees.map((employee) => [employee._id, employee.managerId ?? null]),
+  const employeeMap = new Map(
+    employees.map((employee) => [String(employee._id), employee]),
   );
 
-  return rows.map((row) => toPipApiDoc(row, managerMap.get(row.employeeId) ?? null));
+  return rows
+    .filter((row) => employeeMap.has(String(row.employeeId)))
+    .map((row) => {
+      const employee = employeeMap.get(String(row.employeeId));
+      return toPipApiDoc(row, employee?.managerId ?? null, employee);
+    });
 }
 
 export async function getPip(id: string) {
@@ -1751,7 +1781,8 @@ export async function getPip(id: string) {
   if (!row) return undefined;
 
   const employee = await Employee.findById(row.employeeId).lean();
-  return toPipApiDoc(row, employee?.managerId ?? null);
+  if (!employee) return undefined;
+  return toPipApiDoc(row, employee.managerId ?? null, employee);
 }
 
 export async function createPip(input: {
@@ -1942,7 +1973,9 @@ export async function addPipCheckIn(
     ? await Employee.findById(updated.employeeId).lean()
     : null;
 
-  return toPipApiDoc(updated, employee?.managerId ?? null);
+  return updated && employee
+    ? toPipApiDoc(updated, employee.managerId ?? null, employee)
+    : undefined;
 }
 
 export async function updatePipStatus(
@@ -1962,20 +1995,22 @@ export async function updatePipStatus(
   }
 
   if (status === "COMPLETED") {
-    const rawObjectives = Array.isArray((row as any).pipObjectives)
+    const structuredObjectives = Array.isArray((row as any).pipObjectives)
       ? (row as any).pipObjectives
-      : Array.isArray((row as any).objectives)
-        ? (row as any).objectives.map((objective: any) =>
+      : [];
+    const legacyObjectives = Array.isArray((row as any).objectives)
+      ? (row as any).objectives
+      : [];
+    const rawObjectives = structuredObjectives.length > 0
+      ? structuredObjectives
+      : legacyObjectives.map((objective: any) =>
           typeof objective === "string"
             ? { progress: 0, status: "NOT_STARTED" }
             : objective,
-        )
-        : [];
+        );
 
-    if (rawObjectives.length === 0) {
-      throw new Error("A PIP must have at least one objective before it can be completed.");
-    }
-
+    // Older PIPs were allowed to exist without structured objectives. Keep
+    // those records completable; newer PIPs still enforce 100% completion.
     const incompleteObjective = rawObjectives.find((objective: any) => {
       const progress = typeof objective.progress === "number" ? objective.progress : 0;
       return progress < 100 || objective.status !== "COMPLETED";
@@ -2035,7 +2070,7 @@ export async function calibrateReview(input: {
 
 export async function listCalibrationReviews(cycleId?: string) {
   const rows = await PerformanceReview.find({ status: "COMPLETED", ...(cycleId ? { cycleId } : {}) }).sort({ submittedAt: -1 }).lean();
-  return enrichReviews(rows);
+  return enrichReviews(rows, { requireEmployee: true });
 }
 
 export async function getAverageRatingByDepartment() {

@@ -9,9 +9,9 @@ import {
   Star,
   CheckCircle2,
   ClipboardList,
-  Award,
+  // Award,
   MessageSquare,
-  TrendingUp,
+  // TrendingUp,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
@@ -44,9 +44,11 @@ const goalSchema = z.object({
 type GoalForm = z.infer<typeof goalSchema>;
 
 export default function Performance() {
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const isManager = hasPermission("performance.manage");
-  const isHr = hasPermission("performance.manage");
+  const isAdmin = user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
+  const canAccessTeamReviews = isManager || isAdmin;
+  const isHr = isAdmin;
   const [tab, setTab] = useState("mine");
   const { data: cycles } = useQuery({
     queryKey: ["performance", "cycles"],
@@ -61,7 +63,7 @@ export default function Performance() {
   const tabs = [
     { key: "mine", label: "My Performance" },
     { key: "feedback", label: "360 Feedback" },
-    ...(isManager ? [{ key: "team", label: "Team Reviews" }] : []),
+    ...(canAccessTeamReviews ? [{ key: "team", label: "Team Reviews" }] : []),
     ...(isManager ? [{ key: "pip", label: "PIP Management" }] : []),
     ...(isHr ? [{ key: "calibration", label: "Calibration" }] : []),
   ];
@@ -203,7 +205,7 @@ export default function Performance() {
       <Tabs tabs={tabs} active={tab} onChange={setTab} className="mb-6 w-fit max-w-full" />
       {tab === "mine" && <MyPerformance activeCycleId={activeCycle?.id} />}
       {tab === "feedback" && <FeedbackRequests />}
-      {tab === "team" && isManager && (
+      {tab === "team" && canAccessTeamReviews && (
         <TeamReviews activeCycleId={activeCycle?.id} isHr={isHr} />
       )}
       {tab === "pip" && isManager && <PipManagement />}
@@ -237,27 +239,12 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
     queryKey: ["performance", "goal-cascade", activeCycleId],
     queryFn: () => PerformanceApi.goalCascade(),
   });
-  const { data: trend } = useQuery({
-    queryKey: ["performance", "goal-trend"],
-    queryFn: () => PerformanceApi.goalTrend(),
-  });
-  const { data: outcome } = useQuery({ queryKey: ["performance", "outcome", review?.id], queryFn: () => PerformanceApi.outcome(review!.id), enabled: !!review?.id && review.status === "COMPLETED" });
-  const { data: feedback } = useQuery({ queryKey: ["performance", "feedback-summary", review?.id], queryFn: () => PerformanceApi.feedbackSummary(review!.id), enabled: !!review?.id });
-  const { data: aiInsights, isLoading: aiInsightsLoading } = useQuery({
-    queryKey: ["performance", "ai-insights", review?.id],
-    queryFn: () => PerformanceApi.aiInsights(review!.id),
-    enabled: !!review?.id && review.status === "COMPLETED",
-  });
-
-
-  const {
-    data: aiDevelopmentPlan,
-    isLoading: aiDevelopmentPlanLoading,
-  } = useQuery({
-    queryKey: ["performance", "ai-development-plan", review?.id],
-    queryFn: () => PerformanceApi.aiDevelopmentPlan(review!.id),
-    enabled: !!review?.id && review.status === "COMPLETED",
-  });
+  // const { data: trend } = useQuery({
+  //   queryKey: ["performance", "goal-trend"],
+  //   queryFn: () => PerformanceApi.goalTrend(),
+  // });
+  // const { data: outcome } = useQuery({ queryKey: ["performance", "outcome", review?.id], queryFn: () => PerformanceApi.outcome(review!.id), enabled: !!review?.id && review.status === "COMPLETED" });
+  // const { data: feedback } = useQuery({ queryKey: ["performance", "feedback-summary", review?.id], queryFn: () => PerformanceApi.feedbackSummary(review!.id), enabled: !!review?.id });
   const { data: scorecard, isLoading: scorecardLoading } = useQuery({
     queryKey: ["performance", "scorecard", user?.employee?.id],
     queryFn: () => PerformanceApi.scorecard(user!.employee!.id),
@@ -406,331 +393,6 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
               )}
           </div>
         )}
-      </Card>
-
-      <Card className="overflow-hidden">
-        <CardHeader
-          title="Performance insights"
-          subtitle="A quick view of your goals, feedback, and review progress."
-        />
-
-        {(() => {
-          const latestTrend = trend?.length ? trend[trend.length - 1] : null;
-          const achievement = latestTrend?.achievementPercentage;
-          const rating = review?.finalRating ?? review?.selfRating;
-          const responseCount = feedback?.responseCount ?? 0;
-
-          return (
-            <div className="space-y-5">
-              {/* At-a-glance metrics */}
-              <div className="grid gap-3 sm:grid-cols-3">
-                <InsightMetric
-                  icon={Target}
-                  label="Goal achievement"
-                  value={achievement != null ? `${achievement}%` : "—"}
-                  helper={latestTrend?.cycleName ?? "No cycle data yet"}
-                  progress={achievement}
-                />
-
-                <InsightMetric
-                  icon={Star}
-                  label="Performance rating"
-                  value={rating != null ? `${rating}/5` : "—"}
-                  helper={
-                    review?.finalRating != null
-                      ? "Final rating"
-                      : review?.selfRating != null
-                        ? "Self-assessment"
-                        : "Not rated yet"
-                  }
-                  rating={rating}
-                />
-
-                <InsightMetric
-                  icon={MessageSquare}
-                  label="360° feedback"
-                  value={responseCount ? `${responseCount}` : "—"}
-                  helper={
-                    responseCount
-                      ? `Anonymous response${responseCount === 1 ? "" : "s"}`
-                      : "No responses yet"
-                  }
-                />
-              </div>
-
-              {/* Goal history */}
-              <div className="rounded-2xl border border-line/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="flex items-center gap-1.5 text-[12px] font-semibold text-ink">
-                      <TrendingUp size={14} className="text-brand-600" />
-                      Goal achievement history
-                    </p>
-                    <p className="mt-1 text-[11.5px] text-ink-faint">
-                      Progress across your recent performance cycles
-                    </p>
-                  </div>
-                  {latestTrend && (
-                    <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">
-                      Latest {latestTrend.achievementPercentage}%
-                    </span>
-                  )}
-                </div>
-
-                {trend?.length ? (
-                  <div className="mt-4 space-y-3">
-                    {trend.slice(-3).map((item) => (
-                      <div key={item.cycleId ?? item.cycleName}>
-                        <div className="mb-1.5 flex items-center justify-between gap-3 text-[12px]">
-                          <span className="min-w-0 truncate text-ink-soft">
-                            {item.cycleName}
-                          </span>
-                          <span className="shrink-0 font-semibold text-ink">
-                            {item.achievementPercentage}%
-                          </span>
-                        </div>
-                        <div className="h-2 overflow-hidden rounded-full bg-ink/[0.08]">
-                          <div
-                            className="h-full rounded-full bg-brand-500 transition-all"
-                            style={{
-                              width: `${Math.min(
-                                100,
-                                Math.max(0, Number(item.achievementPercentage) || 0),
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-xl bg-ink/[0.03] px-3 py-3 text-[12px] text-ink-faint">
-                    Goal trends will appear after goals are added to a performance cycle.
-                  </div>
-                )}
-              </div>
-
-              {/* Review outcome */}
-              {outcome ? (
-                <div className="rounded-2xl border border-brand-200 bg-brand-50/70 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-xl bg-white p-2 shadow-sm">
-                      <Award size={17} className="text-brand-600" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12px] font-semibold text-brand-700">
-                        Review outcome
-                      </p>
-                      <p className="mt-1 text-[13px] font-medium text-ink">
-                        {outcome.incrementRecommendation} increment
-                      </p>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <OutcomePill
-                          label="Promotion"
-                          value={outcome.promotionEligible ? "Eligible" : "Not eligible"}
-                          active={outcome.promotionEligible}
-                        />
-                        <OutcomePill
-                          label="Fast-track"
-                          value={outcome.fastTrackEligible ? "Eligible" : "Not eligible"}
-                          active={outcome.fastTrackEligible}
-                        />
-                        <OutcomePill
-                          label="PIP"
-                          value={outcome.pipRecommended ? "Recommended" : "Not recommended"}
-                          active={outcome.pipRecommended}
-                        />
-                      </div>
-
-                      {outcome.trainingNeeds.length ? (
-                        <p className="mt-3 text-[11.5px] leading-5 text-ink-faint">
-                          <span className="font-medium text-ink-soft">
-                            Development focus:
-                          </span>{" "}
-                          {outcome.trainingNeeds.join(", ")}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-3 rounded-2xl bg-ink/[0.03] px-4 py-3">
-                  <Award size={17} className="text-ink-faint" />
-                  <div>
-                    <p className="text-[12px] font-medium text-ink-soft">
-                      Review outcome
-                    </p>
-                    <p className="mt-0.5 text-[11.5px] text-ink-faint">
-                      Outcome details will appear after the review is completed.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {review?.status === "COMPLETED" ? (
-                <div className="rounded-2xl bg-brand-50 p-4">
-                  <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
-                    <Sparkles size={14} /> AI Performance Insights
-                  </p>
-
-                  {aiInsightsLoading ? (
-                    <p className="mt-2 text-[13px] text-ink-faint">
-                      Generating performance insights...
-                    </p>
-                  ) : aiInsights ? (
-                    <div className="mt-3 space-y-3">
-                      <p className="text-[13px] text-ink">
-                        {aiInsights.summary}
-                      </p>
-
-                      {aiInsights.strengths.length ? (
-                        <div>
-                          <p className="text-[12px] font-medium text-ink-faint">
-                            Strengths
-                          </p>
-                          <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] text-ink-soft">
-                            {aiInsights.strengths.map((item, index) => (
-                              <li key={index}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-
-                      {aiInsights.developmentAreas.length ? (
-                        <div>
-                          <p className="text-[12px] font-medium text-ink-faint">
-                            Development areas
-                          </p>
-                          <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] text-ink-soft">
-                            {aiInsights.developmentAreas.map((item, index) => (
-                              <li key={index}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                      {/* AI Development Plan */}
-                      <div className="mt-5 border-t border-brand-100 pt-4">
-                        <p className="flex items-center gap-1 text-[12px] font-medium text-brand-700">
-                          <Sparkles size={14} /> AI Development Plan
-                        </p>
-
-                        {aiDevelopmentPlanLoading ? (
-                          <p className="mt-2 text-[13px] text-ink-faint">
-                            Generating development plan...
-                          </p>
-                        ) : aiDevelopmentPlan ? (
-                          <div className="mt-3 space-y-4">
-                            <div>
-                              <p className="text-[12px] font-medium text-ink-faint">
-                                Overall Focus
-                              </p>
-                              <p className="mt-1 text-[13px] text-ink">
-                                {aiDevelopmentPlan.overallFocus}
-                              </p>
-                            </div>
-
-                            <div>
-                              <p className="text-[12px] font-medium text-ink-faint">
-                                0–30 Days
-                              </p>
-
-                              <div className="mt-2 space-y-2">
-                                {aiDevelopmentPlan.days30.map((item, index) => (
-                                  <div
-                                    key={index}
-                                    className="rounded-xl border border-brand-100 bg-white p-3"
-                                  >
-                                    <p className="text-[13px] font-medium text-ink">
-                                      {item.action}
-                                    </p>
-                                    <p className="mt-1 text-[12px] text-ink-faint">
-                                      Success measure: {item.successMeasure}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div>
-                              <p className="text-[12px] font-medium text-ink-faint">
-                                31–60 Days
-                              </p>
-
-                              <div className="mt-2 space-y-2">
-                                {aiDevelopmentPlan.days60.map((item, index) => (
-                                  <div
-                                    key={index}
-                                    className="rounded-xl border border-brand-100 bg-white p-3"
-                                  >
-                                    <p className="text-[13px] font-medium text-ink">
-                                      {item.action}
-                                    </p>
-                                    <p className="mt-1 text-[12px] text-ink-faint">
-                                      Success measure: {item.successMeasure}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div>
-                              <p className="text-[12px] font-medium text-ink-faint">
-                                61–90 Days
-                              </p>
-
-                              <div className="mt-2 space-y-2">
-                                {aiDevelopmentPlan.days90.map((item, index) => (
-                                  <div
-                                    key={index}
-                                    className="rounded-xl border border-brand-100 bg-white p-3"
-                                  >
-                                    <p className="text-[13px] font-medium text-ink">
-                                      {item.action}
-                                    </p>
-                                    <p className="mt-1 text-[12px] text-ink-faint">
-                                      Success measure: {item.successMeasure}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="mt-2 text-[13px] text-ink-faint">
-                            Development plan is not available yet.
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <p className="text-[12px] font-medium text-ink-faint">
-                          Goal insight
-                        </p>
-                        <p className="mt-1 text-[13px] text-ink-soft">
-                          {aiInsights.goalInsight}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-[12px] font-medium text-ink-faint">
-                          Suggested focus
-                        </p>
-                        <p className="mt-1 text-[13px] text-ink-soft">
-                          {aiInsights.suggestedFocus}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-[13px] text-ink-faint">
-                      AI performance insights are not available yet.
-                    </p>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          );
-        })()}
       </Card>
 
       <Card className="lg:col-span-2">
@@ -1550,7 +1212,7 @@ function CalibrationPanel({ cycleId }: { cycleId?: string }) {
         {(reviews ?? []).map((review: any) => (
           <div key={review.id} className="flex flex-col gap-3 rounded-2xl border border-line/60 p-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold text-ink">{review.revieweeFirstName} {review.revieweeLastName}</p>
+              <p className="text-sm font-semibold text-ink">{review.revieweeName}</p>
               <p className="text-xs text-ink-faint">Manager rating: {review.managerRating ?? "—"} · Final: {review.finalRating ?? "—"}</p>
               {review.calibratedRating != null && <p className="text-xs font-medium text-brand-600">Calibrated: {review.calibratedRating}/5</p>}
             </div>
@@ -1630,7 +1292,7 @@ function PipManagement() {
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-[13px] font-medium text-ink">
-                      {pip.employeeName ?? pip.employeeId}
+                      {pip.employeeName}
                     </p>
                     <p className="mt-0.5 text-[12px] text-ink-faint">
                       {formatDate(pip.startDate)} – {formatDate(pip.endDate)}
@@ -1667,7 +1329,7 @@ function PipManagement() {
                 <div>
                   <p className="text-[12px] text-ink-faint">Employee</p>
                   <p className="text-[14px] font-medium text-ink">
-                    {detailQuery.data.employeeName ?? detailQuery.data.employeeId}
+                    {detailQuery.data.employeeName}
                   </p>
                 </div>
                 <StatusBadge status={detailQuery.data.status} />
@@ -1754,7 +1416,7 @@ function CreatePipModal({ open, onClose }: { open: boolean; onClose: () => void 
   const queryClient = useQueryClient();
   const { data: reviews } = useQuery({
     queryKey: ["performance", "reviews", "pip-source"],
-    queryFn: () => PerformanceApi.reviews(),
+    queryFn: () => PerformanceApi.reviews({ scope: "team" }),
   });
 
   const form = useForm({
@@ -1918,7 +1580,7 @@ function TeamReviews({
     name: string;
   } | null>(null);
   const [goalFor, setGoalFor] = useState<{ id: string; name: string } | null>(null);
-  const [feedbackFor, setFeedbackFor] = useState<{ reviewId: string; revieweeId: string; revieweeName: string } | null>(null);
+  const [feedbackFor, setFeedbackFor] = useState<{ reviewId: string; revieweeId: string; revieweeName: string; managerId?: string; managerName?: string } | null>(null);
   const employeeId = user?.employee?.id;
 
   const { data: reports, isLoading: reportsLoading } = useQuery({
@@ -1951,11 +1613,11 @@ function TeamReviews({
   });
 
   const ensureMutation = useMutation({
-    mutationFn: (revieweeId: string) =>
+    mutationFn: ({ revieweeId, reviewerId }: { revieweeId: string; reviewerId: string }) =>
       PerformanceApi.ensureReview({
         cycleId: activeCycleId!,
         revieweeId,
-        reviewerId: employeeId!,
+        reviewerId,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -2010,14 +1672,23 @@ function TeamReviews({
               </div>
               <div className="flex items-center gap-2">
                 {!review || review.status === "NOT_STARTED" ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => ensureMutation.mutate(emp.id)}
-                    isLoading={ensureMutation.isPending}
-                  >
-                    Start review
-                  </Button>
+                  emp.managerId ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        ensureMutation.mutate({
+                          revieweeId: emp.id,
+                          reviewerId: emp.managerId!,
+                        })
+                      }
+                      isLoading={ensureMutation.isPending}
+                    >
+                      Start review
+                    </Button>
+                  ) : (
+                    <Badge tone="neutral">No reporting manager</Badge>
+                  )
                 ) : review.status === "COMPLETED" ? (
                   <>
                     <span className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
@@ -2061,6 +1732,12 @@ function TeamReviews({
                         reviewId: review.id,
                         revieweeId: emp.id,
                         revieweeName: `${emp.firstName} ${emp.lastName}`,
+                        managerId: emp.managerId ?? undefined,
+                        managerName: reports.find((manager) => manager.id === emp.managerId)
+                          ? `${reports.find((manager) => manager.id === emp.managerId)?.firstName ?? ""} ${reports.find((manager) => manager.id === emp.managerId)?.lastName ?? ""}`.trim()
+                          : emp.managerId === employeeId
+                            ? `${user?.employee?.firstName ?? ""} ${user?.employee?.lastName ?? ""}`.trim()
+                            : undefined,
                       })
                     }
                   >
@@ -2115,6 +1792,8 @@ function TeamReviews({
           revieweeId={feedbackFor.revieweeId}
           revieweeName={feedbackFor.revieweeName}
           reviewers={reports.filter((employee) => employee.id !== feedbackFor.revieweeId)}
+          defaultReviewerId={feedbackFor.managerId ?? ""}
+          defaultReviewerName={feedbackFor.managerName ?? ""}
           onClose={() => setFeedbackFor(null)}
         />
       )}
@@ -2130,6 +1809,8 @@ function FeedbackAssignmentModal({
   revieweeId,
   revieweeName,
   reviewers,
+  defaultReviewerId,
+  defaultReviewerName,
 }: {
   open: boolean;
   onClose: () => void;
@@ -2138,11 +1819,17 @@ function FeedbackAssignmentModal({
   revieweeId: string;
   revieweeName: string;
   reviewers: any[];
+  defaultReviewerId: string;
+  defaultReviewerName: string;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [reviewerId, setReviewerId] = useState(reviewers[0]?.id ?? "");
+  const [reviewerId, setReviewerId] = useState(defaultReviewerId);
   const [type, setType] = useState<"PEER" | "SUBORDINATE">("PEER");
+
+  useEffect(() => {
+    setReviewerId(defaultReviewerId);
+  }, [defaultReviewerId]);
   const mutation = useMutation({
     mutationFn: () =>
       PerformanceApi.createFeedbackRequest({
@@ -2174,7 +1861,12 @@ function FeedbackAssignmentModal({
       <div className="space-y-4">
         <SelectField label="Reviewer" value={reviewerId} onChange={(event) => setReviewerId(event.target.value)}>
           <option value="">Select reviewer</option>
-          {reviewers.map((employee) => (
+          {defaultReviewerId && (
+            <option value={defaultReviewerId}>
+              {defaultReviewerName || "Reporting manager"}
+            </option>
+          )}
+          {reviewers.filter((employee) => employee.id !== defaultReviewerId).map((employee) => (
             <option key={employee.id} value={employee.id}>
               {employee.firstName} {employee.lastName}
             </option>
@@ -2365,9 +2057,11 @@ function FeedbackRequests() {
     queryKey: ["performance", "cycles"],
     queryFn: () => PerformanceApi.cycles(),
   });
+  const activeCycle = cycles?.find((cycle) => cycle.isActive);
   const { data: reviews, isLoading: reviewsLoading } = useQuery({
-    queryKey: ["performance", "feedback-requests"],
-    queryFn: () => PerformanceApi.feedbackRequests(),
+    queryKey: ["performance", "feedback-requests", activeCycle?.id],
+    queryFn: () => PerformanceApi.feedbackRequests(activeCycle?.id),
+    enabled: !!activeCycle?.id,
   });
   const [selected, setSelected] = useState<{
     id: string;
@@ -2376,7 +2070,6 @@ function FeedbackRequests() {
   } | null>(null);
   const [submittedIds, setSubmittedIds] = useState<string[]>([]);
 
-  const activeCycle = cycles?.find((cycle) => cycle.isActive);
   const pendingReviews = (reviews ?? []).filter(
     (review) =>
       (!activeCycle || review.cycleId === activeCycle.id) &&
@@ -2620,88 +2313,88 @@ function FeedbackModal({
   );
 }
 
-function InsightMetric({
-  icon: Icon,
-  label,
-  value,
-  helper,
-  progress,
-  rating,
-}: {
-  icon: typeof Target;
-  label: string;
-  value: string;
-  helper: string;
-  progress?: number;
-  rating?: number | null;
-}) {
-  return (
-    <div className="rounded-2xl border border-line/60 bg-white p-4">
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
-          <Icon size={14} className="text-brand-600" />
-          {label}
-        </span>
-      </div>
+// function InsightMetric({
+//   icon: Icon,
+//   label,
+//   value,
+//   helper,
+//   progress,
+//   rating,
+// }: {
+//   icon: typeof Target;
+//   label: string;
+//   value: string;
+//   helper: string;
+//   progress?: number;
+//   rating?: number | null;
+// }) {
+//   return (
+//     <div className="rounded-2xl border border-line/60 bg-white p-4">
+//       <div className="flex items-center justify-between gap-2">
+//         <span className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
+//           <Icon size={14} className="text-brand-600" />
+//           {label}
+//         </span>
+//       </div>
 
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-ink">
-        {value}
-      </p>
+//       <p className="mt-3 text-2xl font-semibold tracking-tight text-ink">
+//         {value}
+//       </p>
 
-      <p className="mt-1 text-[11.5px] text-ink-faint">{helper}</p>
+//       <p className="mt-1 text-[11.5px] text-ink-faint">{helper}</p>
 
-      {progress != null && (
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
-          <div
-            className="h-full rounded-full bg-brand-500 transition-all"
-            style={{
-              width: `${Math.min(100, Math.max(0, Number(progress) || 0))}%`,
-            }}
-          />
-        </div>
-      )}
+//       {progress != null && (
+//         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
+//           <div
+//             className="h-full rounded-full bg-brand-500 transition-all"
+//             style={{
+//               width: `${Math.min(100, Math.max(0, Number(progress) || 0))}%`,
+//             }}
+//           />
+//         </div>
+//       )}
 
-      {rating != null && (
-        <div className="mt-3 flex items-center gap-0.5" aria-label={`Rating ${rating} out of 5`}>
-          {[1, 2, 3, 4, 5].map((star) => (
-            <Star
-              key={star}
-              size={13}
-              className={
-                star <= Math.round(rating)
-                  ? "fill-gold-500 text-gold-500"
-                  : "text-line"
-              }
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+//       {rating != null && (
+//         <div className="mt-3 flex items-center gap-0.5" aria-label={`Rating ${rating} out of 5`}>
+//           {[1, 2, 3, 4, 5].map((star) => (
+//             <Star
+//               key={star}
+//               size={13}
+//               className={
+//                 star <= Math.round(rating)
+//                   ? "fill-gold-500 text-gold-500"
+//                   : "text-line"
+//               }
+//             />
+//           ))}
+//         </div>
+//       )}
+//     </div>
+//   );
+// }
 
-function OutcomePill({
-  label,
-  value,
-  active,
-}: {
-  label: string;
-  value: string;
-  active: boolean;
-}) {
-  return (
-    <span
-      className={cx(
-        "rounded-full border px-2.5 py-1 text-[10.5px] font-medium",
-        active
-          ? "border-brand-200 bg-white text-brand-700"
-          : "border-line/60 bg-white/60 text-ink-faint",
-      )}
-    >
-      {label}: {value}
-    </span>
-  );
-}
+// function OutcomePill({
+//   label,
+//   value,
+//   active,
+// }: {
+//   label: string;
+//   value: string;
+//   active: boolean;
+// }) {
+//   return (
+//     <span
+//       className={cx(
+//         "rounded-full border px-2.5 py-1 text-[10.5px] font-medium",
+//         active
+//           ? "border-brand-200 bg-white text-brand-700"
+//           : "border-line/60 bg-white/60 text-ink-faint",
+//       )}
+//     >
+//       {label}: {value}
+//     </span>
+//   );
+// }
 
 function GoalCascadeNode({
   goal,

@@ -3184,7 +3184,7 @@ export interface PerformanceFeedbackRequestDoc {
   reviewId: string;
   reviewerEmployeeId: string;
   revieweeEmployeeId: string;
-  type: "PEER" | "SUBORDINATE";
+  type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
   status: "PENDING" | "COMPLETED" | "DECLINED";
   dueDate: string | null;
   createdBy: string | null;
@@ -3199,7 +3199,7 @@ const performanceFeedbackRequestSchema = new Schema<PerformanceFeedbackRequestDo
     reviewId: { type: String, required: true },
     reviewerEmployeeId: { type: String, required: true },
     revieweeEmployeeId: { type: String, required: true },
-    type: { type: String, enum: ["PEER", "SUBORDINATE"], required: true },
+    type: { type: String, enum: ["PEER", "SUBORDINATE", "CROSS_FUNCTIONAL"], required: true },
     status: { type: String, enum: ["PENDING", "COMPLETED", "DECLINED"], default: "PENDING" },
     dueDate: { type: String, default: null },
     createdBy: { type: String, default: null },
