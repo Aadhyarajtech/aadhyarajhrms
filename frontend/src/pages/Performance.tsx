@@ -52,6 +52,11 @@ export default function Performance() {
     user?.role === "MANAGER" || user?.isManager === true;
   const isAdmin = user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
   const canAccessTeamReviews = isTeamManager || isAdmin;
+  // Performance Outcomes uses the same access rule as Team Reviews.
+  const canAccessPerformanceOutcomes = canAccessTeamReviews;
+  // PIP Management is available to all actual managers, including
+  // MANAGER, RECRUITER, FINANCE, and IT_SUPPORT users flagged as managers.
+  const canAccessPipManagement = canAccessTeamReviews;
   const isHr = isAdmin;
   const [tab, setTab] = useState("mine");
   const { data: cycles } = useQuery({
@@ -68,8 +73,12 @@ export default function Performance() {
     { key: "mine", label: "My Performance" },
     { key: "feedback", label: "360 Feedback" },
     ...(canAccessTeamReviews ? [{ key: "team", label: "Team Reviews" }] : []),
-    ...(isManager ? [{ key: "outcomes", label: "Performance Outcomes" }] : []),
-    ...(isManager ? [{ key: "pip", label: "PIP Management" }] : []),
+    // ...(canAccessPerformanceOutcomes
+    //   ? [{ key: "outcomes", label: "Performance Outcomes" }]
+    //   : []),
+    ...(canAccessPipManagement
+      ? [{ key: "pip", label: "PIP Management" }]
+      : []),
     ...(isHr ? [{ key: "calibration", label: "Calibration" }] : []),
   ];
 
@@ -213,7 +222,9 @@ export default function Performance() {
       {tab === "team" && canAccessTeamReviews && (
         <TeamReviews activeCycleId={activeCycle?.id} />
       )}
-      {tab === "outcomes" && isManager && <PerformanceOutcomes />}
+      {tab === "outcomes" && canAccessPerformanceOutcomes && (
+        <PerformanceOutcomes />
+      )}
       {tab === "pip" && isManager && <PipManagement />}
       {tab === "calibration" && isHr && <CalibrationPanel cycleId={activeCycle?.id} />}
     </div>

@@ -1257,22 +1257,19 @@ performanceRouter.get(
 performanceRouter.get("/outcomes", async (req, res, next) => {
   try {
     const { role, employeeId } = req.user!;
-    const teamRoles = [
-      "MANAGER",
-      "RECRUITER",
-      "FINANCE",
-      "IT_SUPPORT",
-      "HR_ADMIN",
-      "SUPER_ADMIN",
-    ];
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+    const isTeamManager =
+      role === "MANAGER" || req.user!.isManager === true;
 
-    if (!teamRoles.includes(role)) {
+    // Performance Outcomes follows the same access model as Team Reviews:
+    // privileged HR/Admin users see all outcomes; actual managers only see
+    // outcomes for reviews assigned to them. A business role by itself does
+    // not grant access.
+    if (!isPrivileged && !isTeamManager) {
       throw AppError.forbidden(
         "You are not authorized to view performance outcomes.",
       );
     }
-
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
 
     if (!isPrivileged && !employeeId) {
       throw AppError.forbidden("Employee profile not found.");
@@ -1280,7 +1277,7 @@ performanceRouter.get("/outcomes", async (req, res, next) => {
 
     const outcomes = await repo.listPerformanceOutcomes({
       cycleId: req.query.cycleId as string | undefined,
-      reviewerId: isPrivileged ? undefined : employeeId ?? undefined,
+      reviewerId: isPrivileged ? undefined : employeeId!,
     });
 
     res.json({ outcomes });
@@ -1370,7 +1367,21 @@ const performanceOutcomeSchema = z.object({
 
 performanceRouter.patch(
   "/reviews/:id/outcome",
-  requirePermission("performance.manage"),
+  (req, _res, next) => {
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+    const isTeamManager =
+      req.user!.role === "MANAGER" || req.user!.isManager === true;
+
+    if (!isPrivileged && !isTeamManager) {
+      return next(
+        AppError.forbidden(
+          "Only administrators and managers can update performance outcomes.",
+        ),
+      );
+    }
+
+    next();
+  },
   validate(performanceOutcomeSchema),
   async (req, res, next) => {
     try {
@@ -1388,7 +1399,9 @@ performanceRouter.patch(
 
       const { role, employeeId } = req.user!;
 
-      if (role === "MANAGER" || req.user!.isManager) {
+      const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
+
+      if (isTeamManager) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -1581,12 +1594,14 @@ performanceRouter.get(
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
+      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+      const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
 
-      if (!employeeId) {
+      if (!employeeId && !isPrivileged) {
         throw AppError.forbidden("Employee profile not found.");
       }
 
-      if (role === "MANAGER") {
+      if (isTeamManager && employeeId) {
         const reviews = await repo.listReviews({
           reviewerId: employeeId,
         });
@@ -1626,7 +1641,10 @@ performanceRouter.get("/pips", async (req, res, next) => {
     const { role, employeeId } = req.user!;
     const requestedEmployeeId = req.query.employeeId as string | undefined;
 
-    if (role === "MANAGER") {
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+    const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
+
+    if (isTeamManager) {
       if (!employeeId) {
         throw AppError.forbidden("Manager employee profile not found.");
       }
@@ -1679,9 +1697,10 @@ performanceRouter.get("/pips/:id", async (req, res, next) => {
     const { role, employeeId } = req.user!;
     const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
     const isOwner = pip.employeeId === employeeId;
-    const isManager = role === "MANAGER" && pip.managerId === employeeId;
+    const isTeamManager = (role === "MANAGER" || req.user!.isManager === true) &&
+      pip.managerId === employeeId;
 
-    if (!isPrivileged && !isOwner && !isManager) {
+    if (!isPrivileged && !isOwner && !isTeamManager) {
       throw AppError.forbidden("You are not authorized to view this PIP.");
     }
 
@@ -1698,6 +1717,8 @@ performanceRouter.post(
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
+      const isTeamManager =
+        role === "MANAGER" || req.user!.isManager === true;
       const employee = (await getEmployeeById(req.body.employeeId)) as any;
 
       if (!employee) throw AppError.notFound("Employee not found.");
@@ -1714,7 +1735,7 @@ performanceRouter.post(
         }
       }
 
-      const managerId = role === "MANAGER"
+      const managerId = isTeamManager
         ? employeeId
         : (req.body.managerId ?? employee.managerId ?? null);
 
@@ -1722,11 +1743,11 @@ performanceRouter.post(
         throw AppError.badRequest("A manager must be assigned before creating a PIP.");
       }
 
-      if (role === "MANAGER" && managerId !== employeeId) {
+      if (isTeamManager && managerId !== employeeId) {
         throw AppError.forbidden("Managers can only create PIPs assigned to themselves.");
       }
 
-      if (role !== "MANAGER") {
+      if (!isTeamManager) {
         const assignedManager = (await getEmployeeById(managerId)) as any;
         if (!assignedManager || assignedManager.status === "TERMINATED") {
           throw AppError.badRequest("Assigned manager is not valid.");
@@ -1760,7 +1781,8 @@ performanceRouter.patch(
       if (!pip) throw AppError.notFound("PIP not found.");
 
       const { role, employeeId } = req.user!;
-      if (role === "MANAGER" && pip.managerId !== employeeId) {
+      const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
+      if (isTeamManager && pip.managerId !== employeeId) {
         throw AppError.forbidden(
           "You can only update objectives for PIPs assigned to you.",
         );
@@ -1785,7 +1807,8 @@ performanceRouter.post(
       if (!pip) throw AppError.notFound("PIP not found.");
 
       const { role, employeeId } = req.user!;
-      if (role === "MANAGER" && pip.managerId !== employeeId) {
+      const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
+      if (isTeamManager && pip.managerId !== employeeId) {
         throw AppError.forbidden(
           "You can only add check-ins to PIPs assigned to you.",
         );
@@ -1817,7 +1840,8 @@ performanceRouter.patch(
       if (!pip) throw AppError.notFound("PIP not found.");
 
       const { role, employeeId } = req.user!;
-      if (role === "MANAGER" && pip.managerId !== employeeId) {
+      const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
+      if (isTeamManager && pip.managerId !== employeeId) {
         throw AppError.forbidden(
           "You can only change the status of PIPs assigned to you.",
         );
