@@ -597,11 +597,11 @@ export default function OrgChart() {
         </div>
       </div>
 
-      {/* Employee Quick-View Side Drawer (Does not navigate away, offers full jump) */}
-      {quickViewEmp && (
-        <div className="fixed inset-y-0 right-0 z-40 flex w-80 sm:w-96 flex-col bg-white shadow-2xl border-l border-[#e8e6e3] animate-in slide-in-from-right duration-200">
-          <div className="flex items-center justify-between border-b border-[#eeecea] p-4 bg-gray-50">
-            <h3 className="text-sm font-semibold text-gray-900">Employee Quick-View</h3>
+      {/* Employee Quick-View Centered Modal */}
+{quickViewEmp && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
+    <div className="flex w-full max-w-2xl max-h-[85vh] flex-col rounded-xl bg-white shadow-2xl border border-[#e8e6e3] overflow-hidden animate-in zoom-in-95 duration-200">
+      <div className="flex items-center justify-between border-b border-[#eeecea] p-4 bg-gray-50">
             <button
               type="button"
               onClick={() => setQuickViewEmp(null)}
@@ -674,9 +674,10 @@ export default function OrgChart() {
   </button>
 </div>
         </div>
-      )}
+      </div>
+    )}
 
-      {/* Chatbot Drawer */}
+{/* Chatbot Drawer */}
       {isChatOpen && (
         <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col bg-white shadow-2xl border-l border-[#e8e6e3] animate-in slide-in-from-right duration-200">
           {/* Header Renamed to "Chatbot" */}

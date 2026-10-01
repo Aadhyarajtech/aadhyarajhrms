@@ -1361,7 +1361,6 @@ function PostJobModal({
             Generate with AI
           </Button>
         </div>
-
         <TextField
           label="Job title"
           required
@@ -1369,6 +1368,11 @@ function PostJobModal({
           error={errors.title?.message}
           {...register("title")}
         />
+
+        <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
+          <span className="font-medium text-ink">💡</span> Enter a job title and click{" "}
+          <span className="font-medium text-brand-600">Generate with AI</span> to automatically fill the job details.
+        </p>
 
         <SelectField
           label="Department"
