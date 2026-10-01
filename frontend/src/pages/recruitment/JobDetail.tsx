@@ -395,7 +395,25 @@ export default function JobDetail() {
 
       if (!candidate) return;
 
-      setInterviewCopilotData(data);
+      setInterviewCopilotData({
+        ...data,
+        technicalQuestions: data.technicalQuestions.map((question) => ({
+          question,
+          followUps: [],
+        })),
+        resumeQuestions: data.resumeQuestions.map((question) => ({
+          question,
+          followUps: [],
+        })),
+        skillGapQuestions: data.skillGapQuestions.map((question) => ({
+          question,
+          followUps: [],
+        })),
+        behavioralQuestions: data.behavioralQuestions.map((question) => ({
+          question,
+          followUps: [],
+        })),
+      });
       setInterviewCopilotFor(candidate);
     },
 

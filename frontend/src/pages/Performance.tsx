@@ -14,9 +14,11 @@ import {
   // TrendingUp,
   ShieldCheck,
   Sparkles,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { PerformanceApi, EmployeesApi } from "@/lib/endpoints";
-import { getErrorMessage } from "@/lib/api";
+import { api, getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -64,6 +66,7 @@ export default function Performance() {
     { key: "mine", label: "My Performance" },
     { key: "feedback", label: "360 Feedback" },
     ...(canAccessTeamReviews ? [{ key: "team", label: "Team Reviews" }] : []),
+    ...(isManager ? [{ key: "outcomes", label: "Performance Outcomes" }] : []),
     ...(isManager ? [{ key: "pip", label: "PIP Management" }] : []),
     ...(isHr ? [{ key: "calibration", label: "Calibration" }] : []),
   ];
@@ -78,8 +81,8 @@ export default function Performance() {
             : "No active review cycle"
         }
       />
-      <div className="mb-6 flex justify-end">
-        <div className="w-full max-w-md rounded-2xl border border-line/60 bg-white p-4 shadow-sm">
+      <div className="mb-6 w-full">
+        <div className="w-full rounded-2xl border border-line/60 bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -206,8 +209,9 @@ export default function Performance() {
       {tab === "mine" && <MyPerformance activeCycleId={activeCycle?.id} />}
       {tab === "feedback" && <FeedbackRequests />}
       {tab === "team" && canAccessTeamReviews && (
-        <TeamReviews activeCycleId={activeCycle?.id} isHr={isHr} />
+        <TeamReviews activeCycleId={activeCycle?.id} />
       )}
+      {tab === "outcomes" && isManager && <PerformanceOutcomes />}
       {tab === "pip" && isManager && <PipManagement />}
       {tab === "calibration" && isHr && <CalibrationPanel cycleId={activeCycle?.id} />}
     </div>
@@ -219,6 +223,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [goalOpen, setGoalOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<any | null>(null);
   const [selfOpen, setSelfOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatQuestion, setChatQuestion] = useState("");
@@ -313,6 +318,23 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
             ? "Developing"
             : "Needs Improvement";
 
+  const deleteGoalMutation = useMutation({
+    mutationFn: (id: string) => PerformanceApi.deleteGoal(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "goals", "mine"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "goal-cascade", activeCycleId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "goal-trend"],
+      });
+      showToast("Goal deleted.");
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
+
   const milestoneMutation = useMutation({
     mutationFn: ({
       id,
@@ -406,10 +428,11 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
           </p>
         ) : (
           <div className="space-y-2">
-            {goalCascade.map((goal: any) => (
+            {flattenGoalCascadeForDisplay(goalCascade).map((item: any) => (
               <GoalCascadeNode
-                key={goal.id}
-                goal={goal}
+                key={item.goal.id}
+                goal={item.goal}
+                parentTitle={item.parentTitle}
                 onToggleMilestone={(id, milestoneIndex, completed) =>
                   milestoneMutation.mutate({ id, milestoneIndex, completed })
                 }
@@ -1007,16 +1030,44 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
                     Due {formatDate(g.dueDate)}
                   </p>
 
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
                     <Button
                       size="sm"
                       variant="outline"
+                      leftIcon={<Pencil size={14} />}
+                      onClick={() => {
+                        setEditingGoal(g);
+                        setGoalOpen(true);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      leftIcon={<Trash2 size={14} />}
+                      isLoading={deleteGoalMutation.isPending && deleteGoalMutation.variables === g.id}
+                      disabled={deleteGoalMutation.isPending}
+                      onClick={() => {
+                        const confirmed = window.confirm(
+                          `Delete the goal "${g.title}"? This action cannot be undone.`,
+                        );
+                        if (confirmed) {
+                          deleteGoalMutation.mutate(g.id);
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      leftIcon={<Sparkles size={14} />}
                       onClick={() => {
                         setSelectedGoal(g);
                         setGoalCoachOpen(true);
                       }}
                     >
-                      <Sparkles size={14} />
                       AI Goal Coach
                     </Button>
                   </div>
@@ -1031,9 +1082,13 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
 
       <AddGoalModal
         open={goalOpen}
-        onClose={() => setGoalOpen(false)}
+        onClose={() => {
+          setGoalOpen(false);
+          setEditingGoal(null);
+        }}
         cycleId={activeCycleId}
         parentGoals={goals ?? []}
+        editGoal={editingGoal}
       />
       {
         review && (
@@ -1205,24 +1260,68 @@ function CalibrationPanel({ cycleId }: { cycleId?: string }) {
 
   if (!cycleId) return <Card><EmptyState icon={ClipboardList} title="No active cycle" description="Activate a performance cycle before calibration." /></Card>;
   if (isLoading) return <Card><Skeleton className="h-64 rounded-2xl" /></Card>;
+  const validCalibrationReviews = (reviews ?? []).filter(
+    (review: any) =>
+      String(review.revieweeFirstName ?? "").trim() ||
+      String(review.revieweeLastName ?? "").trim(),
+  );
+
   return (
     <Card>
       <CardHeader title="Performance calibration" />
       <div className="space-y-3">
-        {(reviews ?? []).map((review: any) => (
+        {validCalibrationReviews.map((review: any) => (
           <div key={review.id} className="flex flex-col gap-3 rounded-2xl border border-line/60 p-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold text-ink">{review.revieweeName}</p>
-              <p className="text-xs text-ink-faint">Manager rating: {review.managerRating ?? "—"} · Final: {review.finalRating ?? "—"}</p>
-              {review.calibratedRating != null && <p className="text-xs font-medium text-brand-600">Calibrated: {review.calibratedRating}/5</p>}
+              <p className="text-sm font-semibold text-ink">
+                {review.revieweeName ?? `${review.revieweeFirstName ?? ""} ${review.revieweeLastName ?? ""}`.trim()}
+              </p>
+              <p className="text-xs text-ink-faint">
+                Manager rating: {review.managerRating ?? "—"} · Final: {review.finalRating ?? "—"}
+              </p>
+              {review.calibratedRating != null && (
+                <p className="text-xs font-medium text-brand-600">
+                  Calibrated: {review.calibratedRating}/5
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
-              <input aria-label="Calibrated rating" type="number" min={1} max={5} step={0.1} defaultValue={review.calibratedRating ?? review.finalRating ?? 3} id={`cal-${review.id}`} className="w-20 rounded-xl border border-line px-3 py-2 text-sm" />
-              <Button size="sm" onClick={() => { const el = document.getElementById(`cal-${review.id}`) as HTMLInputElement | null; mutation.mutate({ id: review.id, rating: Number(el?.value ?? 3) }); }}>Save</Button>
+              <input
+                aria-label="Calibrated rating"
+                type="number"
+                min={1}
+                max={5}
+                step={0.1}
+                defaultValue={review.calibratedRating ?? review.finalRating ?? 3}
+                id={`cal-${review.id}`}
+                className="w-20 rounded-xl border border-line px-3 py-2 text-sm"
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  const el = document.getElementById(
+                    `cal-${review.id}`,
+                  ) as HTMLInputElement | null;
+
+                  mutation.mutate({
+                    id: review.id,
+                    rating: Number(el?.value ?? 3),
+                  });
+                }}
+              >
+                Save
+              </Button>
             </div>
           </div>
         ))}
-        {!reviews?.length && <EmptyState icon={CheckCircle2} title="No completed reviews" description="Completed reviews will appear here for calibration." />}
+
+        {!validCalibrationReviews.length && (
+          <EmptyState
+            icon={CheckCircle2}
+            title="No completed reviews"
+            description="Completed reviews will appear here for calibration."
+          />
+        )}
       </div>
     </Card>
   );
@@ -1414,9 +1513,15 @@ function PipManagement() {
 function CreatePipModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const { data: reviews } = useQuery({
-    queryKey: ["performance", "reviews", "pip-source"],
-    queryFn: () => PerformanceApi.reviews({ scope: "team" }),
+  const {
+    data: eligibleReviews,
+    isLoading: eligibleReviewsLoading,
+    isError: eligibleReviewsError,
+  } = useQuery({
+    queryKey: ["performance", "pip-eligible-reviews"],
+    queryFn: () => PerformanceApi.pipEligibleReviews(),
+    enabled: open,
+    staleTime: 30_000,
   });
 
   const form = useForm({
@@ -1459,7 +1564,9 @@ function CreatePipModal({ open, onClose }: { open: boolean; onClose: () => void 
     onError: (err) => showToast(getErrorMessage(err), "error"),
   });
 
-  const completedReviews = (reviews ?? []).filter((review: any) => review.status === "COMPLETED");
+  const completedReviews = (eligibleReviews ?? []).filter(
+    (review: any) => review.status === "COMPLETED",
+  );
 
   return (
     <Modal
@@ -1476,18 +1583,53 @@ function CreatePipModal({ open, onClose }: { open: boolean; onClose: () => void 
       }
     >
       <div className="space-y-4">
-        <SelectField label="Completed review" required {...form.register("reviewId")} onChange={(event) => {
-          const review = completedReviews.find((item: any) => item.id === event.target.value);
-          form.setValue("reviewId", event.target.value);
-          if (review) form.setValue("employeeId", review.revieweeId);
-        }}>
-          <option value="">Select review</option>
+        <SelectField
+          label="Completed review"
+          required
+          {...form.register("reviewId")}
+          onChange={(event) => {
+            const review = completedReviews.find(
+              (item: any) => item.id === event.target.value,
+            );
+
+            form.setValue("reviewId", event.target.value, {
+              shouldValidate: true,
+              shouldDirty: true,
+            });
+
+            form.setValue("employeeId", review?.revieweeId ?? "", {
+              shouldValidate: true,
+              shouldDirty: true,
+            });
+          }}
+        >
+          <option value="">
+            {eligibleReviewsLoading
+              ? "Loading completed reviews..."
+              : "Select review"}
+          </option>
+
           {completedReviews.map((review: any) => (
             <option key={review.id} value={review.id}>
-              {review.revieweeFirstName} {review.revieweeLastName} — {review.finalRating}/5
+              {review.revieweeFirstName} {review.revieweeLastName} —{" "}
+              {review.finalRating ?? review.managerRating ?? "—"}/5
             </option>
           ))}
         </SelectField>
+
+        {eligibleReviewsError && (
+          <p className="text-[12px] text-red-600">
+            Unable to load completed performance reviews. Please try again.
+          </p>
+        )}
+
+        {!eligibleReviewsLoading &&
+          !eligibleReviewsError &&
+          completedReviews.length === 0 && (
+            <p className="text-[12px] text-ink-faint">
+              No completed performance reviews are available for creating a PIP.
+            </p>
+          )}
 
         <div className="grid grid-cols-2 gap-4">
           <TextField label="Start date" type="date" required {...form.register("startDate")} />
@@ -1561,12 +1703,137 @@ function PipCheckInModal({ pipId, onClose }: { pipId: string; onClose: () => voi
   );
 }
 
+function PerformanceOutcomes() {
+  const [selectedOutcome, setSelectedOutcome] = useState<{
+    reviewId: string;
+    name: string;
+  } | null>(null);
+
+  const { data: outcomes, isLoading, isError } = useQuery({
+    queryKey: ["performance", "outcomes"],
+    queryFn: () => PerformanceApi.outcomes(),
+  });
+
+  if (isLoading) return <Skeleton className="h-64 rounded-3xl" />;
+
+  if (isError) {
+    return (
+      <Card>
+        <EmptyState
+          icon={ClipboardList}
+          title="Unable to load performance outcomes"
+          description="Please try again after refreshing the page."
+        />
+      </Card>
+    );
+  }
+
+  if (!outcomes?.length) {
+    return (
+      <Card>
+        <EmptyState
+          icon={CheckCircle2}
+          title="No performance outcomes yet"
+          description="Saved outcomes from completed performance reviews will appear here."
+        />
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Performance Outcomes"
+        subtitle="Saved outcomes from completed performance reviews"
+      />
+      <div className="space-y-3">
+        {outcomes.map((outcome) => {
+          const employeeName = `${outcome.revieweeFirstName ?? ""} ${outcome.revieweeLastName ?? ""}`.trim() || "Employee";
+          const training = outcome.trainingNeeds?.length
+            ? outcome.trainingNeeds.join(", ")
+            : "—";
+
+          return (
+            <div
+              key={outcome.id}
+              className="rounded-2xl border border-line/60 p-4"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Avatar
+                    firstName={outcome.revieweeFirstName ?? ""}
+                    lastName={outcome.revieweeLastName ?? ""}
+                    src={outcome.revieweeAvatar ?? undefined}
+                    size="sm"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-ink">
+                      {employeeName}
+                    </p>
+                    <p className="text-[12px] text-ink-faint">
+                      {outcome.cycleName ?? "Performance cycle"}
+                      {outcome.finalRating != null
+                        ? ` · Final rating ${outcome.finalRating}/5`
+                        : ""}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                  <Badge tone="neutral">
+                    Increment: {outcome.incrementRecommendation}
+                  </Badge>
+                  <Badge tone={outcome.promotionEligible ? "success" : "neutral"}>
+                    Promotion: {outcome.promotionEligible ? "Eligible" : "Not eligible"}
+                  </Badge>
+                  <Badge tone={outcome.pipRecommended ? "danger" : "neutral"}>
+                    PIP: {outcome.pipRecommended ? "Recommended" : "Not recommended"}
+                  </Badge>
+                  <Badge tone={outcome.fastTrackEligible ? "success" : "neutral"}>
+                    Fast-track: {outcome.fastTrackEligible ? "Eligible" : "Not eligible"}
+                  </Badge>
+                </div>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setSelectedOutcome({
+                      reviewId: outcome.reviewId,
+                      name: employeeName,
+                    })
+                  }
+                >
+                  View outcome
+                </Button>
+              </div>
+
+              <div className="mt-3 rounded-xl bg-ink/[0.03] px-3 py-2">
+                <p className="text-[11px] font-medium text-ink-faint">
+                  Training / development needs
+                </p>
+                <p className="mt-1 text-[12px] text-ink-soft">{training}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {selectedOutcome && (
+        <PerformanceOutcomeModal
+          reviewId={selectedOutcome.reviewId}
+          employeeName={selectedOutcome.name}
+          onClose={() => setSelectedOutcome(null)}
+        />
+      )}
+    </Card>
+  );
+}
+
 function TeamReviews({
   activeCycleId,
-  isHr,
 }: {
   activeCycleId?: string;
-  isHr: boolean;
 }) {
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -1583,10 +1850,19 @@ function TeamReviews({
   const [feedbackFor, setFeedbackFor] = useState<{ reviewId: string; revieweeId: string; revieweeName: string; managerId?: string; managerName?: string } | null>(null);
   const employeeId = user?.employee?.id;
 
+  // Only Super Admin and HR Admin can see the complete employee population.
+  // Manager, Recruiter, Finance, and IT Support are restricted to their own
+  // team members returned by the protected Performance team endpoint.
+  const isTeamAdmin =
+    user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
+
   const { data: reports, isLoading: reportsLoading } = useQuery({
-    queryKey: [isHr ? "performance-employees" : "direct-reports", employeeId],
+    queryKey: [
+      isTeamAdmin ? "performance-all-employees" : "performance-team-members",
+      employeeId,
+    ],
     queryFn: async () => {
-      if (isHr) {
+      if (isTeamAdmin) {
         const result = await EmployeesApi.list({
           status: "ACTIVE",
           page: 1,
@@ -1595,9 +1871,26 @@ function TeamReviews({
         return result.employees;
       }
 
-      return await EmployeesApi.directReports(employeeId!);
+      if (!employeeId) {
+        return [];
+      }
+
+      const response = await api.get<{ employees?: any[] }>(
+        "/performance/team/direct-reports",
+      );
+
+      return Array.isArray(response.data?.employees)
+        ? Array.from(
+            new Map(
+              response.data.employees.map((employee) => [
+                employee.id,
+                employee,
+              ]),
+            ).values(),
+          )
+        : [];
     },
-    enabled: isHr || !!employeeId,
+    enabled: isTeamAdmin || !!employeeId,
   });
 
 
@@ -1791,9 +2084,49 @@ function TeamReviews({
           reviewId={feedbackFor.reviewId}
           revieweeId={feedbackFor.revieweeId}
           revieweeName={feedbackFor.revieweeName}
-          reviewers={reports.filter((employee) => employee.id !== feedbackFor.revieweeId)}
-          defaultReviewerId={feedbackFor.managerId ?? ""}
-          defaultReviewerName={feedbackFor.managerName ?? ""}
+          reviewers={(() => {
+            const reviewee = reports.find(
+              (employee) => String(employee.id) === String(feedbackFor.revieweeId),
+            );
+            const reportingManager =
+              reviewee?.managerId &&
+              reports.find(
+                (employee) => String(employee.id) === String(reviewee.managerId),
+              );
+            const currentManager =
+              employeeId &&
+              user?.employee &&
+              String(user.employee.id) === String(employeeId)
+                ? user.employee
+                : null;
+            const candidates = [
+              ...(feedbackFor.managerId ? [reports.find((employee) => String(employee.id) === String(feedbackFor.managerId))] : []),
+              ...(reportingManager ? [reportingManager] : []),
+              ...(currentManager ? [currentManager] : []),
+              ...reports,
+            ];
+            return Array.from(
+              new Map(
+                candidates
+                  .filter(
+                    (employee) =>
+                      employee &&
+                      String(employee.id) !== String(feedbackFor.revieweeId),
+                  )
+                  .map((employee) => [String(employee.id), employee]),
+              ).values(),
+            );
+          })()}
+          defaultReviewerId={(() => {
+            const reviewee = reports.find(
+              (employee) => String(employee.id) === String(feedbackFor.revieweeId),
+            );
+            if (feedbackFor.managerId) return String(feedbackFor.managerId);
+            if (reviewee?.managerId) return String(reviewee.managerId);
+            if (employeeId) return String(employeeId);
+            return "";
+          })()}
+          defaultReviewerName={feedbackFor.managerName ?? "Reporting manager"}
           onClose={() => setFeedbackFor(null)}
         />
       )}
@@ -1819,17 +2152,27 @@ function FeedbackAssignmentModal({
   revieweeId: string;
   revieweeName: string;
   reviewers: any[];
-  defaultReviewerId: string;
-  defaultReviewerName: string;
+  defaultReviewerId?: string;
+  defaultReviewerName?: string;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [reviewerId, setReviewerId] = useState(defaultReviewerId);
+  const [reviewerId, setReviewerId] = useState(
+    defaultReviewerId || reviewers[0]?.id || "",
+  );
   const [type, setType] = useState<"PEER" | "SUBORDINATE">("PEER");
 
   useEffect(() => {
-    setReviewerId(defaultReviewerId);
-  }, [defaultReviewerId]);
+    const preferredReviewer =
+      defaultReviewerId &&
+      reviewers.some(
+        (employee) => String(employee.id) === String(defaultReviewerId),
+      )
+        ? String(defaultReviewerId)
+        : String(reviewers[0]?.id ?? "");
+
+    setReviewerId(preferredReviewer);
+  }, [defaultReviewerId, reviewers]);
   const mutation = useMutation({
     mutationFn: () =>
       PerformanceApi.createFeedbackRequest({
@@ -1924,6 +2267,9 @@ function PerformanceOutcomeModal({
       );
       queryClient.invalidateQueries({
         queryKey: ["performance", "my-review"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["performance", "outcomes"],
       });
       showToast("Performance outcome updated.");
       onClose();
@@ -2396,22 +2742,45 @@ function FeedbackModal({
 //   );
 // }
 
+function flattenGoalCascadeForDisplay(
+  goals: any[],
+  parentTitle: string | null = null,
+  result: Array<{ goal: any; parentTitle: string | null }> = [],
+) {
+  for (const goal of goals ?? []) {
+    // Keep the parent-child relationship from the backend, but flatten the
+    // visual presentation so each goal is displayed as its own card.
+    result.push({ goal, parentTitle });
+
+    if (Array.isArray(goal.children) && goal.children.length > 0) {
+      flattenGoalCascadeForDisplay(goal.children, goal.title, result);
+    }
+  }
+
+  return result;
+}
+
 function GoalCascadeNode({
   goal,
+  parentTitle,
   onToggleMilestone,
   isUpdating,
-  depth = 0,
 }: {
   goal: any;
+  parentTitle?: string | null;
   onToggleMilestone: (id: string, milestoneIndex: number, completed: boolean) => void;
   isUpdating: boolean;
-  depth?: number;
 }) {
   return (
-    <div className={cx("rounded-2xl border border-line/60 p-3", depth > 0 && "ml-4")}>
+    <div className="rounded-2xl border border-line/60 p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-ink">{goal.title}</p>
+          {parentTitle && (
+            <p className="mt-0.5 text-[11px] text-ink-faint">
+              Parent goal: {parentTitle}
+            </p>
+          )}
           {goal.category && (
             <p className="mt-0.5 text-[11.5px] text-ink-faint">KPI: {goal.category}</p>
           )}
@@ -2453,20 +2822,6 @@ function GoalCascadeNode({
           ))}
         </div>
       ) : null}
-
-      {goal.children?.length ? (
-        <div className="mt-2 space-y-2">
-          {goal.children.map((child: any) => (
-            <GoalCascadeNode
-              key={child.id}
-              goal={child}
-              onToggleMilestone={onToggleMilestone}
-              isUpdating={isUpdating}
-              depth={depth + 1}
-            />
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -2478,6 +2833,7 @@ function AddGoalModal({
   employeeName,
   cycleId,
   parentGoals = [],
+  editGoal,
 }: {
   open: boolean;
   onClose: () => void;
@@ -2485,6 +2841,7 @@ function AddGoalModal({
   employeeName?: string;
   cycleId?: string;
   parentGoals?: any[];
+  editGoal?: any | null;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -2506,6 +2863,47 @@ function AddGoalModal({
       milestones: "",
     },
   });
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (editGoal) {
+      reset({
+        title: editGoal.title ?? "",
+        description: editGoal.description ?? "",
+        dueDate: editGoal.dueDate
+          ? String(editGoal.dueDate).slice(0, 10)
+          : "",
+        category: editGoal.category ?? "",
+        targetValue:
+          editGoal.targetValue !== null && editGoal.targetValue !== undefined
+            ? String(editGoal.targetValue)
+            : "",
+        currentValue:
+          editGoal.currentValue !== null && editGoal.currentValue !== undefined
+            ? String(editGoal.currentValue)
+            : "",
+        parentGoalId: editGoal.parentGoalId ?? "",
+        milestones: Array.isArray(editGoal.milestones)
+          ? editGoal.milestones
+              .map((milestone: any) => milestone.title)
+              .filter((title: any) => String(title ?? "").trim())
+              .join("\n")
+          : "",
+      });
+    } else {
+      reset({
+        title: "",
+        description: "",
+        dueDate: "",
+        category: "",
+        targetValue: "",
+        currentValue: "",
+        parentGoalId: "",
+        milestones: "",
+      });
+    }
+  }, [open, editGoal, reset]);
 
   const { data: assignedEmployeeCascade } = useQuery({
     queryKey: ["performance", "goal-cascade", employeeId],
@@ -2546,7 +2944,39 @@ function AddGoalModal({
         throw new Error("Current value must be a valid non-negative number.");
       }
 
-      const goal = await PerformanceApi.createGoal({
+      // Treat each new line as a separate milestone. Commas are also
+      // supported for backward compatibility with existing entries.
+      const milestones =
+        value.milestones
+          ?.split(/[\n,]+/)
+          .map((title) => title.trim())
+          .filter(Boolean)
+          .map((title) => {
+            const existingMilestone = editGoal?.milestones?.find(
+              (milestone: any) => milestone.title?.trim() === title,
+            );
+            return {
+              title,
+              completed: Boolean(existingMilestone?.completed),
+              targetDate: existingMilestone?.targetDate ?? null,
+            };
+          }) ?? [];
+
+      if (editGoal) {
+        return PerformanceApi.updateGoal(editGoal.id, {
+          title: value.title,
+          description: value.description || undefined,
+          dueDate: value.dueDate,
+          cycleId: cycleId ?? editGoal?.cycleId ?? null,
+          parentGoalId: value.parentGoalId?.trim() || null,
+          category: value.category?.trim() || null,
+          targetValue,
+          currentValue,
+          milestones,
+        });
+      }
+
+      return PerformanceApi.createGoal({
         title: value.title,
         description: value.description || undefined,
         dueDate: value.dueDate,
@@ -2556,16 +2986,8 @@ function AddGoalModal({
         category: value.category?.trim() || undefined,
         targetValue,
         currentValue,
-        milestones:
-          value.milestones
-            ?.split(",")
-            .map((title) => title.trim())
-            .filter(Boolean)
-            .map((title) => ({ title, completed: false })) ?? [],
+        milestones,
       });
-
-      // The backend calculates KPI progress and status from targetValue/currentValue.
-      return goal;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -2574,7 +2996,13 @@ function AddGoalModal({
       queryClient.invalidateQueries({
         queryKey: ["performance", "goal-trend"],
       });
-      showToast(employeeName ? "Goal assigned." : "Goal added.");
+      showToast(
+        editGoal
+          ? "Goal updated."
+          : employeeName
+            ? "Goal assigned."
+            : "Goal added.",
+      );
       reset();
       onClose();
     },
@@ -2585,7 +3013,13 @@ function AddGoalModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={employeeName ? `Assign goal — ${employeeName}` : "Add a goal"}
+      title={
+        editGoal
+          ? "Edit goal"
+          : employeeName
+            ? `Assign goal — ${employeeName}`
+            : "Add a goal"
+      }
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -2595,7 +3029,7 @@ function AddGoalModal({
             onClick={handleSubmit((v) => mutation.mutate(v))}
             isLoading={mutation.isPending}
           >
-            {employeeName ? "Assign goal" : "Add goal"}
+            {editGoal ? "Save changes" : employeeName ? "Assign goal" : "Add goal"}
           </Button>
         </>
       }
@@ -2646,7 +3080,7 @@ function AddGoalModal({
         />
         <TextareaField
           label="Milestones"
-          hint="Separate milestones with commas"
+          hint="Enter each milestone on a new line"
           {...register("milestones")}
         />
         <TextField
