@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { requirePermission, requirePermissionOrManager } from "@/middleware/permissions";
+import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import * as repo from "./performance.repository";
@@ -175,24 +175,32 @@ performanceRouter.get("/reviews", async (req, res, next) => {
     };
 
     if (isTeamScope) {
-      // Team Reviews are available to Managers, HR Admins, and Super Admins.
-      if (!["MANAGER", "HR_ADMIN", "SUPER_ADMIN"].includes(role) && !req.user!.isManager) {
+      // Team Reviews are available only to privileged HR/Admin users or
+      // employees who are actually managers. A business role such as
+      // RECRUITER, FINANCE, or IT_SUPPORT must not grant Team Reviews by
+      // itself; those roles get Team Reviews only when isManager is true.
+      const canAccessTeamReviews =
+        isPrivileged || role === "MANAGER" || req.user!.isManager === true;
+
+      if (!canAccessTeamReviews) {
         throw AppError.forbidden(
           "You are not authorized to view team performance reviews.",
         );
       }
 
-      // A Manager can only see reviews for employees assigned to them.
-      if (role === "MANAGER" || req.user!.isManager) {
+      // Super Admin and HR Admin can view all team reviews. Other team-lead
+      // roles, including users explicitly flagged as managers, are restricted
+      // to reviews assigned to their own employee profile.
+      if (!isPrivileged) {
         if (!employeeId) {
-          throw AppError.forbidden("Manager employee profile not found.");
+          throw AppError.forbidden("Employee profile not found.");
         }
 
         filters.reviewerId = employeeId;
 
         // Creating a cycle does not automatically create review documents.
-        // Ensure the manager has a review assigned for each direct report so
-        // Team Reviews is populated even when assignments were not pre-seeded.
+        // Ensure this team lead has a review assigned for each direct report
+        // so Team Reviews is populated even when assignments were not seeded.
         const activeCycle = filters.cycleId
           ? null
           : await repo.getActiveCycle();
@@ -200,8 +208,12 @@ performanceRouter.get("/reviews", async (req, res, next) => {
 
         if (cycleId) {
           const reports = await repo.listDirectReports(employeeId);
+          const validReports = reports.filter(
+            (report: any) => String(report.id) !== String(employeeId),
+          );
+
           await Promise.all(
-            reports.map((report: any) =>
+            validReports.map((report: any) =>
               repo.ensureReview(
                 String(cycleId),
                 String(report.id),
@@ -212,9 +224,6 @@ performanceRouter.get("/reviews", async (req, res, next) => {
           filters.cycleId = String(cycleId);
         }
       }
-
-      // HR Admin and Super Admin can view all team reviews.
-      // No reviewerId/revieweeId restriction is applied for privileged roles.
     } else if (!isPrivileged) {
       // Regular employees can only view their own reviews.
       if (!employeeId) {
@@ -241,28 +250,44 @@ performanceRouter.get("/team/direct-reports", async (req, res, next) => {
       throw AppError.forbidden("Employee profile not found.");
     }
 
-    if (!["MANAGER", "HR_ADMIN", "SUPER_ADMIN"].includes(role) && !req.user!.isManager) {
+    // Direct reports are exposed only to privileged HR/Admin users or to
+    // employees who are actually managers. Recruiter, Finance, and IT
+    // Support users must be explicitly marked as managers to use this API.
+    const canAccessTeam =
+      ["SUPER_ADMIN", "HR_ADMIN"].includes(role) ||
+      role === "MANAGER" ||
+      req.user!.isManager === true;
+
+    if (!canAccessTeam) {
       throw AppError.forbidden(
         "You are not authorized to view direct reports.",
       );
     }
 
-    if (role === "MANAGER") {
-      res.json({
-        employees: await repo.listDirectReports(employeeId),
-      });
-      return;
-    }
-
     const requestedManagerId = req.query.managerId as string | undefined;
-    if (requestedManagerId) {
+
+    // Super Admin and HR Admin may request another manager's team.
+    if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
       res.json({
-        employees: await repo.listDirectReports(requestedManagerId),
+        employees: await repo.listDirectReports(
+          requestedManagerId ?? employeeId,
+        ),
       });
       return;
     }
 
-    res.json({ employees: [] });
+    // Manager, Recruiter, Finance, and IT Support may only request their own
+    // direct reports. Never trust a client-supplied managerId for these roles.
+    if (
+      requestedManagerId &&
+      String(requestedManagerId) !== String(employeeId)
+    ) {
+      throw AppError.forbidden("You can only view your own team members.");
+    }
+
+    res.json({
+      employees: await repo.listDirectReports(employeeId),
+    });
   } catch (err) {
     next(err);
   }
@@ -336,7 +361,21 @@ const ensureSchema = z.object({
 });
 performanceRouter.post(
   "/reviews",
-  requirePermissionOrManager("performance.manage"),
+  (req, _res, next) => {
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+    const isTeamManager =
+      req.user!.role === "MANAGER" || req.user!.isManager === true;
+
+    if (!isPrivileged && !isTeamManager) {
+      return next(
+        AppError.forbidden(
+          "Only administrators and managers can start team performance reviews.",
+        ),
+      );
+    }
+
+    next();
+  },
   validate(ensureSchema),
   async (req, res, next) => {
     try {
@@ -421,7 +460,21 @@ const managerReviewSchema = z.object({
 });
 performanceRouter.post(
   "/reviews/:id/manager",
-  requirePermissionOrManager("performance.manage"),
+  (req, _res, next) => {
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+    const isTeamManager =
+      req.user!.role === "MANAGER" || req.user!.isManager === true;
+
+    if (!isPrivileged && !isTeamManager) {
+      return next(
+        AppError.forbidden(
+          "Only administrators and managers can submit team performance reviews.",
+        ),
+      );
+    }
+
+    next();
+  },
   validate(managerReviewSchema),
   async (req, res, next) => {
     try {
@@ -432,8 +485,16 @@ performanceRouter.post(
       }
 
       const { role, employeeId } = req.user!;
+      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+      const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
 
-      if (role === "MANAGER" || req.user!.isManager) {
+      if (!isPrivileged && !isTeamManager) {
+        throw AppError.forbidden(
+          "Only administrators and managers can submit team performance reviews.",
+        );
+      }
+
+      if (isTeamManager) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -655,6 +716,154 @@ const milestoneUpdateSchema = z.object({
 const currentValueSchema = z.object({
   currentValue: z.number().nonnegative().nullable(),
 });
+
+const goalUpdateSchema = z.object({
+  title: z.string().min(2).max(250),
+  description: z.string().max(2000).optional().nullable(),
+  dueDate: z.string().min(1),
+  cycleId: z.string().nullable().optional(),
+  parentGoalId: z.string().nullable().optional(),
+  category: z.string().max(100).nullable().optional(),
+  targetValue: z.number().nonnegative().nullable().optional(),
+  currentValue: z.number().nonnegative().nullable().optional(),
+  milestones: z.array(milestoneSchema).optional(),
+});
+
+/**
+ * Update an existing goal without changing the existing goal workflow.
+ * Employees can update their own goals, managers can update direct-report
+ * goals, and HR/Admin users can update any goal.
+ */
+performanceRouter.patch(
+  "/goals/:id",
+  validate(goalUpdateSchema),
+  async (req, res, next) => {
+    try {
+      const goal = await repo.getGoal(req.params.id);
+      if (!goal) {
+        throw AppError.notFound("Goal not found.");
+      }
+
+      const { role, employeeId } = req.user!;
+      if (!employeeId) {
+        throw AppError.forbidden("Employee profile not found.");
+      }
+
+      if (goal.employeeId !== employeeId) {
+        if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+          // Privileged roles may update any goal.
+        } else if (role === "MANAGER") {
+          const employee = (await getEmployeeById(goal.employeeId)) as any;
+          if (!employee || employee.managerId !== employeeId) {
+            throw AppError.forbidden(
+              "You can only update goals for your direct reports.",
+            );
+          }
+        } else {
+          throw AppError.forbidden("You can only update your own goals.");
+        }
+      }
+
+      const targetValue = req.body.targetValue ?? null;
+      const currentValue = req.body.currentValue ?? null;
+
+      if (
+        typeof targetValue === "number" &&
+        targetValue > 0 &&
+        typeof currentValue === "number" &&
+        currentValue > targetValue
+      ) {
+        throw AppError.badRequest(
+          "Current value cannot be greater than the target value.",
+        );
+      }
+
+      if (req.body.parentGoalId) {
+        const parentGoal = await repo.getGoal(req.body.parentGoalId);
+        if (!parentGoal) {
+          throw AppError.notFound("Parent goal not found.");
+        }
+
+        if (String(parentGoal.id) === String(req.params.id)) {
+          throw AppError.badRequest("A goal cannot be its own parent.");
+        }
+
+        if (
+          String(parentGoal.employeeId) !== String(goal.employeeId)
+        ) {
+          throw AppError.badRequest(
+            "The parent goal must belong to the same employee.",
+          );
+        }
+      }
+
+      const updatedGoal = await repo.updateGoal(req.params.id, {
+        title: req.body.title,
+        description: req.body.description ?? null,
+        dueDate: req.body.dueDate,
+        cycleId: req.body.cycleId ?? null,
+        parentGoalId: req.body.parentGoalId ?? null,
+        category: req.body.category ?? null,
+        targetValue,
+        currentValue,
+        milestones: req.body.milestones,
+      });
+
+      if (!updatedGoal) {
+        throw AppError.notFound("Goal not found.");
+      }
+
+      res.json({ goal: updatedGoal });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * Delete one goal. Child goals are preserved by the repository and detached
+ * from the deleted parent, so deleting a goal does not remove other goal data.
+ */
+performanceRouter.delete(
+  "/goals/:id",
+  async (req, res, next) => {
+    try {
+      const goal = await repo.getGoal(req.params.id);
+      if (!goal) {
+        throw AppError.notFound("Goal not found.");
+      }
+
+      const { role, employeeId } = req.user!;
+      if (!employeeId) {
+        throw AppError.forbidden("Employee profile not found.");
+      }
+
+      if (goal.employeeId !== employeeId) {
+        if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+          // Privileged roles may delete any goal.
+        } else if (role === "MANAGER") {
+          const employee = (await getEmployeeById(goal.employeeId)) as any;
+          if (!employee || employee.managerId !== employeeId) {
+            throw AppError.forbidden(
+              "You can only delete goals for your direct reports.",
+            );
+          }
+        } else {
+          throw AppError.forbidden("You can only delete your own goals.");
+        }
+      }
+
+      const deleted = await repo.deleteGoal(req.params.id);
+      if (!deleted) {
+        throw AppError.notFound("Goal not found.");
+      }
+
+      res.json(deleted);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 performanceRouter.patch(
   "/goals/:id/milestones",
@@ -1045,6 +1254,41 @@ performanceRouter.get(
   },
 );
 
+performanceRouter.get("/outcomes", async (req, res, next) => {
+  try {
+    const { role, employeeId } = req.user!;
+    const teamRoles = [
+      "MANAGER",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+      "HR_ADMIN",
+      "SUPER_ADMIN",
+    ];
+
+    if (!teamRoles.includes(role)) {
+      throw AppError.forbidden(
+        "You are not authorized to view performance outcomes.",
+      );
+    }
+
+    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+
+    if (!isPrivileged && !employeeId) {
+      throw AppError.forbidden("Employee profile not found.");
+    }
+
+    const outcomes = await repo.listPerformanceOutcomes({
+      cycleId: req.query.cycleId as string | undefined,
+      reviewerId: isPrivileged ? undefined : employeeId ?? undefined,
+    });
+
+    res.json({ outcomes });
+  } catch (err) {
+    next(err);
+  }
+});
+
 performanceRouter.get("/reviews/:id/outcome", async (req, res, next) => {
   try {
     const review = await repo.getReview(req.params.id);
@@ -1320,6 +1564,62 @@ const pipStatusSchema = z.object({
   status: z.enum(["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"]),
   finalOutcome: z.string().max(3000).optional(),
 });
+
+/**
+ * Return completed performance reviews that can be used as the source review
+ * when creating a PIP.
+ *
+ * This is intentionally separate from GET /reviews because GET /reviews
+ * without scope is the employee's "my reviews" endpoint. For a manager,
+ * that endpoint filters by revieweeId (the manager themselves), which means
+ * completed reviews belonging to direct reports are not returned to the
+ * Create PIP dialog.
+ */
+performanceRouter.get(
+  "/pips/eligible-reviews",
+  requirePermission("performance.manage"),
+  async (req, res, next) => {
+    try {
+      const { role, employeeId } = req.user!;
+
+      if (!employeeId) {
+        throw AppError.forbidden("Employee profile not found.");
+      }
+
+      if (role === "MANAGER") {
+        const reviews = await repo.listReviews({
+          reviewerId: employeeId,
+        });
+
+        const completedReviews = reviews.filter(
+          (review: any) => review.status === "COMPLETED",
+        );
+
+        return res.json({ reviews: completedReviews });
+      }
+
+      if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+        const employeeIdFilter = req.query.employeeId as string | undefined;
+
+        const reviews = await repo.listReviews({
+          revieweeId: employeeIdFilter,
+        });
+
+        const completedReviews = reviews.filter(
+          (review: any) => review.status === "COMPLETED",
+        );
+
+        return res.json({ reviews: completedReviews });
+      }
+
+      throw AppError.forbidden(
+        "You are not authorized to view PIP-eligible reviews.",
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 performanceRouter.get("/pips", async (req, res, next) => {
   try {

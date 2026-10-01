@@ -602,6 +602,9 @@ export async function submitManagerReview(
         managerDeliveryRating,
         managerBehaviorRating,
         finalRating,
+        // A completed review starts calibration at its final rating.
+        // HR can later change this value through the existing Calibration screen.
+        calibratedRating: finalRating,
         status: "COMPLETED",
         submittedAt: nowIso(),
       },
@@ -899,6 +902,125 @@ export async function createGoal(input: {
 }
 
 
+export async function updateGoal(
+  id: string,
+  input: {
+    title: string;
+    description?: string | null;
+    dueDate: string;
+    cycleId?: string | null;
+    parentGoalId?: string | null;
+    category?: string | null;
+    targetValue?: number | null;
+    currentValue?: number | null;
+    milestones?: {
+      title: string;
+      targetDate?: string | null;
+      completed?: boolean;
+    }[];
+  },
+) {
+  const existing = await Goal.findById(id).lean();
+  if (!existing) return undefined;
+
+  const title = input.title.trim();
+  if (!title) {
+    throw new Error("Goal title is required.");
+  }
+
+  if (input.parentGoalId) {
+    if (String(input.parentGoalId) === String(id)) {
+      throw new Error("A goal cannot be its own parent.");
+    }
+
+    const parent = await Goal.findById(input.parentGoalId).lean();
+    if (!parent) {
+      throw new Error("The selected parent goal does not exist.");
+    }
+
+    if (
+      String(parent.employeeId) !== String(existing.employeeId)
+    ) {
+      throw new Error("The parent goal must belong to the same employee.");
+    }
+
+    if (input.cycleId && parent.cycleId && parent.cycleId !== input.cycleId) {
+      throw new Error("Parent and child goals must belong to the same review cycle.");
+    }
+  }
+
+  const targetValue = input.targetValue ?? null;
+  const currentValue = input.currentValue ?? null;
+
+  if (
+    typeof targetValue === "number" &&
+    targetValue > 0 &&
+    typeof currentValue === "number" &&
+    currentValue > targetValue
+  ) {
+    throw new Error("Current value cannot be greater than the target value.");
+  }
+
+  const milestones = Array.isArray(input.milestones)
+    ? input.milestones
+        .map((milestone) => ({
+          title: String(milestone.title ?? "").trim(),
+          targetDate: milestone.targetDate ?? null,
+          completed: Boolean(milestone.completed),
+        }))
+        .filter((milestone) => milestone.title.length > 0)
+    : Array.isArray((existing as any).milestones)
+      ? (existing as any).milestones
+      : [];
+
+  const progress =
+    calculateCombinedGoalProgress(targetValue, currentValue, milestones) ??
+    Math.min(100, Math.max(0, Number((existing as any).progress ?? 0)));
+
+  await Goal.updateOne(
+    { _id: id },
+    {
+      $set: {
+        title,
+        description: input.description?.trim() || null,
+        dueDate: input.dueDate,
+        cycleId: input.cycleId ?? null,
+        parentGoalId: input.parentGoalId ?? null,
+        category: input.category?.trim() || null,
+        targetValue,
+        currentValue,
+        milestones,
+        progress,
+        status: calculateGoalStatus(progress),
+      },
+    },
+  );
+
+  return normalizeGoal(await Goal.findById(id).lean());
+}
+
+export async function deleteGoal(id: string) {
+  const existing = await Goal.findById(id).lean();
+  if (!existing) return undefined;
+
+  // Preserve child goals when deleting a parent goal. The child goals are
+  // detached from the deleted parent instead of being deleted with it.
+  // This keeps existing goal/cascade data intact and allows the requested
+  // goal deletion to complete safely.
+  await Goal.updateMany(
+    { parentGoalId: id },
+    { $set: { parentGoalId: null } },
+  );
+
+  const result = await Goal.deleteOne({ _id: id });
+
+  if (result.deletedCount !== 1) {
+    return undefined;
+  }
+
+  return { id, deleted: true };
+}
+
 export async function updateGoalMilestone(
   id: string,
   milestoneIndex: number,
@@ -1024,15 +1146,20 @@ export async function updateGoalCurrentValue(
   const goal = await Goal.findById(id).lean();
   if (!goal) return undefined;
 
-  const targetValue = (goal as any).targetValue;
+  const rawTargetValue = (goal as any).targetValue;
+  const targetValue = Number(rawTargetValue);
 
-  if (typeof targetValue !== "number" || targetValue <= 0) {
+  if (!Number.isFinite(targetValue) || targetValue <= 0) {
     throw new Error(
       "A positive target value is required before updating the KPI current value.",
     );
   }
 
-  const safeCurrentValue = Math.max(0, currentValue);
+  const safeCurrentValue = Math.max(0, Number(currentValue));
+
+  if (safeCurrentValue > targetValue) {
+    throw new Error("Current value cannot be greater than the target value.");
+  }
   const progress = calculateGoalProgress(targetValue, safeCurrentValue) ?? 0;
 
   await Goal.updateOne(
@@ -1557,6 +1684,80 @@ export async function listFeedbackForReviewer(
   return rows.map(toApiDoc);
 }
 export async function getOutcome(reviewId: string) { return toApiDoc(await PerformanceOutcome.findOne({ reviewId }).lean()); }
+
+export async function listPerformanceOutcomes(filters: {
+  cycleId?: string;
+  reviewerId?: string;
+}) {
+  const reviewQuery: Record<string, any> = {
+    status: "COMPLETED",
+  };
+
+  if (filters.cycleId) reviewQuery.cycleId = filters.cycleId;
+  if (filters.reviewerId) reviewQuery.reviewerId = filters.reviewerId;
+
+  const reviews = await PerformanceReview.find(reviewQuery)
+    .sort({ submittedAt: -1 })
+    .lean();
+
+  if (!reviews.length) return [];
+
+  const reviewIds = reviews.map((review: any) => review._id);
+
+  const [outcomes, employees, cycles] = await Promise.all([
+    PerformanceOutcome.find({ reviewId: { $in: reviewIds } })
+      .sort({ createdAt: -1 })
+      .lean(),
+    Employee.find({
+      _id: { $in: reviews.map((review: any) => review.revieweeId) },
+    }).lean(),
+    PerformanceCycle.find({
+      _id: { $in: reviews.map((review: any) => review.cycleId) },
+    }).lean(),
+  ]);
+
+  const outcomeMap = new Map(
+    outcomes.map((outcome: any) => [String(outcome.reviewId), outcome]),
+  );
+  const employeeMap = new Map(
+    employees.map((employee: any) => [String(employee._id), employee]),
+  );
+  const cycleMap = new Map(
+    cycles.map((cycle: any) => [String(cycle._id), cycle]),
+  );
+
+  return reviews
+    .map((review: any) => {
+      const outcome = outcomeMap.get(String(review._id));
+      if (!outcome) return null;
+
+      const employee = employeeMap.get(String(review.revieweeId));
+      const cycle = cycleMap.get(String(review.cycleId));
+
+      return {
+        id: outcome._id,
+        reviewId: review._id,
+        revieweeId: review.revieweeId,
+        revieweeFirstName: employee?.firstName ?? null,
+        revieweeLastName: employee?.lastName ?? null,
+        revieweeAvatar: employee?.avatarUrl ?? null,
+        revieweeDesignation: employee?.designationId ?? null,
+        cycleId: review.cycleId,
+        cycleName: cycle?.name ?? null,
+        finalRating: review.finalRating ?? null,
+        submittedAt: review.submittedAt ?? null,
+        incrementRecommendation: outcome.incrementRecommendation,
+        promotionEligible: Boolean(outcome.promotionEligible),
+        trainingNeeds: Array.isArray(outcome.trainingNeeds)
+          ? outcome.trainingNeeds
+          : [],
+        pipRecommended: Boolean(outcome.pipRecommended),
+        fastTrackEligible: Boolean(outcome.fastTrackEligible),
+        createdAt: outcome.createdAt,
+      };
+    })
+    .filter(Boolean);
+}
 
 
 export type PerformanceOutcomeInput = {

@@ -168,7 +168,9 @@ export default function EmployeeProfile() {
       return EmployeesApi.updateOnboardingStage(
         employee.id,
         data.stage,
-        data.remarks,
+        {
+          remarks: data.remarks,
+        },
       );
     },
     onSuccess: () => {
@@ -1817,9 +1819,12 @@ function OnboardingWorkflow({
         latestEmployee = await EmployeesApi.updateOnboardingStage(
           employee.id,
           stage,
-          stage === 7
-            ? "Orientation and company policy briefing confirmed by HR."
-            : undefined,
+          {
+            remarks:
+              stage === 7
+                ? "Orientation and company policy briefing confirmed by HR."
+                : undefined,
+          },
         );
       }
       return latestEmployee;
