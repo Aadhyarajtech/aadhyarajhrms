@@ -518,6 +518,7 @@ export async function createEmployee(input: CreateEmployeeInput) {
 }
 
 export interface UpdateEmployeeInput {
+  employeeCode?: string;
   firstName?: string;
   lastName?: string;
   gender?: string | null;
@@ -756,6 +757,11 @@ export async function completeOnboarding(id: string, completedBy: string) {
   return enrichEmployee(updated);
 }
 
+export async function getEmployeeByCode(employeeCode: string) {
+  const employee = await Employee.findOne({ employeeCode }).lean();
+  return employee ? enrichEmployee(employee) : undefined;
+}
+
 export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
   const current = await Employee.findById(id).lean<any>();
   if (!current) return undefined;
@@ -783,6 +789,7 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
     { _id: id },
     {
       $set: {
+        employeeCode: merged.employeeCode ?? current.employeeCode,
         firstName: merged.firstName,
         lastName: merged.lastName,
         departmentId: merged.departmentId,

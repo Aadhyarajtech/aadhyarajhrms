@@ -621,6 +621,16 @@ employeesRouter.post(
 );
 
 const updateEmployeeSchema = z.object({
+  // Employee code is editable only through the privileged /:id update route.
+  // Keep it normalized and unique (for example: EMP0011).
+  employeeCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(3, "Employee code must contain at least 3 characters.")
+    .max(30, "Employee code cannot exceed 30 characters.")
+    .regex(/^[A-Z0-9_-]+$/, "Employee code may contain only letters, numbers, hyphens, and underscores.")
+    .optional(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   gender: z.string().nullable().optional(),
@@ -858,6 +868,17 @@ employeesRouter.patch(
       if (!target) throw AppError.notFound("Employee not found.");
 
       const updateBody: any = { ...req.body };
+
+      if (req.body.employeeCode) {
+        const normalizedEmployeeCode = String(req.body.employeeCode).trim().toUpperCase();
+        const duplicate = await repo.getEmployeeByCode(normalizedEmployeeCode);
+
+        if (duplicate && String(duplicate.id ?? duplicate._id) !== String(req.params.id)) {
+          throw AppError.badRequest(`Employee code ${normalizedEmployeeCode} is already assigned to another employee.`);
+        }
+
+        updateBody.employeeCode = normalizedEmployeeCode;
+      }
 
       if (
         req.body.status === "ON_PROBATION" &&
