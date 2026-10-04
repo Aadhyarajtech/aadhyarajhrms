@@ -160,11 +160,13 @@ export function assignDepartment(category: string) {
     case "Payroll":
       return "FINANCE";
 
-    case "Manager Concern":
-    case "Complaint":
-      // Manager-scoped grievances are assigned to the selected manager.
+   // Manager-scoped grievances are assigned to the selected manager.
       // The employee id is stored in assignedManagerId.
-      return "MANAGER";
+      case "Manager Concern":
+  return "SUPER_ADMIN";
+
+case "Complaint":
+  return "HR_ADMIN";
 
     case "IT Support":
       return "IT_SUPPORT";
@@ -509,7 +511,6 @@ export async function getTeamGrievanceTickets(
   const ownershipConditions: any[] = [
     {
       assignedManagerId: normalizedManagerId,
-      category: { $in: ["Complaint", "Manager Concern"] },
     },
   ];
 
@@ -525,7 +526,9 @@ export async function getTeamGrievanceTickets(
   const tickets = await Ticket.find({
     $or: ownershipConditions,
   })
-    .sort({ createdAt: -1 })
+    .sort({
+      createdAt: -1,
+    })
     .lean();
 
   console.log(
@@ -606,104 +609,50 @@ export async function getTicketsForDepartment(
 ) {
   const normalizedRole = String(role || "").trim();
 
-  // =======================================================
-  // SUPER ADMIN
-  // =======================================================
-  // Only SUPER_ADMIN gets enterprise-wide visibility.
-
+  // SUPER_ADMIN → all tickets
   if (normalizedRole === "SUPER_ADMIN") {
     return Ticket.find({})
-      .sort({
-        createdAt: -1,
-      })
+      .sort({ createdAt: -1 })
       .lean();
   }
 
-  // =======================================================
-  // HR ADMIN
-  // =======================================================
-  // HR_ADMIN sees ONLY tickets assigned to HR_ADMIN.
-
+  // HR_ADMIN → ONLY HR_ADMIN assigned tickets
   if (normalizedRole === "HR_ADMIN") {
     return Ticket.find({
       assignedTo: "HR_ADMIN",
     })
-      .sort({
-        createdAt: -1,
-      })
-      .lean();
-  }
-
-  // IT Support sees only tickets explicitly assigned to IT_SUPPORT.
-  if (normalizedRole === "IT_SUPPORT") {
-    return Ticket.find({
-      assignedTo: "IT_SUPPORT",
-      category: { $in: ["IT Support", "Infrastructure"] },
-    })
       .sort({ createdAt: -1 })
       .lean();
   }
 
-  // Finance sees only tickets explicitly assigned to FINANCE.
-  if (normalizedRole === "FINANCE") {
-    return Ticket.find({
-      assignedTo: "FINANCE",
-      category: { $in: ["Payroll", "Payroll Issue"] },
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-  }
-
-  // =======================================================
-  // RECRUITER
-  // =======================================================
-  // RECRUITER sees only recruitment tickets assigned to RECRUITER.
-
+  // RECRUITER → ONLY RECRUITER assigned tickets
   if (normalizedRole === "RECRUITER") {
     return Ticket.find({
       assignedTo: "RECRUITER",
-      category: { $in: ["Recruitment", "Employee Referral"] },
     })
-      .sort({
-        createdAt: -1,
-      })
+      .sort({ createdAt: -1 })
       .lean();
   }
 
-  // =======================================================
-  // IT SUPPORT
-  // =======================================================
-
-  if (normalizedRole === "IT_SUPPORT") {
-    return Ticket.find({
-      assignedTo: "IT_SUPPORT",
-    })
-      .sort({
-        createdAt: -1,
-      })
-      .lean();
-  }
-
-  // =======================================================
-  // FINANCE
-  // =======================================================
-
+  // FINANCE → ONLY FINANCE assigned tickets
   if (normalizedRole === "FINANCE") {
     return Ticket.find({
       assignedTo: "FINANCE",
     })
-      .sort({
-        createdAt: -1,
-      })
+      .sort({ createdAt: -1 })
       .lean();
   }
 
-  // =======================================================
-  // MANAGER
-  // =======================================================
-  // Managers receive only their own assigned manager tickets
-  // plus legacy Complaint tickets belonging to direct reports.
+  // IT_SUPPORT → ONLY IT_SUPPORT assigned tickets
+  if (normalizedRole === "IT_SUPPORT") {
+    return Ticket.find({
+      assignedTo: "IT_SUPPORT",
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
 
+  // MANAGER → manager-owned/team Complaint tickets only
   if (normalizedRole === "MANAGER") {
     if (!managerEmployeeId) {
       return [];
@@ -714,14 +663,7 @@ export async function getTicketsForDepartment(
     );
   }
 
-  // =======================================================
-  // EMPLOYEE / UNKNOWN ROLE
-  // =======================================================
-  // Employee ticket visibility is handled by getMyTickets()
-  // from the authenticated employee context.
-  //
-  // Do NOT return all tickets for unknown roles.
-
+  // Never return global tickets for an unknown role.
   return [];
 }
 

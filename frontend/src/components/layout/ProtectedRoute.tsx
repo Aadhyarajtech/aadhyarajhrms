@@ -24,8 +24,14 @@ export function ProtectedRoute({
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
-  const roleAllowed = !roles || roles.includes(user.role);
+ if (!user) return <Navigate to="/login" replace />;
+
+// Force temporary-password reset before entering the application
+if (user.mustResetPwd) {
+  return <Navigate to="/change-temporary-password" replace />;
+}
+
+const roleAllowed = !roles || roles.includes(user.role);
   const managerAllowed =
     !managerOnly ||
     user.employee?.isManager === true ||

@@ -15,6 +15,8 @@ import {
   UserCheck,
   ShieldCheck,
   Filter,
+  Copy,
+  RefreshCw,
 } from "lucide-react";
 import { EmployeesApi, OrganizationApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
@@ -50,6 +52,7 @@ const addEmployeeSchema = z.object({
   ]),
   temporaryPassword: z.string().min(8, "At least 8 characters"),
 });
+
 type AddEmployeeForm = z.infer<typeof addEmployeeSchema>;
 
 export default function EmployeeDirectory() {
@@ -69,10 +72,12 @@ export default function EmployeeDirectory() {
     queryKey: ["departments"],
     queryFn: OrganizationApi.departments,
   });
+
   const { data: designations } = useQuery({
     queryKey: ["designations"],
     queryFn: () => OrganizationApi.designations(),
   });
+
   const { data: managers } = useQuery({
     queryKey: ["managers"],
     queryFn: EmployeesApi.managers,
@@ -95,11 +100,53 @@ export default function EmployeeDirectory() {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<AddEmployeeForm>({
     resolver: zodResolver(addEmployeeSchema),
     defaultValues: { role: "EMPLOYEE" },
   });
+
+  // Generate a strong temporary password using the browser's cryptographic RNG.
+  const generateTemporaryPassword = () => {
+    const alphabet =
+      "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
+
+    const randomValues = new Uint32Array(16);
+    window.crypto.getRandomValues(randomValues);
+
+    const password = Array.from(randomValues, (value) =>
+      alphabet.charAt(value % alphabet.length),
+    ).join("");
+
+    setValue("temporaryPassword", password, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+  };
+
+  // Copy the password to the clipboard.
+  const copyTemporaryPassword = async () => {
+    const password = document.querySelector<HTMLInputElement>(
+      'input[name="temporaryPassword"]',
+    )?.value;
+
+    if (!password) {
+      showToast("Generate or enter a password first.", "error");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(password);
+      showToast("Temporary password copied.");
+    } catch {
+      showToast(
+        "Could not copy the password. Please copy it manually.",
+        "error",
+      );
+    }
+  };
 
   const createMutation = useMutation({
     mutationFn: EmployeesApi.create,
@@ -138,14 +185,21 @@ export default function EmployeeDirectory() {
         }
       />
 
+      {/* Dashboard summary cards */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="relative overflow-hidden rounded-[22px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(79,70,229,0.07)]">
           <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-indigo-100/60 blur-2xl" />
           <div className="relative flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Total people</p>
-              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{data?.total ?? "—"}</p>
-              <p className="mt-1 text-[11px] text-slate-500">Organization directory</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">
+                Total people
+              </p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">
+                {data?.total ?? "—"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Organization directory
+              </p>
             </div>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
               <UsersRound size={18} />
@@ -157,9 +211,15 @@ export default function EmployeeDirectory() {
           <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-emerald-100/60 blur-2xl" />
           <div className="relative flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Active view</p>
-              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{status === "ACTIVE" ? "Active" : "All"}</p>
-              <p className="mt-1 text-[11px] text-slate-500">Current directory filter</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">
+                Active view
+              </p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">
+                {status === "ACTIVE" ? "Active" : "All"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Current directory filter
+              </p>
             </div>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm ring-1 ring-emerald-100">
               <UserCheck size={18} />
@@ -171,9 +231,15 @@ export default function EmployeeDirectory() {
           <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-amber-100/60 blur-2xl" />
           <div className="relative flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Department</p>
-              <p className="mt-1 max-w-[150px] truncate font-display text-lg font-semibold text-slate-900">{departmentId ? "Filtered" : "All departments"}</p>
-              <p className="mt-1 text-[11px] text-slate-500">Workforce segment</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">
+                Department
+              </p>
+              <p className="mt-1 max-w-[150px] truncate font-display text-lg font-semibold text-slate-900">
+                {departmentId ? "Filtered" : "All departments"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Workforce segment
+              </p>
             </div>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm ring-1 ring-amber-100">
               <Filter size={18} />
@@ -185,9 +251,15 @@ export default function EmployeeDirectory() {
           <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-violet-100/60 blur-2xl" />
           <div className="relative flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Directory access</p>
-              <p className="mt-1 font-display text-lg font-semibold text-slate-900">{isAdmin ? "Admin view" : "Employee view"}</p>
-              <p className="mt-1 text-[11px] text-slate-500">Role-based visibility</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">
+                Directory access
+              </p>
+              <p className="mt-1 font-display text-lg font-semibold text-slate-900">
+                {isAdmin ? "Admin view" : "Employee view"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Role-based visibility
+              </p>
             </div>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm ring-1 ring-violet-100">
               <ShieldCheck size={18} />
@@ -196,6 +268,7 @@ export default function EmployeeDirectory() {
         </div>
       </div>
 
+      {/* Search and filters */}
       <Card className="!p-0 overflow-hidden border-slate-200/70 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.045)]">
         <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-[#FAF8FF] px-5 py-4">
           <div className="flex items-center gap-2">
@@ -203,11 +276,16 @@ export default function EmployeeDirectory() {
               <Filter size={15} />
             </span>
             <div>
-              <p className="text-[13px] font-semibold text-slate-800">Find people</p>
-              <p className="text-[11px] text-slate-500">Search and refine the organization directory.</p>
+              <p className="text-[13px] font-semibold text-slate-800">
+                Find people
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Search and refine the organization directory.
+              </p>
             </div>
           </div>
         </div>
+
         <div className="flex flex-wrap items-center gap-3 p-4">
           <div className="relative min-w-[220px] flex-1">
             <Search
@@ -224,6 +302,7 @@ export default function EmployeeDirectory() {
               className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm shadow-sm transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100/70"
             />
           </div>
+
           <select
             value={departmentId}
             onChange={(e) => {
@@ -239,6 +318,7 @@ export default function EmployeeDirectory() {
               </option>
             ))}
           </select>
+
           <select
             value={status}
             onChange={(e) => {
@@ -258,6 +338,7 @@ export default function EmployeeDirectory() {
         </div>
       </Card>
 
+      {/* Employee list */}
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -289,12 +370,15 @@ export default function EmployeeDirectory() {
                   />
                   <StatusBadge status={emp.status} />
                 </div>
+
                 <p className="mt-4 font-display text-[16px] font-semibold tracking-[-0.01em] text-slate-900">
                   {emp.firstName} {emp.lastName}
                 </p>
+
                 <p className="text-[12.5px] text-ink-faint">
                   {emp.designationTitle}
                 </p>
+
                 <div className="mt-4 flex items-center gap-2">
                   <Badge tone="neutral" className="text-[11px]">
                     {emp.departmentName}
@@ -303,10 +387,12 @@ export default function EmployeeDirectory() {
                     {emp.employeeCode}
                   </span>
                 </div>
+
                 <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
                   <p className="flex items-center gap-1.5 truncate">
                     <Mail size={12} /> {emp.email}
                   </p>
+
                   {emp.phone && (
                     <p className="flex items-center gap-1.5">
                       <Phone size={12} /> {emp.phone}
@@ -317,10 +403,12 @@ export default function EmployeeDirectory() {
             ))}
           </div>
 
+          {/* Pagination */}
           <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm">
             <p className="text-[12px] font-medium text-slate-500">
               Page {page} of {totalPages}
             </p>
+
             <div className="flex gap-2">
               <Button
                 size="sm"
@@ -331,6 +419,7 @@ export default function EmployeeDirectory() {
               >
                 Previous
               </Button>
+
               <Button
                 size="sm"
                 variant="outline"
@@ -345,6 +434,7 @@ export default function EmployeeDirectory() {
         </>
       )}
 
+      {/* Add employee modal */}
       <Modal
         open={addOpen}
         onClose={() => setAddOpen(false)}
@@ -356,6 +446,7 @@ export default function EmployeeDirectory() {
             <Button variant="outline" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
+
             <Button
               onClick={handleSubmit((v) => createMutation.mutate(v))}
               isLoading={createMutation.isPending}
@@ -370,12 +461,18 @@ export default function EmployeeDirectory() {
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
               <UserPlus size={17} />
             </div>
+
             <div>
-              <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-indigo-600">Employee setup</p>
-              <p className="mt-0.5 text-[11px] text-slate-500">Create the account and assign the employee to the organization.</p>
+              <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-indigo-600">
+                Employee setup
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Create the account and assign the employee to the organization.
+              </p>
             </div>
           </div>
         </div>
+
         <form className="grid gap-4 sm:grid-cols-2">
           <TextField
             label="First name"
@@ -383,12 +480,14 @@ export default function EmployeeDirectory() {
             error={errors.firstName?.message}
             {...register("firstName")}
           />
+
           <TextField
             label="Last name"
             required
             error={errors.lastName?.message}
             {...register("lastName")}
           />
+
           <TextField
             label="Work email"
             type="email"
@@ -397,6 +496,7 @@ export default function EmployeeDirectory() {
             error={errors.email?.message}
             {...register("email")}
           />
+
           <SelectField
             label="Department"
             required
@@ -410,6 +510,7 @@ export default function EmployeeDirectory() {
               </option>
             ))}
           </SelectField>
+
           <SelectField
             label="Designation"
             required
@@ -423,6 +524,7 @@ export default function EmployeeDirectory() {
               </option>
             ))}
           </SelectField>
+
           <SelectField label="Reporting manager" {...register("managerId")}>
             <option value="">No manager (top of hierarchy)</option>
             {managers?.map((m) => (
@@ -431,6 +533,7 @@ export default function EmployeeDirectory() {
               </option>
             ))}
           </SelectField>
+
           <TextField
             label="Date of joining"
             type="date"
@@ -438,6 +541,7 @@ export default function EmployeeDirectory() {
             error={errors.dateOfJoining?.message}
             {...register("dateOfJoining")}
           />
+
           <SelectField label="System role" required {...register("role")}>
             <option value="EMPLOYEE">Employee</option>
             <option value="MANAGER">Manager</option>
@@ -446,13 +550,39 @@ export default function EmployeeDirectory() {
             <option value="HR_ADMIN">HR Admin</option>
             <option value="SUPER_ADMIN">Super Admin</option>
           </SelectField>
-          <TextField
-            label="Temporary password"
-            required
-            hint="At least 8 characters"
-            error={errors.temporaryPassword?.message}
-            {...register("temporaryPassword")}
-          />
+
+          {/* Temporary password: manual entry or automatic generation */}
+          <div className="sm:col-span-2">
+            <TextField
+              label="Temporary password"
+              required
+              hint="Enter a password manually or generate a secure 16-character password."
+              error={errors.temporaryPassword?.message}
+              {...register("temporaryPassword")}
+            />
+
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                leftIcon={<RefreshCw size={14} />}
+                onClick={generateTemporaryPassword}
+              >
+                Generate password
+              </Button>
+
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                leftIcon={<Copy size={14} />}
+                onClick={copyTemporaryPassword}
+              >
+                Copy password
+              </Button>
+            </div>
+          </div>
         </form>
       </Modal>
     </div>

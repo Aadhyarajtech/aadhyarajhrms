@@ -11,6 +11,7 @@ import { notFoundHandler, errorHandler } from "@/middleware/errorHandler";
 
 import { UPLOAD_DIR_ABSOLUTE } from "@/middleware/upload";
 import { hrCopilotRouter } from "@/modules/ai/hr-copilot/hr-copilot.routes";
+import { requirePasswordResetComplete } from "@/middleware/passwordResetGate";
 
 // =========================================================
 // ROUTES
@@ -144,10 +145,14 @@ export function createApp() {
   });
 
   // =======================================================
-  // AUTH
-  // =======================================================
+// AUTH
+// =======================================================
 
-  app.use("/api/auth", authRouter);
+app.use("/api/auth", authRouter);
+
+// Block temporary-password users from other API modules.
+// Keep this after auth routes so change-password remains usable.
+app.use("/api", requirePasswordResetComplete);
 
   // =======================================================
   // EMPLOYEES

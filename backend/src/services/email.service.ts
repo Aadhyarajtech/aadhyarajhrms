@@ -85,6 +85,55 @@ export async function sendEmail(input: {
   }
 }
 
+
+/* =========================================================
+   NEW EMPLOYEE TEMPORARY CREDENTIALS EMAIL
+========================================================= */
+
+export async function sendEmployeeWelcomeCredentialsEmail(input: {
+  to: string;
+  firstName: string;
+  lastName: string;
+  temporaryPassword: string;
+}) {
+  const firstName = escapeHtml(input.firstName);
+  const lastName = escapeHtml(input.lastName);
+  const email = escapeHtml(input.to);
+  const password = escapeHtml(input.temporaryPassword);
+
+  return sendEmail({
+    to: input.to,
+    subject: "Welcome to Aadhyaraj HRMS - Your Login Details",
+    text:
+      `Hello ${input.firstName} ${input.lastName},\n\n` +
+      `Your Aadhyaraj HRMS account has been created.\n\n` +
+      `Login email: ${input.to}\n` +
+      `Temporary password: ${input.temporaryPassword}\n\n` +
+      `Please sign in and change your password immediately. Do not share these credentials.\n\n` +
+      `Regards,\nAadhyaraj HRMS Team`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <body style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+          <div style="max-width:600px;margin:auto;background:#fff;border-radius:12px;padding:28px;">
+            <h2 style="margin-top:0;color:#111827;">Welcome to Aadhyaraj HRMS</h2>
+            <p>Hello ${firstName} ${lastName},</p>
+            <p>Your employee account has been created. Use the credentials below to sign in:</p>
+            <div style="padding:16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;">
+              <p style="margin:4px 0;"><strong>Login email:</strong> ${email}</p>
+              <p style="margin:12px 0 4px;"><strong>Temporary password:</strong></p>
+              <p style="margin:4px 0;font-family:monospace;font-size:16px;word-break:break-all;">${password}</p>
+            </div>
+            <p style="margin-top:20px;"><strong>Important:</strong> Change your password immediately after your first login. Do not share these credentials.</p>
+            <p>Regards,<br />Aadhyaraj HRMS Team</p>
+          </div>
+        </body>
+      </html>
+    `,
+  });
+}
+
+
 /* =========================================================
    SEND ANNOUNCEMENT EMAIL
 ========================================================= */
