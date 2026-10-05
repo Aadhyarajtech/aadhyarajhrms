@@ -228,7 +228,7 @@ export const EmployeesApi = {
   updateOnboardingStage: (
     id: string,
     stage: number,
-    remarks?: string | null,
+    payload?: Record<string, unknown>,
   ) =>
     api
       .patch<{
@@ -237,7 +237,7 @@ export const EmployeesApi = {
         employee: Employee;
       }>(`/employees/${id}/onboarding/stage`, {
         stage,
-        remarks,
+        ...(payload ?? {}),
       })
       .then((r) => r.data.employee),
 
@@ -1563,10 +1563,10 @@ export interface InterviewCopilotQuestion {
 
 export interface InterviewCopilot {
   focusAreas: string[];
-  technicalQuestions: InterviewCopilotQuestion[];
-  resumeQuestions: InterviewCopilotQuestion[];
-  skillGapQuestions: InterviewCopilotQuestion[];
-  behavioralQuestions: InterviewCopilotQuestion[];
+  technicalQuestions: string[];
+  resumeQuestions: string[];
+  skillGapQuestions: string[];
+  behavioralQuestions: string[];
 }
 
 export interface InterviewCopilotResponse extends InterviewCopilot {}
@@ -1995,11 +1995,21 @@ export interface PerformanceFeedbackRequest {
   dueDate?: string | null;
   createdAt: string;
   completedAt?: string | null;
+  revieweeName?: string | null;
   revieweeFirstName?: string | null;
   revieweeLastName?: string | null;
   revieweeAvatar?: string | null;
   revieweeDesignation?: string | null;
   revieweeDepartment?: string | null;
+  revieweeDepartmentId?: string | null;
+  revieweeDesignationId?: string | null;
+
+  // Enriched fields returned by the feedback-request listing endpoint.
+  employeeId?: string;
+  employeeName?: string;
+  employeeAvatar?: string | null;
+  designation?: string | null;
+  department?: string | null;
 }
 
 export interface PerformancePip {
@@ -2017,13 +2027,20 @@ export interface PerformancePip {
   checkIns: PipCheckIn[];
   completedAt?: string | null;
   finalOutcome?: string | null;
-  employeeName?: string;
-  employeeFirstName?: string;
-  employeeLastName?: string;
+  employeeName?: string | null;
+  employeeFirstName?: string | null;
+  employeeLastName?: string | null;
 }
 
 // --- Performance ----------------------------------------------------------------
 export const PerformanceApi = {
+  pipEligibleReviews: () =>
+    api
+      .get<{ reviews: PerformanceReview[] }>(
+        "/performance/pips/eligible-reviews",
+      )
+      .then((r) => r.data.reviews),
+
   pips: () =>
     api
       .get<{
@@ -2229,7 +2246,10 @@ export const PerformanceApi = {
 
    feedbackRequests: (cycleId?: string) =>
     api
-      .get<{ requests: PerformanceFeedbackRequest[] }>("/performance/feedback-requests", { params: { cycleId } })
+      .get<{ requests: PerformanceFeedbackRequest[] }>(
+        "/performance/feedback-requests",
+        cycleId ? { params: { cycleId } } : undefined,
+      )
       .then((r) => r.data.requests),
 
   createFeedbackRequest: (payload: { cycleId: string; reviewId: string; reviewerEmployeeId: string; revieweeEmployeeId: string; type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL"; dueDate?: string }) =>
@@ -2312,6 +2332,33 @@ export const PerformanceApi = {
         { question },
       )
       .then((r) => r.data.answer),
+  outcomes: (cycleId?: string) =>
+    api
+      .get<{
+        outcomes: Array<{
+          id: string;
+          reviewId: string;
+          revieweeId: string;
+          revieweeFirstName?: string | null;
+          revieweeLastName?: string | null;
+          revieweeAvatar?: string | null;
+          revieweeDesignation?: string | null;
+          cycleId: string;
+          cycleName?: string | null;
+          finalRating?: number | null;
+          submittedAt?: string | null;
+          incrementRecommendation: "MAXIMUM" | "STANDARD" | "NONE" | "PIP";
+          promotionEligible: boolean;
+          trainingNeeds: string[];
+          pipRecommended: boolean;
+          fastTrackEligible: boolean;
+          createdAt: string;
+        }>;
+      }>("/performance/outcomes", {
+        params: cycleId ? { cycleId } : undefined,
+      })
+      .then((r) => r.data.outcomes),
+
   outcome: (id: string) =>
     api
       .get<{
@@ -2341,6 +2388,33 @@ export const PerformanceApi = {
         goal: Goal;
       }>(`/performance/goals/${id}/progress`, { progress })
       .then((r) => r.data.goal),
+
+  updateGoal: (
+    id: string,
+    payload: {
+      title: string;
+      description?: string;
+      dueDate: string;
+      cycleId?: string | null;
+      parentGoalId?: string | null;
+      category?: string | null;
+      targetValue?: number | null;
+      currentValue?: number | null;
+      milestones?: {
+        title: string;
+        targetDate?: string | null;
+        completed?: boolean;
+      }[];
+    },
+  ) =>
+    api
+      .patch<{ goal: Goal }>(`/performance/goals/${id}`, payload)
+      .then((r) => r.data.goal),
+
+  deleteGoal: (id: string) =>
+    api
+      .delete<{ id: string; deleted: boolean }>(`/performance/goals/${id}`)
+      .then((r) => r.data),
 
   updateGoalCurrentValue: (id: string, currentValue: number) =>
     api

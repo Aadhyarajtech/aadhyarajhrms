@@ -85,6 +85,55 @@ export async function sendEmail(input: {
   }
 }
 
+
+/* =========================================================
+   NEW EMPLOYEE TEMPORARY CREDENTIALS EMAIL
+========================================================= */
+
+export async function sendEmployeeWelcomeCredentialsEmail(input: {
+  to: string;
+  firstName: string;
+  lastName: string;
+  temporaryPassword: string;
+}) {
+  const firstName = escapeHtml(input.firstName);
+  const lastName = escapeHtml(input.lastName);
+  const email = escapeHtml(input.to);
+  const password = escapeHtml(input.temporaryPassword);
+
+  return sendEmail({
+    to: input.to,
+    subject: "Welcome to Aadhyaraj HRMS - Your Login Details",
+    text:
+      `Hello ${input.firstName} ${input.lastName},\n\n` +
+      `Your Aadhyaraj HRMS account has been created.\n\n` +
+      `Login email: ${input.to}\n` +
+      `Temporary password: ${input.temporaryPassword}\n\n` +
+      `Please sign in and change your password immediately. Do not share these credentials.\n\n` +
+      `Regards,\nAadhyaraj HRMS Team`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <body style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+          <div style="max-width:600px;margin:auto;background:#fff;border-radius:12px;padding:28px;">
+            <h2 style="margin-top:0;color:#111827;">Welcome to Aadhyaraj HRMS</h2>
+            <p>Hello ${firstName} ${lastName},</p>
+            <p>Your employee account has been created. Use the credentials below to sign in:</p>
+            <div style="padding:16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;">
+              <p style="margin:4px 0;"><strong>Login email:</strong> ${email}</p>
+              <p style="margin:12px 0 4px;"><strong>Temporary password:</strong></p>
+              <p style="margin:4px 0;font-family:monospace;font-size:16px;word-break:break-all;">${password}</p>
+            </div>
+            <p style="margin-top:20px;"><strong>Important:</strong> Change your password immediately after your first login. Do not share these credentials.</p>
+            <p>Regards,<br />Aadhyaraj HRMS Team</p>
+          </div>
+        </body>
+      </html>
+    `,
+  });
+}
+
+
 /* =========================================================
    SEND ANNOUNCEMENT EMAIL
 ========================================================= */
@@ -181,6 +230,125 @@ export async function sendAnnouncementEmail(input: {
               This email was sent by
               Aadhyaraj HRMS.
             </p>
+          </div>
+        </body>
+      </html>
+    `,
+  });
+}
+
+/* =========================================================
+   TICKET EMAILS
+========================================================= */
+
+export async function sendTicketEmail(input: {
+  to: string;
+  event: "CREATED" | "REPLY" | "STATUS" | "ESCALATED";
+  ticketId: string;
+  subject: string;
+  category: string;
+  priority: string;
+  status: string;
+  description?: string | null;
+  response?: string | null;
+  responderName?: string | null;
+  responderRole?: string | null;
+  reason?: string | null;
+  attachment?: string | null;
+}) {
+  const safeTicketId = escapeHtml(input.ticketId);
+  const safeSubject = escapeHtml(input.subject);
+  const safeCategory = escapeHtml(input.category);
+  const safePriority = escapeHtml(input.priority);
+  const safeStatus = escapeHtml(input.status);
+  const safeDescription = escapeHtml(input.description || "").replace(/\n/g, "<br />");
+  const safeResponse = escapeHtml(input.response || "").replace(/\n/g, "<br />");
+  const safeResponder = escapeHtml(input.responderName || "HRMS User");
+  const safeRole = escapeHtml(input.responderRole || "");
+  const safeReason = escapeHtml(input.reason || "").replace(/\n/g, "<br />");
+
+  let title = "Ticket Update";
+  let text = "";
+
+  if (input.event === "CREATED") {
+    title = "New Ticket Created";
+    text =
+      `Your ticket has been created successfully.\n\n` +
+      `Ticket ID: ${input.ticketId}\n` +
+      `Subject: ${input.subject}\n` +
+      `Category: ${input.category}\n` +
+      `Priority: ${input.priority}\n` +
+      `Status: ${input.status}\n\n` +
+      `Description:\n${input.description || ""}`;
+  } else if (input.event === "REPLY") {
+    title = "New Response on Your Ticket";
+    text =
+      `There is a new response on your ticket.\n\n` +
+      `Ticket ID: ${input.ticketId}\n` +
+      `Subject: ${input.subject}\n` +
+      `Status: ${input.status}\n` +
+      `Responded by: ${input.responderName || "HRMS User"}` +
+      (input.responderRole ? ` (${input.responderRole})` : "") +
+      `\n\nResponse:\n${input.response || ""}`;
+  } else if (input.event === "STATUS") {
+    title = "Ticket Status Updated";
+    text =
+      `The status of your ticket has been updated.\n\n` +
+      `Ticket ID: ${input.ticketId}\n` +
+      `Subject: ${input.subject}\n` +
+      `New Status: ${input.status}\n` +
+      `Updated by: ${input.responderName || "HRMS User"}` +
+      (input.responderRole ? ` (${input.responderRole})` : "");
+  } else {
+    title = "Ticket Escalated";
+    text =
+      `Your ticket has been escalated.\n\n` +
+      `Ticket ID: ${input.ticketId}\n` +
+      `Subject: ${input.subject}\n` +
+      `Status: ${input.status}\n` +
+      `Escalated by: ${input.responderName || "HRMS User"}\n\n` +
+      `Reason:\n${input.reason || ""}`;
+  }
+
+  const extraHtml =
+    input.event === "CREATED"
+      ? `<h3 style="margin:22px 0 8px;color:#111827;">Description</h3><p style="font-size:14px;line-height:1.7;color:#374151;">${safeDescription}</p>`
+      : input.event === "REPLY"
+        ? `<h3 style="margin:22px 0 8px;color:#111827;">Response</h3><div style="padding:14px;background:#f8fafc;border-radius:8px;font-size:14px;line-height:1.7;color:#374151;">${safeResponse}</div>`
+        : input.event === "ESCALATED"
+          ? `<h3 style="margin:22px 0 8px;color:#111827;">Escalation Reason</h3><p style="font-size:14px;line-height:1.7;color:#374151;">${safeReason}</p>`
+          : "";
+
+  const responderHtml =
+    input.event === "REPLY" || input.event === "STATUS" || input.event === "ESCALATED"
+      ? `<p style="font-size:14px;color:#4b5563;"><strong>Updated by:</strong> ${safeResponder}${safeRole ? ` (${safeRole})` : ""}</p>`
+      : "";
+
+  const attachmentHtml = input.attachment
+    ? `<p style="font-size:13px;color:#6b7280;"><strong>Attachment:</strong> ${escapeHtml(input.attachment)}</p>`
+    : "";
+
+  return sendEmail({
+    to: input.to,
+    subject: `[Aadhyaraj HRMS] ${title} - ${input.ticketId}`,
+    text,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <body style="margin:0;padding:0;background:#f5f7fb;font-family:Arial,Helvetica,sans-serif;">
+          <div style="max-width:640px;margin:30px auto;background:#ffffff;border-radius:12px;padding:30px;box-sizing:border-box;">
+            <h2 style="margin:0 0 20px;color:#111827;">${escapeHtml(title)}</h2>
+            <div style="padding:16px;background:#f8fafc;border-radius:10px;">
+              <p style="margin:0 0 8px;font-size:14px;color:#374151;"><strong>Ticket ID:</strong> ${safeTicketId}</p>
+              <p style="margin:0 0 8px;font-size:14px;color:#374151;"><strong>Subject:</strong> ${safeSubject}</p>
+              <p style="margin:0 0 8px;font-size:14px;color:#374151;"><strong>Category:</strong> ${safeCategory}</p>
+              <p style="margin:0 0 8px;font-size:14px;color:#374151;"><strong>Priority:</strong> ${safePriority}</p>
+              <p style="margin:0;font-size:14px;color:#374151;"><strong>Status:</strong> ${safeStatus}</p>
+            </div>
+            ${responderHtml}
+            ${extraHtml}
+            ${attachmentHtml}
+            <p style="margin-top:28px;color:#777;font-size:12px;">This email was sent automatically by Aadhyaraj HRMS.</p>
           </div>
         </body>
       </html>

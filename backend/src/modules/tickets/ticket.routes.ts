@@ -26,6 +26,7 @@ import {
   enrichTicketsWithSlaRisk,
 } from "@/services/predictiveSla.service";
 import { detectTicketAnomalies } from "@/services/anomalyDetection.service";
+import { sendTicketEmail } from "@/services/email.service";
 import { getHelpdeskExecutiveAnalytics } from "@/services/analytics.service";
 import {
   findSimilarTickets,
@@ -259,6 +260,30 @@ ticketRouter.post(
         }
       } catch (err) {
         console.error("Failed to send ticket notifications", err);
+      }
+
+      // Email the employee who raised the ticket. Email failures are isolated
+      // so they never prevent successful ticket creation.
+      try {
+        const owner = await Employee.findById(ticket.employeeId).lean();
+        if (owner?.userId) {
+          const ownerUser = await User.findById(owner.userId).select("email").lean();
+          if (ownerUser?.email) {
+            await sendTicketEmail({
+              to: ownerUser.email,
+              event: "CREATED",
+              ticketId: ticket.ticketId,
+              subject: ticket.subject,
+              category: ticket.category,
+              priority: ticket.priority,
+              status: ticket.status,
+              description: ticket.description,
+              attachment: ticket.attachment,
+            });
+          }
+        }
+      } catch (emailError) {
+        console.error("Failed to send ticket creation email", emailError);
       }
 
       const risk = calculatePredictiveSlaRisk(ticket);
@@ -904,6 +929,31 @@ ticketRouter.post(
           );
         }
 
+        // Email every broadcast response to the ticket owner.
+        try {
+          const ownerEmp = await Employee.findById(ticket.employeeId).lean();
+          if (ownerEmp?.userId) {
+            const ownerUser = await User.findById(ownerEmp.userId).select("email").lean();
+            if (ownerUser?.email && ownerUser.email !== (await User.findById(req.user.userId).select("email").lean())?.email) {
+              await sendTicketEmail({
+                to: ownerUser.email,
+                event: "REPLY",
+                ticketId: ticket.ticketId,
+                subject: ticket.subject,
+                category: ticket.category,
+                priority: ticket.priority,
+                status: currentStatus,
+                description: ticket.description,
+                response: broadcastMessage,
+                responderName: senderName,
+                responderRole: senderRole,
+              });
+            }
+          }
+        } catch (emailError) {
+          console.error("Failed to send broadcast ticket email", emailError);
+        }
+
         results.push({
           ticketId: ticket.ticketId,
           status: currentStatus,
@@ -1103,6 +1153,34 @@ ticketRouter.patch(
         );
       }
 
+      // Email the employee whenever the ticket status changes.
+      try {
+        const prevStatus = existingTicket?.status;
+        const newStatus = ticket?.status;
+        if (prevStatus && newStatus && prevStatus !== newStatus) {
+          const ownerEmp = await Employee.findById(ticket.employeeId).lean();
+          if (ownerEmp?.userId) {
+            const ownerUser = await User.findById(ownerEmp.userId).select("email").lean();
+            if (ownerUser?.email) {
+              await sendTicketEmail({
+                to: ownerUser.email,
+                event: "STATUS",
+                ticketId: ticket.ticketId,
+                subject: ticket.subject,
+                category: ticket.category,
+                priority: ticket.priority,
+                status: newStatus,
+                description: ticket.description,
+                responderName: req.user.name || "HRMS User",
+                responderRole: String(req.user.role || ""),
+              });
+            }
+          }
+        }
+      } catch (emailError) {
+        console.error("Failed to send ticket status email", emailError);
+      }
+
       return res.json({
         ticket,
       });
@@ -1254,6 +1332,31 @@ ticketRouter.post(
           "Failed to notify employee about grievance escalation",
           notificationError,
         );
+      }
+
+      // Email the employee about the escalation.
+      try {
+        const owner = await Employee.findById(ticket.employeeId).lean();
+        if (owner?.userId) {
+          const ownerUser = await User.findById(owner.userId).select("email").lean();
+          if (ownerUser?.email) {
+            await sendTicketEmail({
+              to: ownerUser.email,
+              event: "ESCALATED",
+              ticketId: ticket.ticketId,
+              subject: ticket.subject,
+              category: ticket.category,
+              priority: ticket.priority,
+              status: ticket.status,
+              description: ticket.description,
+              responderName: req.user.name || "Manager",
+              responderRole: String(req.user.role || "MANAGER"),
+              reason: parsed.data.reason,
+            });
+          }
+        }
+      } catch (emailError) {
+        console.error("Failed to send ticket escalation email", emailError);
       }
 
       try {
@@ -2039,6 +2142,31 @@ ticketRouter.post(
             notificationError,
           );
         }
+      }
+
+      // Email every response to the employee who owns the ticket.
+      try {
+        const owner = await Employee.findById(ticket.employeeId).lean();
+        if (owner?.userId) {
+          const ownerUser = await User.findById(owner.userId).select("email").lean();
+          if (ownerUser?.email) {
+            await sendTicketEmail({
+              to: ownerUser.email,
+              event: "REPLY",
+              ticketId: ticket.ticketId,
+              subject: ticket.subject,
+              category: ticket.category,
+              priority: ticket.priority,
+              status: ticket.status,
+              description: ticket.description,
+              response: parsed.data.message,
+              responderName: req.user.name || "HRMS User",
+              responderRole: String(req.user.role || ""),
+            });
+          }
+        }
+      } catch (emailError) {
+        console.error("Failed to send ticket reply email", emailError);
       }
 
       return res.status(201).json({

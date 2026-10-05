@@ -1,49 +1,274 @@
-import mongoose, { Schema, type Document } from "mongoose";
+import {
+  Router,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
+import { z } from "zod";
 
-export interface ITicketMessage extends Document {
-  ticketId: string;
-  employeeId: string;
-  senderName: string;
-  senderRole: string;
-  message: string;
-  createdAt: Date;
+import { authenticate } from "@/middleware/auth";
+import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
+
+import type { AuthUser } from "@/types/express";
+
+import * as messageRepo from "./ticketMessage.repository";
+import * as ticketRepo from "./ticket.repository";
+import { notify } from "@/modules/notifications/notifications.repository";
+import { User, Employee } from "@/db/models";
+import { sendTicketEmail } from "@/services/email.service";
+
+interface AuthenticatedRequest extends Request {
+  user?: AuthUser;
 }
 
-const ticketMessageSchema = new Schema<ITicketMessage>(
-  {
-    ticketId: {
-      type: String,
-      required: true,
-      index: true,
-    },
+export const ticketMessageRouter = Router();
 
-    employeeId: {
-      type: String,
-      required: true,
-    },
+ticketMessageRouter.use(authenticate);
 
-    senderName: {
-      type: String,
-      required: true,
-    },
+/* =========================================================
+   GET TICKET MESSAGES
+   GET /api/tickets/:id/messages
+========================================================= */
 
-    senderRole: {
-      type: String,
-      required: true,
-    },
+ticketMessageRouter.get(
+  "/:id/messages",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
 
-    message: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-  },
-  {
-    timestamps: true,
+      const ticketId = req.params.id;
+
+      if (!ticketId) {
+        return res.status(400).json({
+          error: {
+            message: "Ticket ID is required",
+          },
+        });
+      }
+
+      const ticket = await ticketRepo.getTicket(ticketId);
+
+      if (!ticket) {
+        return res.status(404).json({
+          error: {
+            message: "Ticket not found",
+          },
+        });
+      }
+
+      if (!ticketRepo.isUserAuthorizedForTicket(ticket, req.user)) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to view this ticket",
+          },
+        });
+      }
+
+      const messages = await messageRepo.getTicketMessages(ticketId);
+
+      return res.json({
+        messages,
+      });
+    } catch (err) {
+      next(err);
+    }
   },
 );
 
-export const TicketMessage = mongoose.model<ITicketMessage>(
-  "TicketMessage",
-  ticketMessageSchema,
+/* =========================================================
+   CREATE TICKET MESSAGE
+   POST /api/tickets/:id/messages
+
+   Supports:
+   - text
+   - attachment
+========================================================= */
+
+const createMessageSchema = z.object({
+  message: z
+    .string()
+    .trim()
+    .max(5000, "Message cannot exceed 5000 characters")
+    .optional()
+    .default(""),
+});
+
+ticketMessageRouter.post(
+  "/:id/messages",
+  upload.single("attachment"),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: {
+            message: "Unauthorized",
+          },
+        });
+      }
+
+      if (!req.user.employeeId) {
+        return res.status(401).json({
+          error: {
+            message: "Employee not found",
+          },
+        });
+      }
+
+      const ticketId = req.params.id;
+
+      if (!ticketId) {
+        return res.status(400).json({
+          error: {
+            message: "Ticket ID is required",
+          },
+        });
+      }
+
+      const parsed = createMessageSchema.safeParse({
+        message: req.body.message || "",
+      });
+
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: {
+            message: "Invalid message",
+            details: parsed.error.flatten(),
+          },
+        });
+      }
+
+      const uploadedFile = req.file;
+
+      const attachment = uploadedFile
+        ? `${UPLOADS_PUBLIC_PATH}/${uploadedFile.filename}`
+        : "";
+
+      if (!parsed.data.message.trim() && !attachment) {
+        return res.status(400).json({
+          error: {
+            message: "Please enter a message or attach a file",
+          },
+        });
+      }
+
+      const ticket = await ticketRepo.getTicket(ticketId);
+
+      if (!ticket) {
+        return res.status(404).json({
+          error: {
+            message: "Ticket not found",
+          },
+        });
+      }
+
+      if (!ticketRepo.isUserAuthorizedForTicket(ticket, req.user)) {
+        return res.status(403).json({
+          error: {
+            message: "You are not authorized to reply to this ticket",
+          },
+        });
+      }
+
+      const role = String(req.user.role);
+
+      const message = await messageRepo.createTicketMessage({
+        ticketId,
+        employeeId: req.user.employeeId || req.user.userId || "SYSTEM",
+        senderName: req.user.name || (role === "EMPLOYEE" ? "Employee" : "Staff"),
+        senderRole: role || "EMPLOYEE",
+        message: parsed.data.message,
+        attachment,
+      });
+
+      // When support staff replies to an OPEN ticket, auto-transition to IN_PROGRESS
+      if (role !== "EMPLOYEE" && ticket.status === "OPEN") {
+        try {
+          await ticketRepo.updateTicketStatus(ticketId, "IN_PROGRESS");
+        } catch (statusErr) {
+          console.warn("Failed to auto-advance ticket status to IN_PROGRESS", statusErr);
+        }
+      }
+
+      // Create notifications for relevant users (do not notify the sender)
+      try {
+        const ticketOwnerEmp = await Employee.findById(
+          ticket.employeeId,
+        ).lean();
+
+        const senderUserId = req.user.userId;
+
+        if (role === "EMPLOYEE") {
+          // Notify assigned role users (e.g., HR_ADMIN, FINANCE, MANAGER, IT_SUPPORT)
+          const recipients = await User.find({
+            role: ticket.assignedTo,
+            isActive: true,
+          }).lean();
+          for (const r of recipients) {
+            if (r._id === senderUserId) continue;
+            await notify({
+              userId: r._id,
+              type: "TICKET_MESSAGE",
+              title: `${req.user.name || "An employee"} sent a new message`,
+              message: `${ticket.ticketId}`,
+              link: `/app/tickets/${ticket._id}`,
+            });
+          }
+        } else {
+          // Sender is admin/staff — notify ticket owner employee's user account
+          if (
+            ticketOwnerEmp &&
+            ticketOwnerEmp.userId &&
+            ticketOwnerEmp.userId !== senderUserId
+          ) {
+            await notify({
+              userId: ticketOwnerEmp.userId,
+              type: "TICKET_MESSAGE",
+              title: `${req.user.name || "Staff"} replied to your ticket`,
+              message: `${ticket.ticketId}`,
+              link: `/app/tickets/${ticket._id}`,
+            });
+          }
+        }
+      } catch (err) {
+        // Notification failure should not break message creation
+        console.error("Failed to send ticket notifications", err);
+      }
+
+      // Email every response to the employee who owns the ticket.
+      try {
+        const owner = await Employee.findById(ticket.employeeId).lean();
+        if (owner?.userId) {
+          const ownerUser = await User.findById(owner.userId).select("email").lean();
+          if (ownerUser?.email) {
+            await sendTicketEmail({
+              to: ownerUser.email,
+              event: "REPLY",
+              ticketId: ticket.ticketId,
+              subject: ticket.subject,
+              category: ticket.category,
+              priority: ticket.priority,
+              status: ticket.status,
+              description: ticket.description,
+              response: parsed.data.message,
+              responderName: req.user.name || "HRMS User",
+              responderRole: String(req.user.role || ""),
+              attachment,
+            });
+          }
+        }
+      } catch (emailError) {
+        console.error("Failed to send ticket reply email", emailError);
+      }
+
+      return res.status(201).json({ message });
+    } catch (err) {
+      next(err);
+    }
+  },
 );

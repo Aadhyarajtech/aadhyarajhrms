@@ -142,6 +142,12 @@ export default function EmployeeProfile() {
   const isError = employeeQuery.isError && !employee;
   const error = employeeQuery.error;
 
+  const directReportsQuery = useQuery({
+    queryKey: ["employee", effectiveId, "direct-reports"],
+    queryFn: () => EmployeesApi.directReports(effectiveId!),
+    enabled: !!effectiveId && !!employee?.isManager,
+  });
+
   const isSelf = user?.employee?.id === effectiveId;
   const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
   const completeOnboardingMutation = useMutation({
@@ -168,7 +174,9 @@ export default function EmployeeProfile() {
       return EmployeesApi.updateOnboardingStage(
         employee.id,
         data.stage,
-        data.remarks,
+        {
+          remarks: data.remarks,
+        },
       );
     },
     onSuccess: () => {
@@ -373,6 +381,8 @@ export default function EmployeeProfile() {
     );
   }
 
+  const isManager = employee.isManager === true;
+
  const tabs = [
   { key: "overview", label: "Overview" },
   { key: "attendance", label: "Attendance" },
@@ -381,6 +391,7 @@ export default function EmployeeProfile() {
   { key: "ai-insights", label: "AI Insights" },
   ...(canViewPayroll ? [{ key: "payroll", label: "Payroll" }] : []),
   { key: "documents", label: "Documents & Assets" },
+  ...(isManager ? [{ key: "reportees", label: "Reportees" }] : []),
 ];
 
   return (
@@ -721,6 +732,129 @@ export default function EmployeeProfile() {
         <LeaveTab employeeId={employee.id} canManage={isAdmin} />
       )}
       {tab === "performance" && <PerformanceTab employeeId={employee.id} />}
+      {tab === "reportees" && isManager && (
+        <Card className="border-violet-100/80 shadow-[0_18px_45px_-32px_rgba(79,70,229,0.55)]">
+          <CardHeader
+            title="Reportees"
+            subtitle="Employees who report directly to this manager."
+            action={
+              !directReportsQuery.isLoading && !directReportsQuery.isError ? (
+                <Badge tone="neutral">
+                  {(directReportsQuery.data ?? []).filter(
+                    (reportee: any) => reportee.id !== employee.id,
+                  ).length}{" "}
+                  {(directReportsQuery.data ?? []).filter(
+                    (reportee: any) => reportee.id !== employee.id,
+                  ).length === 1
+                    ? "Employee"
+                    : "Employees"}
+                </Badge>
+              ) : undefined
+            }
+          />
+
+          {directReportsQuery.isLoading && (
+            <div className="space-y-3">
+              <Skeleton className="h-16 rounded-2xl" />
+              <Skeleton className="h-16 rounded-2xl" />
+              <Skeleton className="h-16 rounded-2xl" />
+            </div>
+          )}
+
+          {directReportsQuery.isError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50/60 px-4 py-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 rounded-xl bg-white p-2 text-red-600 shadow-sm">
+                    <AlertCircle size={18} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-red-900">
+                      Unable to load reportees
+                    </p>
+                    <p className="mt-1 text-xs text-red-700">
+                      We couldn't retrieve the employees reporting to this manager.
+                    </p>
+                    <p className="mt-2 break-words text-[11px] text-red-600/80">
+                      {getErrorMessage(directReportsQuery.error)}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  leftIcon={<RefreshCw size={14} />}
+                  onClick={() => void directReportsQuery.refetch()}
+                >
+                  Retry
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!directReportsQuery.isLoading &&
+            !directReportsQuery.isError &&
+            (directReportsQuery.data ?? []).filter(
+              (reportee: any) => reportee.id !== employee.id,
+            ).length === 0 && (
+              <EmptyState
+                icon={AlertCircle}
+                title="No reportees"
+                description="There are currently no employees reporting directly to this manager."
+              />
+            )}
+
+          {!directReportsQuery.isLoading &&
+            !directReportsQuery.isError &&
+            (directReportsQuery.data ?? []).filter(
+              (reportee: any) => reportee.id !== employee.id,
+            ).length > 0 && (
+              <div className="space-y-2">
+                {(directReportsQuery.data ?? [])
+                  .filter((reportee: any) => reportee.id !== employee.id)
+                  .map((reportee: any) => (
+                    <div
+                      key={reportee.id}
+                      className="group flex flex-col gap-4 rounded-2xl border border-line/60 bg-gradient-to-r from-white to-violet-50/30 px-4 py-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-[0_12px_30px_-22px_rgba(79,70,229,0.55)] sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          firstName={reportee.firstName}
+                          lastName={reportee.lastName}
+                          src={reportee.avatarUrl}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-medium text-ink">
+                            {reportee.firstName} {reportee.lastName}
+                          </p>
+                          <p className="truncate text-[12px] text-ink-faint">
+                            {reportee.employeeCode || "—"}
+                          </p>
+                          <p className="truncate text-[12px] text-ink-faint">
+                            {reportee.designationTitle ?? "—"}
+                            {" · "}
+                            {reportee.departmentName ?? "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <StatusBadge status={reportee.status} />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate(`/app/employees/${reportee.id}`)}
+                        >
+                          View Profile
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+        </Card>
+      )}
       {tab === "ai-insights" && (
   <EmployeeAIInsightsSection employeeId={employee.id} />
 )}
@@ -1817,9 +1951,12 @@ function OnboardingWorkflow({
         latestEmployee = await EmployeesApi.updateOnboardingStage(
           employee.id,
           stage,
-          stage === 7
-            ? "Orientation and company policy briefing confirmed by HR."
-            : undefined,
+          {
+            remarks:
+              stage === 7
+                ? "Orientation and company policy briefing confirmed by HR."
+                : undefined,
+          },
         );
       }
       return latestEmployee;
@@ -2728,6 +2865,7 @@ function DocumentsTab({
 
 // ----------------------------------------------------------------------------
 type EmployeeForm = {
+  employeeCode: string;
   firstName: string;
   lastName: string;
 
@@ -2809,6 +2947,7 @@ function EditEmployeeModal({
     useForm<EmployeeForm>({
       mode: "onSubmit",
       defaultValues: {
+        employeeCode: employee.employeeCode ?? "",
         firstName: employee.firstName ?? "",
         lastName: employee.lastName ?? "",
 
@@ -3056,6 +3195,40 @@ function EditEmployeeModal({
             </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {/* Employee Code */}
+              <div>
+                <label className="text-[13px] font-medium text-ink-soft">
+                  Employee Code <span className="text-danger-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  {...register("employeeCode", {
+                    required: "Employee code is required",
+                    setValueAs: (value) => String(value ?? "").trim().toUpperCase(),
+                    minLength: {
+                      value: 3,
+                      message: "Employee code must contain at least 3 characters.",
+                    },
+                    maxLength: {
+                      value: 30,
+                      message: "Employee code cannot exceed 30 characters.",
+                    },
+                    pattern: {
+                      value: /^[A-Z0-9_-]+$/i,
+                      message: "Use only letters, numbers, hyphens, and underscores.",
+                    },
+                  })}
+                  className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm font-mono uppercase ${errors.employeeCode ? "border-danger-500" : "border-line"}`}
+                  placeholder="EMP0011"
+                  maxLength={30}
+                />
+                {errors.employeeCode && (
+                  <p className="mt-1 text-xs text-danger-500">
+                    {errors.employeeCode.message}
+                  </p>
+                )}
+              </div>
+
               {/* Department */}
               <div>
                 <label className="text-[13px] font-medium text-ink-soft">

@@ -219,7 +219,7 @@ export async function getActiveCycle() {
   return toApiDoc(valid);
 }
 
-async function enrichReviews(rows: any[]) {
+async function enrichReviews(rows: any[], options: { requireEmployee?: boolean } = {}) {
   if (rows.length === 0) return [];
 
   const revieweeIds = [...new Set(rows.map((r) => r.revieweeId))];
@@ -239,19 +239,26 @@ async function enrichReviews(rows: any[]) {
     Department.find({ _id: { $in: departmentIds } }).lean(),
   ]);
 
-  const revieweeMap = new Map(reviewees.map((e) => [e._id, e]));
-  const reviewerMap = new Map(reviewers.map((e) => [e._id, e]));
-  const cycleMap = new Map(cycles.map((c) => [c._id, c]));
+  const revieweeMap = new Map(reviewees.map((e) => [String(e._id), e]));
+  const reviewerMap = new Map(reviewers.map((e) => [String(e._id), e]));
+  const cycleMap = new Map(cycles.map((c) => [String(c._id), c]));
+
+  const filteredRows = options.requireEmployee
+    ? rows.filter((r) => revieweeMap.has(String(r.revieweeId)))
+    : rows;
   const desMap = new Map(designations.map((d) => [d._id, d]));
   const deptMap = new Map(departments.map((d) => [d._id, d]));
 
-  return rows.map((r) => {
-    const reviewee = revieweeMap.get(r.revieweeId);
-    const reviewer = reviewerMap.get(r.reviewerId);
-    const cycle = cycleMap.get(r.cycleId);
+  return filteredRows.map((r) => {
+    const reviewee = revieweeMap.get(String(r.revieweeId));
+    const reviewer = reviewerMap.get(String(r.reviewerId));
+    const cycle = cycleMap.get(String(r.cycleId));
     return {
       id: r._id,
       ...r,
+      revieweeName: reviewee
+        ? [reviewee.firstName, reviewee.lastName].filter(Boolean).join(" ").trim() || null
+        : null,
       revieweeFirstName: reviewee?.firstName ?? null,
       revieweeLastName: reviewee?.lastName ?? null,
       revieweeAvatar: reviewee?.avatarUrl ?? null,
@@ -261,6 +268,8 @@ async function enrichReviews(rows: any[]) {
       revieweeDepartment: reviewee
         ? (deptMap.get(reviewee.departmentId)?.name ?? null)
         : null,
+      revieweeDepartmentId: reviewee?.departmentId ?? null,
+      revieweeDesignationId: reviewee?.designationId ?? null,
       reviewerFirstName: reviewer?.firstName ?? null,
       reviewerLastName: reviewer?.lastName ?? null,
       cycleName: cycle?.name ?? null,
@@ -281,13 +290,13 @@ export async function listReviews(filters: {
   const rows = await PerformanceReview.find(query)
     .sort({ submittedAt: -1 })
     .lean();
-  return enrichReviews(rows);
+  return enrichReviews(rows, { requireEmployee: true });
 }
 
 export async function getReview(id: string) {
   const row = await PerformanceReview.findById(id).lean();
   if (!row) return undefined;
-  const [enriched] = await enrichReviews([row]);
+  const [enriched] = await enrichReviews([row], { requireEmployee: true });
   return enriched;
 }
 export async function getPerformanceScorecard(employeeId: string) {
@@ -593,6 +602,9 @@ export async function submitManagerReview(
         managerDeliveryRating,
         managerBehaviorRating,
         finalRating,
+        // A completed review starts calibration at its final rating.
+        // HR can later change this value through the existing Calibration screen.
+        calibratedRating: finalRating,
         status: "COMPLETED",
         submittedAt: nowIso(),
       },
@@ -890,6 +902,125 @@ export async function createGoal(input: {
 }
 
 
+export async function updateGoal(
+  id: string,
+  input: {
+    title: string;
+    description?: string | null;
+    dueDate: string;
+    cycleId?: string | null;
+    parentGoalId?: string | null;
+    category?: string | null;
+    targetValue?: number | null;
+    currentValue?: number | null;
+    milestones?: {
+      title: string;
+      targetDate?: string | null;
+      completed?: boolean;
+    }[];
+  },
+) {
+  const existing = await Goal.findById(id).lean();
+  if (!existing) return undefined;
+
+  const title = input.title.trim();
+  if (!title) {
+    throw new Error("Goal title is required.");
+  }
+
+  if (input.parentGoalId) {
+    if (String(input.parentGoalId) === String(id)) {
+      throw new Error("A goal cannot be its own parent.");
+    }
+
+    const parent = await Goal.findById(input.parentGoalId).lean();
+    if (!parent) {
+      throw new Error("The selected parent goal does not exist.");
+    }
+
+    if (
+      String(parent.employeeId) !== String(existing.employeeId)
+    ) {
+      throw new Error("The parent goal must belong to the same employee.");
+    }
+
+    if (input.cycleId && parent.cycleId && parent.cycleId !== input.cycleId) {
+      throw new Error("Parent and child goals must belong to the same review cycle.");
+    }
+  }
+
+  const targetValue = input.targetValue ?? null;
+  const currentValue = input.currentValue ?? null;
+
+  if (
+    typeof targetValue === "number" &&
+    targetValue > 0 &&
+    typeof currentValue === "number" &&
+    currentValue > targetValue
+  ) {
+    throw new Error("Current value cannot be greater than the target value.");
+  }
+
+  const milestones = Array.isArray(input.milestones)
+    ? input.milestones
+        .map((milestone) => ({
+          title: String(milestone.title ?? "").trim(),
+          targetDate: milestone.targetDate ?? null,
+          completed: Boolean(milestone.completed),
+        }))
+        .filter((milestone) => milestone.title.length > 0)
+    : Array.isArray((existing as any).milestones)
+      ? (existing as any).milestones
+      : [];
+
+  const progress =
+    calculateCombinedGoalProgress(targetValue, currentValue, milestones) ??
+    Math.min(100, Math.max(0, Number((existing as any).progress ?? 0)));
+
+  await Goal.updateOne(
+    { _id: id },
+    {
+      $set: {
+        title,
+        description: input.description?.trim() || null,
+        dueDate: input.dueDate,
+        cycleId: input.cycleId ?? null,
+        parentGoalId: input.parentGoalId ?? null,
+        category: input.category?.trim() || null,
+        targetValue,
+        currentValue,
+        milestones,
+        progress,
+        status: calculateGoalStatus(progress),
+      },
+    },
+  );
+
+  return normalizeGoal(await Goal.findById(id).lean());
+}
+
+export async function deleteGoal(id: string) {
+  const existing = await Goal.findById(id).lean();
+  if (!existing) return undefined;
+
+  // Preserve child goals when deleting a parent goal. The child goals are
+  // detached from the deleted parent instead of being deleted with it.
+  // This keeps existing goal/cascade data intact and allows the requested
+  // goal deletion to complete safely.
+  await Goal.updateMany(
+    { parentGoalId: id },
+    { $set: { parentGoalId: null } },
+  );
+
+  const result = await Goal.deleteOne({ _id: id });
+
+  if (result.deletedCount !== 1) {
+    return undefined;
+  }
+
+  return { id, deleted: true };
+}
+
 export async function updateGoalMilestone(
   id: string,
   milestoneIndex: number,
@@ -1015,15 +1146,20 @@ export async function updateGoalCurrentValue(
   const goal = await Goal.findById(id).lean();
   if (!goal) return undefined;
 
-  const targetValue = (goal as any).targetValue;
+  const rawTargetValue = (goal as any).targetValue;
+  const targetValue = Number(rawTargetValue);
 
-  if (typeof targetValue !== "number" || targetValue <= 0) {
+  if (!Number.isFinite(targetValue) || targetValue <= 0) {
     throw new Error(
       "A positive target value is required before updating the KPI current value.",
     );
   }
 
-  const safeCurrentValue = Math.max(0, currentValue);
+  const safeCurrentValue = Math.max(0, Number(currentValue));
+
+  if (safeCurrentValue > targetValue) {
+    throw new Error("Current value cannot be greater than the target value.");
+  }
   const progress = calculateGoalProgress(targetValue, safeCurrentValue) ?? 0;
 
   await Goal.updateOne(
@@ -1206,26 +1342,36 @@ export async function listFeedbackRequests(
     ),
   ];
 
-  const employees = await Employee.find({
-    _id: { $in: employeeIds },
-  })
-    .select("firstName lastName avatarUrl designationId departmentId")
-    .lean();
+  const [employees, validReviews] = await Promise.all([
+    Employee.find({ _id: { $in: employeeIds } })
+      .select("firstName lastName avatarUrl designationId departmentId")
+      .lean(),
+    PerformanceReview.find({
+      _id: { $in: rows.map((row) => row.reviewId) },
+    }).select({ _id: 1 }).lean(),
+  ]);
 
-  const map = new Map(employees.map((employee) => [employee._id, employee]));
+  const map = new Map(employees.map((employee) => [String(employee._id), employee]));
+  const validReviewIds = new Set(validReviews.map((review) => String(review._id)));
+  const validRows = rows.filter(
+    (row) =>
+      map.has(String(row.reviewerEmployeeId)) &&
+      map.has(String(row.revieweeEmployeeId)) &&
+      validReviewIds.has(String(row.reviewId)),
+  );
 
-  return rows.map((row) => ({
+  return validRows.map((row) => ({
     ...toApiDoc(row),
     revieweeFirstName:
-      map.get(row.revieweeEmployeeId)?.firstName ?? null,
+      map.get(String(row.revieweeEmployeeId))?.firstName ?? null,
     revieweeLastName:
-      map.get(row.revieweeEmployeeId)?.lastName ?? null,
+      map.get(String(row.revieweeEmployeeId))?.lastName ?? null,
     revieweeAvatar:
-      map.get(row.revieweeEmployeeId)?.avatarUrl ?? null,
+      map.get(String(row.revieweeEmployeeId))?.avatarUrl ?? null,
     revieweeDesignation:
-      map.get(row.revieweeEmployeeId)?.designationId ?? null,
+      map.get(String(row.revieweeEmployeeId))?.designationId ?? null,
     revieweeDepartment:
-      map.get(row.revieweeEmployeeId)?.departmentId ?? null,
+      map.get(String(row.revieweeEmployeeId))?.departmentId ?? null,
   }));
 }
 
@@ -1411,10 +1557,11 @@ export async function submitFeedback(input: PerformanceFeedbackInput) {
     throw new Error("The selected feedback reviewer does not exist.");
   }
 
-  if (
-    review.reviewerId === input.reviewerEmployeeId ||
-    review.revieweeId === input.reviewerEmployeeId
-  ) {
+  // A 360 reviewer may also be the manager/reviewer of the underlying
+  // performance review. What must be prevented is the employee reviewing
+  // themselves. The reporting manager must therefore be allowed to submit
+  // 360 feedback for their direct report.
+  if (review.revieweeId === input.reviewerEmployeeId) {
     throw new Error(
       "An employee cannot submit 360° feedback for their own review.",
     );
@@ -1538,6 +1685,80 @@ export async function listFeedbackForReviewer(
 }
 export async function getOutcome(reviewId: string) { return toApiDoc(await PerformanceOutcome.findOne({ reviewId }).lean()); }
 
+export async function listPerformanceOutcomes(filters: {
+  cycleId?: string;
+  reviewerId?: string;
+}) {
+  const reviewQuery: Record<string, any> = {
+    status: "COMPLETED",
+  };
+
+  if (filters.cycleId) reviewQuery.cycleId = filters.cycleId;
+  if (filters.reviewerId) reviewQuery.reviewerId = filters.reviewerId;
+
+  const reviews = await PerformanceReview.find(reviewQuery)
+    .sort({ submittedAt: -1 })
+    .lean();
+
+  if (!reviews.length) return [];
+
+  const reviewIds = reviews.map((review: any) => review._id);
+
+  const [outcomes, employees, cycles] = await Promise.all([
+    PerformanceOutcome.find({ reviewId: { $in: reviewIds } })
+      .sort({ createdAt: -1 })
+      .lean(),
+    Employee.find({
+      _id: { $in: reviews.map((review: any) => review.revieweeId) },
+    }).lean(),
+    PerformanceCycle.find({
+      _id: { $in: reviews.map((review: any) => review.cycleId) },
+    }).lean(),
+  ]);
+
+  const outcomeMap = new Map(
+    outcomes.map((outcome: any) => [String(outcome.reviewId), outcome]),
+  );
+  const employeeMap = new Map(
+    employees.map((employee: any) => [String(employee._id), employee]),
+  );
+  const cycleMap = new Map(
+    cycles.map((cycle: any) => [String(cycle._id), cycle]),
+  );
+
+  return reviews
+    .map((review: any) => {
+      const outcome = outcomeMap.get(String(review._id));
+      if (!outcome) return null;
+
+      const employee = employeeMap.get(String(review.revieweeId));
+      const cycle = cycleMap.get(String(review.cycleId));
+
+      return {
+        id: outcome._id,
+        reviewId: review._id,
+        revieweeId: review.revieweeId,
+        revieweeFirstName: employee?.firstName ?? null,
+        revieweeLastName: employee?.lastName ?? null,
+        revieweeAvatar: employee?.avatarUrl ?? null,
+        revieweeDesignation: employee?.designationId ?? null,
+        cycleId: review.cycleId,
+        cycleName: cycle?.name ?? null,
+        finalRating: review.finalRating ?? null,
+        submittedAt: review.submittedAt ?? null,
+        incrementRecommendation: outcome.incrementRecommendation,
+        promotionEligible: Boolean(outcome.promotionEligible),
+        trainingNeeds: Array.isArray(outcome.trainingNeeds)
+          ? outcome.trainingNeeds
+          : [],
+        pipRecommended: Boolean(outcome.pipRecommended),
+        fastTrackEligible: Boolean(outcome.fastTrackEligible),
+        createdAt: outcome.createdAt,
+      };
+    })
+    .filter(Boolean);
+}
+
 
 export type PerformanceOutcomeInput = {
   incrementRecommendation: "MAXIMUM" | "STANDARD" | "NONE" | "PIP";
@@ -1658,7 +1879,7 @@ function normalizePipObjective(input: PipObjectiveInput) {
   };
 }
 
-function toPipApiDoc(doc: any, managerId: string | null = null) {
+function toPipApiDoc(doc: any, managerId: string | null = null, employee: any = null) {
   if (!doc) return undefined;
 
   const plain = toApiDoc(doc) as any;
@@ -1694,6 +1915,11 @@ function toPipApiDoc(doc: any, managerId: string | null = null) {
   return {
     ...plain,
     managerId: plain.managerId ?? managerId,
+    employeeName: employee
+      ? [employee.firstName, employee.lastName].filter(Boolean).join(" ").trim() || null
+      : null,
+    employeeFirstName: employee?.firstName ?? null,
+    employeeLastName: employee?.lastName ?? null,
     objectives,
     checkInFrequency:
       plain.pipCheckInFrequency ?? plain.checkInFrequency ?? "MONTHLY",
@@ -1739,11 +1965,16 @@ export async function listPips(filters: {
   const employees = employeeIds.length
     ? await Employee.find({ _id: { $in: employeeIds } }).lean()
     : [];
-  const managerMap = new Map(
-    employees.map((employee) => [employee._id, employee.managerId ?? null]),
+  const employeeMap = new Map(
+    employees.map((employee) => [String(employee._id), employee]),
   );
 
-  return rows.map((row) => toPipApiDoc(row, managerMap.get(row.employeeId) ?? null));
+  return rows
+    .filter((row) => employeeMap.has(String(row.employeeId)))
+    .map((row) => {
+      const employee = employeeMap.get(String(row.employeeId));
+      return toPipApiDoc(row, employee?.managerId ?? null, employee);
+    });
 }
 
 export async function getPip(id: string) {
@@ -1751,7 +1982,8 @@ export async function getPip(id: string) {
   if (!row) return undefined;
 
   const employee = await Employee.findById(row.employeeId).lean();
-  return toPipApiDoc(row, employee?.managerId ?? null);
+  if (!employee) return undefined;
+  return toPipApiDoc(row, employee.managerId ?? null, employee);
 }
 
 export async function createPip(input: {
@@ -1942,7 +2174,9 @@ export async function addPipCheckIn(
     ? await Employee.findById(updated.employeeId).lean()
     : null;
 
-  return toPipApiDoc(updated, employee?.managerId ?? null);
+  return updated && employee
+    ? toPipApiDoc(updated, employee.managerId ?? null, employee)
+    : undefined;
 }
 
 export async function updatePipStatus(
@@ -1962,20 +2196,22 @@ export async function updatePipStatus(
   }
 
   if (status === "COMPLETED") {
-    const rawObjectives = Array.isArray((row as any).pipObjectives)
+    const structuredObjectives = Array.isArray((row as any).pipObjectives)
       ? (row as any).pipObjectives
-      : Array.isArray((row as any).objectives)
-        ? (row as any).objectives.map((objective: any) =>
+      : [];
+    const legacyObjectives = Array.isArray((row as any).objectives)
+      ? (row as any).objectives
+      : [];
+    const rawObjectives = structuredObjectives.length > 0
+      ? structuredObjectives
+      : legacyObjectives.map((objective: any) =>
           typeof objective === "string"
             ? { progress: 0, status: "NOT_STARTED" }
             : objective,
-        )
-        : [];
+        );
 
-    if (rawObjectives.length === 0) {
-      throw new Error("A PIP must have at least one objective before it can be completed.");
-    }
-
+    // Older PIPs were allowed to exist without structured objectives. Keep
+    // those records completable; newer PIPs still enforce 100% completion.
     const incompleteObjective = rawObjectives.find((objective: any) => {
       const progress = typeof objective.progress === "number" ? objective.progress : 0;
       return progress < 100 || objective.status !== "COMPLETED";
@@ -2035,7 +2271,7 @@ export async function calibrateReview(input: {
 
 export async function listCalibrationReviews(cycleId?: string) {
   const rows = await PerformanceReview.find({ status: "COMPLETED", ...(cycleId ? { cycleId } : {}) }).sort({ submittedAt: -1 }).lean();
-  return enrichReviews(rows);
+  return enrichReviews(rows, { requireEmployee: true });
 }
 
 export async function getAverageRatingByDepartment() {

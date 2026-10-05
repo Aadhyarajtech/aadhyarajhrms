@@ -2854,6 +2854,13 @@ export interface PerformanceReviewDoc {
   improvements: string | null;
   managerComments: string | null;
 
+  // Calibration starts from the manager's final rating after review submission.
+  // These fields are updated by HR when an actual calibration is performed.
+  calibratedRating: number | null;
+  calibrationComments: string | null;
+  calibratedBy: string | null;
+  calibratedAt: string | null;
+
   submittedAt: string | null;
 }
 
@@ -2923,6 +2930,30 @@ const performanceReviewSchema = new Schema<PerformanceReviewDoc>(
     },
 
     managerComments: {
+      type: String,
+      default: null,
+    },
+
+    // Initialised to the final review rating when the manager submits the review.
+    calibratedRating: {
+      type: Number,
+      default: null,
+      min: 1,
+      max: 5,
+    },
+
+    // These remain null until HR actually performs/saves a calibration.
+    calibrationComments: {
+      type: String,
+      default: null,
+    },
+
+    calibratedBy: {
+      type: String,
+      default: null,
+    },
+
+    calibratedAt: {
       type: String,
       default: null,
     },
@@ -3184,7 +3215,7 @@ export interface PerformanceFeedbackRequestDoc {
   reviewId: string;
   reviewerEmployeeId: string;
   revieweeEmployeeId: string;
-  type: "PEER" | "SUBORDINATE";
+  type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
   status: "PENDING" | "COMPLETED" | "DECLINED";
   dueDate: string | null;
   createdBy: string | null;
@@ -3199,7 +3230,7 @@ const performanceFeedbackRequestSchema = new Schema<PerformanceFeedbackRequestDo
     reviewId: { type: String, required: true },
     reviewerEmployeeId: { type: String, required: true },
     revieweeEmployeeId: { type: String, required: true },
-    type: { type: String, enum: ["PEER", "SUBORDINATE"], required: true },
+    type: { type: String, enum: ["PEER", "SUBORDINATE", "CROSS_FUNCTIONAL"], required: true },
     status: { type: String, enum: ["PENDING", "COMPLETED", "DECLINED"], default: "PENDING" },
     dueDate: { type: String, default: null },
     createdBy: { type: String, default: null },
