@@ -178,7 +178,7 @@ export async function listDesignations(
 export async function createDesignation(input: {
   title: string;
   level: number;
-  departmentId: string;
+  departmentId?: string | null;
 }) {
   const doc = await Designation.create(input);
 
@@ -266,7 +266,7 @@ export interface OrganizationSearchEmployee {
   lastName: string;
   email: string | null;
   avatarUrl: string | null;
-  departmentId: string;
+  departmentId: string | null;
   departmentName: string | null;
   designationId: string;
   designationTitle: string | null;
@@ -821,7 +821,7 @@ export async function searchOrganization(
 export interface SkillDependencyEmployee {
   id: string;
   name: string;
-  departmentId: string;
+  departmentId: string | null;
   departmentName: string | null;
   designationTitle: string | null;
   managerId: string | null;

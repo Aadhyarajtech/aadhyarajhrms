@@ -181,7 +181,7 @@ export interface DesignationDoc {
   _id: string;
   title: string;
   level: number;
-  departmentId: string;
+  departmentId: string | null;
 }
 
 const designationSchema = new Schema<DesignationDoc>(
@@ -201,7 +201,7 @@ const designationSchema = new Schema<DesignationDoc>(
 
     departmentId: {
       type: String,
-      required: true,
+      default: null,
     },
   },
   baseOptions,
@@ -609,8 +609,8 @@ const employeeSchema = new Schema<EmployeeDoc>(
     workLocation: { type: String, default: null },
     grade: { type: String, default: null },
 
-    departmentId: { type: String, required: true },
-    designationId: { type: String, required: true },
+    departmentId: { type: String, default: null },
+    designationId: { type: String, default: null },
     managerId: { type: String, default: null },
     isManager: { type: Boolean, default: false },
     shiftId: { type: String, default: null },

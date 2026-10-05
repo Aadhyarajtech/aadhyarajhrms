@@ -348,13 +348,20 @@ export default function Dashboard() {
               )}`
         }.`}
         action={
-          <div className="max-w-xs rounded-2xl border border-line/60 bg-gradient-to-br from-brand-50 to-gold-50 p-4 shadow-sm">
+          <div className="block max-w-xs rounded-2xl border border-line/60 bg-gradient-to-br from-brand-50 to-gold-50 p-4 text-left shadow-sm">
             <p className="font-display text-[13px] font-medium text-ink">
               Need help?
             </p>
 
             <p className="mt-1 text-[12px] text-ink-faint">
-              Reach IT & Security for access or technical issues.
+              <Link
+                to="/app/my-tickets?raise=it-support"
+                className="font-medium text-brand-600 hover:text-brand-700 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-2 rounded-sm"
+                aria-label="Reach IT & Security"
+              >
+                Reach IT & Security
+              </Link>{" "}
+              for access or technical issues.
             </p>
           </div>
         }

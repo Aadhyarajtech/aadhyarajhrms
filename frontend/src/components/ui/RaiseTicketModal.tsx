@@ -8,6 +8,7 @@ import { useToast } from "@/context/ToastContext";
 interface Props {
   open: boolean;
   onClose: () => void;
+  initialCategory?: string;
 }
 
 interface AIClassification {
@@ -22,7 +23,11 @@ interface AIClassification {
   message?: string;
 }
 
-export default function RaiseTicketModal({ open, onClose }: Props) {
+export default function RaiseTicketModal({
+  open,
+  onClose,
+  initialCategory = "",
+}: Props) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [category, setCategory] = useState("");
@@ -95,6 +100,13 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       return;
     }
 
+    // A dashboard/help shortcut can open this modal with a category already
+    // selected. Subject and description intentionally remain empty so the
+    // employee can enter the actual issue.
+    if (initialCategory) {
+      setCategory(initialCategory);
+      userChangedCategoryRef.current = true;
+    }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -110,7 +122,7 @@ export default function RaiseTicketModal({ open, onClose }: Props) {
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, onClose]);
+  }, [open, onClose, initialCategory]);
 
 
   if (!open) return null;

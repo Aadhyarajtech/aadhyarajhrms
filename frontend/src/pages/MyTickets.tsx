@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { MessageCircle, Plus } from "lucide-react";
 
 import { api, resolveAssetUrl } from "@/lib/api";
@@ -18,7 +18,21 @@ interface Ticket {
 }
 
 export default function MyTickets() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [raiseModalOpen, setRaiseModalOpen] = useState(false);
+  const [raiseTicketCategory, setRaiseTicketCategory] = useState("");
+
+  useEffect(() => {
+    if (searchParams.get("raise") !== "it-support") return;
+
+    setRaiseTicketCategory("IT Support");
+    setRaiseModalOpen(true);
+
+    // Remove the one-time trigger from the URL so a normal refresh does not
+    // unexpectedly reopen the ticket form.
+    navigate("/app/my-tickets", { replace: true });
+  }, [searchParams, navigate]);
 
   const {
     data,
@@ -37,17 +51,31 @@ export default function MyTickets() {
 
   if (isLoading) {
     return (
-      <div className="p-6 text-sm text-gray-500">
-        Loading tickets...
-      </div>
+      <>
+        <RaiseTicketModal
+          open={raiseModalOpen}
+          onClose={() => setRaiseModalOpen(false)}
+          initialCategory={raiseTicketCategory}
+        />
+        <div className="p-6 text-sm text-gray-500">
+          Loading tickets...
+        </div>
+      </>
     );
   }
 
   if (error) {
     return (
-      <div className="p-6 text-sm text-red-500">
-        Failed to load tickets.
-      </div>
+      <>
+        <RaiseTicketModal
+          open={raiseModalOpen}
+          onClose={() => setRaiseModalOpen(false)}
+          initialCategory={raiseTicketCategory}
+        />
+        <div className="p-6 text-sm text-red-500">
+          Failed to load tickets.
+        </div>
+      </>
     );
   }
 
@@ -66,7 +94,10 @@ export default function MyTickets() {
 
         <button
           type="button"
-          onClick={() => setRaiseModalOpen(true)}
+          onClick={() => {
+            setRaiseTicketCategory("");
+            setRaiseModalOpen(true);
+          }}
           className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-xs hover:bg-brand-700 transition"
         >
           <Plus className="h-4 w-4" />
@@ -77,6 +108,7 @@ export default function MyTickets() {
       <RaiseTicketModal
         open={raiseModalOpen}
         onClose={() => setRaiseModalOpen(false)}
+        initialCategory={raiseTicketCategory}
       />
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">

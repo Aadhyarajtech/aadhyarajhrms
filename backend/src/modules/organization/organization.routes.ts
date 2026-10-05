@@ -76,10 +76,10 @@ organizationRouter.patch(
   },
 );
 
-organizationRouter.get("/designations", async (_req, res, next) => {
+organizationRouter.get("/designations", async (req, res, next) => {
   try {
     res.json({
-      designations: await repo.listDesignations(),
+      designations: await repo.listDesignations(typeof req.query.departmentId === "string" ? req.query.departmentId : undefined),
     });
   } catch (err) {
     next(err);
@@ -89,7 +89,7 @@ organizationRouter.get("/designations", async (_req, res, next) => {
 const designationSchema = z.object({
   title: z.string().min(2),
   level: z.number().int().min(1).max(10),
-  departmentId: z.string(),
+  departmentId: z.string().trim().min(1).nullable().optional(),
 });
 
 organizationRouter.post(

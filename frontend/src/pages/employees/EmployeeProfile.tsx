@@ -2999,7 +2999,10 @@ function EditEmployeeModal({
       },
     });
   useEffect(() => {
+    setDepartmentInput(employee.departmentName ?? "");
+    setDesignationInput(employee.designationTitle ?? "");
     reset({
+      employeeCode: employee.employeeCode ?? "",
       firstName: employee.firstName ?? "",
       lastName: employee.lastName ?? "",
 
@@ -3053,6 +3056,8 @@ function EditEmployeeModal({
   }, [employee, reset]);
 
   const selectedDepartmentId = watch("departmentId");
+  const [departmentInput, setDepartmentInput] = useState(employee.departmentName ?? "");
+  const [designationInput, setDesignationInput] = useState(employee.designationTitle ?? "");
 
   const { data: departments } = useQuery({
     queryKey: ["departments"],
@@ -3061,9 +3066,9 @@ function EditEmployeeModal({
   });
 
   const { data: designations } = useQuery({
-    queryKey: ["designations", selectedDepartmentId],
-    queryFn: () => OrganizationApi.designations(selectedDepartmentId),
-    enabled: isAdmin && !!selectedDepartmentId,
+    queryKey: ["designations", selectedDepartmentId || "all"],
+    queryFn: () => OrganizationApi.designations(selectedDepartmentId || undefined),
+    enabled: isAdmin,
   });
 
   const { data: managers } = useQuery({
@@ -3118,8 +3123,54 @@ function EditEmployeeModal({
         avatarUrl = result.avatarUrl;
       }
 
+      const departmentName = departmentInput.trim();
+      const designationTitle = designationInput.trim();
+
+      const existingDepartment = (departments ?? []).find(
+        (department: any) =>
+          String(department.name ?? "").trim().toLowerCase() ===
+          departmentName.toLowerCase(),
+      );
+      let departmentId = existingDepartment?.id ?? "";
+
+      if (!departmentId && departmentName) {
+        const codeBase = departmentName.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "DEPT";
+        const createdDepartment = await OrganizationApi.createDepartment({
+          name: departmentName,
+          code: `${codeBase}${Math.floor(Math.random() * 100).toString().padStart(2, "0")}`.slice(0, 10),
+        });
+        departmentId = createdDepartment.id;
+        queryClient.setQueryData<any[]>(["departments"], (current) => {
+          const items = current ?? [];
+          return items.some((x: any) => String(x.id) === String(createdDepartment.id)) ? items : [...items, createdDepartment];
+        });
+      }
+
+      const designationOptions = await OrganizationApi.designations(departmentId || undefined);
+      const existingDesignation = designationOptions.find(
+        (designation: any) =>
+          String(designation.title ?? "").trim().toLowerCase() === designationTitle.toLowerCase() &&
+          (!departmentId || !designation.departmentId || String(designation.departmentId) === String(departmentId)),
+      );
+      let designationId = existingDesignation?.id ?? "";
+
+      if (!designationId && designationTitle) {
+        const createdDesignation = await OrganizationApi.createDesignation({
+          title: designationTitle,
+          level: 1,
+          departmentId: departmentId || null,
+        });
+        designationId = createdDesignation.id;
+        queryClient.setQueryData<any[]>(["designations", departmentId || "all"], (current) => {
+          const items = current ?? [];
+          return items.some((x: any) => String(x.id) === String(createdDesignation.id)) ? items : [...items, createdDesignation];
+        });
+      }
+
       const updatedPayload = {
         ...payload,
+        departmentId: departmentId || null,
+        designationId: designationId || null,
         avatarUrl,
         // Reporting manager is optional. An empty selection explicitly clears
         // the manager so top-level employees (such as Admin) can be saved.
@@ -3231,56 +3282,40 @@ function EditEmployeeModal({
 
               {/* Department */}
               <div>
-                <label className="text-[13px] font-medium text-ink-soft">
-                  Department <span className="text-danger-500">*</span>
-                </label>
-
-                <select
-                  {...register("departmentId", {
-                    required: "Department is required",
-                    onChange: () => {
-                      setValue("designationId", "");
-                    },
-                  })}
-                  className={`mt-1.5 h-10 w-full rounded-xl border bg-white px-3.5 text-sm ${errors.departmentId ? "border-danger-500" : "border-line"}`}
-                >
-                  <option value="">Select department</option>
-
-                  {departments?.map((department: any) => (
-                    <option key={department.id} value={department.id}>
-                      {department.name}
-                    </option>
-                  ))}
-                </select>
-                {errors.departmentId && <p className="mt-1 text-xs text-danger-500">{errors.departmentId.message}</p>}
+                <label className="text-[13px] font-medium text-ink-soft">Department</label>
+                <input
+                  list="employee-department-options"
+                  value={departmentInput}
+                  onChange={(e) => {
+                    setDepartmentInput(e.target.value);
+                    const match = (departments ?? []).find((d: any) => String(d.name).toLowerCase() === e.target.value.trim().toLowerCase());
+                    setValue("departmentId", match?.id ?? "", { shouldDirty: true });
+                  }}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                  placeholder="Select or type department"
+                />
+                <datalist id="employee-department-options">
+                  {(departments ?? []).map((department: any) => <option key={department.id} value={department.name} />)}
+                </datalist>
               </div>
 
               {/* Designation */}
               <div>
-                <label className="text-[13px] font-medium text-ink-soft">
-                  Designation <span className="text-danger-500">*</span>
-                </label>
-
-                <select
-                  {...register("designationId", {
-                    required: "Designation is required",
-                  })}
-                  disabled={!selectedDepartmentId}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm disabled:opacity-50"
-                >
-                  <option value="">
-                    {selectedDepartmentId
-                      ? "Select designation"
-                      : "Select department first"}
-                  </option>
-
-                  {designations?.map((designation: any) => (
-                    <option key={designation.id} value={designation.id}>
-                      {designation.title}
-                    </option>
-                  ))}
-                </select>
-                {errors.designationId && <p className="mt-1 text-xs text-danger-500">{errors.designationId.message}</p>}
+                <label className="text-[13px] font-medium text-ink-soft">Designation</label>
+                <input
+                  list="employee-designation-options"
+                  value={designationInput}
+                  onChange={(e) => {
+                    setDesignationInput(e.target.value);
+                    const match = (designations ?? []).find((d: any) => String(d.title).toLowerCase() === e.target.value.trim().toLowerCase());
+                    setValue("designationId", match?.id ?? "", { shouldDirty: true });
+                  }}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                  placeholder="Select or type designation"
+                />
+                <datalist id="employee-designation-options">
+                  {(designations ?? []).map((designation: any) => <option key={designation.id} value={designation.title} />)}
+                </datalist>
               </div>
 
               {/* Manager Status */}
