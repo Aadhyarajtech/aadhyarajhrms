@@ -9,7 +9,6 @@ import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 // PUBLIC PAGES
 // =========================================================
 
-const Landing = lazy(() => import("@/pages/Landing"));
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
 
@@ -113,7 +112,7 @@ export default function App() {
             PUBLIC ROUTES
         ===================================================== */}
 
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
 
         <Route path="/login" element={<Login />} />
 
