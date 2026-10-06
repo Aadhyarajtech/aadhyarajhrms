@@ -253,39 +253,41 @@ attendanceRouter.post(
   },
 );
 
-attendanceRouter.post(
-  "/check-out",
-  validate(checkOutSchema),
-  async (req, res, next) => {
-    try {
-      if (!req.user!.employeeId) {
-        throw AppError.forbidden("Only employees can check out.");
-      }
-
-      const options = req.body as z.infer<typeof checkOutSchema>;
-      const record = await repo.checkOut(req.user!.employeeId, options);
-
-      if (!record) {
-        throw AppError.badRequest(
-          "You need to check in before you can check out.",
-        );
-      }
-
-      res.json({ record });
-    } catch (err) {
-      if (
-        err instanceof Error &&
-        err.message === "A reason is required for early departure."
-      ) {
-        next(AppError.badRequest(err.message));
-        return;
-      }
-
-      next(err);
+attendanceRouter.post("/check-out", async (req, res, next) => {
+  try {
+    if (!req.user!.employeeId) {
+      throw AppError.forbidden("Only employees can check out.");
     }
-  },
-);
 
+    const options = req.body as z.infer<typeof checkOutSchema>;
+
+    const record = await repo.checkOut(
+      req.user!.employeeId,
+      options,
+    );
+
+    if (!record) {
+      throw AppError.badRequest(
+        "You need to check in before you can check out.",
+      );
+    }
+
+    res.json({ record });
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      (
+        err.message === "A reason is required for early departure." ||
+        err.message === "End the active break before checking out."
+      )
+    ) {
+      next(AppError.badRequest(err.message));
+      return;
+    }
+    next(err);
+  }
+},
+);
 attendanceRouter.post("/break/start", async (req, res, next) => {
   try {
     if (!req.user!.employeeId)
@@ -1153,18 +1155,18 @@ attendanceRouter.get("/ai-patterns", async (req, res, next) => {
         averageCheckInMinutes:
           checkInValues.length > 0
             ? Math.round(
-                checkInValues.reduce((sum, value) => sum + value, 0) /
-                  checkInValues.length,
-              )
+              checkInValues.reduce((sum, value) => sum + value, 0) /
+              checkInValues.length,
+            )
             : null,
 
         averageWorkHours:
           workHourValues.length > 0
             ? Math.round(
-                (workHourValues.reduce((sum, value) => sum + value, 0) /
-                  workHourValues.length) *
-                  100,
-              ) / 100
+              (workHourValues.reduce((sum, value) => sum + value, 0) /
+                workHourValues.length) *
+              100,
+            ) / 100
             : null,
       };
     });
@@ -1208,15 +1210,15 @@ attendanceRouter.get("/ai-patterns", async (req, res, next) => {
     const strongestDay =
       activeWeekdays.length > 0
         ? [...activeWeekdays].sort(
-            (a, b) => b.attendanceRate - a.attendanceRate,
-          )[0].day
+          (a, b) => b.attendanceRate - a.attendanceRate,
+        )[0].day
         : null;
 
     const weakestDay =
       activeWeekdays.length > 0
         ? [...activeWeekdays].sort(
-            (a, b) => a.attendanceRate - b.attendanceRate,
-          )[0].day
+          (a, b) => a.attendanceRate - b.attendanceRate,
+        )[0].day
         : null;
 
     // ---------------------------------------------------------------------
