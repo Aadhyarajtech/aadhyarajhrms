@@ -227,7 +227,8 @@ export default function Tickets() {
           ticket.isBreached);
       if (!isNeedsAttention) {
         return false;
-      }    } else if (statusFilter !== "ALL" && ticket.status !== statusFilter) {
+      }
+    } else if (statusFilter !== "ALL" && ticket.status !== statusFilter) {
       return false;
     }
     if (categoryFilter !== "ALL" && ticket.category !== categoryFilter) {
@@ -352,11 +353,10 @@ export default function Tickets() {
           <button
             type="button"
             onClick={() => setActiveTab("management")}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-              activeTab === "management"
-                ? "bg-white text-gray-900 shadow-xs"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${activeTab === "management"
+              ? "bg-white text-gray-900 shadow-xs"
+              : "text-gray-600 hover:text-gray-900"
+              }`}
           >
             <LayoutDashboard className="h-3.5 w-3.5 text-brand-600" />
             <span>Ticket Queue</span>
@@ -364,11 +364,10 @@ export default function Tickets() {
           <button
             type="button"
             onClick={() => setActiveTab("analytics")}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-              activeTab === "analytics"
-                ? "bg-indigo-600 text-white shadow-xs"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${activeTab === "analytics"
+              ? "bg-indigo-600 text-white shadow-xs"
+              : "text-gray-600 hover:text-gray-900"
+              }`}
           >
             <BarChart3 className="h-3.5 w-3.5" />
             <span>Executive Analytics</span>
@@ -410,11 +409,10 @@ export default function Tickets() {
                   key={tab.id}
                   type="button"
                   onClick={() => setStatusFilter(tab.id)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                    statusFilter === tab.id
-                      ? "bg-brand-600 text-white shadow-xs"
-                      : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
-                  }`}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${statusFilter === tab.id
+                    ? "bg-brand-600 text-white shadow-xs"
+                    : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -430,13 +428,12 @@ export default function Tickets() {
                     setStatusFilter("NEEDS_ATTENTION");
                   }
                 }}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  statusFilter === "NEEDS_ATTENTION"
-                    ? "bg-red-600 text-white shadow-xs"
-                    : atRiskCount > 0
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${statusFilter === "NEEDS_ATTENTION"
+                  ? "bg-red-600 text-white shadow-xs"
+                  : atRiskCount > 0
                     ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
                     : "bg-gray-50 text-gray-500 border border-gray-200"
-                }`}
+                  }`}
                 title="Filter open tickets requiring immediate attention or triage"
               >
                 <AlertTriangle className="h-3 w-3" />
@@ -444,334 +441,342 @@ export default function Tickets() {
               </button>
             </div>
 
-        {/* Search & Category Filter */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[200px] flex-1 sm:w-64">
-            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by ID, subject, keyword..."
-              className="w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-7 text-xs text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2 top-2 text-gray-400 hover:text-gray-600"
+            {/* Search & Category Filter */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[200px] flex-1 sm:w-64">
+                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by ID, subject, keyword..."
+                  className="w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-7 text-xs text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 focus:border-brand-500 focus:outline-none"
               >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
+                {categoryOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+
+              <span className="text-[11px] font-medium text-gray-400">
+                Showing {filteredTickets.length} of {totalCount}
+              </span>
+            </div>
           </div>
 
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 focus:border-brand-500 focus:outline-none"
-          >
-            {categoryOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-xs">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-gray-50/90 text-gray-700 font-semibold">
+                  <th className="py-2.5 px-3 text-left whitespace-nowrap">Ticket ID</th>
+                  <th className="py-2.5 px-2 text-left whitespace-nowrap">Raised By</th>
+                  <th className="py-2.5 px-2 text-left whitespace-nowrap">Category</th>
+                  <th className="py-2.5 px-2 text-left whitespace-nowrap">AI Insights</th>
+                  <th className="py-2.5 px-2 text-left whitespace-nowrap">Priority</th>
+                  <th className="py-2.5 px-2 text-left">Subject</th>
+                  <th className="py-2.5 px-2 text-left whitespace-nowrap">Assigned</th>
+                  <th className="py-2.5 px-2 text-center whitespace-nowrap" title="Attachment">File</th>
+                  <th className="py-2.5 px-2 text-left whitespace-nowrap">Status</th>
+                  <th className="py-2.5 px-2 text-left whitespace-nowrap">Attention / SLA Risk</th>
+                  <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
+                </tr>
+              </thead>
 
-          <span className="text-[11px] font-medium text-gray-400">
-            Showing {filteredTickets.length} of {totalCount}
-          </span>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-xs">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b bg-gray-50/90 text-gray-700 font-semibold">
-              <th className="py-2.5 px-3 text-left whitespace-nowrap">Ticket ID</th>
-              <th className="py-2.5 px-2 text-left whitespace-nowrap">Category</th>
-              <th className="py-2.5 px-2 text-left whitespace-nowrap">AI Insights</th>
-              <th className="py-2.5 px-2 text-left whitespace-nowrap">Priority</th>
-              <th className="py-2.5 px-2 text-left">Subject</th>
-              <th className="py-2.5 px-2 text-left whitespace-nowrap">Assigned</th>
-              <th className="py-2.5 px-2 text-center whitespace-nowrap" title="Attachment">File</th>
-              <th className="py-2.5 px-2 text-left whitespace-nowrap">Status</th>
-              <th className="py-2.5 px-2 text-left whitespace-nowrap">Attention / SLA Risk</th>
-              <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
-            </tr>
-          </thead>
-
-          <tbody className="divide-y divide-gray-100">
-            {filteredTickets?.length ? (
-              filteredTickets.map((ticket: any) => (
-                <tr
-                  key={ticket._id}
-                  className="hover:bg-gray-50/80 transition-colors"
-                >
-                  {/* Ticket ID */}
-                  <td className="py-2.5 px-3 font-semibold whitespace-nowrap">
-                    <Link
-                      to={`/app/tickets/${ticket._id}`}
-                      className="inline-flex items-center gap-1.5 text-brand-600 hover:text-brand-800 hover:underline"
-                      title="Click to open conversation"
+              <tbody className="divide-y divide-gray-100">
+                {filteredTickets?.length ? (
+                  filteredTickets.map((ticket: any) => (
+                    <tr
+                      key={ticket._id}
+                      className="hover:bg-gray-50/80 transition-colors"
                     >
-                      <MessageCircle className="h-3.5 w-3.5 shrink-0 text-brand-500" />
-                      <span>{ticket.ticketId}</span>
-                    </Link>
-                  </td>
+                      {/* Ticket ID */}
+                      <td className="py-2.5 px-3 font-semibold whitespace-nowrap">
+                        <Link
+                          to={`/app/tickets/${ticket._id}`}
+                          className="inline-flex items-center gap-1.5 text-brand-600 hover:text-brand-800 hover:underline"
+                          title="Click to open conversation"
+                        >
+                          <MessageCircle className="h-3.5 w-3.5 shrink-0 text-brand-500" />
+                          <span>{ticket.ticketId}</span>
+                        </Link>
+                      </td>
+                      <td className="py-2.5 px-2 whitespace-nowrap">
+                        <div className="font-medium">
+                          {ticket.raisedBy || "Unknown"}
+                        </div>
+                        {ticket.raisedByEmployeeCode && (
+                          <div className="text-xs text-gray-500">
+                            {ticket.raisedByEmployeeCode}
+                          </div>
+                        )}
+                      </td>
 
-                  {/* Category */}
-                  <td className="py-2.5 px-2 text-gray-700 whitespace-nowrap">
-                    {ticket.category === "Complaint" ? (
-                      <span className="font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 text-[11px]">
-                        Grievance
-                      </span>
-                    ) : (
-                      <span className="font-medium text-gray-800">{ticket.category}</span>
-                    )}
-                  </td>
-
-                  {/* AI Insights */}
-                  <td className="py-2.5 px-2">
-                    {ticket.aiCategory ? (
-                      <div className="flex flex-col items-start gap-1">
-                        <div className="flex items-center gap-1">
-                          <span
-                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap ${
-                              ticket.aiCategory !== ticket.category
-                                ? "bg-amber-50 text-amber-900 border border-amber-200"
-                                : "bg-emerald-50 text-emerald-900 border border-emerald-200"
-                            }`}
-                            title={ticket.aiReason || ""}
-                          >
-                            <span>{ticket.aiCategory !== ticket.category ? "⚠️ Rec:" : "✅"}</span>
-                            <span>{ticket.aiCategory}</span>
+                      {/* Category */}
+                      <td className="py-2.5 px-2 text-gray-700 whitespace-nowrap">
+                        {ticket.category === "Complaint" ? (
+                          <span className="font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 text-[11px]">
+                            Grievance
                           </span>
-                          {ticket.aiConfidence !== null && ticket.aiConfidence !== undefined && (
-                            <span className="text-[10px] font-medium text-gray-400">
-                              {Math.round(ticket.aiConfidence * 100)}%
+                        ) : (
+                          <span className="font-medium text-gray-800">{ticket.category}</span>
+                        )}
+                      </td>
+
+                      {/* AI Insights */}
+                      <td className="py-2.5 px-2">
+                        {ticket.aiCategory ? (
+                          <div className="flex flex-col items-start gap-1">
+                            <div className="flex items-center gap-1">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap ${ticket.aiCategory !== ticket.category
+                                  ? "bg-amber-50 text-amber-900 border border-amber-200"
+                                  : "bg-emerald-50 text-emerald-900 border border-emerald-200"
+                                  }`}
+                                title={ticket.aiReason || ""}
+                              >
+                                <span>{ticket.aiCategory !== ticket.category ? "⚠️ Rec:" : "✅"}</span>
+                                <span>{ticket.aiCategory}</span>
+                              </span>
+                              {ticket.aiConfidence !== null && ticket.aiConfidence !== undefined && (
+                                <span className="text-[10px] font-medium text-gray-400">
+                                  {Math.round(ticket.aiConfidence * 100)}%
+                                </span>
+                              )}
+                            </div>
+
+                            {ticket.aiSentiment && ticket.aiSentiment !== "NEUTRAL" && (
+                              <span
+                                className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold ${ticket.aiSentiment === "CRITICAL"
+                                  ? "bg-red-100 text-red-800 animate-pulse"
+                                  : ticket.aiSentiment === "FRUSTRATED"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-emerald-100 text-emerald-800"
+                                  }`}
+                              >
+                                {ticket.aiSentiment === "CRITICAL" ? "🚨 Critical" : ticket.aiSentiment === "FRUSTRATED" ? "🔥 Frustrated" : "✨ Positive"}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => analyzeTicketAi.mutate(ticket._id)}
+                            disabled={analyzingTicketId === ticket._id}
+                            className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 transition"
+                          >
+                            {analyzingTicketId === ticket._id ? (
+                              <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                            ) : (
+                              <Sparkles className="h-2.5 w-2.5 text-indigo-600" />
+                            )}
+                            <span>{analyzingTicketId === ticket._id ? "..." : "AI"}</span>
+                          </button>
+                        )}
+                      </td>
+
+                      {/* Priority */}
+                      <td className="py-2.5 px-2 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold ${ticket.priority === "CRITICAL"
+                            ? "bg-rose-100 text-rose-800 border border-rose-300 font-bold animate-pulse shadow-2xs"
+                            : ticket.priority === "HIGH"
+                              ? "bg-red-50 text-red-700 border border-red-200"
+                              : ticket.priority === "MEDIUM"
+                                ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                : "bg-slate-50 text-slate-700 border border-slate-200"
+                            }`}
+                        >
+                          {ticket.priority === "CRITICAL" && <span>🚨</span>}
+                          {ticket.priority}
+                        </span>
+                      </td>
+
+                      {/* Subject */}
+                      <td className="py-2.5 px-2 max-w-[170px]">
+                        <Link
+                          to={`/app/tickets/${ticket._id}`}
+                          className="block truncate font-medium text-gray-900 hover:text-brand-600 hover:underline"
+                          title={ticket.subject}
+                        >
+                          {ticket.subject}
+                        </Link>
+                      </td>
+
+                      {/* Assigned To */}
+                      <td
+                        className="py-2.5 px-2 text-gray-600 max-w-[110px] truncate"
+                        title={ticket.assignedTo || "Not Assigned"}
+                      >
+                        {ticket.assignedTo || "—"}
+                      </td>
+
+                      {/* Attachment */}
+                      <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                        {ticket.attachment ? (
+                          <a
+                            href={resolveAssetUrl(ticket.attachment) ?? "#"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center p-1 rounded-md text-brand-600 hover:bg-brand-50 hover:text-brand-800 transition"
+                            title="View Attachment"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                          </a>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Status Dropdown */}
+                      <td className="py-2.5 px-2 whitespace-nowrap">
+                        <select
+                          value={ticket.status}
+                          disabled={updateStatus.isPending}
+                          onChange={(e) => {
+                            const nextStatus = e.target.value as (typeof STATUS_OPTIONS)[number];
+                            if (!STATUS_OPTIONS.includes(nextStatus)) return;
+                            updateStatus.mutate({
+                              id: ticket._id,
+                              status: nextStatus,
+                            });
+                          }}
+                          className="rounded border border-gray-300 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 focus:border-brand-500 focus:outline-none"
+                        >
+                          {STATUS_OPTIONS.map((status) => (
+                            <option key={status} value={status}>
+                              {formatStatus(status)}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* SLA & Predictive Risk */}
+                      <td className="py-2.5 px-2 whitespace-nowrap">
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold ${slaBadgeClass(
+                              ticket.slaStatus,
+                            )}`}
+                            title={`Due: ${formatDateTime(ticket.slaDueAt)}`}
+                          >
+                            {formatSlaStatus(ticket.slaStatus)}
+                          </span>
+
+                          {/* AI Ticket Attention & Stagnation Risk */}
+                          {ticket.status === "OPEN" &&
+                            (ticket.slaRiskLevel === "CRITICAL" ||
+                              ticket.attentionBadge === "HIGH_ATTENTION" ||
+                              ticket.isBreached) ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded bg-red-100 text-red-800 px-2 py-0.5 text-[10px] font-bold border border-red-300 shadow-2xs animate-pulse cursor-help"
+                              title={ticket.attentionReason || ticket.factors?.join(" • ") || "High attention required"}
+                            >
+                              <AlertTriangle className="h-2.5 w-2.5 shrink-0 text-red-700" />
+                              <span>🔴 High Attention</span>
+                            </span>
+                          ) : ticket.status === "OPEN" &&
+                            (ticket.slaRiskLevel === "ELEVATED" ||
+                              ticket.attentionBadge === "ATTENTION_REQUIRED") ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded bg-amber-100 text-amber-900 px-2 py-0.5 text-[10px] font-semibold border border-amber-300 shadow-2xs cursor-help"
+                              title={ticket.attentionReason || ticket.factors?.join(" • ") || "Attention required"}
+                            >
+                              <Clock className="h-2.5 w-2.5 shrink-0 text-amber-700" />
+                              <span>🟡 Needs Attention</span>
+                            </span>
+                          ) : ticket.status === "IN_PROGRESS" ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[10px] font-medium border border-blue-200">
+                              <span>In Progress</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5 text-[10px] font-medium border border-emerald-200">
+                              🟢 On Track
                             </span>
                           )}
                         </div>
+                      </td>
 
-                        {ticket.aiSentiment && ticket.aiSentiment !== "NEUTRAL" && (
-                          <span
-                            className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold ${
-                              ticket.aiSentiment === "CRITICAL"
-                                ? "bg-red-100 text-red-800 animate-pulse"
-                                : ticket.aiSentiment === "FRUSTRATED"
-                                ? "bg-amber-100 text-amber-800"
-                                : "bg-emerald-100 text-emerald-800"
-                            }`}
+                      {/* Actions */}
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          <Link
+                            to={`/app/tickets/${ticket._id}`}
+                            className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand-700 shadow-2xs transition"
+                            title="Open conversation"
                           >
-                            {ticket.aiSentiment === "CRITICAL" ? "🚨 Critical" : ticket.aiSentiment === "FRUSTRATED" ? "🔥 Frustrated" : "✨ Positive"}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => analyzeTicketAi.mutate(ticket._id)}
-                        disabled={analyzingTicketId === ticket._id}
-                        className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 transition"
-                      >
-                        {analyzingTicketId === ticket._id ? (
-                          <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-                        ) : (
-                          <Sparkles className="h-2.5 w-2.5 text-indigo-600" />
-                        )}
-                        <span>{analyzingTicketId === ticket._id ? "..." : "AI"}</span>
-                      </button>
-                    )}
-                  </td>
+                            <MessageCircle className="h-3 w-3" />
+                            <span>Chat</span>
+                          </Link>
 
-                  {/* Priority */}
-                  <td className="py-2.5 px-2 whitespace-nowrap">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold ${
-                        ticket.priority === "CRITICAL"
-                          ? "bg-rose-100 text-rose-800 border border-rose-300 font-bold animate-pulse shadow-2xs"
-                          : ticket.priority === "HIGH"
-                          ? "bg-red-50 text-red-700 border border-red-200"
-                          : ticket.priority === "MEDIUM"
-                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                          : "bg-slate-50 text-slate-700 border border-slate-200"
-                      }`}
+                          {["Complaint", "Manager Concern"].includes(ticket.category) && !ticket.isEscalated && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEscalationTicket(ticket);
+                                setEscalationReason("");
+                                setEscalationTarget("HR_ADMIN");
+                              }}
+                              disabled={escalateTicket.isPending}
+                              className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 transition"
+                              title="Escalate grievance"
+                            >
+                              <AlertTriangle className="h-3 w-3" />
+                              <span>Escalate</span>
+                            </button>
+                          )}
+
+                          {["Complaint", "Manager Concern"].includes(ticket.category) && ticket.isEscalated && (
+                            <>
+                              <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">
+                                Escalated
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setHistoryTicket(ticket)}
+                                className="inline-flex items-center rounded border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-50 transition"
+                              >
+                                History
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={10}
+                      className="p-8 text-center text-sm text-gray-500"
                     >
-                      {ticket.priority === "CRITICAL" && <span>🚨</span>}
-                      {ticket.priority}
-                    </span>
-                  </td>
-
-                  {/* Subject */}
-                  <td className="py-2.5 px-2 max-w-[170px]">
-                    <Link
-                      to={`/app/tickets/${ticket._id}`}
-                      className="block truncate font-medium text-gray-900 hover:text-brand-600 hover:underline"
-                      title={ticket.subject}
-                    >
-                      {ticket.subject}
-                    </Link>
-                  </td>
-
-                  {/* Assigned To */}
-                  <td
-                    className="py-2.5 px-2 text-gray-600 max-w-[110px] truncate"
-                    title={ticket.assignedTo || "Not Assigned"}
-                  >
-                    {ticket.assignedTo || "—"}
-                  </td>
-
-                  {/* Attachment */}
-                  <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                    {ticket.attachment ? (
-                      <a
-                        href={resolveAssetUrl(ticket.attachment) ?? "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center p-1 rounded-md text-brand-600 hover:bg-brand-50 hover:text-brand-800 transition"
-                        title="View Attachment"
-                      >
-                        <Paperclip className="h-3.5 w-3.5" />
-                      </a>
-                    ) : (
-                      <span className="text-gray-300">—</span>
-                    )}
-                  </td>
-
-                  {/* Status Dropdown */}
-                  <td className="py-2.5 px-2 whitespace-nowrap">
-                    <select
-                      value={ticket.status}
-                      disabled={updateStatus.isPending}
-                      onChange={(e) => {
-                        const nextStatus = e.target.value as (typeof STATUS_OPTIONS)[number];
-                        if (!STATUS_OPTIONS.includes(nextStatus)) return;
-                        updateStatus.mutate({
-                          id: ticket._id,
-                          status: nextStatus,
-                        });
-                      }}
-                      className="rounded border border-gray-300 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 focus:border-brand-500 focus:outline-none"
-                    >
-                      {STATUS_OPTIONS.map((status) => (
-                        <option key={status} value={status}>
-                          {formatStatus(status)}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  {/* SLA & Predictive Risk */}
-                  <td className="py-2.5 px-2 whitespace-nowrap">
-                    <div className="flex flex-col items-start gap-1">
-                      <span
-                        className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold ${slaBadgeClass(
-                          ticket.slaStatus,
-                        )}`}
-                        title={`Due: ${formatDateTime(ticket.slaDueAt)}`}
-                      >
-                        {formatSlaStatus(ticket.slaStatus)}
-                      </span>
-
-                      {/* AI Ticket Attention & Stagnation Risk */}
-                      {ticket.status === "OPEN" &&
-                      (ticket.slaRiskLevel === "CRITICAL" ||
-                        ticket.attentionBadge === "HIGH_ATTENTION" ||
-                        ticket.isBreached) ? (
-                        <span
-                          className="inline-flex items-center gap-1 rounded bg-red-100 text-red-800 px-2 py-0.5 text-[10px] font-bold border border-red-300 shadow-2xs animate-pulse cursor-help"
-                          title={ticket.attentionReason || ticket.factors?.join(" • ") || "High attention required"}
-                        >
-                          <AlertTriangle className="h-2.5 w-2.5 shrink-0 text-red-700" />
-                          <span>🔴 High Attention</span>
-                        </span>
-                      ) : ticket.status === "OPEN" &&
-                        (ticket.slaRiskLevel === "ELEVATED" ||
-                          ticket.attentionBadge === "ATTENTION_REQUIRED") ? (
-                        <span
-                          className="inline-flex items-center gap-1 rounded bg-amber-100 text-amber-900 px-2 py-0.5 text-[10px] font-semibold border border-amber-300 shadow-2xs cursor-help"
-                          title={ticket.attentionReason || ticket.factors?.join(" • ") || "Attention required"}
-                        >
-                          <Clock className="h-2.5 w-2.5 shrink-0 text-amber-700" />
-                          <span>🟡 Needs Attention</span>
-                        </span>
-                      ) : ticket.status === "IN_PROGRESS" ? (
-                        <span className="inline-flex items-center gap-1 rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[10px] font-medium border border-blue-200">
-                          <span>In Progress</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5 text-[10px] font-medium border border-emerald-200">
-                          🟢 On Track
-                        </span>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Actions */}
-                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                    <div className="inline-flex items-center justify-end gap-1.5">
-                      <Link
-                          to={`/app/tickets/${ticket._id}`}
-                          className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand-700 shadow-2xs transition"
-                          title="Open conversation"
-                        >
-                          <MessageCircle className="h-3 w-3" />
-                          <span>Chat</span>
-                        </Link>
-
-                      {["Complaint", "Manager Concern"].includes(ticket.category) && !ticket.isEscalated && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEscalationTicket(ticket);
-                            setEscalationReason("");
-                            setEscalationTarget("HR_ADMIN");
-                          }}
-                          disabled={escalateTicket.isPending}
-                          className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 transition"
-                          title="Escalate grievance"
-                        >
-                          <AlertTriangle className="h-3 w-3" />
-                          <span>Escalate</span>
-                        </button>
-                      )}
-
-                      {["Complaint", "Manager Concern"].includes(ticket.category) && ticket.isEscalated && (
-                        <>
-                          <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">
-                            Escalated
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setHistoryTicket(ticket)}
-                            className="inline-flex items-center rounded border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-50 transition"
-                          >
-                            History
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={10}
-                  className="p-8 text-center text-sm text-gray-500"
-                >
-                  {searchQuery || statusFilter !== "ALL" || categoryFilter !== "ALL"
-                    ? "No tickets match your filter criteria."
-                    : "No assigned tickets found."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </>
-  )}
+                      {searchQuery || statusFilter !== "ALL" || categoryFilter !== "ALL"
+                        ? "No tickets match your filter criteria."
+                        : "No assigned tickets found."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {historyTicket && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

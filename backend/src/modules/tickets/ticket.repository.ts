@@ -160,13 +160,13 @@ export function assignDepartment(category: string) {
     case "Payroll":
       return "FINANCE";
 
-   // Manager-scoped grievances are assigned to the selected manager.
-      // The employee id is stored in assignedManagerId.
-      case "Manager Concern":
-  return "SUPER_ADMIN";
+    // Manager-scoped grievances are assigned to the selected manager.
+    // The employee id is stored in assignedManagerId.
+    case "Manager Concern":
+      return "SUPER_ADMIN";
 
-case "Complaint":
-  return "HR_ADMIN";
+    case "Complaint":
+      return "HR_ADMIN";
 
     case "IT Support":
       return "IT_SUPPORT";
@@ -602,6 +602,55 @@ export const HR_CATEGORIES = [
   "Infrastructure",
   "Other",
 ];
+async function enrichTicketsWithRaisedBy(tickets: any[]) {
+  if (!tickets.length) {
+    return tickets;
+  }
+
+  const employeeIds = [
+    ...new Set(
+      tickets
+        .map((ticket: any) => String(ticket.employeeId || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+
+  if (!employeeIds.length) {
+    return tickets;
+  }
+
+  const employees = await Employee.find({
+    _id: { $in: employeeIds },
+  })
+    .select("_id firstName lastName employeeCode")
+    .lean();
+
+  const employeeMap = new Map<
+    string,
+    {
+      name: string;
+      employeeCode: string;
+    }
+  >(
+    employees.map((employee: any) => [
+      String(employee._id),
+      {
+        name: `${employee.firstName || ""} ${employee.lastName || ""}`.trim(),
+        employeeCode: employee.employeeCode || "",
+      },
+    ]),
+  );
+
+  return tickets.map((ticket: any) => {
+    const employee = employeeMap.get(String(ticket.employeeId));
+
+    return {
+      ...ticket,
+      raisedBy: employee?.name || "Employee unavailable",
+      raisedByEmployeeCode: employee?.employeeCode || "",
+    };
+  });
+}
 
 export async function getTicketsForDepartment(
   role: string,
@@ -611,59 +660,70 @@ export async function getTicketsForDepartment(
 
   // SUPER_ADMIN → all tickets
   if (normalizedRole === "SUPER_ADMIN") {
-    return Ticket.find({})
+    const tickets = await Ticket.find({})
       .sort({ createdAt: -1 })
       .lean();
+
+    return enrichTicketsWithRaisedBy(tickets);
   }
 
-  // HR_ADMIN → ONLY HR_ADMIN assigned tickets
+  // HR_ADMIN → HR tickets
   if (normalizedRole === "HR_ADMIN") {
-    return Ticket.find({
+    const tickets = await Ticket.find({
       assignedTo: "HR_ADMIN",
     })
       .sort({ createdAt: -1 })
       .lean();
+
+    return enrichTicketsWithRaisedBy(tickets);
   }
 
-  // RECRUITER → ONLY RECRUITER assigned tickets
+  // RECRUITER → Recruitment tickets
   if (normalizedRole === "RECRUITER") {
-    return Ticket.find({
+    const tickets = await Ticket.find({
       assignedTo: "RECRUITER",
     })
       .sort({ createdAt: -1 })
       .lean();
+
+    return enrichTicketsWithRaisedBy(tickets);
   }
 
-  // FINANCE → ONLY FINANCE assigned tickets
+  // FINANCE → Finance tickets
   if (normalizedRole === "FINANCE") {
-    return Ticket.find({
+    const tickets = await Ticket.find({
       assignedTo: "FINANCE",
     })
       .sort({ createdAt: -1 })
       .lean();
+
+    return enrichTicketsWithRaisedBy(tickets);
   }
 
-  // IT_SUPPORT → ONLY IT_SUPPORT assigned tickets
+  // IT_SUPPORT → IT tickets
   if (normalizedRole === "IT_SUPPORT") {
-    return Ticket.find({
+    const tickets = await Ticket.find({
       assignedTo: "IT_SUPPORT",
     })
       .sort({ createdAt: -1 })
       .lean();
+
+    return enrichTicketsWithRaisedBy(tickets);
   }
 
-  // MANAGER → manager-owned/team Complaint tickets only
+  // MANAGER → manager/team tickets
   if (normalizedRole === "MANAGER") {
     if (!managerEmployeeId) {
       return [];
     }
 
-    return getTeamGrievanceTickets(
+    const tickets = await getTeamGrievanceTickets(
       String(managerEmployeeId),
     );
+
+    return enrichTicketsWithRaisedBy(tickets);
   }
 
-  // Never return global tickets for an unknown role.
   return [];
 }
 
@@ -753,7 +813,7 @@ export function isUserAuthorizedForTicket(
     return (
       !!user.employeeId &&
       String(ticket.assignedManagerId) ===
-        String(user.employeeId)
+      String(user.employeeId)
     );
   }
 
