@@ -7,6 +7,7 @@ import {
   Shift,
   User,
 } from "@/db/models";
+import { env } from "@/config/env";
 import { nowIso } from "@/db/connection";
 import { AppError } from "@/utils/errors";
 import {
@@ -1122,6 +1123,16 @@ export async function requestRegularization(
   employeeId: string,
   date: string,
   note: string,
+  details: Partial<{
+    requestedCheckIn: string | null;
+    requestedCheckOut: string | null;
+    requestedStatus:
+      | "PRESENT"
+      | "ABSENT"
+      | "HALF_DAY"
+      | "WORK_FROM_HOME"
+      | "ON_LEAVE";
+  }> = {},
 ) {
   if (!isValidDateString(date)) {
     throw new Error("Invalid attendance date.");
@@ -1153,17 +1164,31 @@ export async function requestRegularization(
 
   const attendance = await Attendance.findOne({ employeeId, date }).lean();
 
-  const requestedCheckIn = attendance?.checkIn ?? null;
-  const requestedCheckOut = attendance?.checkOut ?? null;
+  const requestedCheckIn =
+    details.requestedCheckIn && /^\d{2}:\d{2}$/.test(details.requestedCheckIn)
+      ? details.requestedCheckIn
+      : attendance?.checkIn ?? null;
+  const requestedCheckOut =
+    details.requestedCheckOut && /^\d{2}:\d{2}$/.test(details.requestedCheckOut)
+      ? details.requestedCheckOut
+      : attendance?.checkOut ?? null;
   const requestedStatus =
-    attendance?.status &&
+    details.requestedStatus &&
     ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"].includes(
-      attendance.status,
+      details.requestedStatus,
     )
-      ? attendance.status
-      : "PRESENT";
+      ? details.requestedStatus
+      : attendance?.status &&
+          ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"].includes(
+            attendance.status,
+          )
+        ? attendance.status
+        : "PRESENT";
 
   const now = nowIso();
+  const expiresAt = new Date(
+    Date.now() + env.regularizationExpiryDays * 24 * 60 * 60 * 1000,
+  ).toISOString();
 
   const request = await AttendanceRegularizationRequest.create({
     employeeId,
@@ -1174,7 +1199,7 @@ export async function requestRegularization(
     requestedStatus,
     reason,
     status: "PENDING",
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt,
     expiredAt: null,
     approverId: null,
     decisionNote: null,

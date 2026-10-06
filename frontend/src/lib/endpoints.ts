@@ -1103,6 +1103,11 @@ export const AttendanceApi = {
     date: string,
     note: string,
     employeeId?: string,
+    details?: {
+      requestedStatus?: string;
+      requestedCheckIn?: string | null;
+      requestedCheckOut?: string | null;
+    },
   ) =>
     api
       .post<{
@@ -1111,6 +1116,9 @@ export const AttendanceApi = {
         date,
         note,
         employeeId,
+        requestedStatus: details?.requestedStatus,
+        requestedCheckIn: details?.requestedCheckIn || undefined,
+        requestedCheckOut: details?.requestedCheckOut || undefined,
       })
       .then((r) => r.data.record),
 
