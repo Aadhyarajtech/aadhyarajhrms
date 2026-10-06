@@ -32,6 +32,21 @@ const regularizationSchema = z.object({
     .trim()
     .min(3, "Please describe the reason for regularization.")
     .max(1000, "Regularization reason must not exceed 1000 characters."),
+  requestedStatus: z
+    .enum(["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"])
+    .optional(),
+  requestedCheckIn: z
+    .string()
+    .trim()
+    .regex(/^$|^\d{2}:\d{2}$/i, "Invalid check-in time.")
+    .optional()
+    .nullable(),
+  requestedCheckOut: z
+    .string()
+    .trim()
+    .regex(/^$|^\d{2}:\d{2}$/i, "Invalid check-out time.")
+    .optional()
+    .nullable(),
 });
 
 const regularizationDecisionSchema = z.object({
@@ -622,9 +637,13 @@ attendanceRouter.get("/ai-anomalies", async (req, res, next) => {
       anomalyResults.push(result);
     }
 
-    // Combine anomalies from all employees
-    const anomalies = anomalyResults.flatMap(
-      (result: any) => result.anomalies ?? [],
+    // Combine anomalies from all employees, preserving the source employee info.
+    const anomalies = anomalyResults.flatMap((result: any) =>
+      (result.anomalies ?? []).map((anomaly: any) => ({
+        ...anomaly,
+        employeeId: result.employeeId,
+        employeeName: result.employeeName,
+      })),
     );
 
     // Build combined summary
@@ -1508,13 +1527,24 @@ attendanceRouter.post(
         throw AppError.forbidden("Employee profile not found.");
       }
 
-      const { date, note } = req.body as z.infer<typeof regularizationSchema>;
+      const {
+        date,
+        note,
+        requestedCheckIn,
+        requestedCheckOut,
+        requestedStatus,
+      } = req.body as z.infer<typeof regularizationSchema>;
 
       res.json({
         record: await repo.requestRegularization(
           req.user!.employeeId,
           date,
           note,
+          {
+            requestedCheckIn: requestedCheckIn || null,
+            requestedCheckOut: requestedCheckOut || null,
+            requestedStatus,
+          },
         ),
       });
     } catch (err) {
@@ -1674,7 +1704,9 @@ attendanceRouter.get(
 
       if (
         status &&
-        !["PENDING", "APPROVED", "REJECTED", "CANCELLED"].includes(status)
+        !["PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXPIRED"].includes(
+          status,
+        )
       ) {
         throw AppError.badRequest("Invalid regularization request status.");
       }
