@@ -572,8 +572,8 @@ const createEmployeeSchema = z.object({
       "EMPLOYEE",
     ])
     .default("EMPLOYEE"),
-  departmentId: z.string(),
-  designationId: z.string(),
+  departmentId: z.string().trim().min(1).nullable().optional(),
+  designationId: z.string().trim().min(1).nullable().optional(),
   managerId: z.string().nullable().optional(),
   isManager: z.boolean().optional(),
   employmentType: z
@@ -661,8 +661,8 @@ const updateEmployeeSchema = z.object({
   gender: z.string().nullable().optional(),
   maritalStatus: z.string().nullable().optional(),
   dateOfBirth: z.string().nullable().optional(),
-  departmentId: z.string().optional(),
-  designationId: z.string().optional(),
+  departmentId: z.string().trim().min(1).nullable().optional(),
+  designationId: z.string().trim().min(1).nullable().optional(),
   managerId: z.string().nullable().optional(),
   isManager: z.boolean().optional(),
   employmentType: z

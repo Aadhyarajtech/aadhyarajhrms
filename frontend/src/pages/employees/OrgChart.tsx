@@ -96,7 +96,7 @@ const ADMIN_QUICK_QUERIES: QuickQuery[] = [
   {
     id: "q-3",
     category: "Manager Roster",
-    question: "List all Reporting Managers and direct report counts",
+    question: "List all Reporting Managers and reportees counts",
     renderResponse: (tree) => {
       const allEmps = flattenTree(tree);
       const managers = allEmps.filter((e) => e.directReports && e.directReports.length > 0);
@@ -115,7 +115,7 @@ const ADMIN_QUICK_QUERIES: QuickQuery[] = [
                   <p className="text-gray-500">{m.designationTitle}</p>
                 </div>
                 <span className="inline-block px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold text-[10px]">
-                  {m.directReports.length} Direct Reports
+                  {m.directReports.length}Reportees
                 </span>
               </div>
             ))}
@@ -245,7 +245,7 @@ const ADMIN_QUICK_QUERIES: QuickQuery[] = [
   {
     id: "q-7",
     category: "HR & Leadership",
-    question: "List Executive Direct Reports (Who reports to C-Level / Founder)",
+    question: "List Executive Reportees (Who reports to C-Level / Founder)",
     renderResponse: (tree) => {
       const rootNode = tree[0];
       if (!rootNode) return <div className="p-2 text-xs text-gray-500">No executive root node found.</div>;
@@ -254,7 +254,7 @@ const ADMIN_QUICK_QUERIES: QuickQuery[] = [
         <div className="space-y-2 text-[11px]">
           <p className="font-semibold text-gray-800 text-xs flex items-center gap-1.5">
             <Shield size={13} className="text-purple-600" />
-            Direct Reports to Executive ({fullName(rootNode)})
+            Reportees to Executive ({fullName(rootNode)})
           </p>
           <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg bg-white">
             {rootNode.directReports.map((emp) => (
@@ -634,15 +634,15 @@ export default function OrgChart() {
                 <span className="font-medium text-gray-900">{quickViewEmp.id}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Direct Reports:</span>
+                <span className="text-gray-400">Reportees:</span>
                 <span className="font-semibold text-purple-700">{quickViewEmp.directReports?.length || 0} Members</span>
               </div>
             </div>
 
-            {/* Direct Reports Roster */}
+            {/* Reportees Roster */}
             {quickViewEmp.directReports && quickViewEmp.directReports.length > 0 && (
               <div>
-                <p className="font-semibold text-gray-800 mb-2">Direct Reports:</p>
+                <p className="font-semibold text-gray-800 mb-2">Reportees:</p>
                 <div className="space-y-1.5 max-h-40 overflow-y-auto">
                   {quickViewEmp.directReports.map((report) => (
                     <div
@@ -1059,9 +1059,36 @@ function normalizeOrgData(data: unknown): OrgNodeData[] {
       }
     }
   };
+walk(data);
 
-  walk(data);
+  // Place Aniketh Sharad Nikam directly under Adithya Nuthakki
+  const targetAdithya = [...byId.values()].find(
+    (n) => fullName(n).toLowerCase() === "adithya nuthakki"
+  );
 
+  if (targetAdithya) {
+    let targetAniket = [...byId.values()].find(
+      (n) => fullName(n).toLowerCase().includes("aniket") || n.id === "ART-2026-0028"
+    );
+
+    if (!targetAniket) {
+      targetAniket = {
+        id: "ART-2026-0028",
+        firstName: "Aniketh",
+        lastName: "Sharad Nikam",
+        managerId: targetAdithya.id,
+        directReports: []
+      } as unknown as OrgNodeData;
+
+      byId.set(targetAniket.id, targetAniket);
+    } else {
+      targetAniket.managerId = targetAdithya.id;
+    }
+
+    parentById.set(targetAniket.id, targetAdithya.id);
+  }
+
+  // Ensure all nodes in byId have directReports initialized
   for (const node of byId.values()) {
     node.directReports = [];
   }
@@ -1076,6 +1103,16 @@ function normalizeOrgData(data: unknown): OrgNodeData[] {
       parent.directReports.push(child);
     }
   }
+  // Exclude employees marked for deletion/removal
+const excludedNames = ["vyshnavi", "lalit"];
+
+for (const [id, node] of byId.entries()) {
+  const name = fullName(node).toLowerCase();
+  if (excludedNames.some((excluded) => name.includes(excluded))) {
+    byId.delete(id);
+    parentById.delete(id);
+  }
+}
 
   const managerIds = new Map<string, string>();
 

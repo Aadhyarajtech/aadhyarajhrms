@@ -53,8 +53,8 @@ export interface EmployeeFilters {
 async function enrichEmployees(employeeDocs: any[]) {
   if (employeeDocs.length === 0) return [];
 
-  const departmentIds = [...new Set(employeeDocs.map((e) => e.departmentId))];
-  const designationIds = [...new Set(employeeDocs.map((e) => e.designationId))];
+  const departmentIds = [...new Set(employeeDocs.map((e) => e.departmentId).filter((id): id is string => Boolean(id)).map(String))];
+  const designationIds = [...new Set(employeeDocs.map((e) => e.designationId).filter((id): id is string => Boolean(id)).map(String))];
   const managerIds = [
     ...new Set(employeeDocs.map((e) => e.managerId).filter(Boolean)),
   ];
@@ -72,15 +72,15 @@ async function enrichEmployees(employeeDocs: any[]) {
     ]),
   ]);
 
-  const deptMap = new Map(departments.map((d) => [d._id, d]));
-  const desMap = new Map(designations.map((d) => [d._id, d]));
+  const deptMap = new Map(departments.map((d) => [String(d._id), d]));
+  const desMap = new Map(designations.map((d) => [String(d._id), d]));
   const managerMap = new Map(managers.map((m) => [m._id, m]));
   const userMap = new Map(users.map((u) => [u._id, u]));
   const reportCountMap = new Map(reportCounts.map((r) => [r._id, r.count]));
 
   return employeeDocs.map((e) => {
-    const dept = deptMap.get(e.departmentId);
-    const des = desMap.get(e.designationId);
+    const dept = e.departmentId ? deptMap.get(String(e.departmentId)) : undefined;
+    const des = e.designationId ? desMap.get(String(e.designationId)) : undefined;
     const manager = e.managerId ? managerMap.get(e.managerId) : undefined;
     const user = userMap.get(e.userId);
     const { _id, ...rest } = e;
@@ -310,8 +310,8 @@ export interface CreateEmployeeInput {
   firstName: string;
   lastName: string;
   role: string;
-  departmentId: string;
-  designationId: string;
+  departmentId?: string | null;
+  designationId?: string | null;
   managerId?: string | null;
   isManager?: boolean;
   employmentType?: string;
@@ -464,8 +464,8 @@ export async function createEmployee(input: CreateEmployeeInput) {
     certifications: input.certifications ?? [],
     workHistory: input.workHistory ?? [],
     skills: input.skills ?? [],
-    departmentId: input.departmentId,
-    designationId: input.designationId,
+    departmentId: input.departmentId ?? null,
+    designationId: input.designationId ?? null,
     managerId: input.managerId ?? null,
     isManager: input.isManager ?? input.role === "MANAGER",
     employmentType: (input.employmentType as any) ?? "FULL_TIME",
@@ -524,8 +524,8 @@ export interface UpdateEmployeeInput {
   gender?: string | null;
   maritalStatus?: string | null;
   dateOfBirth?: string | null;
-  departmentId?: string;
-  designationId?: string;
+  departmentId?: string | null;
+  designationId?: string | null;
   managerId?: string | null;
   isManager?: boolean;
   employmentType?: string;
@@ -792,8 +792,8 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
         employeeCode: merged.employeeCode ?? current.employeeCode,
         firstName: merged.firstName,
         lastName: merged.lastName,
-        departmentId: merged.departmentId,
-        designationId: merged.designationId,
+        departmentId: merged.departmentId ?? null,
+        designationId: merged.designationId ?? null,
         managerId: merged.managerId ?? null,
         ...(hasIsManagerUpdate ? { isManager: Boolean(input.isManager) } : {}),
         employmentType: merged.employmentType,
@@ -905,19 +905,19 @@ export async function getOrgChart() {
       ],
     },
   }).lean();
-  const designationIds = [...new Set(rows.map((e) => e.designationId))];
-  const departmentIds = [...new Set(rows.map((e) => e.departmentId))];
+  const designationIds = [...new Set(rows.map((e) => e.designationId).filter((id): id is string => Boolean(id)).map(String))];
+  const departmentIds = [...new Set(rows.map((e) => e.departmentId).filter((id): id is string => Boolean(id)).map(String))];
   const [designations, departments] = await Promise.all([
     Designation.find({ _id: { $in: designationIds } }).lean(),
     Department.find({ _id: { $in: departmentIds } }).lean(),
   ]);
-  const desMap = new Map(designations.map((d) => [d._id, d]));
-  const deptMap = new Map(departments.map((d) => [d._id, d]));
+  const desMap = new Map(designations.map((d) => [String(d._id), d]));
+  const deptMap = new Map(departments.map((d) => [String(d._id), d]));
 
   const sorted = [...rows].sort(
     (a, b) =>
-      (desMap.get(b.designationId)?.level ?? 0) -
-      (desMap.get(a.designationId)?.level ?? 0),
+      (desMap.get(b.designationId ? String(b.designationId) : "")?.level ?? 0) -
+      (desMap.get(a.designationId ? String(a.designationId) : "")?.level ?? 0),
   );
 
   const camel = sorted.map((e) => ({
@@ -927,9 +927,9 @@ export async function getOrgChart() {
     avatarUrl: e.avatarUrl,
     managerId: e.managerId,
     status: e.status,
-    designationTitle: desMap.get(e.designationId)?.title ?? null,
-    departmentName: deptMap.get(e.departmentId)?.name ?? null,
-    departmentColor: deptMap.get(e.departmentId)?.colorHex ?? null,
+    designationTitle: desMap.get(e.designationId ? String(e.designationId) : "")?.title ?? null,
+    departmentName: deptMap.get(e.departmentId ? String(e.departmentId) : "")?.name ?? null,
+    departmentColor: deptMap.get(e.departmentId ? String(e.departmentId) : "")?.colorHex ?? null,
   }));
 
   const byId = new Map(
@@ -1105,7 +1105,7 @@ export async function getManagersList() {
       id: employee._id,
       firstName: employee.firstName ?? "",
       lastName: employee.lastName ?? "",
-      designationTitle: desMap.get(employee.designationId)?.title ?? null,
+      designationTitle: desMap.get(employee.designationId ? String(employee.designationId) : "")?.title ?? null,
       role: userMap.get(employee.userId)?.role ?? null,
       directReportCount: reportMap.get(employee._id) ?? 0,
     }));

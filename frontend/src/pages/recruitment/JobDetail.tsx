@@ -858,10 +858,7 @@ export default function JobDetail() {
               {rankedCandidates.length ? (
                 <div className="mt-3 space-y-2">
                   {rankedCandidates.slice(0, 5).map((candidate: any) => {
-                    const score =
-                      candidate.screening?.score ??
-                      candidate.jobFitScore ??
-                      0;
+                    const score = candidate.jobFitScore ?? 0;
 
                     return (
                       <div
