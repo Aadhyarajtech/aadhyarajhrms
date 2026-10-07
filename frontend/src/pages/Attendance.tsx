@@ -184,9 +184,14 @@ function AttendanceExceptionReview({
     date?: string | null;
     severity?: string | null;
     description: string;
+    reason?: string | null;
     employeeId?: string;
     employeeName?: string | null;
   }> = data?.anomalies ?? [];
+  const [selectedDetail, setSelectedDetail] = useState<{
+    title: string;
+    content: string;
+  } | null>(null);
 
   const severityStyles: Record<string, string> = {
     HIGH: "bg-red-50 text-red-700 border-red-200",
@@ -274,90 +279,125 @@ function AttendanceExceptionReview({
             </div>
           ) : (
             <div className="space-y-3">
-              {anomalies.map((anomaly) => (
-                <div
-                  key={anomaly.id}
-                  className="rounded-2xl border border-line bg-white p-4 shadow-sm"
-                >
-                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                    <div className="grid flex-1 gap-3 text-[13px] md:grid-cols-2 xl:grid-cols-6">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Employee
-                        </p>
-                        <p className="mt-1 font-medium text-ink">
-                          {anomaly.employeeName ||
-                            (employeeId
-                              ? employees.find((emp) => emp.id === employeeId)?.firstName ?? "Selected employee"
-                              : "All Employees")}
-                        </p>
+              {anomalies.map((anomaly) => {
+                const reasonText = anomaly.reason?.trim() || "No reason provided.";
+                const detailText = anomaly.description?.trim() || "No details available.";
+
+                return (
+                  <div
+                    key={anomaly.id}
+                    className="rounded-2xl border border-line bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="grid flex-1 gap-3 text-[13px] md:grid-cols-2 xl:grid-cols-7">
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                            Employee
+                          </p>
+                          <p className="mt-1 font-medium text-ink">
+                            {anomaly.employeeName ||
+                              (employeeId
+                                ? employees.find((emp) => emp.id === employeeId)?.firstName ?? "Selected employee"
+                                : "All Employees")}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                            Date
+                          </p>
+                          <p className="mt-1 font-medium text-ink">
+                            {anomaly.date ? formatDate(anomaly.date) : "—"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                            Problem
+                          </p>
+                          <p className="mt-1 font-medium text-ink">
+                            {anomaly.title}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                            Severity
+                          </p>
+                          <span
+                            className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium capitalize ${severityStyles[String(anomaly.severity).toUpperCase()] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}
+                          >
+                            {String(anomaly.severity ?? "LOW").toLowerCase()}
+                          </span>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                            Status
+                          </p>
+                          <span
+                            className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium ${statusStyles.OPEN ?? "bg-sky-50 text-sky-700 border-sky-200"}`}
+                          >
+                            Open
+                          </span>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                            Reason
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDetail({ title: "Reason", content: reasonText })}
+                            className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
+                          >
+                            {reasonText.length > 40 ? `${reasonText.slice(0, 40)}...` : reasonText}
+                          </button>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                            Details
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDetail({ title: "Details", content: detailText })}
+                            className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
+                          >
+                            {detailText.length > 40 ? `${detailText.slice(0, 40)}...` : detailText}
+                          </button>
+                        </div>
                       </div>
 
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Date
-                        </p>
-                        <p className="mt-1 font-medium text-ink">
-                          {anomaly.date ? formatDate(anomaly.date) : "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Problem
-                        </p>
-                        <p className="mt-1 font-medium text-ink">
-                          {anomaly.title}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Severity
-                        </p>
-                        <span
-                          className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium capitalize ${severityStyles[String(anomaly.severity).toUpperCase()] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}
+                      <div className="flex items-center justify-end xl:pl-3">
+                        <Button
+                          size="sm"
+                          onClick={onOpenRegularization}
                         >
-                          {String(anomaly.severity ?? "LOW").toLowerCase()}
-                        </span>
+                          Create Regularization
+                        </Button>
                       </div>
-
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Status
-                        </p>
-                        <span
-                          className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium ${statusStyles.OPEN ?? "bg-sky-50 text-sky-700 border-sky-200"}`}
-                        >
-                          Open
-                        </span>
-                      </div>
-
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Details
-                        </p>
-                        <p className="mt-1 line-clamp-2 text-ink-faint">
-                          {anomaly.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-end xl:pl-3">
-                      <Button
-                        size="sm"
-                        onClick={onOpenRegularization}
-                      >
-                        Create Regularization
-                      </Button>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </Card>
+
+      <Modal
+        open={!!selectedDetail}
+        onClose={() => setSelectedDetail(null)}
+        title={selectedDetail?.title ?? "Details"}
+        footer={
+          <Button onClick={() => setSelectedDetail(null)}>Close</Button>
+        }
+      >
+        <p className="whitespace-pre-wrap text-sm leading-6 text-ink">
+          {selectedDetail?.content ?? "No details available."}
+        </p>
+      </Modal>
     </div>
   );
 }
@@ -592,6 +632,11 @@ function MyAttendance({
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.checkOut ? formatTime(todayRecord.checkOut) : "—"}
               </p>
+              {todayRecord?.checkOut && todayRecord.earlyDepartureReason ? (
+                <p className="mt-1 max-w-[180px] text-[10px] leading-4 text-amber-700">
+                  Reason: {todayRecord.earlyDepartureReason}
+                </p>
+              ) : null}
             </div>
             <div>
               <p className="text-[11px] text-ink-faint">Hours</p>

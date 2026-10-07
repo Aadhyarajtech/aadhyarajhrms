@@ -31,6 +31,7 @@ export interface AttendanceAnomaly {
   date: string | null;
   title: string;
   description: string;
+  reason?: string | null;
   actualValue: number | string | null;
   expectedValue: number | string | null;
   deviation: number | null;
@@ -493,6 +494,7 @@ function detectEarlyDepartures(
         description: record.earlyDepartureReason
           ? `Employee left ${minutes} minutes before the scheduled shift end. Reason: ${record.earlyDepartureReason}.`
           : `Employee left ${minutes} minutes before the scheduled shift end.`,
+        reason: record.earlyDepartureReason ?? null,
         actualValue: minutes,
         expectedValue: 0,
         deviation: minutes,
