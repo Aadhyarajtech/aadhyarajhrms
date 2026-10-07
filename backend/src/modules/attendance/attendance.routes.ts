@@ -223,6 +223,7 @@ const attendanceLocationSchema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   accuracy: z.number().min(0).max(100000).optional(),
+  lateCheckInReason: z.string().trim().max(1000).optional(),
 });
 
 const checkOutSchema = attendanceLocationSchema.extend({

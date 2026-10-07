@@ -425,6 +425,8 @@ function MyAttendance({
   const queryClient = useQueryClient();
   const [earlyDepartureOpen, setEarlyDepartureOpen] = useState(false);
   const [earlyDepartureReason, setEarlyDepartureReason] = useState("");
+  const [lateCheckInOpen, setLateCheckInOpen] = useState(false);
+  const [lateCheckInReason, setLateCheckInReason] = useState("");
   const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
 
   const exportAttendance = async (format: "xlsx" | "pdf") => {
@@ -442,18 +444,22 @@ function MyAttendance({
     }
   };
 
+  const attendanceUserId = user?.employee?.id ?? user?.id ?? "anonymous";
+
   const {
     data: records,
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["attendance", "mine", month, year],
+    queryKey: ["attendance", "mine", attendanceUserId, month, year],
     queryFn: () => AttendanceApi.mine(month, year),
+    enabled: !!user,
   });
 
   const { data: todayRecord, isLoading: todayLoading } = useQuery({
-    queryKey: ["attendance", "today"],
+    queryKey: ["attendance", "today", attendanceUserId],
     queryFn: AttendanceApi.today,
+    enabled: !!user,
   });
 
   const getCurrentLocation = () =>
@@ -484,13 +490,31 @@ function MyAttendance({
     );
 
   const checkInMutation = useMutation({
-    mutationFn: async () =>
-      AttendanceApi.checkInWithLocation(await getCurrentLocation()),
+    mutationFn: async (reason?: string) => {
+      const location = await getCurrentLocation();
+      return AttendanceApi.checkInWithLocation({
+        ...location,
+        ...(reason?.trim() ? { lateCheckInReason: reason.trim() } : {}),
+      });
+    },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance", "today", attendanceUserId] });
+      queryClient.invalidateQueries({ queryKey: ["attendance", "mine", attendanceUserId] });
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      setLateCheckInOpen(false);
+      setLateCheckInReason("");
       showToast("Checked in successfully.");
     },
-    onError: (error) => showToast(getErrorMessage(error), "error"),
+    onError: (error) => {
+      const message = getErrorMessage(error);
+      if (message === "A reason is required for late check-in.") {
+        showToast(message, "error");
+        setLateCheckInReason("");
+        setLateCheckInOpen(true);
+        return;
+      }
+      showToast(message, "error");
+    },
   });
 
   const checkOutMutation = useMutation({
@@ -502,6 +526,8 @@ function MyAttendance({
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance", "today", attendanceUserId] });
+      queryClient.invalidateQueries({ queryKey: ["attendance", "mine", attendanceUserId] });
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
       setEarlyDepartureOpen(false);
       setEarlyDepartureReason("");
@@ -589,6 +615,16 @@ function MyAttendance({
     todayRecord?.earlyDepartureMinutes && todayRecord.earlyDepartureMinutes > 0
       ? ("EARLY_DEPARTURE" as AttendanceRecord["status"])
       : todayRecord?.status;
+  const lateCheckInReasonText =
+    todayRecord?.lateCheckInReason?.trim() ||
+    todayRecord?.note?.trim() ||
+    todayRecord?.auditTrail
+      ?.find(
+        (entry) =>
+          entry.action === "CHECK_IN" && !!entry.note?.trim(),
+      )
+      ?.note?.trim() ||
+    null;
 
   return (
     <div className="space-y-6">
@@ -626,6 +662,11 @@ function MyAttendance({
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : "—"}
               </p>
+              {lateCheckInReasonText ? (
+                <p className="mt-1 max-w-[180px] text-[10px] leading-4 text-amber-700">
+                  {lateCheckInReasonText}
+                </p>
+              ) : null}
             </div>
             <div>
               <p className="text-[11px] text-ink-faint">Check-out</p>
@@ -634,7 +675,7 @@ function MyAttendance({
               </p>
               {todayRecord?.checkOut && todayRecord.earlyDepartureReason ? (
                 <p className="mt-1 max-w-[180px] text-[10px] leading-4 text-amber-700">
-                  Reason: {todayRecord.earlyDepartureReason}
+                  {todayRecord.earlyDepartureReason}
                 </p>
               ) : null}
             </div>
@@ -668,7 +709,7 @@ function MyAttendance({
               size="sm"
               className="w-[120px] shrink-0"
               leftIcon={<LogIn size={14} />}
-              onClick={() => checkInMutation.mutate()}
+              onClick={() => checkInMutation.mutate(undefined)}
               disabled={!canCheckIn}
               isLoading={checkInMutation.isPending}
             >
@@ -710,6 +751,57 @@ function MyAttendance({
           </div>
         </div>
       </Card>
+
+      <Modal
+        open={lateCheckInOpen}
+        onClose={() => {
+          if (!checkInMutation.isPending) {
+            setLateCheckInOpen(false);
+            setLateCheckInReason("");
+          }
+        }}
+        title="Late check-in reason"
+        subtitle="You checked in later than the office start time. Please provide a reason to complete attendance." 
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setLateCheckInOpen(false);
+                setLateCheckInReason("");
+              }}
+              disabled={checkInMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const reason = lateCheckInReason.trim();
+                if (reason.length < 3) {
+                  showToast(
+                    "Please provide a reason for late check-in.",
+                    "error",
+                  );
+                  return;
+                }
+                checkInMutation.mutate(reason);
+              }}
+              isLoading={checkInMutation.isPending}
+            >
+              Confirm check-in
+            </Button>
+          </>
+        }
+      >
+        <TextareaField
+          label="Reason"
+          required
+          placeholder="E.g. Traffic delay, medical issue, or personal emergency."
+          maxLength={1000}
+          value={lateCheckInReason}
+          onChange={(e) => setLateCheckInReason(e.target.value)}
+        />
+      </Modal>
 
       <Modal
         open={earlyDepartureOpen}

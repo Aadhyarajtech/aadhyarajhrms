@@ -415,6 +415,7 @@ async function findOrCreateToday(employeeId: string) {
         effectiveWorkHours: null,
         breakMinutes: 0,
         lateMinutes: 0,
+        lateCheckInReason: null,
         earlyDepartureMinutes: 0,
         overtimeHours: 0,
         checkInLatitude: null,
@@ -455,6 +456,7 @@ export async function checkIn(
     latitude?: number;
     longitude?: number;
     accuracy?: number;
+    lateCheckInReason?: string;
   },
 ) {
   assertValidLocation(location);
@@ -501,6 +503,7 @@ export async function checkIn(
           shiftId: shift?._id ?? existing.shiftId ?? null,
           status: metrics.status,
           lateMinutes: metrics.lateMinutes,
+          lateCheckInReason: null,
           checkInLatitude: location?.latitude ?? null,
           checkInLongitude: location?.longitude ?? null,
           checkInAccuracy: location?.accuracy ?? null,
@@ -527,17 +530,42 @@ export async function checkIn(
     }
 
     if (metrics.lateMinutes > 0) {
+      if (!String(location?.lateCheckInReason ?? "").trim()) {
+        throw AppError.badRequest("A reason is required for late check-in.");
+      }
+
+      const lateReason = String(location?.lateCheckInReason ?? "").trim();
       const localTime = new Intl.DateTimeFormat("en-IN", {
         timeZone: IST_TIME_ZONE,
         dateStyle: "medium",
         timeStyle: "short",
       }).format(new Date(now));
 
+      await Attendance.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            lateCheckInReason: lateReason,
+            note: lateReason,
+            updatedAt: now,
+          },
+          $push: {
+            auditTrail: {
+              action: "CHECK_IN",
+              actorId: employeeId,
+              actorRole: "EMPLOYEE",
+              at: now,
+              note: lateReason,
+            },
+          },
+        },
+      );
+
       await notifyAttendanceException({
         employeeId,
         type: "ATTENDANCE_LATE",
         title: "Late arrival recorded",
-        message: `Late arrival of ${metrics.lateMinutes} minute(s) was recorded at ${localTime}.`,
+        message: `Late arrival of ${metrics.lateMinutes} minute(s) was recorded at ${localTime}. Reason: ${lateReason}`,
       });
     }
   }

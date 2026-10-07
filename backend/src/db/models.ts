@@ -798,6 +798,7 @@ export interface AttendanceDoc {
   effectiveWorkHours: number | null;
   breakMinutes: number;
   lateMinutes: number;
+  lateCheckInReason: string | null;
   earlyDepartureMinutes: number;
   overtimeHours: number;
   earlyDepartureReason: string | null;
@@ -881,6 +882,12 @@ const attendanceSchema = new Schema<AttendanceDoc>(
     effectiveWorkHours: { type: Number, default: null, min: 0 },
     breakMinutes: { type: Number, default: 0, min: 0 },
     lateMinutes: { type: Number, default: 0, min: 0 },
+    lateCheckInReason: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 1000,
+    },
     earlyDepartureMinutes: { type: Number, default: 0, min: 0 },
     overtimeHours: { type: Number, default: 0, min: 0 },
     earlyDepartureReason: {
