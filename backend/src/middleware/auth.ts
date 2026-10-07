@@ -8,13 +8,27 @@ import { User, Employee } from "@/db/models";
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization;
 
-  if (!header || !header.startsWith("Bearer ")) {
-    return null;
+  if (header && header.startsWith("Bearer ")) {
+    const token = header.slice("Bearer ".length).trim();
+    return token || null;
   }
 
-  const token = header.slice("Bearer ".length).trim();
+  const queryToken = req.query?.token;
+  if (typeof queryToken === "string" && queryToken.trim()) {
+    return queryToken.trim();
+  }
 
-  return token || null;
+  if (Array.isArray(queryToken)) {
+    const candidate = queryToken.find(
+      (value): value is string => typeof value === "string" && value.trim().length > 0,
+    );
+
+    if (candidate && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -37,19 +51,13 @@ export async function authenticate(
    * 1. Validate Authorization header
    * ---------------------------------------------------------
    */
-  if (!header || !header.startsWith("Bearer ")) {
-    return next(
-      AppError.unauthorized(
-        "Missing or malformed Authorization header",
-      ),
-    );
-  }
-
   const token = getBearerToken(req);
 
   if (!token) {
     return next(
-      AppError.unauthorized("Missing authentication token"),
+      AppError.unauthorized(
+        "Missing or malformed Authorization header or token",
+      ),
     );
   }
 
