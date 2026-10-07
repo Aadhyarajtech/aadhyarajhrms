@@ -44,9 +44,10 @@ export function Topbar({
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [lateCheckInOpen, setLateCheckInOpen] = useState(false);
   const [earlyDepartureOpen, setEarlyDepartureOpen] =
     useState(false);
-
+  const [lateCheckInReason, setLateCheckInReason] = useState("");
   const [earlyDepartureReason, setEarlyDepartureReason] =
     useState("");
   const getCurrentLocation = () =>
@@ -201,8 +202,10 @@ export function Topbar({
      ATTENDANCE
   ========================================================= */
 
+  const attendanceUserId = user?.employee?.id ?? user?.id ?? "anonymous";
+
   const { data: todayAttendance } = useQuery({
-    queryKey: ["attendance", "today"],
+    queryKey: ["attendance", "today", attendanceUserId],
     queryFn: () => AttendanceApi.today(),
     enabled: !!user?.employee,
   });
@@ -211,12 +214,21 @@ export function Topbar({
      CHECK IN
   ========================================================= */
   const checkInMutation = useMutation({
-    mutationFn: AttendanceApi.checkIn,
+    mutationFn: async (reason?: string) => {
+      const location = await getCurrentLocation();
+      return AttendanceApi.checkInWithLocation({
+        ...location,
+        ...(reason?.trim() ? { lateCheckInReason: reason.trim() } : {}),
+      });
+    },
 
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["attendance", "today"],
+        queryKey: ["attendance", "today", attendanceUserId],
       });
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      setLateCheckInOpen(false);
+      setLateCheckInReason("");
 
       showToast(
         "Checked in. Have a great day!",
@@ -224,10 +236,16 @@ export function Topbar({
     },
 
     onError: (err) => {
-      showToast(
-        getErrorMessage(err),
-        "error",
-      );
+      const message = getErrorMessage(err);
+
+      if (message === "A reason is required for late check-in.") {
+        setLateCheckInReason("");
+        setLateCheckInOpen(true);
+        showToast(message, "error");
+        return;
+      }
+
+      showToast(message, "error");
     },
   });
 
@@ -249,8 +267,9 @@ export function Topbar({
 
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["attendance", "today"],
+        queryKey: ["attendance", "today", attendanceUserId],
       });
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
 
       setEarlyDepartureOpen(false);
       setEarlyDepartureReason("");
@@ -592,7 +611,7 @@ export function Topbar({
                     <Clock size={14} />
                   }
                   onClick={() =>
-                    checkInMutation.mutate()
+                    checkInMutation.mutate(undefined)
                   }
                   isLoading={
                     checkInMutation.isPending
@@ -871,6 +890,62 @@ export function Topbar({
           </div>
         </div>
       </header>
+
+      <Modal
+        open={lateCheckInOpen}
+        onClose={() => {
+          if (!checkInMutation.isPending) {
+            setLateCheckInOpen(false);
+            setLateCheckInReason("");
+          }
+        }}
+        title="Late check-in reason"
+        subtitle="You checked in later than the office start time. Please provide a reason to complete attendance."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setLateCheckInOpen(false);
+                setLateCheckInReason("");
+              }}
+              disabled={checkInMutation.isPending}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              onClick={() => {
+                const reason = lateCheckInReason.trim();
+
+                if (reason.length < 3) {
+                  showToast(
+                    "Please provide a reason for late check-in.",
+                    "error",
+                  );
+                  return;
+                }
+
+                checkInMutation.mutate(reason);
+              }}
+              isLoading={checkInMutation.isPending}
+            >
+              Confirm check-in
+            </Button>
+          </>
+        }
+      >
+        <TextareaField
+          label="Reason"
+          required
+          placeholder="E.g. Traffic delay, medical issue, or personal emergency."
+          maxLength={1000}
+          value={lateCheckInReason}
+          onChange={(e) =>
+            setLateCheckInReason(e.target.value)
+          }
+        />
+      </Modal>
 
       <Modal
         open={earlyDepartureOpen}

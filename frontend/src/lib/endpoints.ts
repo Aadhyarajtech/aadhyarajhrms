@@ -787,6 +787,10 @@ export interface AttendanceLocation {
   accuracy?: number;
 }
 
+export interface AttendanceCheckInOptions extends Partial<AttendanceLocation> {
+  lateCheckInReason?: string;
+}
+
 export interface AttendanceCheckOutOptions extends Partial<AttendanceLocation> {
   breakMinutes?: number;
   earlyDepartureReason?: string;
@@ -882,7 +886,7 @@ export const AttendanceApi = {
       }>("/attendance/check-in")
       .then((r) => r.data.record),
 
-  checkInWithLocation: (location: Partial<AttendanceLocation>) =>
+  checkInWithLocation: (location: AttendanceCheckInOptions) =>
     api
       .post<{
         record: AttendanceRecord;

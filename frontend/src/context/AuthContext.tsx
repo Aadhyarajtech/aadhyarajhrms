@@ -32,16 +32,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [permissions, setPermissions] = useState<string[]>([]);
 
-  const logout = useCallback(() => {
+  const clearAuthState = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     queryClient.clear();
     setUser(null);
     setPermissions([]);
   }, [queryClient]);
 
+  const logout = useCallback(() => {
+    clearAuthState();
+  }, [clearAuthState]);
+
   useEffect(() => {
     registerUnauthorizedHandler(logout);
   }, [logout]);
+
+  useEffect(() => {
+    const syncFromStorage = (event: StorageEvent) => {
+      if (event.key !== TOKEN_KEY) {
+        return;
+      }
+
+      const token = event.newValue ?? localStorage.getItem(TOKEN_KEY);
+      if (!token) {
+        clearAuthState();
+        return;
+      }
+
+      AuthApi.me()
+        .then(async (freshUser) => {
+          setUser(freshUser);
+
+          try {
+            const access = await GovernanceApi.me();
+            setPermissions(access.permissions ?? []);
+          } catch {
+            setPermissions([]);
+          }
+        })
+        .catch(() => {
+          clearAuthState();
+        });
+    };
+
+    window.addEventListener("storage", syncFromStorage);
+    return () => window.removeEventListener("storage", syncFromStorage);
+  }, [clearAuthState]);
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);

@@ -31,6 +31,7 @@ export interface AttendanceAnomaly {
   date: string | null;
   title: string;
   description: string;
+  reason?: string | null;
   actualValue: number | string | null;
   expectedValue: number | string | null;
   deviation: number | null;
@@ -319,87 +320,86 @@ function detectLateCheckIns(
       .filter(
         (record) =>
           isEligibleRecord(record) &&
-          record.status !== "ABSENT",
+          record.status !== "ABSENT" &&
+          (record.status === "LATE" || Number(record.lateMinutes ?? 0) > 0),
       )
-      .map((record) => ({
-        date: String(record.date).slice(
-          0,
-          10,
-        ),
-        minutes: timeToMinutes(
-          record.checkIn,
-        ),
-      }))
+      .map((record) => {
+        const date = String(record.date).slice(0, 10);
+        const minutes = timeToMinutes(record.checkIn);
+        return {
+          date,
+          minutes,
+          record,
+        };
+      })
       .filter(
         (
-          record,
-        ): record is {
+          item,
+        ): item is {
           date: string;
           minutes: number;
-        } =>
-          record.minutes !== null,
+          record: AttendanceDoc;
+        } => item.minutes !== null,
       );
+
+  if (!currentCheckIns.length) {
+    return [];
+  }
 
   const baselineValues = [
     ...historicalCheckIns,
-    ...currentCheckIns.map(
-      (record) => record.minutes,
-    ),
+    ...currentCheckIns.map((item) => item.minutes),
   ];
 
-  if (baselineValues.length < 5) {
-    return [];
-  }
-
   const baseline =
-    median(baselineValues);
+    baselineValues.length >= 5
+      ? median(baselineValues)
+      : null;
 
-  if (baseline === null) {
-    return [];
-  }
+  return Array.from(
+    new Map(
+      currentCheckIns.map((item) => {
+        const matchedRecord = item.record;
+        const reason =
+          matchedRecord?.lateCheckInReason?.trim() ||
+          matchedRecord?.note?.trim() ||
+          matchedRecord?.auditTrail
+            ?.find(
+              (entry) =>
+                entry.action === "CHECK_IN" && !!entry.note?.trim(),
+            )
+            ?.note?.trim() ||
+          null;
+        const deviation =
+          baseline === null ? null : Math.round(item.minutes - baseline);
+        const isUnusual =
+          deviation !== null && deviation >= 30;
+        const description = reason
+          ? isUnusual
+            ? `Check-in was ${Math.abs(deviation ?? 0)} minutes later than the employee's usual check-in pattern. Reason: ${reason}.`
+            : `Late check-in recorded. Reason: ${reason}.`
+          : isUnusual
+            ? `Check-in was ${Math.abs(deviation ?? 0)} minutes later than the employee's usual check-in pattern.`
+            : "Late check-in recorded.";
 
-  return currentCheckIns
-    .map((record) => ({
-      record,
-      deviation:
-        record.minutes - baseline,
-    }))
-    .filter(
-      ({ deviation }) =>
-        deviation >= 30,
-    )
-    .map(
-      ({
-        record,
-        deviation,
-      }) => ({
-        id: `late-check-in-${record.date}`,
-
-        type: "LATE_CHECK_IN" as const,
-
-        severity:
-          getSeverity(deviation),
-
-        date: record.date,
-
-        title:
-          "Unusual late check-in",
-
-        description:
-          `Check-in was ${Math.round(
-            deviation,
-          )} minutes later than the employee's usual check-in pattern.`,
-
-        actualValue:
-          record.minutes,
-
-        expectedValue:
-          Math.round(baseline),
-
-        deviation:
-          Math.round(deviation),
+        return [
+          `late-check-in-${item.date}`,
+          {
+            id: `late-check-in-${item.date}`,
+            type: "LATE_CHECK_IN" as const,
+            severity: isUnusual ? getSeverity(Math.abs(deviation ?? 0)) : "LOW",
+            date: item.date,
+            title: isUnusual ? "Unusual late check-in" : "Late check-in",
+            description,
+            reason,
+            actualValue: item.minutes,
+            expectedValue: baseline === null ? null : Math.round(baseline),
+            deviation: deviation === null ? null : Math.abs(deviation),
+          },
+        ];
       }),
-    );
+    ).values(),
+  );
 }
 
 // ============================================================================
@@ -493,6 +493,7 @@ function detectEarlyDepartures(
         description: record.earlyDepartureReason
           ? `Employee left ${minutes} minutes before the scheduled shift end. Reason: ${record.earlyDepartureReason}.`
           : `Employee left ${minutes} minutes before the scheduled shift end.`,
+        reason: record.earlyDepartureReason ?? null,
         actualValue: minutes,
         expectedValue: 0,
         deviation: minutes,

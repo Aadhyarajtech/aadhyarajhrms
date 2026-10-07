@@ -184,9 +184,14 @@ function AttendanceExceptionReview({
     date?: string | null;
     severity?: string | null;
     description: string;
+    reason?: string | null;
     employeeId?: string;
     employeeName?: string | null;
   }> = data?.anomalies ?? [];
+  const [selectedDetail, setSelectedDetail] = useState<{
+    title: string;
+    content: string;
+  } | null>(null);
 
   const severityStyles: Record<string, string> = {
     HIGH: "bg-red-50 text-red-700 border-red-200",
@@ -274,90 +279,89 @@ function AttendanceExceptionReview({
             </div>
           ) : (
             <div className="space-y-3">
-              {anomalies.map((anomaly) => (
-                <div
-                  key={anomaly.id}
-                  className="rounded-2xl border border-line bg-white p-4 shadow-sm"
-                >
-                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                    <div className="grid flex-1 gap-3 text-[13px] md:grid-cols-2 xl:grid-cols-6">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Employee
-                        </p>
-                        <p className="mt-1 font-medium text-ink">
-                          {anomaly.employeeName ||
-                            (employeeId
-                              ? employees.find((emp) => emp.id === employeeId)?.firstName ?? "Selected employee"
-                              : "All Employees")}
-                        </p>
-                      </div>
+              {anomalies.map((anomaly) => {
+                const reasonText = anomaly.reason?.trim() || "No reason provided.";
+                const detailText = anomaly.description?.trim() || "No details available.";
 
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Date
-                        </p>
-                        <p className="mt-1 font-medium text-ink">
-                          {anomaly.date ? formatDate(anomaly.date) : "—"}
-                        </p>
+                return (
+                  <div
+                    key={anomaly.id}
+                    className="rounded-2xl border border-line bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="grid flex-1 gap-3 text-[13px] md:grid-cols-2 xl:grid-cols-7">
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Employee</p>
+                          <p className="mt-1 font-medium text-ink">
+                            {anomaly.employeeName ||
+                              (employeeId
+                                ? employees.find((emp) => emp.id === employeeId)?.firstName ?? "Selected employee"
+                                : "All Employees")}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Date</p>
+                          <p className="mt-1 font-medium text-ink">{anomaly.date ? formatDate(anomaly.date) : "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Problem</p>
+                          <p className="mt-1 font-medium text-ink">{anomaly.title}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Severity</p>
+                          <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium capitalize ${severityStyles[String(anomaly.severity).toUpperCase()] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
+                            {String(anomaly.severity ?? "LOW").toLowerCase()}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Status</p>
+                          <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium ${statusStyles.OPEN ?? "bg-sky-50 text-sky-700 border-sky-200"}`}>Open</span>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Reason</p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDetail({ title: "Reason", content: reasonText })}
+                            className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
+                          >
+                            {reasonText.length > 40 ? `${reasonText.slice(0, 40)}...` : reasonText}
+                          </button>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Details</p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDetail({ title: "Details", content: detailText })}
+                            className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
+                          >
+                            {detailText.length > 40 ? `${detailText.slice(0, 40)}...` : detailText}
+                          </button>
+                        </div>
                       </div>
-
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Problem
-                        </p>
-                        <p className="mt-1 font-medium text-ink">
-                          {anomaly.title}
-                        </p>
+                      <div className="flex items-center justify-end xl:pl-3">
+                        <Button size="sm" onClick={onOpenRegularization}>Create Regularization</Button>
                       </div>
-
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Severity
-                        </p>
-                        <span
-                          className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium capitalize ${severityStyles[String(anomaly.severity).toUpperCase()] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}
-                        >
-                          {String(anomaly.severity ?? "LOW").toLowerCase()}
-                        </span>
-                      </div>
-
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Status
-                        </p>
-                        <span
-                          className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium ${statusStyles.OPEN ?? "bg-sky-50 text-sky-700 border-sky-200"}`}
-                        >
-                          Open
-                        </span>
-                      </div>
-
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                          Details
-                        </p>
-                        <p className="mt-1 line-clamp-2 text-ink-faint">
-                          {anomaly.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-end xl:pl-3">
-                      <Button
-                        size="sm"
-                        onClick={onOpenRegularization}
-                      >
-                        Create Regularization
-                      </Button>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </Card>
+
+      <Modal
+        open={!!selectedDetail}
+        onClose={() => setSelectedDetail(null)}
+        title={selectedDetail?.title ?? "Details"}
+        footer={
+          <Button onClick={() => setSelectedDetail(null)}>Close</Button>
+        }
+      >
+        <p className="whitespace-pre-wrap text-sm leading-6 text-ink">
+          {selectedDetail?.content ?? "No details available."}
+        </p>
+      </Modal>
     </div>
   );
 }
@@ -385,6 +389,8 @@ function MyAttendance({
   const queryClient = useQueryClient();
   const [earlyDepartureOpen, setEarlyDepartureOpen] = useState(false);
   const [earlyDepartureReason, setEarlyDepartureReason] = useState("");
+  const [lateCheckInOpen, setLateCheckInOpen] = useState(false);
+  const [lateCheckInReason, setLateCheckInReason] = useState("");
   const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
 
   const exportAttendance = async (format: "xlsx" | "pdf") => {
@@ -402,18 +408,22 @@ function MyAttendance({
     }
   };
 
+  const attendanceUserId = user?.employee?.id ?? user?.id ?? "anonymous";
+
   const {
     data: records,
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["attendance", "mine", month, year],
+    queryKey: ["attendance", "mine", attendanceUserId, month, year],
     queryFn: () => AttendanceApi.mine(month, year),
+    enabled: !!user,
   });
 
   const { data: todayRecord, isLoading: todayLoading } = useQuery({
-    queryKey: ["attendance", "today"],
+    queryKey: ["attendance", "today", attendanceUserId],
     queryFn: AttendanceApi.today,
+    enabled: !!user,
   });
 
   const getCurrentLocation = () =>
@@ -444,13 +454,31 @@ function MyAttendance({
     );
 
   const checkInMutation = useMutation({
-    mutationFn: async () =>
-      AttendanceApi.checkInWithLocation(await getCurrentLocation()),
+    mutationFn: async (reason?: string) => {
+      const location = await getCurrentLocation();
+      return AttendanceApi.checkInWithLocation({
+        ...location,
+        ...(reason?.trim() ? { lateCheckInReason: reason.trim() } : {}),
+      });
+    },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance", "today", attendanceUserId] });
+      queryClient.invalidateQueries({ queryKey: ["attendance", "mine", attendanceUserId] });
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      setLateCheckInOpen(false);
+      setLateCheckInReason("");
       showToast("Checked in successfully.");
     },
-    onError: (error) => showToast(getErrorMessage(error), "error"),
+    onError: (error) => {
+      const message = getErrorMessage(error);
+      if (message === "A reason is required for late check-in.") {
+        showToast(message, "error");
+        setLateCheckInReason("");
+        setLateCheckInOpen(true);
+        return;
+      }
+      showToast(message, "error");
+    },
   });
 
   const checkOutMutation = useMutation({
@@ -462,6 +490,8 @@ function MyAttendance({
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance", "today", attendanceUserId] });
+      queryClient.invalidateQueries({ queryKey: ["attendance", "mine", attendanceUserId] });
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
       setEarlyDepartureOpen(false);
       setEarlyDepartureReason("");
@@ -549,6 +579,16 @@ function MyAttendance({
     todayRecord?.earlyDepartureMinutes && todayRecord.earlyDepartureMinutes > 0
       ? ("EARLY_DEPARTURE" as AttendanceRecord["status"])
       : todayRecord?.status;
+  const lateCheckInReasonText =
+    todayRecord?.lateCheckInReason?.trim() ||
+    todayRecord?.note?.trim() ||
+    todayRecord?.auditTrail
+      ?.find(
+        (entry) =>
+          entry.action === "CHECK_IN" && !!entry.note?.trim(),
+      )
+      ?.note?.trim() ||
+    null;
 
   return (
     <div className="space-y-6">
@@ -586,12 +626,22 @@ function MyAttendance({
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : "—"}
               </p>
+              {lateCheckInReasonText ? (
+                <p className="mt-1 max-w-[180px] text-[10px] leading-4 text-amber-700">
+                  {lateCheckInReasonText}
+                </p>
+              ) : null}
             </div>
             <div>
               <p className="text-[11px] text-ink-faint">Check-out</p>
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.checkOut ? formatTime(todayRecord.checkOut) : "—"}
               </p>
+              {todayRecord?.checkOut && todayRecord.earlyDepartureReason ? (
+                <p className="mt-1 max-w-[180px] text-[10px] leading-4 text-amber-700">
+                  {todayRecord.earlyDepartureReason}
+                </p>
+              ) : null}
             </div>
             <div>
               <p className="text-[11px] text-ink-faint">Hours</p>
@@ -623,7 +673,7 @@ function MyAttendance({
               size="sm"
               className="w-[120px] shrink-0"
               leftIcon={<LogIn size={14} />}
-              onClick={() => checkInMutation.mutate()}
+              onClick={() => checkInMutation.mutate(undefined)}
               disabled={!canCheckIn}
               isLoading={checkInMutation.isPending}
             >
@@ -665,6 +715,57 @@ function MyAttendance({
           </div>
         </div>
       </Card>
+
+      <Modal
+        open={lateCheckInOpen}
+        onClose={() => {
+          if (!checkInMutation.isPending) {
+            setLateCheckInOpen(false);
+            setLateCheckInReason("");
+          }
+        }}
+        title="Late check-in reason"
+        subtitle="You checked in later than the office start time. Please provide a reason to complete attendance." 
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setLateCheckInOpen(false);
+                setLateCheckInReason("");
+              }}
+              disabled={checkInMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const reason = lateCheckInReason.trim();
+                if (reason.length < 3) {
+                  showToast(
+                    "Please provide a reason for late check-in.",
+                    "error",
+                  );
+                  return;
+                }
+                checkInMutation.mutate(reason);
+              }}
+              isLoading={checkInMutation.isPending}
+            >
+              Confirm check-in
+            </Button>
+          </>
+        }
+      >
+        <TextareaField
+          label="Reason"
+          required
+          placeholder="E.g. Traffic delay, medical issue, or personal emergency."
+          maxLength={1000}
+          value={lateCheckInReason}
+          onChange={(e) => setLateCheckInReason(e.target.value)}
+        />
+      </Modal>
 
       <Modal
         open={earlyDepartureOpen}
