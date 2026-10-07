@@ -27,13 +27,13 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 const DEMO_ACCOUNTS = [
-  { label: "Super Admin", email: "admin@aadhyaraj.com" },
-  { label: "HR Admin", email: "hr.admin@aadhyaraj.com" },
-  { label: "Manager", email: "manager.demo@aadhyaraj.com" },
-  { label: "Recruiter", email: "recruiter.demo@aadhyaraj.com" },
-  { label: "Finance", email: "finance.demo@aadhyaraj.com" },
-  { label: "IT Support", email: "it.support.demo@aadhyaraj.com" },
-  { label: "Employee", email: "employee.demo@aadhyaraj.com" },
+  { label: "Super Admin", email: "adithya.nuthakki@aadhyarajtech.com" },
+  { label: "HR Admin", email: "geetha.balachandran@aadhyarajtech.com" },
+  { label: "Manager", email: "gangadhar.yedla@aadhyarajtech.com" },
+  { label: "Recruiter", email: "meghana.sahithi@aadhyarajtech.com" },
+  { label: "Finance", email: "sreevidya.talasila@aadhyarajtech.com" },
+  { label: "IT Support", email: "kavya.rachupalli@aadhyarajtech.com" },
+  { label: "Employee", email: "anusha.nookanaboina@aadhyarajtech.com" },
 ];
 const DEMO_PASSWORD = "Welcome@123";
 

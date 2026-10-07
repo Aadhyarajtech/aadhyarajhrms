@@ -21,11 +21,36 @@ import { getKpiAchievementPercentage } from "./payroll.performance";
 function toApiDoc(doc: any) {
   if (!doc) return undefined;
   const { _id, ...rest } = doc;
+
+  // PayrollRun/SalaryStructure documents can derive start/end dates from
+  // year + month, but PayslipRequest documents do not have those fields.
+  // Only derive dates when a valid year/month pair is actually present.
+  const year = Number(rest.year);
+  const month = Number(rest.month);
+  const hasValidYearMonth =
+    Number.isInteger(year) &&
+    Number.isInteger(month) &&
+    year >= 1900 &&
+    month >= 1 &&
+    month <= 12;
+
   const startDate =
-    rest.startDate ?? `${rest.year}-${String(rest.month).padStart(2, "0")}-01`;
+    rest.startDate ??
+    (hasValidYearMonth
+      ? `${year}-${String(month).padStart(2, "0")}-01`
+      : undefined);
   const endDate =
-    rest.endDate ?? new Date(rest.year, rest.month, 0).toISOString().slice(0, 10);
-  return { id: _id, ...rest, startDate, endDate };
+    rest.endDate ??
+    (hasValidYearMonth
+      ? new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
+      : undefined);
+
+  return {
+    id: _id,
+    ...rest,
+    ...(startDate !== undefined ? { startDate } : {}),
+    ...(endDate !== undefined ? { endDate } : {}),
+  };
 }
 
 export async function getSalaryStructure(employeeId: string) {
