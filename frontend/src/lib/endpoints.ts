@@ -787,6 +787,10 @@ export interface AttendanceLocation {
   accuracy?: number;
 }
 
+export interface AttendanceCheckInOptions extends Partial<AttendanceLocation> {
+  lateCheckInReason?: string;
+}
+
 export interface AttendanceCheckOutOptions extends Partial<AttendanceLocation> {
   breakMinutes?: number;
   earlyDepartureReason?: string;
@@ -882,7 +886,7 @@ export const AttendanceApi = {
       }>("/attendance/check-in")
       .then((r) => r.data.record),
 
-  checkInWithLocation: (location: Partial<AttendanceLocation>) =>
+  checkInWithLocation: (location: AttendanceCheckInOptions) =>
     api
       .post<{
         record: AttendanceRecord;
@@ -1103,6 +1107,11 @@ export const AttendanceApi = {
     date: string,
     note: string,
     employeeId?: string,
+    details?: {
+      requestedStatus?: string;
+      requestedCheckIn?: string | null;
+      requestedCheckOut?: string | null;
+    },
   ) =>
     api
       .post<{
@@ -1111,6 +1120,9 @@ export const AttendanceApi = {
         date,
         note,
         employeeId,
+        requestedStatus: details?.requestedStatus,
+        requestedCheckIn: details?.requestedCheckIn || undefined,
+        requestedCheckOut: details?.requestedCheckOut || undefined,
       })
       .then((r) => r.data.record),
 
@@ -1429,6 +1441,29 @@ export const LeaveApi = {
         request: LeaveRequest;
       }>("/leave/requests", payload)
       .then((r) => r.data.request),
+
+  bulkApply: (payload: {
+    applyToAll: boolean;
+    employeeIds?: string[];
+    leaveTypeId: string;
+    startDate: string;
+    endDate: string;
+    halfDay?: boolean;
+    halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
+    reason: string;
+  }) =>
+    api
+      .post<{
+        totalEmployees: number;
+        createdCount: number;
+        skippedCount: number;
+        created: LeaveRequest[];
+        skipped: Array<{
+          employeeId: string;
+          reason: string;
+        }>;
+      }>("/leave/requests/bulk", payload)
+      .then((r) => r.data),
 
   decide: (
     id: string,
@@ -3294,3 +3329,4 @@ export const DashboardApi = {
   overview: () =>
     api.get<DashboardOverview>("/dashboard/overview").then((r) => r.data),
 };
+

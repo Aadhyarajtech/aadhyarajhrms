@@ -1666,7 +1666,7 @@ export async function generateJobRequisitionAI(input: {
   designations: {
     id: string;
     title: string;
-    departmentId: string;
+    departmentId: string | null;
   }[];
 }) {
   const fallback = {

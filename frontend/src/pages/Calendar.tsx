@@ -5,7 +5,6 @@ import {
   ChevronRight,
   CalendarDays,
   MapPin,
-  Clock3,
   Megaphone,
   RefreshCw,
   Brain,
@@ -32,6 +31,7 @@ type CalendarEvent = {
   body: string;
   start: Date;
   end?: Date;
+  allDay?: boolean;
   location?: string;
   type: string;
   pinned: boolean;
@@ -64,6 +64,36 @@ function isValidDate(value: unknown): value is Date {
   );
 }
 
+function hasExplicitTime(value?: string | null) {
+  if (!value) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  // A plain YYYY-MM-DD value never contains an event time.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return false;
+  }
+
+  // Treat UTC/local midnight generated from a date-only form value as all-day.
+  // This prevents values such as 2026-10-07T00:00:00.000Z from appearing as
+  // 5:30 AM in India.
+  if (
+    /^\d{4}-\d{2}-\d{2}T00:00(?::00(?:\.000)?)?(?:Z|[+-]00:00)?$/.test(
+      trimmed,
+    )
+  ) {
+    return false;
+  }
+
+  return /T\d{2}:\d{2}/.test(trimmed) || /\d{2}:\d{2}/.test(trimmed);
+}
+
 function parseDate(
   value?: string | null,
 ): Date | null {
@@ -75,6 +105,24 @@ function parseDate(
 
   if (!trimmed) {
     return null;
+  }
+
+  // Date-only values such as "2026-10-07" must be treated as
+  // a local calendar date. Using new Date("2026-10-07") directly
+  // interprets the value as UTC and shifts it to 05:30 AM in IST.
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const date = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+    );
+
+    if (isValidDate(date)) {
+      return date;
+    }
   }
 
   const date = new Date(trimmed);
@@ -197,6 +245,17 @@ function formatLongDate(date: Date) {
   });
 }
 
+function formatEventDateRange(
+  start: Date,
+  end?: Date,
+) {
+  if (!end || sameDay(start, end)) {
+    return formatLongDate(start);
+  }
+
+  return `${formatLongDate(start)} - ${formatLongDate(end)}`;
+}
+
 function getAnnouncementTypeLabel(type: string) {
   switch (type) {
     case "COMPANY_EVENT":
@@ -293,12 +352,17 @@ function announcementToCalendarEvent(
     announcement.eventEndAt,
   );
 
+  const allDay =
+    !hasExplicitTime(announcement.eventStartAt) &&
+    !hasExplicitTime(announcement.eventEndAt);
+
   return {
     id: announcement.id,
     title: announcement.title,
     body: announcement.body,
     start,
     end: end ?? undefined,
+    allDay,
     location:
       announcement.eventLocation?.trim() ||
       undefined,
@@ -325,6 +389,9 @@ function calendarApiEventToCalendarEvent(
 ): CalendarEvent | null {
   const start = parseDate(event.startAt);
   const end = parseDate(event.endAt);
+  const allDay =
+    !hasExplicitTime(event.startAt) &&
+    !hasExplicitTime(event.endAt);
 
   if (!start || !end) {
     return null;
@@ -337,6 +404,7 @@ function calendarApiEventToCalendarEvent(
     body: event.description || "",
     start,
     end,
+    allDay,
     location:
       event.location?.trim() || undefined,
     type: event.type,
@@ -372,6 +440,33 @@ export default function Calendar() {
     useState<Date>(() => {
       return startOfDay(new Date());
     });
+
+  const [selectedEvent, setSelectedEvent] =
+    useState<CalendarEvent | null>(null);
+
+  const selectedAnnouncementId =
+    selectedEvent?.source === "ANNOUNCEMENT"
+      ? selectedEvent.id
+      : null;
+
+  const { data: selectedAnnouncement, isFetching: selectedAnnouncementLoading } =
+    useQuery<AppAnnouncement | null, Error>({
+      queryKey: ["calendar-event-details", selectedAnnouncementId],
+      queryFn: () =>
+        selectedAnnouncementId
+          ? AnnouncementsApi.get(selectedAnnouncementId)
+          : Promise.resolve(null),
+      enabled: Boolean(selectedAnnouncementId),
+    });
+
+  const openEventDetails = (event: CalendarEvent) => {
+    setSelectedEvent(event);
+    if (event.source === "ANNOUNCEMENT") {
+      void AnnouncementsApi.markRead(event.id).catch(() => undefined);
+    }
+  };
+
+  const closeEventDetails = () => setSelectedEvent(null);
 
   /* =======================================================
      CURRENT USER
@@ -1512,12 +1607,21 @@ export default function Calendar() {
                                 event: CalendarEvent,
                               ) => (
                                 <div
-                                  key={
-                                    event.id
-                                  }
-                                  title={`${formatTime(
-                                    event.start,
-                                  )} - ${event.title}`}
+                                  key={event.id}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEventDetails(event);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      openEventDetails(event);
+                                    }
+                                  }}
+                                  title={`View details: ${formatEventDateRange(event.start, event.end)} - ${event.title}`}
                                   className={[
                                     "block w-full min-w-0 truncate rounded-lg border border-brand-100/70 px-2 py-1.5 text-[10px] font-semibold leading-tight shadow-sm",
 
@@ -1528,20 +1632,8 @@ export default function Calendar() {
                                     " ",
                                   )}
                                 >
-                                  <span className="font-semibold">
-                                    {formatTime(
-                                      event.start,
-                                    )}
-                                  </span>
-
-                                  <span className="mx-1">
-                                    ·
-                                  </span>
-
                                   <span>
-                                    {
-                                      event.title
-                                    }
+                                    {event.title}
                                   </span>
                                 </div>
                               ),
@@ -1607,7 +1699,19 @@ export default function Calendar() {
                 ) => (
                   <div
                     key={event.id}
-                    className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white to-slate-50/70 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-[0_12px_25px_rgba(15,23,42,0.07)]"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openEventDetails(event)}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key === "Enter" ||
+                        e.key === " "
+                      ) {
+                        e.preventDefault();
+                        openEventDetails(event);
+                      }
+                    }}
+                    className="w-full cursor-pointer rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white to-slate-50/70 p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-[0_12px_25px_rgba(15,23,42,0.07)] focus:outline-none focus:ring-2 focus:ring-brand-200"
                   >
                     <div className="flex items-start gap-3">
                       {/* FIXED: icon div now correctly stays inside the flex row */}
@@ -1684,24 +1788,19 @@ export default function Calendar() {
 
                         <div className="mt-3 space-y-1.5 text-xs text-ink-faint">
                           <div className="flex items-center gap-2">
-                            <Clock3
+                            <CalendarDays
                               size={13}
                             />
 
                             <span>
-                              {formatTime(
+                              {formatEventDateRange(
                                 event.start,
+                                event.end,
                               )}
-
-                              {event.end
-                                ? ` - ${formatTime(
-                                    event.end,
-                                  )}`
-                                : ""}
                             </span>
                           </div>
 
-                          {event.location && (
+                          {event.location && ( 
                             <div className="flex items-center gap-2">
                               <MapPin
                                 size={13}
@@ -1735,7 +1834,8 @@ export default function Calendar() {
                                   selectedMeetingId ===
                                     event.calendarEventId
                                 }
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setAiError(
                                     null,
                                   );
@@ -1841,6 +1941,230 @@ export default function Calendar() {
           </div>
         </Card>
       </div>
+
+      {selectedEvent && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeEventDetails();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="calendar-event-details-title"
+            className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">
+                  {selectedEvent.source === "CALENDAR" ? (
+                    <CalendarDays size={20} />
+                  ) : (
+                    <Megaphone size={20} />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2
+                      id="calendar-event-details-title"
+                      className="text-lg font-bold text-slate-900"
+                    >
+                      {selectedEvent.title}
+                    </h2>
+                    {selectedEvent.pinned && (
+                      <Badge tone="brand" className="px-2 py-0.5 text-[10px]">
+                        Pinned
+                      </Badge>
+                    )}
+                    {selectedEvent.source === "CALENDAR" && (
+                      <Badge tone="brand" className="px-2 py-0.5 text-[10px]">
+                        Calendar
+                      </Badge>
+                    )}
+                    {selectedEvent.isCritical && (
+                      <Badge tone="brand" className="px-2 py-0.5 text-[10px]">
+                        Critical
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-ink-faint">
+                    {selectedEvent.source === "ANNOUNCEMENT"
+                      ? getAnnouncementTypeLabel(
+                          selectedAnnouncement?.type ?? selectedEvent.type,
+                        )
+                      : selectedEvent.type
+                          .replaceAll("_", " ")
+                          .toLowerCase()
+                          .replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeEventDetails}
+                aria-label="Close event details"
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              >
+                <span className="text-2xl leading-none">×</span>
+              </button>
+            </div>
+
+            <div className="max-h-[calc(90vh-145px)] overflow-y-auto px-6 py-5">
+              {selectedAnnouncementLoading ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+                  Loading full event information...
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-3">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                        Date
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                        {formatEventDateRange(
+                          selectedEvent.start,
+                          selectedEvent.end,
+                        )}
+                      </p>
+                    </div>
+
+                    {(selectedEvent.location ||
+                      selectedAnnouncement?.eventLocation) && (
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:col-span-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                          Location
+                        </p>
+                        <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                          <MapPin size={14} className="text-brand-600" />
+                          <span>
+                            {selectedAnnouncement?.eventLocation?.trim() ||
+                              selectedEvent.location}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Description
+                    </p>
+                    <div className="mt-2 rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-7 text-slate-600">
+                      {selectedAnnouncement?.body ||
+                        selectedEvent.body ||
+                        "No description provided."}
+                    </div>
+                  </div>
+
+                  {selectedEvent.source === "ANNOUNCEMENT" &&
+                    selectedAnnouncement && (
+                      <div className="mt-5">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Announcement Information
+                        </p>
+                        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-2xl border border-slate-200 p-4">
+                            <p className="text-[11px] text-slate-400">
+                              Audience
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-800">
+                              {String(selectedAnnouncement.audience)
+                                .replaceAll("_", " ")
+                                .toLowerCase()
+                                .replace(/\b\w/g, (c) => c.toUpperCase())}
+                            </p>
+                          </div>
+
+                          <div className="rounded-2xl border border-slate-200 p-4">
+                            <p className="text-[11px] text-slate-400">
+                              Status
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-800">
+                              {selectedAnnouncement.status ?? "Published"}
+                            </p>
+                          </div>
+
+                          <div className="rounded-2xl border border-slate-200 p-4 sm:col-span-2">
+                            <p className="text-[11px] text-slate-400">
+                              Channels
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {(selectedAnnouncement.channels?.length
+                                ? selectedAnnouncement.channels
+                                : ["IN_APP"]).map((channel) => (
+                                <span
+                                  key={channel}
+                                  className="rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700"
+                                >
+                                  {channel.replaceAll("_", " ")}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {selectedAnnouncement.requiresAcknowledgement && (
+                          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                            This announcement requires acknowledgement.
+                          </div>
+                        )}
+
+                        {selectedAnnouncement.attachment && (
+                          <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                              Attachment
+                            </p>
+                            <a
+                              href={selectedAnnouncement.attachment}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-2 inline-flex rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 transition hover:bg-brand-100"
+                            >
+                              View Attachment
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  {selectedEvent.source === "CALENDAR" && (
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-[11px] text-slate-400">Status</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-800">
+                          {selectedEvent.status || "Scheduled"}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-[11px] text-slate-400">
+                          Participants
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-800">
+                          {selectedEvent.participantCount ?? 0}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end border-t border-slate-100 px-6 py-4">
+              <button
+                type="button"
+                onClick={closeEventDetails}
+                className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

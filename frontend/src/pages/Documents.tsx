@@ -129,16 +129,17 @@ const DOCUMENT_REJECTION_REASONS = [
 // Helper function to safely fetch and view private document blobs
 async function openPrivateDocument(
   id: string,
-  fileName: string,
+  fileName: string | null | undefined,
   showToast: (message: string, variant?: "success" | "error" | "info") => void,
 ) {
   // Open synchronously to avoid popup blockers, then populate it after the
   // authenticated API request completes.
   const popup = window.open("about:blank", "_blank");
+  const safeFileName = String(fileName || "document").trim() || "document";
 
   try {
     const blob = await DocumentsApi.download(id);
-    const extension = fileName.split(".").pop()?.toLowerCase();
+    const extension = safeFileName.split(".").pop()?.toLowerCase() ?? "";
 
     const mimeType =
       extension === "pdf"
@@ -156,15 +157,14 @@ async function openPrivateDocument(
 
     if (popup) {
       popup.location.href = objectUrl;
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      popup.document.title = safeFileName;
     } else {
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = fileName;
+      anchor.download = safeFileName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     }
   } catch (err) {
     popup?.close();

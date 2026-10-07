@@ -69,11 +69,14 @@ export default function Attendance() {
   const isManager = hasPermission("attendance.manage");
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const [tab, setTab] = useState(
-    isManager && (requestedTab === "team" || requestedTab === "exceptions")
-      ? requestedTab
-      : "mine",
-  );
+  const initialTab: string =
+    isManager &&
+      ["team", "regularization", "exceptions"].includes(
+        requestedTab ?? "",
+      )
+      ? (requestedTab ?? "mine")
+      : "mine";
+  const [tab, setTab] = useState<string>(initialTab);
   const [regOpen, setRegOpen] = useState(false);
 
   const handleTabChange = (nextTab: string) => {
@@ -89,6 +92,7 @@ export default function Attendance() {
     ...(isManager
       ? [
           { key: "team", label: "Team View" },
+          { key: "regularization", label: "Attendance Regularization" },
           { key: "exceptions", label: "Attendance Exceptions" },
         ]
       : []),
@@ -123,7 +127,14 @@ export default function Attendance() {
         />
       )}
       {tab === "team" && isManager && <TeamAttendance />}
-      {tab === "exceptions" && isManager && <TeamAttendanceExceptions />}
+      {tab === "regularization" && isManager && <TeamRegularizationRequests />}
+      {tab === "exceptions" && isManager && (
+        <AttendanceExceptionReview
+          employeeId={selectedEmployeeId}
+          onEmployeeChange={setSelectedEmployeeId}
+          onOpenRegularization={() => setRegOpen(true)}
+        />
+      )}
       <RegularizeModal open={regOpen} onClose={() => setRegOpen(false)} />
     </div>
   );
@@ -138,6 +149,221 @@ function downloadBlob(blob: Blob, filename: string) {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+function AttendanceExceptionReview({
+  employeeId,
+  onEmployeeChange,
+  onOpenRegularization,
+}: {
+  employeeId?: string;
+  onEmployeeChange: (id?: string) => void;
+  onOpenRegularization: () => void;
+}) {
+  const { user, hasPermission } = useAuth();
+  const canSelectEmployee = hasPermission("attendance.manage");
+  const today = new Date();
+  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [year, setYear] = useState(today.getFullYear());
+
+  const { data: employeeData, isLoading: employeesLoading } = useQuery({
+    queryKey: ["attendance", "exceptions", "employees", user?.role],
+    queryFn: () => EmployeesApi.list({ page: 1, pageSize: 100 }),
+    enabled: !!user && canSelectEmployee,
+  });
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["attendance", "exceptions", employeeId, month, year],
+    queryFn: () => AttendanceApi.aiAnomalies(month, year, employeeId),
+  });
+
+  const employees = employeeData?.employees ?? [];
+  const anomalies: Array<{
+    id: string;
+    title: string;
+    date?: string | null;
+    severity?: string | null;
+    description: string;
+    reason?: string | null;
+    employeeId?: string;
+    employeeName?: string | null;
+  }> = data?.anomalies ?? [];
+  const [selectedDetail, setSelectedDetail] = useState<{
+    title: string;
+    content: string;
+  } | null>(null);
+
+  const severityStyles: Record<string, string> = {
+    HIGH: "bg-red-50 text-red-700 border-red-200",
+    MEDIUM: "bg-orange-50 text-orange-700 border-orange-200",
+    LOW: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  };
+
+  const statusStyles: Record<string, string> = {
+    OPEN: "bg-sky-50 text-sky-700 border-sky-200",
+    RESOLVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    IGNORED: "bg-gray-100 text-gray-700 border-gray-200",
+  };
+
+  return (
+    <div className="mb-6 space-y-4">
+      <Card>
+        <CardHeader
+          title="Attendance exceptions"
+          subtitle="Review system-detected attendance issues for the selected employee."
+        />
+        <div className="space-y-5 px-6 pb-5 pt-4">
+          <div className="max-w-md">
+            <label className="mb-1.5 block text-[12px] font-medium text-ink">
+              Employee
+            </label>
+            <select
+              value={employeeId ?? ""}
+              onChange={(e) => onEmployeeChange(e.target.value || undefined)}
+              disabled={employeesLoading}
+              className="h-11 w-full rounded-xl border border-line bg-white px-3 text-base text-ink outline-none focus:border-brand-400"
+            >
+              <option value="">All Employees</option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.firstName} {employee.lastName}
+                  {employee.employeeCode ? ` · ${employee.employeeCode}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <select
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              className="h-10 rounded-xl border border-line bg-white px-3 text-sm text-ink"
+            >
+              {Array.from({ length: 12 }, (_, index) => (
+                <option key={index + 1} value={index + 1}>
+                  {monthName(index + 1)}
+                </option>
+              ))}
+            </select>
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="h-10 rounded-xl border border-line bg-white px-3 text-sm text-ink"
+            >
+              {Array.from({ length: 5 }, (_, index) => {
+                const value = today.getFullYear() - index;
+                return (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="p-4 sm:p-5">
+          {isLoading ? (
+            <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-faint">
+              Loading exceptions...
+            </div>
+          ) : isError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              Unable to load attendance exceptions.
+            </div>
+          ) : anomalies.length === 0 ? (
+            <div className="rounded-xl border border-line bg-surface p-6 text-center text-sm text-ink-faint">
+              No attendance exceptions found for this selection.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {anomalies.map((anomaly) => {
+                const reasonText = anomaly.reason?.trim() || "No reason provided.";
+                const detailText = anomaly.description?.trim() || "No details available.";
+
+                return (
+                  <div
+                    key={anomaly.id}
+                    className="rounded-2xl border border-line bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="grid flex-1 gap-3 text-[13px] md:grid-cols-2 xl:grid-cols-7">
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Employee</p>
+                          <p className="mt-1 font-medium text-ink">
+                            {anomaly.employeeName ||
+                              (employeeId
+                                ? employees.find((emp) => emp.id === employeeId)?.firstName ?? "Selected employee"
+                                : "All Employees")}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Date</p>
+                          <p className="mt-1 font-medium text-ink">{anomaly.date ? formatDate(anomaly.date) : "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Problem</p>
+                          <p className="mt-1 font-medium text-ink">{anomaly.title}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Severity</p>
+                          <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium capitalize ${severityStyles[String(anomaly.severity).toUpperCase()] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
+                            {String(anomaly.severity ?? "LOW").toLowerCase()}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Status</p>
+                          <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium ${statusStyles.OPEN ?? "bg-sky-50 text-sky-700 border-sky-200"}`}>Open</span>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Reason</p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDetail({ title: "Reason", content: reasonText })}
+                            className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
+                          >
+                            {reasonText.length > 40 ? `${reasonText.slice(0, 40)}...` : reasonText}
+                          </button>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Details</p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDetail({ title: "Details", content: detailText })}
+                            className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
+                          >
+                            {detailText.length > 40 ? `${detailText.slice(0, 40)}...` : detailText}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end xl:pl-3">
+                        <Button size="sm" onClick={onOpenRegularization}>Create Regularization</Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Modal
+        open={!!selectedDetail}
+        onClose={() => setSelectedDetail(null)}
+        title={selectedDetail?.title ?? "Details"}
+        footer={
+          <Button onClick={() => setSelectedDetail(null)}>Close</Button>
+        }
+      >
+        <p className="whitespace-pre-wrap text-sm leading-6 text-ink">
+          {selectedDetail?.content ?? "No details available."}
+        </p>
+      </Modal>
+    </div>
+  );
 }
 
 function MyAttendance({
@@ -163,6 +389,8 @@ function MyAttendance({
   const queryClient = useQueryClient();
   const [earlyDepartureOpen, setEarlyDepartureOpen] = useState(false);
   const [earlyDepartureReason, setEarlyDepartureReason] = useState("");
+  const [lateCheckInOpen, setLateCheckInOpen] = useState(false);
+  const [lateCheckInReason, setLateCheckInReason] = useState("");
   const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
 
   const exportAttendance = async (format: "xlsx" | "pdf") => {
@@ -180,18 +408,22 @@ function MyAttendance({
     }
   };
 
+  const attendanceUserId = user?.employee?.id ?? user?.id ?? "anonymous";
+
   const {
     data: records,
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["attendance", "mine", month, year],
+    queryKey: ["attendance", "mine", attendanceUserId, month, year],
     queryFn: () => AttendanceApi.mine(month, year),
+    enabled: !!user,
   });
 
   const { data: todayRecord, isLoading: todayLoading } = useQuery({
-    queryKey: ["attendance", "today"],
+    queryKey: ["attendance", "today", attendanceUserId],
     queryFn: AttendanceApi.today,
+    enabled: !!user,
   });
 
   const getCurrentLocation = () =>
@@ -222,13 +454,31 @@ function MyAttendance({
     );
 
   const checkInMutation = useMutation({
-    mutationFn: async () =>
-      AttendanceApi.checkInWithLocation(await getCurrentLocation()),
+    mutationFn: async (reason?: string) => {
+      const location = await getCurrentLocation();
+      return AttendanceApi.checkInWithLocation({
+        ...location,
+        ...(reason?.trim() ? { lateCheckInReason: reason.trim() } : {}),
+      });
+    },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance", "today", attendanceUserId] });
+      queryClient.invalidateQueries({ queryKey: ["attendance", "mine", attendanceUserId] });
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      setLateCheckInOpen(false);
+      setLateCheckInReason("");
       showToast("Checked in successfully.");
     },
-    onError: (error) => showToast(getErrorMessage(error), "error"),
+    onError: (error) => {
+      const message = getErrorMessage(error);
+      if (message === "A reason is required for late check-in.") {
+        showToast(message, "error");
+        setLateCheckInReason("");
+        setLateCheckInOpen(true);
+        return;
+      }
+      showToast(message, "error");
+    },
   });
 
   const checkOutMutation = useMutation({
@@ -240,6 +490,8 @@ function MyAttendance({
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance", "today", attendanceUserId] });
+      queryClient.invalidateQueries({ queryKey: ["attendance", "mine", attendanceUserId] });
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
       setEarlyDepartureOpen(false);
       setEarlyDepartureReason("");
@@ -327,6 +579,16 @@ function MyAttendance({
     todayRecord?.earlyDepartureMinutes && todayRecord.earlyDepartureMinutes > 0
       ? ("EARLY_DEPARTURE" as AttendanceRecord["status"])
       : todayRecord?.status;
+  const lateCheckInReasonText =
+    todayRecord?.lateCheckInReason?.trim() ||
+    todayRecord?.note?.trim() ||
+    todayRecord?.auditTrail
+      ?.find(
+        (entry) =>
+          entry.action === "CHECK_IN" && !!entry.note?.trim(),
+      )
+      ?.note?.trim() ||
+    null;
 
   return (
     <div className="space-y-6">
@@ -364,12 +626,22 @@ function MyAttendance({
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : "—"}
               </p>
+              {lateCheckInReasonText ? (
+                <p className="mt-1 max-w-[180px] text-[10px] leading-4 text-amber-700">
+                  {lateCheckInReasonText}
+                </p>
+              ) : null}
             </div>
             <div>
               <p className="text-[11px] text-ink-faint">Check-out</p>
               <p className="mt-1 text-sm font-medium text-ink">
                 {todayRecord?.checkOut ? formatTime(todayRecord.checkOut) : "—"}
               </p>
+              {todayRecord?.checkOut && todayRecord.earlyDepartureReason ? (
+                <p className="mt-1 max-w-[180px] text-[10px] leading-4 text-amber-700">
+                  {todayRecord.earlyDepartureReason}
+                </p>
+              ) : null}
             </div>
             <div>
               <p className="text-[11px] text-ink-faint">Hours</p>
@@ -401,7 +673,7 @@ function MyAttendance({
               size="sm"
               className="w-[120px] shrink-0"
               leftIcon={<LogIn size={14} />}
-              onClick={() => checkInMutation.mutate()}
+              onClick={() => checkInMutation.mutate(undefined)}
               disabled={!canCheckIn}
               isLoading={checkInMutation.isPending}
             >
@@ -443,6 +715,57 @@ function MyAttendance({
           </div>
         </div>
       </Card>
+
+      <Modal
+        open={lateCheckInOpen}
+        onClose={() => {
+          if (!checkInMutation.isPending) {
+            setLateCheckInOpen(false);
+            setLateCheckInReason("");
+          }
+        }}
+        title="Late check-in reason"
+        subtitle="You checked in later than the office start time. Please provide a reason to complete attendance." 
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setLateCheckInOpen(false);
+                setLateCheckInReason("");
+              }}
+              disabled={checkInMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const reason = lateCheckInReason.trim();
+                if (reason.length < 3) {
+                  showToast(
+                    "Please provide a reason for late check-in.",
+                    "error",
+                  );
+                  return;
+                }
+                checkInMutation.mutate(reason);
+              }}
+              isLoading={checkInMutation.isPending}
+            >
+              Confirm check-in
+            </Button>
+          </>
+        }
+      >
+        <TextareaField
+          label="Reason"
+          required
+          placeholder="E.g. Traffic delay, medical issue, or personal emergency."
+          maxLength={1000}
+          value={lateCheckInReason}
+          onChange={(e) => setLateCheckInReason(e.target.value)}
+        />
+      </Modal>
 
       <Modal
         open={earlyDepartureOpen}
@@ -892,7 +1215,7 @@ function TeamAttendance() {
   );
 }
 
-function TeamAttendanceExceptions() {
+function TeamRegularizationRequests() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("PENDING");
@@ -941,8 +1264,8 @@ function TeamAttendanceExceptions() {
   return (
     <Card>
       <CardHeader
-        title="Attendance exceptions"
-        subtitle="Review attendance regularization requests from your direct reports"
+        title="Attendance regularization"
+        subtitle="Review attendance correction requests from your direct reports"
         action={
           <select
             value={status}
@@ -961,7 +1284,7 @@ function TeamAttendanceExceptions() {
       ) : isError ? (
         <EmptyState
           icon={AlertTriangle}
-          title="Unable to load attendance exceptions"
+          title="Unable to load attendance regularization"
           description="Please try again."
         />
       ) : !requests.length ? (
@@ -969,8 +1292,8 @@ function TeamAttendanceExceptions() {
           icon={CheckCircle2}
           title={
             status === "PENDING"
-              ? "No pending attendance exceptions"
-              : "No attendance exceptions found"
+              ? "No pending regularization requests"
+              : "No regularization requests found"
           }
         />
       ) : (
@@ -1061,8 +1384,8 @@ function TeamAttendanceExceptions() {
           }}
           title={
             decisionRequest.action === "approve"
-              ? "Approve attendance exception"
-              : "Reject attendance exception"
+              ? "Approve regularization request"
+              : "Reject regularization request"
           }
           subtitle={`${decisionRequest.firstName ?? ""} ${decisionRequest.lastName ?? ""} · ${formatDate(decisionRequest.date)}`}
           footer={
@@ -1137,15 +1460,51 @@ function RegularizeModal({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { register, handleSubmit, reset } = useForm({
-    defaultValues: { date: localDateString(), note: "" },
+    defaultValues: {
+      date: localDateString(),
+      problem: "MISSED_CHECK_IN",
+      requestedStatus: "PRESENT",
+      checkIn: "",
+      checkOut: "",
+      note: "",
+    },
   });
   const mutation = useMutation({
-    mutationFn: (value: { date: string; note: string }) =>
-      AttendanceApi.regularize(value.date, value.note.trim()),
+    mutationFn: (value: {
+      date: string;
+      problem: string;
+      requestedStatus: string;
+      checkIn: string;
+      checkOut: string;
+      note: string;
+    }) => {
+      const problemLabel = {
+        MISSED_CHECK_IN: "Missed check-in",
+        MISSED_CHECK_OUT: "Missed check-out",
+        WRONG_PUNCH: "Wrong punch",
+        NO_ATTENDANCE: "No attendance",
+        OTHER: "Attendance correction",
+      }[value.problem] ?? "Attendance correction";
+
+      const normalizedReason = `${problemLabel}: ${value.note.trim()}`;
+
+      return AttendanceApi.regularize(value.date, normalizedReason, undefined, {
+        requestedStatus: value.requestedStatus,
+        requestedCheckIn: value.checkIn || null,
+        requestedCheckOut: value.checkOut || null,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
       showToast("Regularization request submitted.");
-      reset({ date: localDateString(), note: "" });
+      reset({
+        date: localDateString(),
+        problem: "MISSED_CHECK_IN",
+        requestedStatus: "PRESENT",
+        checkIn: "",
+        checkOut: "",
+        note: "",
+      });
       onClose();
     },
     onError: (error) => showToast(getErrorMessage(error), "error"),
@@ -1155,7 +1514,7 @@ function RegularizeModal({
       open={open}
       onClose={onClose}
       title="Request attendance regularization"
-      subtitle="For a day with a missed or incorrect punch."
+      subtitle="Submit a correction request for a missed or incorrect attendance entry."
       footer={
         <>
           <Button
@@ -1185,6 +1544,64 @@ function RegularizeModal({
     >
       <div className="space-y-4">
         <TextField label="Date" type="date" required {...register("date")} />
+
+        <div className="space-y-2">
+          <label className="block text-[12px] font-medium text-ink">
+            Problem
+          </label>
+          <select
+            className="h-11 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink"
+            defaultValue="MISSED_CHECK_IN"
+            {...register("problem")}
+          >
+            <option value="MISSED_CHECK_IN">Missed check-in</option>
+            <option value="MISSED_CHECK_OUT">Missed check-out</option>
+            <option value="WRONG_PUNCH">Wrong punch</option>
+            <option value="NO_ATTENDANCE">No attendance</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className="block text-[12px] font-medium text-ink">
+              Check-in time
+            </label>
+            <input
+              type="time"
+              className="h-11 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink"
+              {...register("checkIn")}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="block text-[12px] font-medium text-ink">
+              Check-out time
+            </label>
+            <input
+              type="time"
+              className="h-11 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink"
+              {...register("checkOut")}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-[12px] font-medium text-ink">
+            Corrected attendance status
+          </label>
+          <select
+            className="h-11 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink"
+            defaultValue="PRESENT"
+            {...register("requestedStatus")}
+          >
+            <option value="PRESENT">Present</option>
+            <option value="ABSENT">Absent</option>
+            <option value="HALF_DAY">Half day</option>
+            <option value="WORK_FROM_HOME">Work from home</option>
+            <option value="ON_LEAVE">On leave</option>
+          </select>
+        </div>
+
         <TextareaField
           label="Reason"
           required
@@ -1192,6 +1609,16 @@ function RegularizeModal({
           maxLength={1000}
           {...register("note")}
         />
+
+        <div className="space-y-2">
+          <label className="block text-[12px] font-medium text-ink">
+            Attachment (optional)
+          </label>
+          <input
+            type="file"
+            className="block w-full rounded-xl border border-dashed border-line bg-surface px-3 py-2 text-sm text-ink"
+          />
+        </div>
       </div>
     </Modal>
   );

@@ -379,18 +379,26 @@ export default function EmployeeDirectory() {
                   {emp.designationTitle}
                 </p>
 
-                <div className="mt-4 flex items-center gap-2">
-                  <Badge tone="neutral" className="text-[11px]">
-                    {emp.departmentName}
-                  </Badge>
-                  <span className="font-mono text-[11px] text-ink-faint">
+                <div className="mt-4 min-w-0 space-y-1.5">
+                  {emp.departmentName && (
+                    <div className="min-w-0" title={emp.departmentName}>
+                      <Badge
+                        tone="neutral"
+                        className="inline-flex max-w-full whitespace-normal break-words text-[11px]"
+                      >
+                        {emp.departmentName}
+                      </Badge>
+                    </div>
+                  )}
+                  <div className="font-mono text-[11px] text-ink-faint">
                     {emp.employeeCode}
-                  </span>
+                  </div>
                 </div>
 
                 <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
-                  <p className="flex items-center gap-1.5 truncate">
-                    <Mail size={12} /> {emp.email}
+                  <p className="flex min-w-0 items-start gap-1.5 text-[11px] text-slate-500">
+                    <Mail size={12} className="mt-0.5 shrink-0 text-slate-400" />
+                    <span className="min-w-0 break-words leading-4">{emp.email}</span>
                   </p>
 
                   {emp.phone && (

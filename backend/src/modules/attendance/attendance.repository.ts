@@ -7,6 +7,7 @@ import {
   Shift,
   User,
 } from "@/db/models";
+import { env } from "@/config/env";
 import { nowIso } from "@/db/connection";
 import { AppError } from "@/utils/errors";
 import {
@@ -414,6 +415,7 @@ async function findOrCreateToday(employeeId: string) {
         effectiveWorkHours: null,
         breakMinutes: 0,
         lateMinutes: 0,
+        lateCheckInReason: null,
         earlyDepartureMinutes: 0,
         overtimeHours: 0,
         checkInLatitude: null,
@@ -454,6 +456,7 @@ export async function checkIn(
     latitude?: number;
     longitude?: number;
     accuracy?: number;
+    lateCheckInReason?: string;
   },
 ) {
   assertValidLocation(location);
@@ -500,6 +503,7 @@ export async function checkIn(
           shiftId: shift?._id ?? existing.shiftId ?? null,
           status: metrics.status,
           lateMinutes: metrics.lateMinutes,
+          lateCheckInReason: null,
           checkInLatitude: location?.latitude ?? null,
           checkInLongitude: location?.longitude ?? null,
           checkInAccuracy: location?.accuracy ?? null,
@@ -526,17 +530,42 @@ export async function checkIn(
     }
 
     if (metrics.lateMinutes > 0) {
+      if (!String(location?.lateCheckInReason ?? "").trim()) {
+        throw AppError.badRequest("A reason is required for late check-in.");
+      }
+
+      const lateReason = String(location?.lateCheckInReason ?? "").trim();
       const localTime = new Intl.DateTimeFormat("en-IN", {
         timeZone: IST_TIME_ZONE,
         dateStyle: "medium",
         timeStyle: "short",
       }).format(new Date(now));
 
+      await Attendance.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            lateCheckInReason: lateReason,
+            note: lateReason,
+            updatedAt: now,
+          },
+          $push: {
+            auditTrail: {
+              action: "CHECK_IN",
+              actorId: employeeId,
+              actorRole: "EMPLOYEE",
+              at: now,
+              note: lateReason,
+            },
+          },
+        },
+      );
+
       await notifyAttendanceException({
         employeeId,
         type: "ATTENDANCE_LATE",
         title: "Late arrival recorded",
-        message: `Late arrival of ${metrics.lateMinutes} minute(s) was recorded at ${localTime}.`,
+        message: `Late arrival of ${metrics.lateMinutes} minute(s) was recorded at ${localTime}. Reason: ${lateReason}`,
       });
     }
   }
@@ -1122,6 +1151,16 @@ export async function requestRegularization(
   employeeId: string,
   date: string,
   note: string,
+  details: Partial<{
+    requestedCheckIn: string | null;
+    requestedCheckOut: string | null;
+    requestedStatus:
+      | "PRESENT"
+      | "ABSENT"
+      | "HALF_DAY"
+      | "WORK_FROM_HOME"
+      | "ON_LEAVE";
+  }> = {},
 ) {
   if (!isValidDateString(date)) {
     throw new Error("Invalid attendance date.");
@@ -1153,17 +1192,31 @@ export async function requestRegularization(
 
   const attendance = await Attendance.findOne({ employeeId, date }).lean();
 
-  const requestedCheckIn = attendance?.checkIn ?? null;
-  const requestedCheckOut = attendance?.checkOut ?? null;
+  const requestedCheckIn =
+    details.requestedCheckIn && /^\d{2}:\d{2}$/.test(details.requestedCheckIn)
+      ? details.requestedCheckIn
+      : attendance?.checkIn ?? null;
+  const requestedCheckOut =
+    details.requestedCheckOut && /^\d{2}:\d{2}$/.test(details.requestedCheckOut)
+      ? details.requestedCheckOut
+      : attendance?.checkOut ?? null;
   const requestedStatus =
-    attendance?.status &&
+    details.requestedStatus &&
     ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"].includes(
-      attendance.status,
+      details.requestedStatus,
     )
-      ? attendance.status
-      : "PRESENT";
+      ? details.requestedStatus
+      : attendance?.status &&
+          ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"].includes(
+            attendance.status,
+          )
+        ? attendance.status
+        : "PRESENT";
 
   const now = nowIso();
+  const expiresAt = new Date(
+    Date.now() + env.regularizationExpiryDays * 24 * 60 * 60 * 1000,
+  ).toISOString();
 
   const request = await AttendanceRegularizationRequest.create({
     employeeId,
@@ -1174,7 +1227,7 @@ export async function requestRegularization(
     requestedStatus,
     reason,
     status: "PENDING",
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt,
     expiredAt: null,
     approverId: null,
     decisionNote: null,

@@ -46,6 +46,21 @@ const MANAGER_ROLES: string[] = [
 ];
 
 /**
+ * Roles that can access Team Approvals.
+ * SUPER_ADMIN / HR_ADMIN can see all team requests.
+ * MANAGER / RECRUITER / FINANCE / IT_SUPPORT see only their
+ * own direct team's requests through the backend scope=team filter.
+ */
+const TEAM_LEAVE_APPROVAL_ROLES: string[] = [
+  "SUPER_ADMIN",
+  "HR_ADMIN",
+  "MANAGER",
+  "RECRUITER",
+  "FINANCE",
+  "IT_SUPPORT",
+];
+
+/**
  * Leave application rules are shared by the form UI and validation:
  * - past dates are not allowed
  * - Saturday/Sunday are not allowed
@@ -193,6 +208,12 @@ export default function Leave() {
   const isManager =
     !!user && MANAGER_ROLES.includes(user.role);
 
+  const isTeamLeaveApprover =
+    !!user && TEAM_LEAVE_APPROVAL_ROLES.includes(user.role);
+
+  const isLeaveAdmin =
+    user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
+
   const [tab, setTab] = useState(
     params.get("tab") === "team" && isManager
       ? "team"
@@ -200,6 +221,7 @@ export default function Leave() {
   );
 
   const [applyOpen, setApplyOpen] = useState(false);
+  const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
   const [applyPrefill, setApplyPrefill] = useState<{
     startDate?: string;
     endDate?: string;
@@ -210,9 +232,11 @@ export default function Leave() {
   const tabs = [
     { key: "mine", label: "My Leave" },
     { key: "assistant", label: "AI Leave Assistant ✦" },
+    ...(isTeamLeaveApprover
+      ? [{ key: "team", label: "Team Approvals" }]
+      : []),
     ...(isManager
       ? [
-          { key: "team", label: "Team Approvals" },
           { key: "analytics", label: "Leave Analytics" },
           { key: "patterns", label: "Pattern Detection" },
         ]
@@ -226,15 +250,27 @@ export default function Leave() {
         title="Leave"
         subtitle="Apply for leave, track balances, and manage approvals."
         action={
-          <Button
-            leftIcon={<Plus size={16} />}
-            onClick={() => {
-              setApplyPrefill(null);
-              setApplyOpen(true);
-            }}
-          >
-            Apply for leave
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              leftIcon={<Plus size={16} />}
+              onClick={() => {
+                setApplyPrefill(null);
+                setApplyOpen(true);
+              }}
+            >
+              Apply for leave
+            </Button>
+
+            {isLeaveAdmin && (
+              <Button
+                variant="outline"
+                leftIcon={<Users size={16} />}
+                onClick={() => setBulkApplyOpen(true)}
+              >
+                Apply for all employees
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -254,7 +290,7 @@ export default function Leave() {
           }}
         />
       )}
-      {tab === "team" && isManager && <TeamApprovals />}
+      {tab === "team" && isTeamLeaveApprover && <TeamApprovals />}
       {tab === "analytics" && isManager && <LeaveAnalytics />}
       {tab === "patterns" && isManager && <LeavePatternDetection />}
       {tab === "calendar" && <LeaveCalendar />}
@@ -267,6 +303,13 @@ export default function Leave() {
         }}
         prefillData={applyPrefill}
       />
+
+      {isLeaveAdmin && (
+        <BulkApplyLeaveModal
+          open={bulkApplyOpen}
+          onClose={() => setBulkApplyOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -418,6 +461,15 @@ function MyLeave() {
   );
 }
 
+/**
+ * Team Approvals:
+ * - SUPER_ADMIN / HR_ADMIN can decide requests across the organization.
+ * - MANAGER / RECRUITER / FINANCE / IT_SUPPORT can decide requests
+ *   shown for their own direct reports.
+ *
+ * The backend is the final authorization boundary and verifies
+ * the employee's reporting manager before recording the decision.
+ */
 function TeamApprovals() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -1870,6 +1922,337 @@ function LeaveCalendar() {
   );
 }
 
+
+function BulkApplyLeaveModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [employeeScope, setEmployeeScope] = useState<"ALL" | "SELECTED">("SELECTED");
+  const [employeeIds, setEmployeeIds] = useState<string[]>([]);
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const [leaveTypeId, setLeaveTypeId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [reason, setReason] = useState("");
+
+  const { data: leaveTypes, isLoading: leaveTypesLoading } = useQuery({
+    queryKey: ["leave-types", "bulk-apply"],
+    queryFn: LeaveApi.types,
+    enabled: open,
+  });
+
+  const {
+    data: employeeData,
+    isLoading: employeesLoading,
+    isError: employeesError,
+  } = useQuery({
+    queryKey: ["leave", "bulk-apply", "employees"],
+    queryFn: () =>
+      EmployeesApi.list({
+        page: 1,
+        pageSize: 100,
+      }),
+    enabled: open,
+  });
+
+  // Load employees whenever the bulk modal is open so the Apply-to
+  // dropdown can show employee names. The employee-list API accepts a
+  // maximum pageSize of 100; the bulk-leave backend still performs the
+  // final eligibility check for every submitted employee.
+  // Keep the picker aligned with the backend bulk-leave eligibility rules.
+  // Normalize the status value because employee records may return the status
+  // with different casing. If an employee status is not present in the list
+  // response, keep the employee visible and let the backend perform the final
+  // eligibility validation when the request is submitted.
+  const bulkEligibleStatuses = new Set([
+    "ACTIVE",
+    "ON_PROBATION",
+    "ON_LEAVE",
+    "NOTICE_PERIOD",
+  ]);
+
+  const employees = (employeeData?.employees ?? []).filter((employee) => {
+    const status = String(employee.status ?? "").trim().toUpperCase();
+    return !status || bulkEligibleStatuses.has(status);
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setEmployeeScope("SELECTED");
+    setEmployeeIds([]);
+    setEmployeePickerOpen(false);
+    setLeaveTypeId("");
+    setStartDate("");
+    setEndDate("");
+    setReason("");
+  }, [open]);
+
+  const toggleEmployee = (employeeId: string) => {
+    setEmployeeScope("SELECTED");
+    setEmployeeIds((current) =>
+      current.includes(employeeId)
+        ? current.filter((id) => id !== employeeId)
+        : [...current, employeeId],
+    );
+  };
+
+  const selectAllLoadedEmployees = () => {
+    setEmployeeScope("SELECTED");
+    setEmployeeIds(employees.map((employee) => employee.id));
+  };
+
+  const selectedEmployeesLabel =
+    employeeIds.length === 0
+      ? "Select employees"
+      : employeeIds.length === employees.length
+        ? "All employees selected"
+        : `${employeeIds.length} employee${employeeIds.length === 1 ? "" : "s"} selected`;
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (employeeScope === "SELECTED" && !employeeIds.length) {
+        throw new Error("Select at least one employee.");
+      }
+
+      return LeaveApi.bulkApply({
+        applyToAll: employeeScope === "ALL",
+        employeeIds: employeeScope === "SELECTED" ? employeeIds : undefined,
+        leaveTypeId,
+        startDate,
+        endDate,
+        halfDay: false,
+        halfDayType: null,
+        reason: reason.trim(),
+      });
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["leave"] });
+      queryClient.invalidateQueries({ queryKey: ["leave-types"] });
+
+      const skippedText =
+        result.skippedCount > 0
+          ? ` ${result.skippedCount} employee(s) were skipped.`
+          : "";
+
+      showToast(
+        user?.role === "SUPER_ADMIN"
+          ? `Leave approved for ${result.createdCount} employee(s).${skippedText}`
+          : `Leave request created for ${result.createdCount} employee(s).${skippedText}`,
+      );
+
+      onClose();
+    },
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
+
+  const canSubmit =
+    !!leaveTypeId &&
+    !!startDate &&
+    !!endDate &&
+    endDate >= startDate &&
+    reason.trim().length >= 3 &&
+    (employeeScope === "ALL" || employeeIds.length > 0);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Apply leave for employees"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            isLoading={mutation.isPending}
+            disabled={!canSubmit}
+            leftIcon={<Users size={16} />}
+          >
+            Apply leave
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-xl border border-brand-100 bg-brand-50/50 p-3">
+          <p className="text-[12px] font-semibold text-ink">
+            Admin bulk leave
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">
+            Super Admin and HR Admin can create the same leave request for all
+            eligible employees or a selected group. Existing leave rules and
+            balances are still checked for every employee.
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SelectField
+            label="Leave type"
+            required
+            value={leaveTypeId}
+            onChange={(event) => setLeaveTypeId(event.target.value)}
+          >
+            <option value="">
+              {leaveTypesLoading ? "Loading leave types..." : "Select leave type"}
+            </option>
+            {leaveTypes?.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.name}
+              </option>
+            ))}
+          </SelectField>
+
+          <div className="relative">
+            <label className="mb-1 block text-[11px] font-medium text-ink">
+              Apply to <span className="text-red-500">*</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setEmployeePickerOpen((open) => !open)}
+              className={cx(
+                "flex h-10 w-full items-center justify-between rounded-xl border bg-white px-3 text-left text-sm transition focus:outline-none",
+                employeePickerOpen
+                  ? "border-brand-400 ring-2 ring-brand-100"
+                  : "border-line/60 hover:border-brand-200",
+              )}
+              aria-expanded={employeePickerOpen}
+              aria-haspopup="listbox"
+            >
+              <span className="truncate text-ink">
+                {selectedEmployeesLabel}
+              </span>
+              <ChevronRight
+                size={15}
+                className={cx(
+                  "shrink-0 text-ink-faint transition-transform",
+                  employeePickerOpen && "rotate-90",
+                )}
+              />
+            </button>
+
+            {employeePickerOpen && (
+              <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 overflow-hidden rounded-xl border border-line/70 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.14)]">
+                <div className="flex items-center justify-between border-b border-line/60 px-3 py-2.5">
+                  <div>
+                    <p className="text-[11px] font-semibold text-ink">
+                      Select employees
+                    </p>
+                    <p className="text-[9px] text-ink-faint">
+                      {employeeIds.length === 0
+                        ? "No employees selected"
+                        : `${employeeIds.length} selected`}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={selectAllLoadedEmployees}
+                    disabled={employeesLoading || !employees.length}
+                    className="text-[10px] font-semibold text-brand-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Select all
+                  </button>
+                </div>
+
+                <div className="max-h-56 overflow-y-auto p-1.5">
+                  {employeesLoading && (
+                    <p className="py-5 text-center text-[11px] text-ink-faint">
+                      Loading employees...
+                    </p>
+                  )}
+
+                  {employeesError && (
+                    <p className="px-3 py-5 text-center text-[11px] text-red-500">
+                      Unable to load employees. Please refresh and try again.
+                    </p>
+                  )}
+
+                  {!employeesLoading &&
+                    !employeesError &&
+                    employees.map((employee) => {
+                      const selected =
+                        employeeIds.includes(employee.id);
+
+                      const name = [employee.firstName, employee.lastName]
+                        .filter(Boolean)
+                        .join(" ");
+
+                      return (
+                        <label
+                          key={employee.id}
+                          className="flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 hover:bg-canvas"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => {
+                              toggleEmployee(employee.id);
+                            }}
+                            className="h-4 w-4 shrink-0 accent-brand-600"
+                          />
+                          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">
+                            {name || "Employee"}
+                          </span>
+                        </label>
+                      );
+                    })}
+
+                  {!employeesLoading &&
+                    !employeesError &&
+                    !employees.length && (
+                      <p className="py-5 text-center text-[11px] text-ink-faint">
+                        No eligible employees found.
+                      </p>
+                    )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TextField
+            label="Start date"
+            required
+            type="date"
+            value={startDate}
+            onChange={(event) => setStartDate(event.target.value)}
+            min={getTodayIso()}
+          />
+          <TextField
+            label="End date"
+            required
+            type="date"
+            value={endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+            min={startDate || getTodayIso()}
+          />
+        </div>
+
+        <TextareaField
+          label="Reason"
+          required
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Example: Company-wide holiday / management declared leave"
+          rows={3}
+        />
+
+      </div>
+    </Modal>
+  );
+}
+
 function ApplyModal({
   open,
   onClose,
@@ -2046,7 +2429,9 @@ function ApplyModal({
       });
 
       showToast(
-        "Leave request submitted for approval.",
+        user?.role === "SUPER_ADMIN"
+          ? "Leave approved successfully. No approval is required."
+          : "Leave request submitted for approval.",
       );
 
       reset();
@@ -2864,3 +3249,5 @@ function LeaveConflictCard({
     </div>
   );
 }
+
+

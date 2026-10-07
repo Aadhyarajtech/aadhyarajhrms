@@ -290,6 +290,7 @@ export interface AttendanceRecord {
   effectiveWorkHours: number | null;
   breakMinutes: number;
   lateMinutes: number;
+  lateCheckInReason: string | null;
   earlyDepartureMinutes: number;
   overtimeHours: number;
   earlyDepartureReason: string | null;
@@ -318,7 +319,8 @@ export type AttendanceRegularizationStatus =
   | "PENDING"
   | "APPROVED"
   | "REJECTED"
-  | "CANCELLED";
+  | "CANCELLED"
+  | "EXPIRED";
 
 export type AttendanceRegularizationRequestedStatus =
   | "PRESENT"

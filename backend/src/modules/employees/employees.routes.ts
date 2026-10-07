@@ -518,14 +518,15 @@ employeesRouter.get(
         requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
 
       // Managers may only request their own direct reports.
-      if (!isAdmin && !requester.isManager) {
-        throw AppError.forbidden(
-          "Only employees marked as managers can access direct reports.",
-        );
+      if (
+        requester.role === "MANAGER" &&
+        requester.employeeId !== employeeId
+      ) {
+        throw AppError.forbidden();
       }
 
-      // Non-admin managers may only request their own direct reports.
-      if (!isAdmin && requester.employeeId !== employeeId) {
+      // Employees cannot access direct-report lists.
+      if (!isAdmin && requester.role !== "MANAGER") {
         throw AppError.forbidden();
       }
 
@@ -572,8 +573,8 @@ const createEmployeeSchema = z.object({
       "EMPLOYEE",
     ])
     .default("EMPLOYEE"),
-  departmentId: z.string(),
-  designationId: z.string(),
+  departmentId: z.string().trim().min(1).nullable().optional(),
+  designationId: z.string().trim().min(1).nullable().optional(),
   managerId: z.string().nullable().optional(),
   isManager: z.boolean().optional(),
   employmentType: z
@@ -661,8 +662,8 @@ const updateEmployeeSchema = z.object({
   gender: z.string().nullable().optional(),
   maritalStatus: z.string().nullable().optional(),
   dateOfBirth: z.string().nullable().optional(),
-  departmentId: z.string().optional(),
-  designationId: z.string().optional(),
+  departmentId: z.string().trim().min(1).nullable().optional(),
+  designationId: z.string().trim().min(1).nullable().optional(),
   managerId: z.string().nullable().optional(),
   isManager: z.boolean().optional(),
   employmentType: z
