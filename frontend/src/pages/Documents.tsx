@@ -668,9 +668,7 @@ function DocumentRow({ doc }: { doc: any }): JSX.Element {
   const { showToast } = useToast();
   const { user, hasPermission } = useAuth();
 
-  const canDelete =
-    user?.role !== "EMPLOYEE" &&
-    (doc.uploadedBy === user?.id || hasPermission("documents.manage"));
+  const canDelete = ["SUPER_ADMIN", "HR_ADMIN"].includes((user as any)?.role);
 
   const canReview =
     hasPermission("documents.manage") &&
