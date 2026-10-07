@@ -1,3 +1,4 @@
+
 import "express";
 
 export interface AuthUser {
@@ -6,6 +7,7 @@ export interface AuthUser {
   name: string;
   email: string;
   isManager: boolean;
+  mustResetPwd: boolean;
   role:
     | "SUPER_ADMIN"
     | "HR_ADMIN"

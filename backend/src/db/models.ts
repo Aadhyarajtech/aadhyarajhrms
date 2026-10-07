@@ -181,7 +181,7 @@ export interface DesignationDoc {
   _id: string;
   title: string;
   level: number;
-  departmentId: string;
+  departmentId: string | null;
 }
 
 const designationSchema = new Schema<DesignationDoc>(
@@ -201,7 +201,7 @@ const designationSchema = new Schema<DesignationDoc>(
 
     departmentId: {
       type: String,
-      required: true,
+      default: null,
     },
   },
   baseOptions,
@@ -609,8 +609,8 @@ const employeeSchema = new Schema<EmployeeDoc>(
     workLocation: { type: String, default: null },
     grade: { type: String, default: null },
 
-    departmentId: { type: String, required: true },
-    designationId: { type: String, required: true },
+    departmentId: { type: String, default: null },
+    designationId: { type: String, default: null },
     managerId: { type: String, default: null },
     isManager: { type: Boolean, default: false },
     shiftId: { type: String, default: null },
@@ -919,7 +919,8 @@ export type AttendanceRegularizationStatus =
   | "PENDING"
   | "APPROVED"
   | "REJECTED"
-  | "CANCELLED";
+  | "CANCELLED"
+  | "EXPIRED";
 
 export type AttendanceRegularizationAuditAction =
   | "REQUESTED"
@@ -957,6 +958,8 @@ export interface AttendanceRegularizationRequestDoc {
   decisionNote: string | null;
   requestedAt: string;
   decidedAt: string | null;
+  expiresAt: string | null;
+  expiredAt: string | null;
   approvedCheckIn: string | null;
   approvedCheckOut: string | null;
   approvedStatus: AttendanceRegularizationRequestDoc["requestedStatus"] | null;
@@ -1003,7 +1006,7 @@ const attendanceRegularizationRequestSchema =
       reason: { type: String, required: true, trim: true, maxlength: 1000 },
       status: {
         type: String,
-        enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
+        enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXPIRED"],
         default: "PENDING",
       },
       approverId: { type: String, default: null },
@@ -1015,6 +1018,8 @@ const attendanceRegularizationRequestSchema =
       },
       requestedAt: { type: String, required: true },
       decidedAt: { type: String, default: null },
+      expiresAt: { type: String, default: null },
+      expiredAt: { type: String, default: null },
       approvedCheckIn: { type: String, default: null },
       approvedCheckOut: { type: String, default: null },
       approvedStatus: { type: String, default: null },

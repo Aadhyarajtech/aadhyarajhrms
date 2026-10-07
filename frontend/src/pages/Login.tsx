@@ -27,13 +27,13 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 const DEMO_ACCOUNTS = [
-  { label: "Super Admin", email: "admin@aadhyaraj.com" },
-  { label: "HR Admin", email: "hr.admin@aadhyaraj.com" },
-  { label: "Manager", email: "manager.demo@aadhyaraj.com" },
-  { label: "Recruiter", email: "recruiter.demo@aadhyaraj.com" },
-  { label: "Finance", email: "finance.demo@aadhyaraj.com" },
-  { label: "IT Support", email: "it.support.demo@aadhyaraj.com" },
-  { label: "Employee", email: "employee.demo@aadhyaraj.com" },
+  { label: "Super Admin", email: "adithya.nuthakki@aadhyarajtech.com" },
+  { label: "HR Admin", email: "geetha.balachandran@aadhyarajtech.com" },
+  { label: "Manager", email: "gangadhar.yedla@aadhyarajtech.com" },
+  { label: "Recruiter", email: "meghana.sahithi@aadhyarajtech.com" },
+  { label: "Finance", email: "sreevidya.talasila@aadhyarajtech.com" },
+  { label: "IT Support", email: "kavya.rachupalli@aadhyarajtech.com" },
+  { label: "Employee", email: "anusha.nookanaboina@aadhyarajtech.com" },
 ];
 const DEMO_PASSWORD = "Welcome@123";
 
@@ -68,23 +68,29 @@ export default function Login() {
     resolver: zodResolver(schema),
   });
 
-  const onSubmit = async (values: FormValues) => {
-    setSubmitting(true);
-    try {
-      await login(values.email, values.password);
-      navigate("/app/dashboard");
-    } catch (err) {
-      showToast(
-        getErrorMessage(
-          err,
-          "We couldn't sign you in. Check your details and try again.",
-        ),
-        "error",
-      );
-    } finally {
-      setSubmitting(false);
+ const onSubmit = async (values: FormValues) => {
+  setSubmitting(true);
+
+  try {
+    const loggedInUser = await login(values.email, values.password);
+
+    if (loggedInUser.mustResetPwd) {
+      navigate("/change-temporary-password", { replace: true });
+    } else {
+      navigate("/app/dashboard", { replace: true });
     }
-  };
+  } catch (err) {
+    showToast(
+      getErrorMessage(
+        err,
+        "We couldn't sign you in. Check your details and try again.",
+      ),
+      "error",
+    );
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const fillDemo = (email: string) => {
     setValue("email", email);
@@ -376,7 +382,8 @@ export default function Login() {
             "The new HRMS turned our scattered HR processes into one calm, connected system."
           </p>
           <p className="mt-4 text-sm text-white/70">
-            Mira Sharma · Chief Executive Officer, Aadhyaraj Technologies
+            
+Adithya Nuthakki· Chief Executive Officer, Aadhyaraj Technologies
           </p>
         </div>
         <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/10 blur-3xl" />

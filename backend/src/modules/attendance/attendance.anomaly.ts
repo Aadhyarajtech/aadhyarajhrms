@@ -16,7 +16,8 @@ export type AttendanceAnomalyType =
   | "UNUSUAL_WORKING_HOURS"
   | "FREQUENT_ABSENCE"
   | "ATTENDANCE_DECLINE"
-  | "REPEATED_HALF_DAYS";
+  | "REPEATED_HALF_DAYS"
+  | "EARLY_DEPARTURE";
 
 export type AttendanceAnomalySeverity =
   | "LOW"
@@ -36,6 +37,9 @@ export interface AttendanceAnomaly {
 }
 
 export interface AttendanceAnomalyResult {
+  employeeId: string;
+  employeeName: string | null;
+
   period: {
     month: number;
     year: number;
@@ -463,6 +467,40 @@ function detectMissingCheckouts(
 }
 
 // ============================================================================
+// EARLY DEPARTURE
+// ============================================================================
+
+function detectEarlyDepartures(
+  records: AttendanceDoc[],
+): AttendanceAnomaly[] {
+  return records
+    .filter(
+      (record) =>
+        record.status === "EARLY_DEPARTURE" ||
+        Number(record.earlyDepartureMinutes ?? 0) > 0,
+    )
+    .map((record) => {
+      const date = String(record.date).slice(0, 10);
+      const minutes = Number(record.earlyDepartureMinutes ?? 0);
+      const severity = minutes >= 60 ? "HIGH" : minutes >= 30 ? "MEDIUM" : "LOW";
+
+      return {
+        id: `early-departure-${date}`,
+        type: "EARLY_DEPARTURE" as const,
+        severity,
+        date,
+        title: "Early departure",
+        description: record.earlyDepartureReason
+          ? `Employee left ${minutes} minutes before the scheduled shift end. Reason: ${record.earlyDepartureReason}.`
+          : `Employee left ${minutes} minutes before the scheduled shift end.`,
+        actualValue: minutes,
+        expectedValue: 0,
+        deviation: minutes,
+      };
+    });
+}
+
+// ============================================================================
 // UNUSUAL WORKING HOURS
 // ============================================================================
 
@@ -883,6 +921,10 @@ const [
         previousRecords,
       ),
 
+      ...detectEarlyDepartures(
+        currentRecords,
+      ),
+
       ...detectMissingCheckouts(
         currentRecords,
       ),
@@ -960,6 +1002,12 @@ const [
     );
 
   return {
+    employeeId: String(employee._id),
+    employeeName:
+      [employee.firstName, employee.lastName].filter(Boolean).join(" ") ||
+      employee.employeeCode ||
+      null,
+
     period: {
       month: resolvedMonth,
       year: resolvedYear,

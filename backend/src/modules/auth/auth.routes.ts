@@ -92,13 +92,18 @@ authRouter.post(
     try {
       const { email, password } = req.body as z.infer<typeof registerSchema>;
       const normalizedEmail = email.toLowerCase().trim();
+
       const existing = await findUserByEmail(normalizedEmail);
+
       if (existing) {
-        throw AppError.badRequest("An account with this email already exists.");
+        throw AppError.badRequest(
+          "An account with this email already exists.",
+        );
       }
 
       const now = nowIso();
       const passwordHash = bcrypt.hashSync(password, 10);
+
       const user = await User.create({
         email: normalizedEmail,
         passwordHash,
@@ -112,9 +117,11 @@ authRouter.post(
       let department = await Department.findOne({})
         .sort({ createdAt: 1 })
         .lean();
+
       let designation = await Designation.findOne({})
         .sort({ createdAt: 1 })
         .lean();
+
       if (!department) {
         department = await Department.create({
           name: "General",
@@ -126,6 +133,7 @@ authRouter.post(
           createdAt: now,
         });
       }
+
       if (!designation) {
         designation = await Designation.create({
           title: "Employee",
@@ -133,7 +141,10 @@ authRouter.post(
           departmentId: department._id,
         });
       }
-      const employeeCode = `ART-${new Date().getFullYear()}-${String((await Employee.countDocuments({})) + 1).padStart(4, "0")}`;
+
+      const employeeCode = `ART-${new Date().getFullYear()}-${String(
+        (await Employee.countDocuments({})) + 1,
+      ).padStart(4, "0")}`;
 
       const employee = await Employee.create({
         employeeCode,
@@ -162,25 +173,34 @@ authRouter.post(
         updatedAt: now,
       });
 
-      res
-        .status(201)
-        .json({ message: "Registration successful. You can now sign in." });
-      const hrAdmins = await User.find({
-        role: "HR_ADMIN",
-        isActive: true,
-      })
-        .select("_id")
-        .lean();
-      for (const hrAdmin of hrAdmins) {
-        await notify({
-          userId: hrAdmin._id,
-          type: "SYSTEM",
-          title: "New Employee Registered",
-          message: `A new employee ${employee.firstName} ${employee.lastName}, has registered. Please assign the Department, Designation and Reporting Manager.`,
-          link: `/employees/${employee._id}`,
-        });
+      // Notify HR admins. Notification failures must not fail registration.
+      try {
+        const hrAdmins = await User.find({
+          role: "HR_ADMIN",
+          isActive: true,
+        })
+          .select("_id")
+          .lean();
+
+        await Promise.allSettled(
+          hrAdmins.map((hrAdmin) =>
+            notify({
+              userId: hrAdmin._id,
+              type: "SYSTEM",
+              title: "New Employee Registered",
+              message: `A new employee ${employee.firstName} ${employee.lastName} has registered. Please assign the Department, Designation and Reporting Manager.`,
+              link: `/employees/${employee._id}`,
+            }),
+          ),
+        );
+      } catch (notificationError) {
+        console.error(
+          "Failed to notify HR admins about registration",
+          notificationError,
+        );
       }
-      res.status(201).json({
+
+      return res.status(201).json({
         message: "Registration successful. You can sign in.",
       });
     } catch (err) {

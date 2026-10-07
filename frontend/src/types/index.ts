@@ -318,7 +318,8 @@ export type AttendanceRegularizationStatus =
   | "PENDING"
   | "APPROVED"
   | "REJECTED"
-  | "CANCELLED";
+  | "CANCELLED"
+  | "EXPIRED";
 
 export type AttendanceRegularizationRequestedStatus =
   | "PRESENT"

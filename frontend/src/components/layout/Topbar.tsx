@@ -24,9 +24,10 @@ import {
 } from "@/lib/endpoints";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { TextareaField } from "@/components/ui/Field";
 import { timeAgo, cx } from "@/lib/format";
 import { getErrorMessage } from "@/lib/api";
-
 export function Topbar({
   onOpenMobileNav,
   onRaiseTicket,
@@ -43,6 +44,48 @@ export function Topbar({
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [earlyDepartureOpen, setEarlyDepartureOpen] =
+    useState(false);
+
+  const [earlyDepartureReason, setEarlyDepartureReason] =
+    useState("");
+  const getCurrentLocation = () =>
+    new Promise<{
+      latitude: number;
+      longitude: number;
+      accuracy?: number;
+    }>((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(
+          new Error(
+            "Geolocation is not supported by this browser.",
+          ),
+        );
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) =>
+          resolve({
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            accuracy: Number.isFinite(coords.accuracy)
+              ? coords.accuracy
+              : undefined,
+          }),
+        () =>
+          reject(
+            new Error(
+              "Unable to get your location. Please allow location access and try again.",
+            ),
+          ),
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 30000,
+        },
+      );
+    });
 
   /*
    * Notification read state is user-specific and role-neutral.
@@ -52,8 +95,8 @@ export function Topbar({
   const isNotificationRead = (notification: any) =>
     Boolean(
       notification?.isRead ??
-        notification?.read ??
-        notification?.readAt,
+      notification?.read ??
+      notification?.readAt,
     );
 
   const notifRef = useRef<HTMLDivElement>(null);
@@ -167,7 +210,6 @@ export function Topbar({
   /* =========================================================
      CHECK IN
   ========================================================= */
-
   const checkInMutation = useMutation({
     mutationFn: AttendanceApi.checkIn,
 
@@ -190,27 +232,46 @@ export function Topbar({
   });
 
   /* =========================================================
-     CHECK OUT
-  ========================================================= */
+   CHECK OUT
+========================================================= */
 
   const checkOutMutation = useMutation({
-    mutationFn: AttendanceApi.checkOut,
+    mutationFn: async (reason?: string) => {
+      const location = await getCurrentLocation();
+
+      return AttendanceApi.checkOutWithOptions({
+        ...location,
+        ...(reason?.trim()
+          ? { earlyDepartureReason: reason.trim() }
+          : {}),
+      });
+    },
 
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["attendance", "today"],
       });
 
-      showToast(
-        "Checked out. See you tomorrow!",
-      );
+      setEarlyDepartureOpen(false);
+      setEarlyDepartureReason("");
+
+      showToast("Checked out. See you tomorrow!");
     },
 
-    onError: (err) => {
-      showToast(
-        getErrorMessage(err),
-        "error",
-      );
+    onError: (error) => {
+      const message = getErrorMessage(error);
+
+      if (
+        message ===
+        "A reason is required for early departure."
+      ) {
+        showToast(message, "error");
+        setEarlyDepartureReason("");
+        setEarlyDepartureOpen(true);
+        return;
+      }
+
+      showToast(message, "error");
     },
   });
 
@@ -343,9 +404,9 @@ export function Topbar({
   const handleNotifClick = async (notification: any) => {
     const id = String(
       notification?.id ??
-        notification?._id ??
-        notification?.notificationId ??
-        "",
+      notification?._id ??
+      notification?.notificationId ??
+      "",
     ).trim();
     const link = resolveNotificationLink(notification);
     /*
@@ -447,371 +508,425 @@ export function Topbar({
     typeof notifData?.unreadCount === "number"
       ? notifData.unreadCount
       : notifications.filter(
-          (notification: any) =>
-            !isNotificationRead(notification),
-        ).length;
+        (notification: any) =>
+          !isNotificationRead(notification),
+      ).length;
 
   /* =========================================================
      RENDER
   ========================================================= */
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line/70 bg-white/85 px-4 backdrop-blur-md sm:px-6">
-      {/* =====================================================
+    <>
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line/70 bg-white/85 px-4 backdrop-blur-md sm:px-6">
+        {/* =====================================================
           LEFT SIDE
       ===================================================== */}
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={onOpenMobileNav}
-          className="rounded-lg p-1.5 text-ink-soft hover:bg-black/5 md:hidden"
-          type="button"
-        >
-          <Menu size={20} />
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onOpenMobileNav}
+            className="rounded-lg p-1.5 text-ink-soft hover:bg-black/5 md:hidden"
+            type="button"
+          >
+            <Menu size={20} />
+          </button>
 
-        <div className="hidden sm:block">
-          <p className="text-[13px] text-ink-faint">
-            Welcome back,{" "}
-            <span className="font-medium text-ink">
-              {user?.employee?.firstName ??
-                user?.email}
-            </span>
-          </p>
+          <div className="hidden sm:block">
+            <p className="text-[13px] text-ink-faint">
+              Welcome back,{" "}
+              <span className="font-medium text-ink">
+                {user?.employee?.firstName ??
+                  user?.email}
+              </span>
+            </p>
+          </div>
         </div>
-      </div>
 
-      {/* =====================================================
+        {/* =====================================================
           RIGHT SIDE
       ===================================================== */}
 
-      <div className="flex items-center gap-2 sm:gap-3">
-        {/* ===================================================
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* ===================================================
             EMPLOYEE ACTIONS
         =================================================== */}
 
-        {user?.employee && (
-          <div className="hidden items-center gap-2 sm:flex">
-            {!isMyTicketsPage && (
-              <Button
-                size="sm"
-                variant="primary"
-                leftIcon={
-                  <TicketPlus size={14} />
-                }
-                onClick={onRaiseTicket}
-              >
-                Raise Ticket
-              </Button>
-            )}
+          {user?.employee && (
+            <div className="hidden items-center gap-2 sm:flex">
+              {!isMyTicketsPage && (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  leftIcon={
+                    <TicketPlus size={14} />
+                  }
+                  onClick={onRaiseTicket}
+                >
+                  Raise Ticket
+                </Button>
+              )}
 
-            {todayAttendance?.checkIn &&
-            !todayAttendance?.checkOut ? (
-              <Button
-                size="sm"
-                variant="outline"
-                leftIcon={
-                  <Clock size={14} />
-                }
-                onClick={() =>
-                  checkOutMutation.mutate()
-                }
-                isLoading={
-                  checkOutMutation.isPending
-                }
-              >
-                Check out
-              </Button>
-            ) : todayAttendance?.checkOut ? (
-              <span className="inline-flex items-center gap-1.5 rounded-xl bg-success-50 px-3 py-2 text-[13px] font-medium text-success-700">
-                <Check size={14} />
-                Day complete
-              </span>
-            ) : (
-              <Button
-                size="sm"
-                leftIcon={
-                  <Clock size={14} />
-                }
-                onClick={() =>
-                  checkInMutation.mutate()
-                }
-                isLoading={
-                  checkInMutation.isPending
-                }
-              >
-                Check in
-              </Button>
-            )}
-          </div>
-        )}
+              {todayAttendance?.checkIn &&
+                !todayAttendance?.checkOut ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  leftIcon={
+                    <Clock size={14} />
+                  }
+                  onClick={() => checkOutMutation.mutate(undefined)}
+                  isLoading={checkOutMutation.isPending}
+                >
+                  Check out
+                </Button>
+              ) : todayAttendance?.checkOut ? (
+                <span className="inline-flex items-center gap-1.5 rounded-xl bg-success-50 px-3 py-2 text-[13px] font-medium text-success-700">
+                  <Check size={14} />
+                  Day complete
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  leftIcon={
+                    <Clock size={14} />
+                  }
+                  onClick={() =>
+                    checkInMutation.mutate()
+                  }
+                  isLoading={
+                    checkInMutation.isPending
+                  }
+                >
+                  Check in
+                </Button>
+              )}
+            </div>
+          )}
 
-        {/* ===================================================
+          {/* ===================================================
             NOTIFICATIONS
         =================================================== */}
 
-        <div
-          className="relative"
-          ref={notifRef}
-        >
-          <button
-            type="button"
-            onClick={() =>
-              setNotifOpen((value) => !value)
-            }
-            className="relative rounded-xl p-2 text-ink-soft transition hover:bg-black/5"
-            aria-label="Notifications"
-            aria-expanded={notifOpen}
+          <div
+            className="relative"
+            ref={notifRef}
           >
-            <Bell size={19} />
+            <button
+              type="button"
+              onClick={() =>
+                setNotifOpen((value) => !value)
+              }
+              className="relative rounded-xl p-2 text-ink-soft transition hover:bg-black/5"
+              aria-label="Notifications"
+              aria-expanded={notifOpen}
+            >
+              <Bell size={19} />
 
-            {!!unreadCount && (
-              <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-[10px] font-semibold text-white">
-                {unreadCount > 9
-                  ? "9+"
-                  : unreadCount}
-              </span>
-            )}
-          </button>
+              {!!unreadCount && (
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-[10px] font-semibold text-white">
+                  {unreadCount > 9
+                    ? "9+"
+                    : unreadCount}
+                </span>
+              )}
+            </button>
 
-          {notifOpen && (
-            <div className="absolute right-0 top-12 z-40 w-80 rounded-2xl border border-line/70 bg-white p-2 shadow-lifted animate-fade-up sm:w-96">
-              {/* =============================================
+            {notifOpen && (
+              <div className="absolute right-0 top-12 z-40 w-80 rounded-2xl border border-line/70 bg-white p-2 shadow-lifted animate-fade-up sm:w-96">
+                {/* =============================================
                   NOTIFICATION HEADER
               ============================================= */}
 
-              <div className="flex items-center justify-between px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <p className="font-display text-[14px] font-medium text-ink">
-                    Notifications
-                  </p>
+                <div className="flex items-center justify-between px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <p className="font-display text-[14px] font-medium text-ink">
+                      Notifications
+                    </p>
 
-                  {isNotificationsFetching && (
-                    <span className="text-[10px] text-ink-faint">
-                      Updating...
-                    </span>
+                    {isNotificationsFetching && (
+                      <span className="text-[10px] text-ink-faint">
+                        Updating...
+                      </span>
+                    )}
+                  </div>
+
+                  {!!unreadCount && (
+                    <button
+                      type="button"
+                      onClick={markAllRead}
+                      className="text-[12px] font-medium text-brand-600 hover:text-brand-700"
+                    >
+                      Mark all read
+                    </button>
                   )}
                 </div>
 
-                {!!unreadCount && (
-                  <button
-                    type="button"
-                    onClick={markAllRead}
-                    className="text-[12px] font-medium text-brand-600 hover:text-brand-700"
-                  >
-                    Mark all read
-                  </button>
-                )}
-              </div>
-
-              {/* =============================================
+                {/* =============================================
                   NOTIFICATION LIST
               ============================================= */}
 
-              <div className="max-h-96 overflow-y-auto">
-                {!notifications.length ? (
-                  <p className="px-3 py-6 text-center text-[13px] text-ink-faint">
-                    You're all caught up.
-                  </p>
-                ) : (
-                  notifications.map(
-                    (notification: any) => {
-                      const isRead =
-                        isNotificationRead(notification);
+                <div className="max-h-96 overflow-y-auto">
+                  {!notifications.length ? (
+                    <p className="px-3 py-6 text-center text-[13px] text-ink-faint">
+                      You're all caught up.
+                    </p>
+                  ) : (
+                    notifications.map(
+                      (notification: any) => {
+                        const isRead =
+                          isNotificationRead(notification);
 
-                      return (
-                        <div
-                          key={notification.id}
-                          className={cx(
-                            "rounded-xl px-3 py-2.5 transition hover:bg-black/[0.03]",
-                            !isRead &&
+                        return (
+                          <div
+                            key={notification.id}
+                            className={cx(
+                              "rounded-xl px-3 py-2.5 transition hover:bg-black/[0.03]",
+                              !isRead &&
                               "bg-brand-50/60",
-                          )}
-                        >
-                          <div className="flex items-start gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleNotifClick(notification)
-                              }
-                              className="min-w-0 flex-1 text-left"
-                              aria-label={
-                                isRead
-                                  ? `Open ${notification.title}`
-                                  : `Open and mark ${notification.title} as read`
-                              }
-                            >
-                              <span className="flex items-center gap-2 text-[13px] font-medium text-ink">
-                                {!isRead && (
-                                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+                            )}
+                          >
+                            <div className="flex items-start gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleNotifClick(notification)
+                                }
+                                className="min-w-0 flex-1 text-left"
+                                aria-label={
+                                  isRead
+                                    ? `Open ${notification.title}`
+                                    : `Open and mark ${notification.title} as read`
+                                }
+                              >
+                                <span className="flex items-center gap-2 text-[13px] font-medium text-ink">
+                                  {!isRead && (
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+                                  )}
+
+                                  <span className="truncate">
+                                    {notification.title}
+                                  </span>
+                                </span>
+
+                                <span className="mt-0.5 block text-[12px] text-ink-faint">
+                                  {notification.message}
+                                </span>
+
+                                <span className="mt-0.5 block text-[11px] text-ink-faint/80">
+                                  {timeAgo(
+                                    notification.createdAt,
+                                  )}
+                                </span>
+
+                                {notification.expiresAt && (
+                                  <span className="mt-0.5 block text-[10px] text-amber-700">
+                                    Expires: {new Intl.DateTimeFormat("en-IN", {
+                                      dateStyle: "medium",
+                                      timeStyle: "short",
+                                      timeZone: "Asia/Kolkata",
+                                    }).format(new Date(notification.expiresAt))}
+                                  </span>
                                 )}
+                              </button>
 
-                                <span className="truncate">
-                                  {notification.title}
-                                </span>
-                              </span>
-
-                              <span className="mt-0.5 block text-[12px] text-ink-faint">
-                                {notification.message}
-                              </span>
-
-                              <span className="mt-0.5 block text-[11px] text-ink-faint/80">
-                                {timeAgo(
-                                  notification.createdAt,
+                              <div className="shrink-0 pt-0.5">
+                                {isRead ? (
+                                  <span className="inline-flex items-center rounded-full bg-success-50 px-2 py-1 text-[10px] font-medium text-success-700">
+                                    Read
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={async (event) => {
+                                      event.stopPropagation();
+                                      await markNotificationRead(
+                                        notification.id,
+                                      );
+                                    }}
+                                    className="whitespace-nowrap rounded-lg px-2 py-1 text-[10px] font-medium text-brand-600 transition hover:bg-brand-100 hover:text-brand-700"
+                                    aria-label={`Mark ${notification.title} as read`}
+                                  >
+                                    Mark as read
+                                  </button>
                                 )}
-                              </span>
-
-                              {notification.expiresAt && (
-                                <span className="mt-0.5 block text-[10px] text-amber-700">
-                                  Expires: {new Intl.DateTimeFormat("en-IN", {
-                                    dateStyle: "medium",
-                                    timeStyle: "short",
-                                    timeZone: "Asia/Kolkata",
-                                  }).format(new Date(notification.expiresAt))}
-                                </span>
-                              )}
-                            </button>
-
-                            <div className="shrink-0 pt-0.5">
-                              {isRead ? (
-                                <span className="inline-flex items-center rounded-full bg-success-50 px-2 py-1 text-[10px] font-medium text-success-700">
-                                  Read
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={async (event) => {
-                                    event.stopPropagation();
-                                    await markNotificationRead(
-                                      notification.id,
-                                    );
-                                  }}
-                                  className="whitespace-nowrap rounded-lg px-2 py-1 text-[10px] font-medium text-brand-600 transition hover:bg-brand-100 hover:text-brand-700"
-                                  aria-label={`Mark ${notification.title} as read`}
-                                >
-                                  Mark as read
-                                </button>
-                              )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    },
-                  )
-                )}
+                        );
+                      },
+                    )
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* ===================================================
+          {/* ===================================================
             USER MENU
         =================================================== */}
 
-        <div
-          className="relative"
-          ref={userRef}
-        >
-          <button
-            type="button"
-            onClick={() =>
-              setUserMenuOpen((value) => !value)
-            }
-            className="flex items-center gap-2 rounded-xl p-1 transition hover:bg-black/5"
-            aria-label="User menu"
-            aria-expanded={userMenuOpen}
+          <div
+            className="relative"
+            ref={userRef}
           >
-            <Avatar
-              firstName={
-                user?.employee?.firstName ??
-                user?.email ??
-                "U"
+            <button
+              type="button"
+              onClick={() =>
+                setUserMenuOpen((value) => !value)
               }
-              lastName={
-                user?.employee?.lastName ?? ""
-              }
-              src={user?.employee?.avatarUrl}
-              size="sm"
-            />
-          </button>
+              className="flex items-center gap-2 rounded-xl p-1 transition hover:bg-black/5"
+              aria-label="User menu"
+              aria-expanded={userMenuOpen}
+            >
+              <Avatar
+                firstName={
+                  user?.employee?.firstName ??
+                  user?.email ??
+                  "U"
+                }
+                lastName={
+                  user?.employee?.lastName ?? ""
+                }
+                src={user?.employee?.avatarUrl}
+                size="sm"
+              />
+            </button>
 
-          {userMenuOpen && (
-            <div className="absolute right-0 top-12 z-40 w-56 rounded-2xl border border-line/70 bg-white p-1.5 shadow-lifted animate-fade-up">
-              {/* =============================================
+            {userMenuOpen && (
+              <div className="absolute right-0 top-12 z-40 w-56 rounded-2xl border border-line/70 bg-white p-1.5 shadow-lifted animate-fade-up">
+                {/* =============================================
                   USER DETAILS
               ============================================= */}
 
-              <div className="px-3 py-2.5">
-                <p className="truncate text-[13px] font-medium text-ink">
-                  {user?.employee?.fullName ??
-                    user?.email}
-                </p>
+                <div className="px-3 py-2.5">
+                  <p className="truncate text-[13px] font-medium text-ink">
+                    {user?.employee?.fullName ??
+                      user?.email}
+                  </p>
 
-                <p className="truncate text-[12px] text-ink-faint">
-                  {user?.email}
-                </p>
-              </div>
+                  <p className="truncate text-[12px] text-ink-faint">
+                    {user?.email}
+                  </p>
+                </div>
 
-              <div className="my-1 h-px bg-line/70" />
+                <div className="my-1 h-px bg-line/70" />
 
-              {/* =============================================
+                {/* =============================================
                   MY PROFILE
               ============================================= */}
 
-              {user?.employee && (
+                {user?.employee && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserMenuOpen(false);
+
+                      navigate(
+                        `/app/employees/${user.employee!.id}`,
+                      );
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-ink-soft hover:bg-black/5"
+                  >
+                    <UserCircle2 size={16} />
+                    My profile
+                  </button>
+                )}
+
+                {/* =============================================
+                  ACCOUNT SETTINGS
+              ============================================= */}
+
                 <button
                   type="button"
                   onClick={() => {
                     setUserMenuOpen(false);
-
                     navigate(
-                      `/app/employees/${user.employee!.id}`,
+                      "/app/settings/account",
                     );
                   }}
                   className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-ink-soft hover:bg-black/5"
                 >
-                  <UserCircle2 size={16} />
-                  My profile
+                  <Settings size={16} />
+                  Account settings
                 </button>
-              )}
 
-              {/* =============================================
-                  ACCOUNT SETTINGS
-              ============================================= */}
-
-              <button
-                type="button"
-                onClick={() => {
-                  setUserMenuOpen(false);
-                  navigate(
-                    "/app/settings/account",
-                  );
-                }}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-ink-soft hover:bg-black/5"
-              >
-                <Settings size={16} />
-                Account settings
-              </button>
-
-              {/* =============================================
+                {/* =============================================
                   SIGN OUT
               ============================================= */}
 
-              <button
-                type="button"
-                onClick={() => {
-                  logout();
-                  navigate("/login");
-                }}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-danger-500 hover:bg-danger-50"
-              >
-                <LogOut size={16} />
-                Sign out
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    logout();
+                    navigate("/login");
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-danger-500 hover:bg-danger-50"
+                >
+                  <LogOut size={16} />
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      <Modal
+        open={earlyDepartureOpen}
+        onClose={() => {
+          if (!checkOutMutation.isPending) {
+            setEarlyDepartureOpen(false);
+            setEarlyDepartureReason("");
+          }
+        }}
+        title="Early departure reason"
+        subtitle="You are checking out before the scheduled shift end time. Please provide a reason to complete checkout."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEarlyDepartureOpen(false);
+                setEarlyDepartureReason("");
+              }}
+              disabled={checkOutMutation.isPending}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              onClick={() => {
+                const reason = earlyDepartureReason.trim();
+
+                if (reason.length < 3) {
+                  showToast(
+                    "Please provide a reason for early departure.",
+                    "error",
+                  );
+                  return;
+                }
+
+                checkOutMutation.mutate(reason);
+              }}
+              isLoading={checkOutMutation.isPending}
+            >
+              Confirm checkout
+            </Button>
+          </>
+        }
+      >
+        <TextareaField
+          label="Reason"
+          required
+          placeholder="E.g. Personal emergency, medical appointment, or approved early departure."
+          maxLength={1000}
+          value={earlyDepartureReason}
+          onChange={(e) =>
+            setEarlyDepartureReason(e.target.value)
+          }
+        />
+      </Modal>
+    </>
   );
 }

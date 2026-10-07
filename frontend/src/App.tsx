@@ -5,11 +5,15 @@ import { Loader2 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 
+
+const TemporaryPasswordChange = lazy(
+  () => import("@/pages/TemporaryPasswordChange.tsx"),
+);
+
 // =========================================================
 // PUBLIC PAGES
 // =========================================================
 
-const Landing = lazy(() => import("@/pages/Landing"));
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
 
@@ -113,7 +117,7 @@ export default function App() {
             PUBLIC ROUTES
         ===================================================== */}
 
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
 
         <Route path="/login" element={<Login />} />
 
@@ -138,6 +142,7 @@ export default function App() {
           ================================================= */}
 
           <Route index element={<Navigate to="dashboard" replace />} />
+
 
           {/* =================================================
               DASHBOARD
@@ -409,6 +414,15 @@ export default function App() {
 
           <Route path="*" element={<NotFound />} />
         </Route>
+
+        <Route
+  path="/change-temporary-password"
+  element={
+    <Suspense fallback={<div>Loading...</div>}>
+      <TemporaryPasswordChange />
+    </Suspense>
+  }
+/>
 
         {/* =====================================================
             UNKNOWN PUBLIC ROUTE

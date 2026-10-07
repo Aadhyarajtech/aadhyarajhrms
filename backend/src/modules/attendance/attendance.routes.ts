@@ -32,6 +32,21 @@ const regularizationSchema = z.object({
     .trim()
     .min(3, "Please describe the reason for regularization.")
     .max(1000, "Regularization reason must not exceed 1000 characters."),
+  requestedStatus: z
+    .enum(["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"])
+    .optional(),
+  requestedCheckIn: z
+    .string()
+    .trim()
+    .regex(/^$|^\d{2}:\d{2}$/i, "Invalid check-in time.")
+    .optional()
+    .nullable(),
+  requestedCheckOut: z
+    .string()
+    .trim()
+    .regex(/^$|^\d{2}:\d{2}$/i, "Invalid check-out time.")
+    .optional()
+    .nullable(),
 });
 
 const regularizationDecisionSchema = z.object({
@@ -238,39 +253,41 @@ attendanceRouter.post(
   },
 );
 
-attendanceRouter.post(
-  "/check-out",
-  validate(checkOutSchema),
-  async (req, res, next) => {
-    try {
-      if (!req.user!.employeeId) {
-        throw AppError.forbidden("Only employees can check out.");
-      }
-
-      const options = req.body as z.infer<typeof checkOutSchema>;
-      const record = await repo.checkOut(req.user!.employeeId, options);
-
-      if (!record) {
-        throw AppError.badRequest(
-          "You need to check in before you can check out.",
-        );
-      }
-
-      res.json({ record });
-    } catch (err) {
-      if (
-        err instanceof Error &&
-        err.message === "A reason is required for early departure."
-      ) {
-        next(AppError.badRequest(err.message));
-        return;
-      }
-
-      next(err);
+attendanceRouter.post("/check-out", async (req, res, next) => {
+  try {
+    if (!req.user!.employeeId) {
+      throw AppError.forbidden("Only employees can check out.");
     }
-  },
-);
 
+    const options = req.body as z.infer<typeof checkOutSchema>;
+
+    const record = await repo.checkOut(
+      req.user!.employeeId,
+      options,
+    );
+
+    if (!record) {
+      throw AppError.badRequest(
+        "You need to check in before you can check out.",
+      );
+    }
+
+    res.json({ record });
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      (
+        err.message === "A reason is required for early departure." ||
+        err.message === "End the active break before checking out."
+      )
+    ) {
+      next(AppError.badRequest(err.message));
+      return;
+    }
+    next(err);
+  }
+},
+);
 attendanceRouter.post("/break/start", async (req, res, next) => {
   try {
     if (!req.user!.employeeId)
@@ -622,9 +639,13 @@ attendanceRouter.get("/ai-anomalies", async (req, res, next) => {
       anomalyResults.push(result);
     }
 
-    // Combine anomalies from all employees
-    const anomalies = anomalyResults.flatMap(
-      (result: any) => result.anomalies ?? [],
+    // Combine anomalies from all employees, preserving the source employee info.
+    const anomalies = anomalyResults.flatMap((result: any) =>
+      (result.anomalies ?? []).map((anomaly: any) => ({
+        ...anomaly,
+        employeeId: result.employeeId,
+        employeeName: result.employeeName,
+      })),
     );
 
     // Build combined summary
@@ -1134,18 +1155,18 @@ attendanceRouter.get("/ai-patterns", async (req, res, next) => {
         averageCheckInMinutes:
           checkInValues.length > 0
             ? Math.round(
-                checkInValues.reduce((sum, value) => sum + value, 0) /
-                  checkInValues.length,
-              )
+              checkInValues.reduce((sum, value) => sum + value, 0) /
+              checkInValues.length,
+            )
             : null,
 
         averageWorkHours:
           workHourValues.length > 0
             ? Math.round(
-                (workHourValues.reduce((sum, value) => sum + value, 0) /
-                  workHourValues.length) *
-                  100,
-              ) / 100
+              (workHourValues.reduce((sum, value) => sum + value, 0) /
+                workHourValues.length) *
+              100,
+            ) / 100
             : null,
       };
     });
@@ -1189,15 +1210,15 @@ attendanceRouter.get("/ai-patterns", async (req, res, next) => {
     const strongestDay =
       activeWeekdays.length > 0
         ? [...activeWeekdays].sort(
-            (a, b) => b.attendanceRate - a.attendanceRate,
-          )[0].day
+          (a, b) => b.attendanceRate - a.attendanceRate,
+        )[0].day
         : null;
 
     const weakestDay =
       activeWeekdays.length > 0
         ? [...activeWeekdays].sort(
-            (a, b) => a.attendanceRate - b.attendanceRate,
-          )[0].day
+          (a, b) => a.attendanceRate - b.attendanceRate,
+        )[0].day
         : null;
 
     // ---------------------------------------------------------------------
@@ -1508,13 +1529,24 @@ attendanceRouter.post(
         throw AppError.forbidden("Employee profile not found.");
       }
 
-      const { date, note } = req.body as z.infer<typeof regularizationSchema>;
+      const {
+        date,
+        note,
+        requestedCheckIn,
+        requestedCheckOut,
+        requestedStatus,
+      } = req.body as z.infer<typeof regularizationSchema>;
 
       res.json({
         record: await repo.requestRegularization(
           req.user!.employeeId,
           date,
           note,
+          {
+            requestedCheckIn: requestedCheckIn || null,
+            requestedCheckOut: requestedCheckOut || null,
+            requestedStatus,
+          },
         ),
       });
     } catch (err) {
@@ -1674,7 +1706,9 @@ attendanceRouter.get(
 
       if (
         status &&
-        !["PENDING", "APPROVED", "REJECTED", "CANCELLED"].includes(status)
+        !["PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXPIRED"].includes(
+          status,
+        )
       ) {
         throw AppError.badRequest("Invalid regularization request status.");
       }

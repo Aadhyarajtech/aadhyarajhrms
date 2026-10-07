@@ -15,6 +15,7 @@ import {
 import * as attendanceRepo from "@/modules/attendance/attendance.repository";
 import * as leaveRepo from "@/modules/leave/leave.repository";
 import * as performanceRepo from "@/modules/performance/performance.repository";
+import { sendEmployeeWelcomeCredentialsEmail } from "@/services/email.service";
 export const employeesRouter = Router();
 employeesRouter.use(authenticate);
 
@@ -572,8 +573,8 @@ const createEmployeeSchema = z.object({
       "EMPLOYEE",
     ])
     .default("EMPLOYEE"),
-  departmentId: z.string(),
-  designationId: z.string(),
+  departmentId: z.string().trim().min(1).nullable().optional(),
+  designationId: z.string().trim().min(1).nullable().optional(),
   managerId: z.string().nullable().optional(),
   isManager: z.boolean().optional(),
   employmentType: z
@@ -614,7 +615,31 @@ employeesRouter.post(
   async (req, res, next) => {
     try {
       const employee = await repo.createEmployee(req.body);
-      res.status(201).json({ employee });
+
+      let emailSent = false;
+
+      try {
+        const emailResult = await sendEmployeeWelcomeCredentialsEmail({
+          to: req.body.email,
+          firstName: req.body.firstName,
+          lastName: req.body.lastName,
+          temporaryPassword: req.body.temporaryPassword,
+        });
+
+        emailSent = emailResult.sent;
+      } catch (emailError) {
+        console.error(
+          "[Employee] Welcome email failed:",
+          emailError instanceof Error
+            ? emailError.message
+            : "Unknown email error",
+        );
+      }
+
+      res.status(201).json({
+        employee,
+        emailSent,
+      });
     } catch (err) {
       next(err);
     }
@@ -622,13 +647,23 @@ employeesRouter.post(
 );
 
 const updateEmployeeSchema = z.object({
+  // Employee code is editable only through the privileged /:id update route.
+  // Keep it normalized and unique (for example: EMP0011).
+  employeeCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(3, "Employee code must contain at least 3 characters.")
+    .max(30, "Employee code cannot exceed 30 characters.")
+    .regex(/^[A-Z0-9_-]+$/, "Employee code may contain only letters, numbers, hyphens, and underscores.")
+    .optional(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   gender: z.string().nullable().optional(),
   maritalStatus: z.string().nullable().optional(),
   dateOfBirth: z.string().nullable().optional(),
-  departmentId: z.string().optional(),
-  designationId: z.string().optional(),
+  departmentId: z.string().trim().min(1).nullable().optional(),
+  designationId: z.string().trim().min(1).nullable().optional(),
   managerId: z.string().nullable().optional(),
   isManager: z.boolean().optional(),
   employmentType: z
@@ -859,6 +894,17 @@ employeesRouter.patch(
       if (!target) throw AppError.notFound("Employee not found.");
 
       const updateBody: any = { ...req.body };
+
+      if (req.body.employeeCode) {
+        const normalizedEmployeeCode = String(req.body.employeeCode).trim().toUpperCase();
+        const duplicate = await repo.getEmployeeByCode(normalizedEmployeeCode);
+
+        if (duplicate && String(duplicate.id ?? duplicate._id) !== String(req.params.id)) {
+          throw AppError.badRequest(`Employee code ${normalizedEmployeeCode} is already assigned to another employee.`);
+        }
+
+        updateBody.employeeCode = normalizedEmployeeCode;
+      }
 
       if (
         req.body.status === "ON_PROBATION" &&

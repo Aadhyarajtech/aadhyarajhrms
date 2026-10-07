@@ -643,7 +643,14 @@ export default function Dashboard() {
             <div className="rounded-2xl border border-line/60 bg-gradient-to-br from-brand-50 to-gold-50 px-4 py-3 shadow-sm">
               <p className="text-[13px] font-medium text-ink">Need help?</p>
               <p className="mt-1 text-[11px] text-ink-faint">
-                Reach IT &amp; Security for access or technical issues.
+                <Link
+                  to="/app/my-tickets?raise=it-support"
+                  className="font-medium text-brand-600 hover:text-brand-700 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-2 rounded-sm"
+                  aria-label="Reach IT & Security"
+                >
+                  Reach IT & Security
+                </Link>{" "}
+                for access or technical issues.
               </p>
             </div>
             <div className="flex items-center gap-2 rounded-xl border border-gold-100 bg-gold-50 px-3 py-2">

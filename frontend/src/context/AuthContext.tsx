@@ -1,3 +1,4 @@
+
 import {
   createContext,
   useContext,
@@ -14,7 +15,7 @@ import type { AuthUser } from "@/types";
 interface AuthContextValue {
   user: AuthUser | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<AuthUser>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   permissions: string[];
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string): Promise<AuthUser> => {
       queryClient.clear();
 
       const { token, user: loggedInUser } = await AuthApi.login(
@@ -86,8 +87,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const access = await GovernanceApi.me();
         setPermissions(access.permissions ?? []);
       } catch {
+        // Keep authentication working even if permission loading fails.
         setPermissions([]);
       }
+
+      return loggedInUser;
     },
     [queryClient],
   );
