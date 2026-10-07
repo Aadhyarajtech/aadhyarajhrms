@@ -762,6 +762,129 @@ console.log("[Leave Balance Check]", {
   );
 }
 
+
+
+const BULK_LEAVE_ELIGIBLE_STATUSES = [
+  "ACTIVE",
+  "ON_PROBATION",
+  "ON_LEAVE",
+  "NOTICE_PERIOD",
+] as const;
+
+export async function listActiveEmployeeIds() {
+  const rows = await Employee.find({
+    status: { $in: BULK_LEAVE_ELIGIBLE_STATUSES },
+  })
+    .select("_id")
+    .lean();
+
+  return rows.map((row) => String(row._id));
+}
+
+/**
+ * Create the same leave request for multiple employees.
+ *
+ * This is intentionally built on top of createRequest() so the existing
+ * leave-balance, eligibility, Comp-Off and leave-type rules are preserved.
+ * Employees who cannot receive the leave are skipped and returned to the
+ * caller instead of failing the entire bulk operation.
+ */
+export async function bulkCreateRequests(input: {
+  employeeIds: string[];
+  leaveTypeId: string;
+  startDate: string;
+  endDate: string;
+  halfDay?: boolean;
+  halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
+  reason: string;
+}) {
+  const uniqueEmployeeIds = Array.from(
+    new Set(input.employeeIds.map((id) => String(id).trim()).filter(Boolean)),
+  );
+
+  const created: any[] = [];
+  const skipped: Array<{
+    employeeId: string;
+    reason: string;
+  }> = [];
+
+  for (const employeeId of uniqueEmployeeIds) {
+    try {
+      const employee = await Employee.findById(employeeId)
+        .select("_id status firstName lastName")
+        .lean();
+
+      if (!employee) {
+        skipped.push({ employeeId, reason: "Employee not found." });
+        continue;
+      }
+
+      const employeeStatus = String(employee.status ?? "")
+        .trim()
+        .toUpperCase();
+
+      if (!BULK_LEAVE_ELIGIBLE_STATUSES.includes(employeeStatus as (typeof BULK_LEAVE_ELIGIBLE_STATUSES)[number])) {
+        skipped.push({
+          employeeId,
+          reason: "Employee is not eligible for leave application.",
+        });
+        continue;
+      }
+
+      /*
+       * Do not create a duplicate request when the employee already has
+       * pending/approved leave overlapping the selected date range.
+       */
+      const overlappingRequest = await LeaveRequest.findOne({
+        employeeId,
+        status: { $in: ["PENDING", "APPROVED"] },
+        startDate: { $lte: input.endDate },
+        endDate: { $gte: input.startDate },
+      })
+        .select("_id startDate endDate status")
+        .lean();
+
+      if (overlappingRequest) {
+        skipped.push({
+          employeeId,
+          reason: `Existing ${String(overlappingRequest.status).toLowerCase()} leave overlaps the selected dates.`,
+        });
+        continue;
+      }
+
+      const request = await createRequest({
+        employeeId,
+        leaveTypeId: input.leaveTypeId,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        halfDay: input.halfDay,
+        halfDayType: input.halfDayType,
+        reason: input.reason,
+      });
+
+      if (request) {
+        created.push(request);
+      }
+    } catch (error) {
+      skipped.push({
+        employeeId,
+        reason:
+          error instanceof Error
+            ? error.message
+            : "Unable to create leave request.",
+      });
+    }
+  }
+
+  return {
+    totalEmployees: uniqueEmployeeIds.length,
+    createdCount: created.length,
+    skippedCount: skipped.length,
+    created,
+    skipped,
+  };
+}
+
 export async function getRequest(id: string) {
   const row = await LeaveRequest.findById(id).lean();
   return toApiDoc(row);
@@ -1288,3 +1411,5 @@ export async function onLeaveToday() {
     endDate: { $gte: today },
   });
 }
+
+

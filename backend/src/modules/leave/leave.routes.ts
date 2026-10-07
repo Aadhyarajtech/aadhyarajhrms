@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
@@ -28,6 +28,13 @@ export const leaveRouter = Router();
  * at this AI-service boundary. The actual authenticated role is never
  * changed.
  */
+const TEAM_LEAVE_APPROVAL_ROLES = [
+  "MANAGER",
+  "RECRUITER",
+  "FINANCE",
+  "IT_SUPPORT",
+] as const;
+
 const getLeaveAiRequesterRole = (requester: {
   role:
     | "SUPER_ADMIN"
@@ -220,8 +227,12 @@ leaveRouter.get("/comp-off/credits", async (req, res, next) => {
  * Employee:
  *   Can view own requests.
  *
- * Manager:
- *   Can view their direct team's requests when scope=team.
+ * Team approval roles:
+ *   MANAGER / RECRUITER / FINANCE / IT_SUPPORT
+ *   -> Can view their direct team's requests when scope=team.
+ *
+ * HR_ADMIN / SUPER_ADMIN:
+ *   -> Can view all team leave requests.
  */
 leaveRouter.get("/requests", async (req, res, next) => {
   try {
@@ -241,17 +252,21 @@ leaveRouter.get("/requests", async (req, res, next) => {
 
     if (req.query.scope === "team") {
       /*
-       * MANAGER
-       *   -> Only direct reports.
+       * MANAGER / RECRUITER / FINANCE / IT_SUPPORT
+       *   -> Only their own direct reports.
        *
        * HR_ADMIN / SUPER_ADMIN
        *   -> Can view all team leave requests.
        *
-       * This keeps the Team Approvals screen usable for
-       * administrators while preserving manager-level
-       * access restrictions.
+       * This keeps Team Approvals restricted to the authenticated
+       * employee's direct team for non-admin team-approval roles.
        */
-      if (role === "MANAGER") {
+      const isTeamLeaveApprovalRole =
+        TEAM_LEAVE_APPROVAL_ROLES.includes(
+          role as (typeof TEAM_LEAVE_APPROVAL_ROLES)[number],
+        );
+
+      if (isTeamLeaveApprovalRole) {
         if (!employeeId) {
           throw AppError.forbidden("Employee profile is required.");
         }
@@ -664,33 +679,196 @@ leaveRouter.post(
         throw AppError.forbidden("Only employees can apply for leave.");
       }
 
-      const request = await repo.createRequest({
+      const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
+
+      let request = await repo.createRequest({
         employeeId: req.user!.employeeId,
         ...req.body,
       });
 
-      /**
-       * Notify the employee's manager.
-       */
-      const employee = (await getEmployeeById(req.user!.employeeId)) as any;
+      // Super Admin leave is effective immediately and does not require
+      // another employee/manager to approve it. Reuse the existing approval
+      // path so balance updates and approval bookkeeping remain consistent.
+      if (isSuperAdmin) {
+        const approvedRequest = await repo.decideRequest(
+          request.id,
+          req.user!.employeeId,
+          "APPROVED",
+          "Automatically approved for Super Admin.",
+          { canApproveAny: true },
+        );
 
-      if (employee?.managerId) {
-        const manager = (await getEmployeeById(employee.managerId)) as any;
+        if (!approvedRequest) {
+          throw AppError.notFound("Leave request could not be approved.");
+        }
 
-        if (manager) {
-          await notify({
-            userId: manager.userId,
-            type: "LEAVE_REQUEST",
-            title: "New leave request to review",
-            message:
-              `${employee.firstName} ${employee.lastName} ` +
-              `requested ${request.totalDays} day(s) of leave.`,
-            link: "/leave?tab=team",
-          });
+        request = approvedRequest;
+      } else {
+        /**
+         * Notify the employee's manager.
+         */
+        const employee = (await getEmployeeById(req.user!.employeeId)) as any;
+
+        if (employee?.managerId) {
+          const manager = (await getEmployeeById(employee.managerId)) as any;
+
+          if (manager) {
+            await notify({
+              userId: manager.userId,
+              type: "LEAVE_REQUEST",
+              title: "New leave request to review",
+              message:
+                `${employee.firstName} ${employee.lastName} ` +
+                `requested ${request.totalDays} day(s) of leave.`,
+              link: "/leave?tab=team",
+            });
+          }
         }
       }
 
       res.status(201).json({ request });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+
+/**
+ * ============================================================
+ * BULK LEAVE REQUESTS
+ * ============================================================
+ *
+ * SUPER_ADMIN / HR_ADMIN only.
+ * Creates leave requests for the selected employees. The normal leave-balance
+ * and eligibility rules are preserved for every employee. Super Admin-created
+ * requests are automatically approved; HR Admin-created requests retain the
+ * existing approval workflow.
+ */
+const bulkCreateRequestSchema = z
+  .object({
+    leaveTypeId: z.string(),
+    startDate: z.string(),
+    endDate: z.string(),
+    halfDay: z.boolean().optional().default(false),
+    halfDayType: z
+      .enum(["FIRST_HALF", "SECOND_HALF"])
+      .nullable()
+      .optional()
+      .default(null),
+    reason: z.string().min(3, "Please add a short reason for this leave."),
+    applyToAll: z.boolean().optional().default(false),
+    employeeIds: z.array(z.string().min(1)).optional().default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.halfDay && !value.halfDayType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["halfDayType"],
+        message: "Select first half or second half.",
+      });
+    }
+
+    if (!value.halfDay && value.halfDayType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["halfDayType"],
+        message: "Half-day type is only allowed for half-day leave.",
+      });
+    }
+
+    if (!value.applyToAll && value.employeeIds.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["employeeIds"],
+        message: "Select at least one employee or choose all active employees.",
+      });
+    }
+  });
+
+leaveRouter.post(
+  "/requests/bulk",
+  requirePermission("leave.manage"),
+  validate(bulkCreateRequestSchema),
+  async (req, res, next) => {
+    try {
+      const requester = req.user!;
+
+      if (
+        requester.role !== "SUPER_ADMIN" &&
+        requester.role !== "HR_ADMIN"
+      ) {
+        throw AppError.forbidden(
+          "Only Super Admin and HR Admin can apply leave for multiple employees.",
+        );
+      }
+
+      const employeeIds = req.body.applyToAll
+        ? await repo.listActiveEmployeeIds()
+        : req.body.employeeIds;
+
+      if (!employeeIds.length) {
+        throw AppError.badRequest("No active employees were found.");
+      }
+
+      const result = await repo.bulkCreateRequests({
+        ...req.body,
+        employeeIds,
+      });
+
+      /*
+       * IMPORTANT:
+       * A Super Admin applying leave for another employee must NOT approve
+       * that employee's leave automatically. The employee's reporting manager
+       * must receive a PENDING request in Team Approvals.
+       *
+       * Only a Super Admin's own leave is auto-approved by the single-request
+       * endpoint above. Bulk leave is created against the selected employees
+       * and therefore remains PENDING for their reporting managers.
+       */
+      if (requester.role === "SUPER_ADMIN") {
+        for (const createdRequest of result.created) {
+          try {
+            const employee = (await getEmployeeById(
+              String(createdRequest.employeeId),
+            )) as any;
+
+            if (!employee?.managerId) {
+              continue;
+            }
+
+            const manager = (await getEmployeeById(
+              String(employee.managerId),
+            )) as any;
+
+            if (!manager?.userId) {
+              continue;
+            }
+
+            await notify({
+              userId: manager.userId,
+              type: "LEAVE_REQUEST",
+              title: "New leave request to review",
+              message:
+                `${employee.firstName} ${employee.lastName} ` +
+                `has a new leave request for ${createdRequest.totalDays} day(s).`,
+              link: "/leave?tab=team",
+            });
+          } catch (notificationError) {
+            /*
+             * Notification failure must never turn a successfully created
+             * PENDING leave request into a failed bulk operation.
+             */
+            console.error(
+              "[Bulk Leave] Failed to notify reporting manager. " +
+                "Leave request was created successfully.",
+              notificationError,
+            );
+          }
+        }
+      }
+
+      res.status(201).json(result);
     } catch (err) {
       next(err);
     }
@@ -718,9 +896,49 @@ const decisionSchema = z.object({
     .optional(),
 });
 
+/**
+ * Leave approval/rejection authorization.
+ *
+ * SUPER_ADMIN / HR_ADMIN
+ *   -> Can approve/reject any leave request.
+ *
+ * MANAGER / RECRUITER / FINANCE / IT_SUPPORT
+ *   -> Can approve/reject only requests belonging to their direct reports.
+ *
+ * The repository performs the final reporting-manager check using the
+ * authenticated approverId, so a team-approval role cannot approve a
+ * request outside their own reporting team.
+ *
+ * This middleware is used only for the decision endpoint. Existing bulk
+ * leave and AI/management permission checks remain unchanged.
+ */
+const requireLeaveDecisionAccess: RequestHandler = (req, _res, next) => {
+  const role = req.user?.role;
+
+  const allowedRoles = [
+    "SUPER_ADMIN",
+    "HR_ADMIN",
+    "MANAGER",
+    "RECRUITER",
+    "FINANCE",
+    "IT_SUPPORT",
+  ];
+
+  if (role && allowedRoles.includes(role)) {
+    next();
+    return;
+  }
+
+  next(
+    AppError.forbidden(
+      "Only administrators or a reporting manager can approve or reject leave requests.",
+    ),
+  );
+};
+
 leaveRouter.post(
   "/requests/:id/decide",
-  requirePermission("leave.manage"),
+  requireLeaveDecisionAccess,
   validate(decisionSchema),
   async (req, res, next) => {
     try {
@@ -824,8 +1042,12 @@ leaveRouter.post("/requests/:id/cancel", async (req, res, next) => {
       req.user!.employeeId,
     );
 
-    res.json({ request });
+    res.json({ request }); 
   } catch (err) {
     next(err);
   }
 });
+
+
+
+
