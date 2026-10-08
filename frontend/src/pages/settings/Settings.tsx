@@ -125,7 +125,7 @@ function DepartmentsTab() {
             leftIcon={<Plus size={14} />}
             onClick={() => setOpen(true)}
           >
-            Add department
+            Add Department
           </Button>
         }
       />
@@ -235,7 +235,7 @@ function DesignationsTab() {
             leftIcon={<Plus size={14} />}
             onClick={() => setOpen(true)}
           >
-            Add designation
+            Add Designation
           </Button>
         }
       />
@@ -268,7 +268,7 @@ function DesignationsTab() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Add designation"
+        title="Add Designation"
         footer={
           <>
             <Button variant="outline" onClick={() => setOpen(false)}>
@@ -348,14 +348,14 @@ function HolidaysTab() {
   return (
     <Card>
       <CardHeader
-        title="Holiday calendar"
+        title="Holiday Calendar"
         action={
           <Button
             size="sm"
             leftIcon={<Plus size={14} />}
             onClick={() => setOpen(true)}
           >
-            Add holiday
+            Add Holiday
           </Button>
         }
       />
@@ -434,7 +434,7 @@ function HolidaysTab() {
               {...register("isOptional")}
               className="rounded accent-brand-500"
             />{" "}
-            Optional holiday
+            Optional Holiday
           </label>
         </div>
       </Modal>
@@ -520,14 +520,14 @@ function CyclesTab() {
   return (
     <Card>
       <CardHeader
-        title="Performance review cycles"
+        title="Performance Review Cycles"
         action={
           <Button
             size="sm"
             leftIcon={<Plus size={14} />}
             onClick={() => setOpen(true)}
           >
-            New cycle
+            New Cycle
           </Button>
         }
       />
@@ -612,17 +612,17 @@ function CyclesTab() {
             {...register("name", { required: true })}
           />
           <label className="block text-[13px] font-medium text-ink-soft">
-            Review type
+            Review Type
             <select
               {...register("type")}
               className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink"
             >
-              <option value="PROBATION">Probation review</option>
-              <option value="QUARTERLY">Quarterly review</option>
-              <option value="HALF_YEARLY">Half-yearly review</option>
-              <option value="ANNUAL">Annual appraisal</option>
-              <option value="THREE_SIXTY">360-degree review</option>
-              <option value="PIP">PIP review</option>
+              <option value="PROBATION">Probation Review</option>
+              <option value="QUARTERLY">Quarterly Review</option>
+              <option value="HALF_YEARLY">Half-Yearly Review</option>
+              <option value="ANNUAL">Annual Appraisal</option>
+              <option value="THREE_SIXTY">360-Degree Review</option>
+              <option value="PIP">PIP Review</option>
             </select>
           </label>
           <div className="grid grid-cols-2 gap-4">
@@ -708,7 +708,7 @@ function ShiftsTab() {
   return (
     <Card>
       <CardHeader
-        title="Shift management"
+        title="Shift Management"
         subtitle="Configure working hours, grace time, breaks, overtime thresholds and employee assignments."
         action={
           <Button
@@ -784,7 +784,7 @@ function ShiftsTab() {
                 </div>
               </div>
               <div className="mt-3 flex items-center gap-3 text-[12px] text-ink-faint">
-                <span>{shift.employeeIds.length} assigned</span>
+                <span>{shift.employeeIds.length} Assigned</span>
                 {shift.geofence && (
                   <span className="inline-flex items-center gap-1">
                     <MapPin size={12} /> Geofence enabled
@@ -975,7 +975,7 @@ function ShiftFormModal({
               {...register("isActive")}
               className="rounded accent-brand-500"
             />{" "}
-            Active shift
+            Active Shift
           </label>
         )}
       </div>
@@ -1018,7 +1018,7 @@ function ShiftAssignmentModal({
             Cancel
           </Button>
           <Button onClick={() => onSubmit(selected)} isLoading={isLoading}>
-            Save assignments
+            Save Assignments
           </Button>
         </>
       }
