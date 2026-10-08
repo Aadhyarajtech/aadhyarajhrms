@@ -6,6 +6,7 @@ import { z } from "zod";
 import { env } from "@/config/env";
 import { validate } from "@/middleware/validate";
 import { authenticate } from "@/middleware/auth";
+import { isAdmin } from "@/middleware/rbac";
 import { AppError } from "@/utils/errors";
 import { Department, Designation, Employee, User } from "@/db/models";
 import { nowIso } from "@/db/connection";
@@ -14,6 +15,7 @@ import {
   findAuthProfile,
   touchLastLogin,
   updatePassword,
+  updateAdminUserCredentials,
   savePasswordResetOtp,
   incrementPasswordResetOtpAttempts,
   clearPasswordResetOtp,
@@ -213,12 +215,15 @@ authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.body as z.infer<typeof loginSchema>;
     const user = await findUserByEmail(email.toLowerCase().trim());
+
     if (!user || !user.isActive) {
       throw AppError.unauthorized(
         "We couldn't find an active account with that email and password.",
       );
     }
+
     const matches = bcrypt.compareSync(password, user.passwordHash);
+
     if (!matches) {
       throw AppError.unauthorized(
         "We couldn't find an active account with that email and password.",
@@ -226,9 +231,13 @@ authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
     }
 
     const profile = await findAuthProfile(user.id);
-    if (!profile) throw AppError.unauthorized();
+
+    if (!profile) {
+      throw AppError.unauthorized();
+    }
 
     await touchLastLogin(user.id);
+
     const token = signToken({
       id: user.id,
       email: user.email,
@@ -236,7 +245,10 @@ authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
       employeeId: profile.employeeId,
     });
 
-    res.json({ token, user: serializeProfile(profile) });
+    res.json({
+      token,
+      user: serializeProfile(profile),
+    });
   } catch (err) {
     next(err);
   }
@@ -245,12 +257,138 @@ authRouter.post("/login", validate(loginSchema), async (req, res, next) => {
 authRouter.get("/me", authenticate, async (req, res, next) => {
   try {
     const profile = await findAuthProfile(req.user!.userId);
-    if (!profile) throw AppError.notFound("Account not found.");
-    res.json({ user: serializeProfile(profile) });
+
+    if (!profile) {
+      throw AppError.notFound("Account not found.");
+    }
+
+    res.json({
+      user: serializeProfile(profile),
+    });
   } catch (err) {
     next(err);
   }
 });
+
+/* =========================================================
+   ADMIN EMPLOYEE LOGIN CREDENTIAL UPDATE
+
+   Allows SUPER_ADMIN / HR_ADMIN to change both the login
+   email and password of an employee without knowing the
+   employee's existing password.
+
+   The employee record is used only to resolve its linked
+   User account through employee.userId.
+
+   Password is bcrypt-hashed before being stored.
+========================================================= */
+
+const adminEmployeeCredentialsSchema = z
+  .object({
+    email: z.string().email("Enter a valid employee login email address."),
+    password: z
+      .string()
+      .min(8, "Employee password must be at least 8 characters long."),
+    confirmPassword: z
+      .string()
+      .min(1, "Please confirm the employee password."),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  });
+
+authRouter.patch(
+  "/admin/employees/:employeeId/credentials",
+  authenticate,
+  isAdmin,
+  validate(adminEmployeeCredentialsSchema),
+  async (req, res, next) => {
+    try {
+      const employeeId = String(req.params.employeeId ?? "").trim();
+
+      if (!employeeId) {
+        throw AppError.badRequest("Employee ID is required.");
+      }
+
+      const {
+        email,
+        password,
+      } = req.body as z.infer<typeof adminEmployeeCredentialsSchema>;
+
+      const employee = await Employee.findById(employeeId)
+        .select("_id userId employeeCode firstName lastName status")
+        .lean();
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      if (!employee.userId) {
+        throw AppError.badRequest(
+          "This employee does not have a linked login account.",
+        );
+      }
+
+      const normalizedEmail = email.toLowerCase().trim();
+
+      // Make sure the requested email does not belong to another account.
+      const existingUser = await User.findOne({
+        email: normalizedEmail,
+      })
+        .select("_id")
+        .lean();
+
+      if (
+        existingUser &&
+        String(existingUser._id) !== String(employee.userId)
+      ) {
+        throw AppError.conflict(
+          "An account with this email already exists. Please use a different email.",
+        );
+      }
+
+      const passwordHash = bcrypt.hashSync(password, 10);
+
+      const updatedUser = await updateAdminUserCredentials(
+        employee.userId,
+        normalizedEmail,
+        passwordHash,
+      );
+
+      if (!updatedUser) {
+        throw AppError.notFound(
+          "The employee's linked login account could not be found.",
+        );
+      }
+
+      // Return the same safe profile shape used by /auth/me and /auth/login.
+      // The password and password hash are never returned.
+      const profile = await findAuthProfile(employee.userId);
+
+      if (!profile) {
+        throw AppError.notFound(
+          "The employee's updated login profile could not be loaded.",
+        );
+      }
+
+      return res.json({
+        success: true,
+        message: "Employee login email and password updated successfully.",
+        employee: {
+          id: employee._id,
+          employeeCode: employee.employeeCode,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          status: employee.status,
+        },
+        user: serializeProfile(profile),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 const forgotPasswordEmailSchema = z.object({
   email: z.string().email("Enter a valid email address."),
@@ -317,8 +455,10 @@ authRouter.post(
       // Match the frontend's 60-second resend countdown and prevent OTP spam.
       if (user.passwordResetOtpRequestedAt) {
         const requestedAt = Date.parse(user.passwordResetOtpRequestedAt);
+
         if (Number.isFinite(requestedAt)) {
           const elapsed = Date.now() - requestedAt;
+
           if (elapsed < PASSWORD_RESET_OTP_RESEND_COOLDOWN_MS) {
             return res.json(genericResponse);
           }
@@ -327,9 +467,11 @@ authRouter.post(
 
       const otp = generatePasswordResetOtp();
       const now = new Date();
+
       const expiresAt = new Date(
         now.getTime() + PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60 * 1000,
       ).toISOString();
+
       const requestedAt = now.toISOString();
 
       await savePasswordResetOtp({
@@ -370,6 +512,7 @@ authRouter.post(
       const { email, otp, newPassword } = req.body as z.infer<
         typeof resetPasswordSchema
       >;
+
       const normalizedEmail = email.toLowerCase().trim();
       const user = await findUserByEmail(normalizedEmail);
 
@@ -387,28 +530,34 @@ authRouter.post(
 
       if (user.passwordResetOtpAttempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS) {
         await clearPasswordResetOtp(user.id);
+
         throw AppError.badRequest(
           "Too many incorrect OTP attempts. Please request a new OTP.",
         );
       }
 
       const expiresAt = Date.parse(user.passwordResetOtpExpiresAt);
+
       if (!Number.isFinite(expiresAt) || Date.now() >= expiresAt) {
         await clearPasswordResetOtp(user.id);
+
         throw AppError.badRequest(
           "The OTP is invalid or has expired. Please request a new OTP.",
         );
       }
 
       const submittedOtpHash = hashPasswordResetOtp(otp);
+
       if (submittedOtpHash !== user.passwordResetOtpHash) {
         await incrementPasswordResetOtpAttempts(user.id);
+
         throw AppError.badRequest(
           "The OTP is invalid or has expired. Please request a new OTP.",
         );
       }
 
       const passwordHash = bcrypt.hashSync(newPassword, 10);
+
       await updatePassword(user.id, passwordHash);
 
       return res.json({
@@ -429,14 +578,24 @@ authRouter.post(
       const { currentPassword, newPassword } = req.body as z.infer<
         typeof changePasswordSchema
       >;
+
       const user = await findUserByEmail(req.user!.email);
-      if (!user) throw AppError.notFound();
+
+      if (!user) {
+        throw AppError.notFound();
+      }
+
       if (!bcrypt.compareSync(currentPassword, user.passwordHash)) {
         throw AppError.badRequest("Your current password is incorrect.");
       }
+
       const hash = bcrypt.hashSync(newPassword, 10);
+
       await updatePassword(user.id, hash);
-      res.json({ message: "Password updated." });
+
+      res.json({
+        message: "Password updated.",
+      });
     } catch (err) {
       next(err);
     }

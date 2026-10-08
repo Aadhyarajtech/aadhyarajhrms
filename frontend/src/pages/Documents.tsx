@@ -453,7 +453,7 @@ export default function Documents() {
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardHeader
-              title="My documents"
+              title="My Documents"
               subtitle="All documents visible to the employee and HR admins."
             />
             {canManageDocuments && (
@@ -490,7 +490,7 @@ export default function Documents() {
 
         <Card>
           <CardHeader
-            title="Assigned assets"
+            title="Assigned Assets"
             subtitle="Laptop, phone, and other equipment allocated to the employee."
           />
 
@@ -516,7 +516,7 @@ export default function Documents() {
         <div className="grid gap-6">
           <Card>
             <CardHeader
-              title="Documents requested from me"
+              title="Documents Requested From Me"
               subtitle="Document requests raised by HR, admins, or your manager."
             />
 
@@ -544,7 +544,7 @@ export default function Documents() {
           <Card>
             <div className="flex items-center justify-between gap-3">
               <CardHeader
-                title="Documents I requested"
+                title="Documents I Requested"
                 subtitle="Company-issued documents you've requested from HR."
               />
 

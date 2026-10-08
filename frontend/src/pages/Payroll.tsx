@@ -508,7 +508,7 @@ function PayrollRuns() {
     <div className="space-y-6">
       <Card>
         <CardHeader
-          title="Process payroll"
+          title="Process Payroll"
           action={<span className="rounded-full bg-brand-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-brand-700">Admin workflow</span>}
           subtitle="Generates one payroll run for the selected period and includes all selected departments."
         />
@@ -646,7 +646,7 @@ function PayrollRuns() {
       </Card>
 
       <Card>
-        <CardHeader title="Payroll history" subtitle="Each payroll period is one payroll run containing all selected departments." />
+        <CardHeader title="Payroll History" subtitle="Each payroll period is one payroll run containing all selected departments." />
         {isLoading ? (
           <Skeleton className="h-48 rounded-2xl" />
         ) : !runs?.length ? (

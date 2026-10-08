@@ -1125,7 +1125,7 @@ export default function Announcements() {
             <div className="p-5">
               <div className="flex items-center gap-2">
                 <Users size={17} className="text-brand-600" />
-                <p className="text-[13px] font-semibold text-ink">Existing capabilities kept</p>
+                <p className="text-[13px] font-semibold text-ink">Existing Capabilities Kept</p>
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {["Targeting", "Email", "In-App", "Banner", "Calendar", "Scheduling", "Expiry", "Attachments", "Pinning", "Read receipts", "Acknowledgement"].map((item) => (

@@ -8,8 +8,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
-  Mail,
-  ShieldCheck,
+  Mail
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -26,16 +25,16 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 
-const DEMO_ACCOUNTS = [
-  { label: "Super Admin", email: "adithya.nuthakki@aadhyarajtech.com" },
-  { label: "HR Admin", email: "geetha.balachandran@aadhyarajtech.com" },
-  { label: "Manager", email: "gangadhar.yedla@aadhyarajtech.com" },
-  { label: "Recruiter", email: "meghana.sahithi@aadhyarajtech.com" },
-  { label: "Finance", email: "sreevidya.talasila@aadhyarajtech.com" },
-  { label: "IT Support", email: "kavya.rachupalli@aadhyarajtech.com" },
-  { label: "Employee", email: "anusha.nookanaboina@aadhyarajtech.com" },
-];
-const DEMO_PASSWORD = "Welcome@123";
+// const DEMO_ACCOUNTS = [
+//   { label: "Super Admin", email: "adithya.nuthakki@aadhyarajtech.com" },
+//   { label: "HR Admin", email: "geetha.balachandran@aadhyarajtech.com" },
+//   { label: "Manager", email: "gangadhar.yedla@aadhyarajtech.com" },
+//   { label: "Recruiter", email: "meghana.sahithi@aadhyarajtech.com" },
+//   { label: "Finance", email: "sreevidya.talasila@aadhyarajtech.com" },
+//   { label: "IT Support", email: "kavya.rachupalli@aadhyarajtech.com" },
+//   { label: "Employee", email: "anusha.nookanaboina@aadhyarajtech.com" },
+// ];
+// const DEMO_PASSWORD = "Welcome@123";
 
 const passwordRule = z
   .string()
@@ -92,10 +91,10 @@ export default function Login() {
   }
 };
 
-  const fillDemo = (email: string) => {
-    setValue("email", email);
-    setValue("password", DEMO_PASSWORD);
-  };
+  // const fillDemo = (email: string) => {
+  //   setValue("email", email);
+  //   setValue("password", DEMO_PASSWORD);
+  // };
 
   const openForgotPassword = () => {
     setForgotEmail("");
@@ -451,7 +450,7 @@ Adithya Nuthakki· Chief Executive Officer, Aadhyaraj Technologies
             </Button>
           </form>
 
-          <div className="mt-8">
+          {/* <div className="mt-8">
             <div className="flex items-center gap-2 text-[12px] font-medium text-ink-faint">
               <ShieldCheck size={14} /> Quick demo access
             </div>
@@ -470,14 +469,14 @@ Adithya Nuthakki· Chief Executive Officer, Aadhyaraj Technologies
                 </button>
               ))}
             </div>
-          </div>
+          </div> */}
 
           <p className="mt-6 text-center text-[12px] text-ink-faint">
             New employee? <Link to="/register" className="font-medium text-brand-600 hover:text-brand-700">Create an account</Link>
           </p>
-          <p className="mt-4 text-center text-[12px] text-ink-faint">
+          {/* <p className="mt-4 text-center text-[12px] text-ink-faint">
             <Link to="/" className="hover:text-ink-soft">← Back to homepage</Link>
-          </p>
+          </p> */}
         </div>
       </div>
     </div>

@@ -905,7 +905,7 @@ export default function JobDetail() {
                     htmlFor="candidate-screening-search"
                     className="mb-2 block text-[12px] font-semibold text-ink"
                   >
-                    Search candidates
+                    Search Candidates
                   </label>
                   <div className="relative">
                     <Search
@@ -2508,7 +2508,7 @@ function CandidateRecruitmentWorkspace({
           <div className="p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[13px] font-semibold text-ink">Pipeline overview</p>
+                <p className="text-[13px] font-semibold text-ink">Pipeline Overview</p>
                 <p className="mt-0.5 text-[10.5px] text-ink-faint">Use this view for stage distribution and drag/drop workflow.</p>
               </div>
               <Button size="sm" variant="outline" onClick={() => onTabChange("CANDIDATES")}>

@@ -100,8 +100,6 @@ export async function findAuthProfile(
     lastLoginAt: user.lastLoginAt,
     passwordHash: user.passwordHash,
 
-    // Password reset fields required by AuthProfileRow/UserRow.
-    // Defaults keep older user documents compatible.
     passwordResetOtpHash: user.passwordResetOtpHash ?? null,
     passwordResetOtpExpiresAt: user.passwordResetOtpExpiresAt ?? null,
     passwordResetOtpRequestedAt: user.passwordResetOtpRequestedAt ?? null,
@@ -117,7 +115,9 @@ export async function findAuthProfile(
     designationTitle,
     isManager:
       !!employee &&
-      (employee.isManager === true || hasDirectReports || user.role === "MANAGER"),
+      (employee.isManager === true ||
+        hasDirectReports ||
+        user.role === "MANAGER"),
   };
 }
 
@@ -145,6 +145,13 @@ export async function updatePassword(userId: string, passwordHash: string) {
   );
 }
 
+/**
+ * Existing admin password-reset operation.
+ *
+ * This is intentionally preserved separately from the new credential-update
+ * operation below because the reset-password workflow may intentionally force
+ * the employee to choose another password after signing in.
+ */
 export async function adminResetPassword(
   userId: string,
   passwordHash: string,
@@ -163,6 +170,67 @@ export async function adminResetPassword(
       },
     },
   );
+}
+
+/**
+ * Updates an employee's login credentials from an administrator action.
+ *
+ * The employee document is linked to this User document through `userId`.
+ * The password must already be bcrypt-hashed before reaching this function.
+ *
+ * `mustResetPwd` is set to false because the administrator explicitly supplied
+ * the new login password. This means the employee can immediately sign in
+ * using the credentials supplied by the administrator.
+ */
+export async function updateAdminUserCredentials(
+  userId: string,
+  email: string,
+  passwordHash: string,
+) {
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const existingUser = await User.findOne({
+    email: normalizedEmail,
+  })
+    .select("_id")
+    .lean();
+
+  if (
+    existingUser &&
+    String(existingUser._id) !== String(userId)
+  ) {
+    throw new Error(
+      "An account with this email already exists. Please use a different email.",
+    );
+  }
+
+  const updated = await User.findByIdAndUpdate(
+    userId,
+    {
+      $set: {
+        email: normalizedEmail,
+        passwordHash,
+        mustResetPwd: false,
+
+        // Invalidate any previously issued password-reset OTP.
+        passwordResetOtpHash: null,
+        passwordResetOtpExpiresAt: null,
+        passwordResetOtpRequestedAt: null,
+        passwordResetOtpAttempts: 0,
+
+        updatedAt: nowIso(),
+      },
+    },
+    {
+      new: true,
+    },
+  )
+    .select(
+      "_id email role isActive mustResetPwd lastLoginAt createdAt updatedAt",
+    )
+    .lean();
+
+  return updated;
 }
 
 export async function savePasswordResetOtp(input: {

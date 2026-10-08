@@ -46,8 +46,7 @@ const goalSchema = z.object({
 type GoalForm = z.infer<typeof goalSchema>;
 
 export default function Performance() {
-  const { user, hasPermission } = useAuth();
-  const isManager = hasPermission("performance.manage");
+  const { user } = useAuth();
   const isTeamManager =
     user?.role === "MANAGER" || user?.isManager === true;
   const isAdmin = user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
@@ -225,7 +224,7 @@ export default function Performance() {
       {tab === "outcomes" && canAccessPerformanceOutcomes && (
         <PerformanceOutcomes />
       )}
-      {tab === "pip" && isManager && <PipManagement />}
+      {tab === "pip" && canAccessPipManagement && <PipManagement />}
       {tab === "calibration" && isHr && <CalibrationPanel cycleId={activeCycle?.id} />}
     </div>
   );
@@ -375,7 +374,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader title="My review" />
+        <CardHeader title="My Review" />
         {reviewLoading ? (
           <Skeleton className="h-40 rounded-2xl" />
         ) : !review ? (
@@ -432,7 +431,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
 
       <Card className="lg:col-span-2">
         <CardHeader
-          title="Goal cascade"
+          title="Goal Cascade"
           subtitle="Company, department, and individual goals are connected through parent-child relationships."
         />
         {!goalCascade?.length ? (
@@ -862,7 +861,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
       </Card >
       <Card>
         <CardHeader
-          title="My goals"
+          title="My Goals"
           action={
             <Button
               size="sm"
@@ -1281,7 +1280,7 @@ function CalibrationPanel({ cycleId }: { cycleId?: string }) {
 
   return (
     <Card>
-      <CardHeader title="Performance calibration" />
+      <CardHeader title="Performance Calibration" />
       <div className="space-y-3">
         {validCalibrationReviews.map((review: any) => (
           <div key={review.id} className="flex flex-col gap-3 rounded-2xl border border-line/60 p-4 md:flex-row md:items-center md:justify-between">
@@ -1949,7 +1948,7 @@ function TeamReviews({
   return (
     <Card>
       <CardHeader
-        title="Direct reports"
+        title="Direct Reports"
         subtitle="Review status for the current cycle"
       />
       <div className="space-y-2">
@@ -2451,7 +2450,7 @@ function FeedbackRequests() {
     <div className="space-y-6">
       <Card>
         <CardHeader
-          title="360-degree feedback"
+          title="360-Degree Feedback"
           subtitle={
             activeCycle
               ? `Feedback requests for ${activeCycle.name}`
