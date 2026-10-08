@@ -399,7 +399,7 @@ function MyLeave() {
       </div>
 
       <Card>
-        <CardHeader title="My requests" />
+        <CardHeader title="My Requests" />
 
         {requestsLoading ? (
           <Skeleton className="h-40 rounded-2xl" />
@@ -531,7 +531,7 @@ function TeamApprovals() {
   return (
     <Card>
       <CardHeader
-        title="Team approvals"
+        title="Team Approvals"
         subtitle="Requests from your direct reports"
         action={
           <select
@@ -931,7 +931,7 @@ function LeaveAnalytics() {
 
           <Card>
             <CardHeader
-              title="Leave overview"
+              title="Leave Overview"
               subtitle={`${analytics.period.startDate} – ${analytics.period.endDate} · ${analytics.scope}`}
             />
 
@@ -959,7 +959,7 @@ function LeaveAnalytics() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader title="Leave by type" />
+              <CardHeader title="Leave By Type" />
               {!analytics.leaveTypes.length ? (
                 <EmptyState
                   icon={CalendarDays}
@@ -992,7 +992,7 @@ function LeaveAnalytics() {
             </Card>
 
             <Card>
-              <CardHeader title="Monthly trend" />
+              <CardHeader title="Monthly Trend" />
               {!analytics.monthlyTrend.length ? (
                 <EmptyState
                   icon={CalendarDays}
@@ -1028,7 +1028,7 @@ function LeaveAnalytics() {
 
           <Card>
             <CardHeader
-              title="Top employees by leave usage"
+              title="Top Employees By Leave Usage"
               subtitle="Employees with the highest approved leave days in the selected period."
             />
 
@@ -1078,7 +1078,7 @@ function LeaveAnalytics() {
 
           <Card>
             <CardHeader
-              title="AI summary"
+              title="AI Summary"
               subtitle="Generated from the calculated leave analytics."
             />
             <div className="flex items-start gap-3 rounded-2xl border border-brand-100/80 bg-gradient-to-br from-[#F5F2FF] via-white to-[#F8F7FF] p-4 shadow-[0_7px_20px_rgba(91,79,229,0.06)]">
@@ -1305,7 +1305,7 @@ function LeavePatternDetection() {
 
           <Card>
             <CardHeader
-              title="Detected patterns"
+              title="Detected Patterns"
               subtitle={`${patterns.period.startDate} – ${patterns.period.endDate} · ${patterns.scope}`}
             />
 
@@ -1376,7 +1376,7 @@ function LeavePatternDetection() {
 
           <Card>
             <CardHeader
-              title="AI interpretation"
+              title="AI Interpretation"
               subtitle="The AI explains detected patterns without changing the underlying data."
             />
 

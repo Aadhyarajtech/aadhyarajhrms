@@ -495,6 +495,18 @@ export async function checkIn(
       existing?.breakMinutes ?? 0,
     );
 
+    // Validate the late-check-in reason BEFORE changing the attendance record.
+    // This keeps check-in atomic from the application's perspective: a late
+    // check-in without a reason must never be persisted.
+    const lateReason =
+      metrics.lateMinutes > 0
+        ? String(location?.lateCheckInReason ?? "").trim()
+        : null;
+
+    if (metrics.lateMinutes > 0 && !lateReason) {
+      throw AppError.badRequest("A reason is required for late check-in.");
+    }
+
     const updateResult = await Attendance.updateOne(
       { _id: existing._id, checkIn: null, checkOut: null },
       {
@@ -503,7 +515,8 @@ export async function checkIn(
           shiftId: shift?._id ?? existing.shiftId ?? null,
           status: metrics.status,
           lateMinutes: metrics.lateMinutes,
-          lateCheckInReason: null,
+          lateCheckInReason: lateReason,
+          note: lateReason,
           checkInLatitude: location?.latitude ?? null,
           checkInLongitude: location?.longitude ?? null,
           checkInAccuracy: location?.accuracy ?? null,
@@ -515,7 +528,7 @@ export async function checkIn(
             actorId: employeeId,
             actorRole: "EMPLOYEE",
             at: now,
-            note: null,
+            note: lateReason,
           },
         },
       },
@@ -530,36 +543,11 @@ export async function checkIn(
     }
 
     if (metrics.lateMinutes > 0) {
-      if (!String(location?.lateCheckInReason ?? "").trim()) {
-        throw AppError.badRequest("A reason is required for late check-in.");
-      }
-
-      const lateReason = String(location?.lateCheckInReason ?? "").trim();
       const localTime = new Intl.DateTimeFormat("en-IN", {
         timeZone: IST_TIME_ZONE,
         dateStyle: "medium",
         timeStyle: "short",
       }).format(new Date(now));
-
-      await Attendance.updateOne(
-        { _id: existing._id },
-        {
-          $set: {
-            lateCheckInReason: lateReason,
-            note: lateReason,
-            updatedAt: now,
-          },
-          $push: {
-            auditTrail: {
-              action: "CHECK_IN",
-              actorId: employeeId,
-              actorRole: "EMPLOYEE",
-              at: now,
-              note: lateReason,
-            },
-          },
-        },
-      );
 
       await notifyAttendanceException({
         employeeId,

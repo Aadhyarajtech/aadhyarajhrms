@@ -40,6 +40,7 @@ startRequestExpiryJob();
       `Aadhyaraj HRMS API listening on http://localhost:${env.port}`,
       {
         env: env.nodeEnv,
+        port: env.port,
       },
     );
   });

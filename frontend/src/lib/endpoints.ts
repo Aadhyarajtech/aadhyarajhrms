@@ -2885,12 +2885,32 @@ export const DocumentsApi = {
       })
       .then((r) => r.data.requests),
 
-  download: (id: string) =>
-    api
-      .get<Blob>(`/documents/${id}/download`, {
-        responseType: "blob",
-      })
-      .then((r) => r.data),
+  download: async (id: string) => {
+    const token = localStorage.getItem("aadhyaraj_token");
+    const response = await fetch(`${api.defaults.baseURL ?? ""}/documents/${id}/download`, {
+      headers: {
+        Authorization: token ? `Bearer ${token}` : "",
+      },
+    });
+
+    if (!response.ok) {
+      const raw = await response.text();
+      let message = "Unable to open this document.";
+
+      try {
+        const parsed = JSON.parse(raw) as { error?: { message?: string } };
+        message = parsed?.error?.message || message;
+      } catch {
+        if (raw && raw.trim()) {
+          message = raw.trim();
+        }
+      }
+
+      throw new Error(message);
+    }
+
+    return response.blob();
+  },
 
   delete: (id: string) => api.delete(`/documents/${id}`),
 

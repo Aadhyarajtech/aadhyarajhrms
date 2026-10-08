@@ -651,7 +651,14 @@ export default function Dashboard() {
                 <div className="rounded-2xl border border-line/60 bg-gradient-to-br from-brand-50 to-gold-50 px-4 py-3 shadow-sm">
                   <p className="text-[13px] font-medium text-ink">Need help?</p>
                   <p className="mt-1 text-[11px] text-ink-faint">
-                    Reach IT &amp; Security for access or technical issues.
+                    <Link
+                      to="/app/my-tickets?raise=it-support"
+                      className="font-medium text-brand-600 hover:text-brand-700 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-2 rounded-sm"
+                      aria-label="Reach IT & Security"
+                    >
+                      Reach IT &amp; Security
+                    </Link>{" "}
+                    for access or technical issues.
                   </p>
                 </div>
               </div>
@@ -711,7 +718,7 @@ export default function Dashboard() {
         action={
           <div className="flex items-center gap-3">
             <div className="rounded-2xl border border-line/60 bg-gradient-to-br from-brand-50 to-gold-50 px-4 py-3 shadow-sm">
-              <p className="text-[13px] font-medium text-ink">Need help?</p>
+              <p className="text-[13px] font-medium text-ink">Need Help?</p>
               <p className="mt-1 text-[11px] text-ink-faint">
                 <Link
                   to="/app/my-tickets?raise=it-support"
@@ -772,7 +779,7 @@ export default function Dashboard() {
 
       {/* ========================= MAIN ANALYTICS ========================= */}
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        {/* Headcount trend */}
+        {/* Headcount Trend */}
         <Card>
           <CardHeader
             title="Headcount Trend"
@@ -802,7 +809,7 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {/* Headcount by department */}
+        {/* Headcount By Department */}
         <Card>
           <CardHeader title="Headcount by Department" />
           <div className="px-4 pb-4">
@@ -879,10 +886,10 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {/* Employee lifecycle */}
+        {/* Employee Lifecycle */}
         <Card>
           <div className="flex items-start justify-between gap-3">
-            <CardHeader title="Employee lifecycle" subtitle="Current distribution across lifecycle stages" />
+            <CardHeader title="Employee Lifecycle" subtitle="Current distribution across lifecycle stages" />
             <select
               value={lifecycleDepartment}
               onChange={(event) => setLifecycleDepartment(event.target.value)}
@@ -919,7 +926,7 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {/* Attendance trend */}
+        {/* Attendance Trend */}
         <Card>
           <CardHeader
             title="Attendance Trend"
@@ -942,7 +949,7 @@ export default function Dashboard() {
         {/* Payroll */}
         <Card>
           <CardHeader
-            title="Payroll cost trend"
+            title="Payroll Cost Trend"
             subtitle="Net payout, last runs"
             action={<span className="rounded-lg border border-line/60 bg-white px-2.5 py-1 text-[10px] text-ink-faint">Last 6 months</span>}
           />
@@ -962,7 +969,7 @@ export default function Dashboard() {
         {/* Important announcements */}
         <Card>
           <div className="flex items-center justify-between gap-3">
-            <CardHeader title="Important announcements" />
+            <CardHeader title="Important Announcements" />
             <Link to="/app/announcements" className="mr-4 text-[10px] font-medium text-brand-600 hover:underline">View all</Link>
           </div>
           <div className="space-y-3 px-4 pb-4">
@@ -983,7 +990,7 @@ export default function Dashboard() {
         {/* Recent activity */}
         <Card>
           <div className="flex items-center justify-between gap-3">
-            <CardHeader title="Recent activity" />
+            <CardHeader title="Recent Activity" />
             <Link to="/app" className="mr-4 text-[10px] font-medium text-brand-600 hover:underline">View all</Link>
           </div>
           <div className="space-y-3 px-4 pb-4">
@@ -1002,7 +1009,7 @@ export default function Dashboard() {
         {/* Upcoming holidays */}
         <Card>
           <div className="flex items-center justify-between gap-3">
-            <CardHeader title="Upcoming holidays & festivals" />
+            <CardHeader title="Upcoming Holidays & Festivals" />
             <Link to="/app/announcements" className="mr-4 text-[10px] font-medium text-brand-600 hover:underline">View calendar</Link>
           </div>
           <div className="space-y-2 px-4 pb-4">
@@ -1019,7 +1026,7 @@ export default function Dashboard() {
         {/* Pending leave approvals */}
         <Card>
           <div className="flex items-center justify-between gap-3">
-            <CardHeader title="Pending leave approvals" />
+            <CardHeader title="Pending Leave Approvals" />
             <Link to="/app/leave" className="mr-4 text-[10px] font-medium text-brand-600 hover:underline">View all</Link>
           </div>
           <div className="px-4 pb-4">
@@ -1052,6 +1059,7 @@ export default function Dashboard() {
     </div>
   );
 }
+
 
 
 

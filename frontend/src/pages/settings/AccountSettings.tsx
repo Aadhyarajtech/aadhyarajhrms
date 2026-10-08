@@ -29,7 +29,7 @@ export default function AccountSettings() {
   const mutation = useMutation({
     mutationFn: (v: FormValues) => AuthApi.changePassword(v.currentPassword, v.newPassword),
     onSuccess: () => {
-      showToast("Password updated successfully.");
+      showToast("Password Updated Successfully.");
       reset();
     },
     onError: (err) => showToast(getErrorMessage(err), "error"),
@@ -51,13 +51,13 @@ export default function AccountSettings() {
       </Card>
 
       <Card>
-        <CardHeader title="Change password" subtitle="Use a strong password you don't use elsewhere." />
+        <CardHeader title="Change Password" subtitle="Use a Strong Password you don't use elsewhere." />
         <form className="space-y-4">
-          <TextField label="Current password" type="password" required error={errors.currentPassword?.message} {...register("currentPassword")} />
-          <TextField label="New password" type="password" required error={errors.newPassword?.message} {...register("newPassword")} />
-          <TextField label="Confirm new password" type="password" required error={errors.confirmPassword?.message} {...register("confirmPassword")} />
+          <TextField label="Current Password" type="password" required error={errors.currentPassword?.message} {...register("currentPassword")} />
+          <TextField label="New Password" type="password" required error={errors.newPassword?.message} {...register("newPassword")} />
+          <TextField label="Confirm New Password" type="password" required error={errors.confirmPassword?.message} {...register("confirmPassword")} />
           <Button leftIcon={<KeyRound size={15} />} onClick={handleSubmit((v) => mutation.mutate(v))} isLoading={mutation.isPending}>
-            Update password
+            Update Password
           </Button>
         </form>
       </Card>

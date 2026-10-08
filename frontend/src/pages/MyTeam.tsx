@@ -82,7 +82,7 @@ export default function MyTeam() {
               <p className="mt-1 text-sm text-white/75">View and monitor your direct team members.</p>
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-xs text-white/80 backdrop-blur">
-              Team management & approvals
+              Team Management & Approvals
             </div>
           </div>
         </div>
@@ -175,7 +175,7 @@ function TeamMembers({
   return (
     <Card className="border-violet-100/80 shadow-[0_18px_45px_-32px_rgba(79,70,229,0.55)]">
       <CardHeader
-        title="Direct team members"
+        title="Direct Team Members"
         subtitle="Employees who report directly to you."
         action={
           <input
@@ -407,7 +407,7 @@ function TeamLeaveRequests({ managerId }: { managerId: string }) {
   return (
     <Card className="border-emerald-100/80 shadow-[0_18px_45px_-32px_rgba(16,185,129,0.45)]">
       <CardHeader
-        title="Team leave requests"
+        title="Team Leave Requests"
         subtitle="Review leave requests submitted by your direct reports."
         action={
           <select
@@ -705,7 +705,7 @@ function TeamAttendance({ managerId }: { managerId: string }) {
 
       <Card className="border-blue-100/80 shadow-[0_18px_45px_-32px_rgba(59,130,246,0.45)]">
         <CardHeader
-          title="Team attendance"
+          title="Team Attendance"
           subtitle="Monitor attendance records and exceptions for your direct reports."
           action={
             <input
@@ -963,7 +963,7 @@ function TeamPerformance({ managerId }: { managerId: string }) {
   return (
     <Card className="border-violet-100/80 shadow-[0_18px_45px_-32px_rgba(79,70,229,0.45)]">
       <CardHeader
-        title="Team performance"
+        title="Team Performance"
         subtitle="View performance reviews for your direct reports and complete the manager review."
       />
 

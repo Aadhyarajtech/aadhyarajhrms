@@ -139,7 +139,7 @@ async function getEmployeeLifecycle() {
   };
 }
 
-dashboardRouter.get("/overview", async (_req, res, next) => {
+dashboardRouter.get("/overview", async (req, res, next) => {
   try {
     const [
       kpis,

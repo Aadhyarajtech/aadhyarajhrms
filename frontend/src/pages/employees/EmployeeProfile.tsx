@@ -993,7 +993,7 @@ function OverviewTab({
       {/* Personal information */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:gap-6">
         <Card className="lg:col-span-2">
-          <CardHeader title="Personal information" />
+          <CardHeader title="Personal Information" />
           <dl className="grid grid-cols-1 gap-x-8 gap-y-5 text-[13.5px] sm:grid-cols-2 lg:grid-cols-3">
             <Info label="Gender" value={employee.gender ?? "—"} />
 
@@ -2492,7 +2492,7 @@ function LeaveTab({ employeeId }: { employeeId: string; canManage: boolean }) {
       </div>
 
       <Card>
-        <CardHeader title="Leave history" />
+        <CardHeader title="Leave History" />
         {requestsLoading ? (
           <Skeleton className="h-32 rounded-2xl" />
         ) : !requests?.length ? (
@@ -2537,7 +2537,7 @@ function PerformanceTab({ employeeId }: { employeeId: string }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
-        <CardHeader title="Review history" />
+        <CardHeader title="Review History" />
         {reviewsLoading ? (
           <Skeleton className="h-32 rounded-2xl" />
         ) : !reviews?.length ? (
@@ -2569,7 +2569,7 @@ function PerformanceTab({ employeeId }: { employeeId: string }) {
         )}
       </Card>
       <Card>
-        <CardHeader title="Active goals" />
+        <CardHeader title="Active Goals" />
         {goalsLoading ? (
           <Skeleton className="h-32 rounded-2xl" />
         ) : !goals?.length ? (
@@ -2631,7 +2631,7 @@ function PayrollTab({
       {canEditStructure && (
         <Card>
           <CardHeader
-            title="Salary structure"
+            title="Salary Structure"
             subtitle={
               structure
                 ? `Effective from ${formatDate(structure.effectiveFrom)}`
@@ -2666,7 +2666,7 @@ function PayrollTab({
       )}
 
       <Card>
-        <CardHeader title="Payslip history" />
+        <CardHeader title="Payslip History" />
         {isLoading ? (
           <Skeleton className="h-40 rounded-2xl" />
         ) : !payslips?.length ? (
@@ -2835,7 +2835,7 @@ function DocumentsTab({
         )}
       </Card>
       <Card>
-        <CardHeader title="Assigned assets" />
+        <CardHeader title="Assigned Assets" />
         {assetsLoading ? (
           <Skeleton className="h-32 rounded-2xl" />
         ) : !assets?.length ? (

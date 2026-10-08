@@ -346,7 +346,7 @@ export default function Reports() {
               <Activity size={15} />
             </span>
             <div>
-              <p className="text-[13px] font-semibold text-ink">Report controls</p>
+              <p className="text-[13px] font-semibold text-ink">Report Controls</p>
               <p className="text-[11px] text-ink-faint">Choose the reporting period and workforce scope.</p>
             </div>
           </div>
@@ -1151,11 +1151,11 @@ function Overview({
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Headcount by department" />
+          <CardHeader title="Headcount By Department" />
           <Chart data={data.workforce.byDepartment} />
         </Card>
         <Card>
-          <CardHeader title="Attendance status" />
+          <CardHeader title="Attendance Status" />
           <Chart data={data.attendance.byStatus} />
         </Card>
       </div>

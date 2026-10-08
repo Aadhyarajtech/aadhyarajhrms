@@ -167,3 +167,128 @@ export async function getUpcomingHolidays(limit = 4) {
     return { id: _id, ...rest };
   });
 }
+
+export async function getPendingLeavesForDashboard(params: {
+  employeeId?: string | null;
+  role?: string | null;
+  isManager?: boolean;
+  limit?: number;
+}) {
+  const {
+    employeeId,
+    role,
+    isManager = false,
+    limit = 8,
+  } = params;
+
+  const isPrivileged =
+    role === "SUPER_ADMIN" || role === "HR_ADMIN";
+
+  const query: Record<string, any> = {
+    status: "PENDING",
+  };
+
+  // Super Admin and HR Admin can see everyone's pending leaves.
+  if (!isPrivileged) {
+    if (!employeeId) {
+      return [];
+    }
+
+    // Managers can see pending leaves of their direct reports.
+    if (isManager) {
+      const reports = await Employee.find({
+        managerId: employeeId,
+      })
+        .select("_id")
+        .lean();
+
+      const employeeIds = reports.map((employee) =>
+        String(employee._id)
+      );
+
+      if (!employeeIds.length) {
+        return [];
+      }
+
+      query.employeeId = {
+        $in: employeeIds,
+      };
+    } else {
+      // Normal employee can see only their own pending leaves.
+      query.employeeId = employeeId;
+    }
+  }
+
+  const rows = await LeaveRequest.find(query)
+    .sort({ appliedAt: -1 })
+    .limit(limit)
+    .lean();
+
+  if (!rows.length) {
+    return [];
+  }
+
+  const employeeIds = [
+    ...new Set(rows.map((row) => String(row.employeeId))),
+  ];
+
+  const leaveTypeIds = [
+    ...new Set(rows.map((row) => String(row.leaveTypeId))),
+  ];
+
+  const [employees, leaveTypes] = await Promise.all([
+    Employee.find({
+      _id: {
+        $in: employeeIds,
+      },
+    })
+      .select("firstName lastName")
+      .lean(),
+
+    LeaveType.find({
+      _id: {
+        $in: leaveTypeIds,
+      },
+    })
+      .select("name")
+      .lean(),
+  ]);
+
+  const employeeMap = new Map(
+    employees.map((employee) => [
+      String(employee._id),
+      employee,
+    ])
+  );
+
+  const leaveTypeMap = new Map(
+    leaveTypes.map((leaveType) => [
+      String(leaveType._id),
+      leaveType,
+    ])
+  );
+
+  return rows.map((row) => {
+    const employee = employeeMap.get(
+      String(row.employeeId)
+    );
+
+    const leaveType = leaveTypeMap.get(
+      String(row.leaveTypeId)
+    );
+
+    return {
+      id: String(row._id),
+      employeeId: String(row.employeeId),
+      employeeName: employee
+        ? `${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim()
+        : "Employee",
+      leaveTypeName: leaveType?.name ?? "Leave",
+      startDate: row.startDate,
+      endDate: row.endDate,
+      totalDays: row.totalDays,
+      status: row.status,
+      appliedAt: row.appliedAt,
+    };
+  });
+}

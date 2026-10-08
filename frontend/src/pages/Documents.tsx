@@ -126,49 +126,35 @@ const DOCUMENT_REJECTION_REASONS = [
   "Document is incomplete",
 ] as const;
 
-// Helper function to safely fetch and view private document blobs
-async function openPrivateDocument(
+// Open the authenticated document URL directly from the click event so the
+// browser opens the real file without creating a blank intermediate tab.
+function openPrivateDocument(
   id: string,
-  fileName: string | null | undefined,
+  _fileName: string | null | undefined,
   showToast: (message: string, variant?: "success" | "error" | "info") => void,
 ) {
-  // Open synchronously to avoid popup blockers, then populate it after the
-  // authenticated API request completes.
-  const popup = window.open("about:blank", "_blank");
-  const safeFileName = String(fileName || "document").trim() || "document";
-
   try {
-    const blob = await DocumentsApi.download(id);
-    const extension = safeFileName.split(".").pop()?.toLowerCase() ?? "";
+    const token = localStorage.getItem("aadhyaraj_token");
+    const rawBase = import.meta.env.VITE_API_URL || "/api";
+    const baseUrl = rawBase.startsWith("http")
+      ? rawBase
+      : `${window.location.origin}${rawBase}`;
+    const downloadUrl = new URL(`${baseUrl.replace(/\/$/, "")}/documents/${id}/download`);
 
-    const mimeType =
-      extension === "pdf"
-        ? "application/pdf"
-        : extension === "png"
-        ? "image/png"
-        : extension === "jpg" || extension === "jpeg"
-        ? "image/jpeg"
-        : extension === "txt"
-        ? "text/plain"
-        : blob.type || "application/octet-stream";
+    if (token) {
+      downloadUrl.searchParams.set("token", token);
+    }
 
-    const viewableBlob = new Blob([blob], { type: mimeType });
-    const objectUrl = URL.createObjectURL(viewableBlob);
-
-    if (popup) {
-      popup.location.href = objectUrl;
-      popup.document.title = safeFileName;
-    } else {
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = safeFileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
+    const popup = window.open(downloadUrl.toString(), "_blank", "noopener,noreferrer");
+    if (!popup) {
+      showToast("Please allow popups to open the document in a new tab.", "info");
     }
   } catch (err) {
-    popup?.close();
-    showToast(getErrorMessage(err), "error");
+    const message =
+      err instanceof Error && err.message
+        ? err.message
+        : getErrorMessage(err);
+    showToast(message, "error");
   }
 }
 
@@ -467,7 +453,7 @@ export default function Documents() {
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardHeader
-              title="My documents"
+              title="My Documents"
               subtitle="All documents visible to the employee and HR admins."
             />
             {canManageDocuments && (
@@ -504,7 +490,7 @@ export default function Documents() {
 
         <Card>
           <CardHeader
-            title="Assigned assets"
+            title="Assigned Assets"
             subtitle="Laptop, phone, and other equipment allocated to the employee."
           />
 
@@ -530,7 +516,7 @@ export default function Documents() {
         <div className="grid gap-6">
           <Card>
             <CardHeader
-              title="Documents requested from me"
+              title="Documents Requested From Me"
               subtitle="Document requests raised by HR, admins, or your manager."
             />
 
@@ -558,7 +544,7 @@ export default function Documents() {
           <Card>
             <div className="flex items-center justify-between gap-3">
               <CardHeader
-                title="Documents I requested"
+                title="Documents I Requested"
                 subtitle="Company-issued documents you've requested from HR."
               />
 
@@ -599,7 +585,7 @@ export default function Documents() {
       {canProcessCompanyRequests && (
         <Card>
           <CardHeader
-            title="Company document requests"
+            title="Company Document Requests"
             subtitle="Company-issued documents employees have requested. Upload the completed document to fulfil each request."
           />
 
@@ -668,9 +654,7 @@ function DocumentRow({ doc }: { doc: any }): JSX.Element {
   const { showToast } = useToast();
   const { user, hasPermission } = useAuth();
 
-  const canDelete =
-    user?.role !== "EMPLOYEE" &&
-    (doc.uploadedBy === user?.id || hasPermission("documents.manage"));
+  const canDelete = ["SUPER_ADMIN", "HR_ADMIN"].includes((user as any)?.role);
 
   const canReview =
     hasPermission("documents.manage") &&

@@ -136,6 +136,30 @@ function safePrivateDocumentPath(storageKey: string) {
   return target;
 }
 
+function safePublicUploadPath(storageKey: string) {
+  const safeKey = path.basename(storageKey);
+  const root = path.resolve(UPLOAD_DIR_ABSOLUTE);
+  const target = path.resolve(root, safeKey);
+  if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+    throw AppError.forbidden();
+  }
+  return target;
+}
+
+function buildMissingDocumentPlaceholder(fileName: string, type: string) {
+  const cleanedName = String(fileName || "document").trim() || "document";
+  const plainText = [
+    "Document not available in storage.",
+    "",
+    `Name: ${cleanedName}`,
+    `Type: ${type || "UNSPECIFIED"}`,
+    "",
+    "This placeholder was generated because the original file was not found on disk.",
+  ].join("\n");
+
+  return Buffer.from(plainText, "utf8");
+}
+
 export async function getPrivateDocumentPath(id: string) {
   const row = await DocumentRecord.findById(id).lean();
   if (!row) throw AppError.notFound("Document not found.");
@@ -149,17 +173,31 @@ export async function getPrivateDocumentPath(id: string) {
     throw AppError.notFound("This document is not available through secure storage yet.");
   }
 
-  let filePath = safePrivateDocumentPath(key);
-  try {
-    await fs.access(filePath);
-  } catch {
-    const fallbackPath = path.resolve(UPLOAD_DIR_ABSOLUTE, key);
+  const candidatePaths = [
+    safePrivateDocumentPath(key),
+    safePublicUploadPath(key),
+  ];
+
+  let filePath = candidatePaths[0];
+  let resolved = false;
+
+  for (const candidate of candidatePaths) {
     try {
-      await fs.access(fallbackPath);
-      filePath = fallbackPath;
+      await fs.access(candidate);
+      filePath = candidate;
+      resolved = true;
+      break;
     } catch {
-      throw AppError.notFound("Document file not found on disk.");
+      // continue to next fallback path
     }
+  }
+
+  if (!resolved) {
+    await fs.mkdir(PRIVATE_DOCUMENT_DIR_ABSOLUTE, { recursive: true });
+    const placeholderName = `${path.basename(key).replace(/\.[^/.]+$/, "") || "document"}.txt`;
+    const placeholderPath = path.resolve(PRIVATE_DOCUMENT_DIR_ABSOLUTE, placeholderName);
+    await fs.writeFile(placeholderPath, buildMissingDocumentPlaceholder(String(row.fileName || key), String(row.type || "OTHER")));
+    filePath = placeholderPath;
   }
 
   return { row: toApiDoc(row), filePath };

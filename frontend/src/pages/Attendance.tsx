@@ -209,7 +209,7 @@ function AttendanceExceptionReview({
     <div className="mb-6 space-y-4">
       <Card>
         <CardHeader
-          title="Attendance exceptions"
+          title="Attendance Exceptions"
           subtitle="Review system-detected attendance issues for the selected employee."
         />
         <div className="space-y-5 px-6 pb-5 pt-4">
@@ -1097,7 +1097,7 @@ function TeamAttendance() {
       </div>
       <Card>
       <CardHeader
-        title="Team attendance"
+        title="Team Attendance"
         subtitle="View attendance for your direct reports on any date"
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -1264,7 +1264,7 @@ function TeamRegularizationRequests() {
   return (
     <Card>
       <CardHeader
-        title="Attendance regularization"
+        title="Attendance Regularization"
         subtitle="Review attendance correction requests from your direct reports"
         action={
           <select

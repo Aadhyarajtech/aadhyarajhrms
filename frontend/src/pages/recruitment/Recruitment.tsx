@@ -452,7 +452,7 @@ export default function Recruitment() {
               Talent acquisition intelligence
             </div>
             <h2 className="font-display text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">
-              Build your next great team.
+              Build Your Next Great Team.
             </h2>
             <p className="mt-1.5 max-w-2xl text-[12px] leading-relaxed text-indigo-100">
               Track requisitions, candidate movement, hiring sources and
@@ -594,7 +594,7 @@ export default function Recruitment() {
 
       <Card className="mb-6 border-indigo-100/70 bg-gradient-to-br from-white to-[#FBFAFF] shadow-[0_10px_30px_rgba(79,70,229,0.05)]">
         <CardHeader
-          title="Pipeline overview"
+          title="Pipiline Overview"
           subtitle="Candidates by stage across all recruitment roles"
         />
 
@@ -766,7 +766,7 @@ export default function Recruitment() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Hiring workspace</p>
-                <h3 className="mt-1 font-display text-lg font-semibold tracking-[-0.015em] text-slate-900">Current requisitions</h3>
+                <h3 className="mt-1 font-display text-lg font-semibold tracking-[-0.015em] text-slate-900">Current Requisitions</h3>
                 <p className="mt-1 text-[11px] text-slate-500">Search and filter requisitions without changing the existing recruitment workflow.</p>
               </div>
               <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-semibold text-slate-500">

@@ -508,13 +508,13 @@ function PayrollRuns() {
     <div className="space-y-6">
       <Card>
         <CardHeader
-          title="Process payroll"
+          title="Process Payroll"
           action={<span className="rounded-full bg-brand-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-brand-700">Admin workflow</span>}
           subtitle="Generates one payroll run for the selected period and includes all selected departments."
         />
         <form className="flex flex-wrap items-end gap-3 rounded-2xl bg-gradient-to-r from-slate-50 to-white p-4">
           <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-muted">
-            <span>Payroll start date <span className="text-red-500">*</span></span>
+            <span>Payroll Start Date <span className="text-red-500">*</span></span>
             <input
               type="date"
               required
@@ -524,7 +524,7 @@ function PayrollRuns() {
             />
           </label>
           <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-muted">
-            <span>Payroll end date <span className="text-red-500">*</span></span>
+            <span>Payroll End Date <span className="text-red-500">*</span></span>
             <input
               type="date"
               required
@@ -537,7 +537,7 @@ function PayrollRuns() {
 
           <div className="flex min-w-[280px] flex-1 flex-col gap-2 text-[13px] font-medium text-ink-muted">
             <span>
-              Departments to process <span className="text-red-500">*</span>
+              Departments to Process <span className="text-red-500">*</span>
             </span>
             <select
               value=""
@@ -626,7 +626,7 @@ function PayrollRuns() {
             onClick={handleLock}
             isLoading={lockMutation.isPending}
           >
-            Lock attendance
+            Lock Attendance
           </Button>
           <Button
             type="button"
@@ -640,13 +640,13 @@ function PayrollRuns() {
                 : "Lock attendance for the selected departments before processing."
             }
           >
-            Process payroll
+            Process Payroll
           </Button>
         </form>
       </Card>
 
       <Card>
-        <CardHeader title="Payroll history" subtitle="Each payroll period is one payroll run containing all selected departments." />
+        <CardHeader title="Payroll History" subtitle="Each payroll period is one payroll run containing all selected departments." />
         {isLoading ? (
           <Skeleton className="h-48 rounded-2xl" />
         ) : !runs?.length ? (
@@ -712,7 +712,7 @@ function PayrollRuns() {
                               className="flex items-center gap-1 text-[12px] font-medium text-brand-600 hover:underline"
                             >
                               {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                              View payslips
+                              View Payslips
                             </button>
                             {r.status === "PROCESSED" && <button onClick={() => reviewMutation.mutate(r.id)} className="text-[12px] font-medium text-brand-600 hover:underline">Submit for review</button>}
                             {r.status === "HR_REVIEW" && <button onClick={() => approveMutation.mutate(r.id)} className="text-[12px] font-medium text-success-700 hover:underline">Approve</button>}
@@ -829,22 +829,22 @@ function InlineRunPayslips({
                     <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-ink-faint">Earnings</p>
                     <div className="space-y-1.5">
                       {earnings.map(([label, value]) => <div key={label} className="flex justify-between text-[12px]"><span className="text-ink-faint">{label}</span><span>{formatCurrencyINR(value ?? 0)}</span></div>)}
-                      <div className="mt-3 flex justify-between border-t border-line/60 pt-2 text-[13px] font-semibold"><span>Gross earnings</span><span>{formatCurrencyINR(p.grossEarnings)}</span></div>
+                      <div className="mt-3 flex justify-between border-t border-line/60 pt-2 text-[13px] font-semibold"><span>Gross Earnings</span><span>{formatCurrencyINR(p.grossEarnings)}</span></div>
                     </div>
                   </div>
                   <div className="rounded-xl bg-white p-4">
                     <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-ink-faint">Deductions</p>
                     <div className="space-y-1.5">
                       {deductions.map(([label, value]) => <div key={label} className="flex justify-between text-[12px]"><span className="text-ink-faint">{label}</span><span>{formatCurrencyINR(value ?? 0)}</span></div>)}
-                      <div className="mt-3 flex justify-between border-t border-line/60 pt-2 text-[13px] font-semibold"><span>Total deductions</span><span>{formatCurrencyINR(p.totalDeductions)}</span></div>
+                      <div className="mt-3 flex justify-between border-t border-line/60 pt-2 text-[13px] font-semibold"><span>Total Deductions</span><span>{formatCurrencyINR(p.totalDeductions)}</span></div>
                     </div>
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Net pay</p><p className="mt-1 text-lg font-semibold text-ink">{formatCurrencyINR(p.netPay)}</p></div>
-                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Days payable</p><p className="mt-1 font-semibold text-ink">{p.daysPayable} / {p.daysInMonth}</p></div>
-                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Taxable income</p><p className="mt-1 font-semibold text-ink">{formatCurrencyINR(p.taxableIncome)}</p></div>
-                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Annual tax</p><p className="mt-1 font-semibold text-ink">{formatCurrencyINR(p.annualTax)}</p></div>
+                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Net Pay</p><p className="mt-1 text-lg font-semibold text-ink">{formatCurrencyINR(p.netPay)}</p></div>
+                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Days Payable</p><p className="mt-1 font-semibold text-ink">{p.daysPayable} / {p.daysInMonth}</p></div>
+                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Taxable Income</p><p className="mt-1 font-semibold text-ink">{formatCurrencyINR(p.taxableIncome)}</p></div>
+                  <div className="rounded-xl bg-white p-3"><p className="text-[10px] uppercase tracking-wider text-ink-faint">Annual Tax</p><p className="mt-1 font-semibold text-ink">{formatCurrencyINR(p.annualTax)}</p></div>
                 </div>
                 <div className="mt-4"><PayslipAiExplainer payslipId={p.id} /></div>
               </div>
@@ -1213,19 +1213,19 @@ const modalContent = (
 
           <div className="mt-4 rounded-2xl border border-line/60 px-4 py-3 text-[12px] text-ink-faint">
             <div className="flex justify-between">
-              <span>Tax regime</span>
+              <span>Tax Regime</span>
               <span className="font-medium text-ink">
                 {payslip.taxRegime === "OLD" ? "Old" : "New"}
               </span>
             </div>
             <div className="mt-1 flex justify-between">
-              <span>Taxable annual income</span>
+              <span>Taxable Annual Income</span>
               <span className="font-medium text-ink">
                 {formatCurrencyINR(payslip.taxableIncome ?? 0)}
               </span>
             </div>
             <div className="mt-1 flex justify-between">
-              <span>Annual tax</span>
+              <span>Annual Tax</span>
               <span className="font-medium text-ink">
                 {formatCurrencyINR(payslip.annualTax ?? 0)}
               </span>
@@ -1234,7 +1234,7 @@ const modalContent = (
 
           <div className="mt-5 flex items-center justify-between rounded-2xl bg-success-50 px-4 py-3">
             <span className="flex items-center gap-1.5 text-[13px] font-medium text-success-700">
-              <CheckCircle2 size={15} /> Net pay
+              <CheckCircle2 size={15} /> Net Pay
             </span>
             <span className="font-display text-xl font-medium text-success-700">
               {formatCurrencyINR(payslip.netPay)}
