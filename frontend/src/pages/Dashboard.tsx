@@ -60,11 +60,9 @@ import { Link } from "react-router-dom";
 
 
 import {
-
   DashboardApi,
-
   AnnouncementsApi,
-
+  LeaveApi,
 } from "@/lib/endpoints";
 
 import { GoogleCalendarApi } from "@/lib/googleCalendar";
@@ -219,7 +217,44 @@ export default function Dashboard() {
 
 
 
+ 
   /* =========================================================
+     EMPLOYEE PENDING LEAVE REQUESTS
+
+     This query is used only by non-admin dashboards.
+     It requests PENDING leaves for the logged-in employee ID
+     and applies a client-side identity check as an additional
+     safeguard so another employee's requests are not displayed.
+  ========================================================= */
+
+  const employeeId = user?.employee?.id;
+
+  const {
+    data: employeePendingLeaves = [],
+  } = useQuery<any[]>({
+    queryKey: ["dashboard", "employee-pending-leaves", employeeId],
+    queryFn: () =>
+      LeaveApi.requests({
+        status: "PENDING",
+        employeeId: employeeId!,
+      }),
+    enabled: !isAdminDashboard && Boolean(employeeId),
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+  });
+
+  const myPendingLeaves = employeePendingLeaves.filter((request: any) => {
+    if (!employeeId) return false;
+
+    const requestEmployeeId =
+      request?.employeeId ??
+      request?.employee?.id ??
+      request?.employee?._id;
+
+    return requestEmployeeId === employeeId;
+  });
+
+ /* =========================================================
 
      EMPLOYEE LIFECYCLE
 
@@ -624,7 +659,42 @@ export default function Dashboard() {
           </Card>
           <Card className="mt-5"><div className="flex items-center justify-between gap-3"><CardHeader title="Important announcements" subtitle="Recent HR updates and company communications"/><Link to="/app/announcements" className="mr-5 text-[11px] font-medium text-brand-600 hover:underline">View all</Link></div><div className="px-5 pb-5">{announcements.filter(a=>a.status==="PUBLISHED").sort((a,b)=>new Date(b.publishedAt??b.createdAt).getTime()-new Date(a.publishedAt??a.createdAt).getTime()).slice(0,1).map(a=><Link key={a.id} to="/app/announcements" className="flex items-start gap-4 rounded-2xl border border-line/60 bg-gradient-to-r from-brand-50/50 to-white p-4 transition hover:border-brand-200 hover:bg-brand-50/60"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-600"><Megaphone size={18}/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-[13px] font-semibold text-ink">{a.title}</p><Badge tone="brand" className="px-2 py-0.5 text-[9px]">New</Badge></div><p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-ink-faint">{a.body}</p><p className="mt-2 text-[10px] text-ink-faint">{formatDate(a.publishedAt??a.createdAt,{day:"numeric",month:"short",year:"numeric"})}</p></div><ArrowRight size={15} className="mt-1 shrink-0 text-brand-500"/></Link>)}{!announcements.length&&<p className="py-5 text-center text-[12px] text-ink-faint">No announcements available.</p>}</div></Card>
           <div className="mt-5 grid gap-5 md:grid-cols-2">
-            <Card><div className="flex items-center justify-between"><CardHeader title="Recent activity"/><Link to="/app" className="mr-5 text-[11px] font-medium text-brand-600 hover:underline">View all</Link></div><div className="space-y-4 px-5 pb-5">{data.recentActivity.slice(0,4).map((item:any,i:number)=><div key={i} className="flex items-start gap-3"><div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-500"/><div className="min-w-0 flex-1"><p className="text-[12px] leading-snug"><span className="font-medium text-ink">{item.firstName} {item.lastName}</span>{" "}<span className="text-ink-faint">{item.kind==="leave"&&`applied for ${item.label}`}{item.kind==="hire"&&`joined as ${item.label}`}{item.kind==="candidate"&&`applied for ${item.label}`}</span></p><div className="mt-1 flex flex-wrap items-center gap-2"><Badge tone="neutral" className="px-2 py-0.5 text-[9px]">{String(item.detail??"").replace(/_/g," ")}</Badge><span className="text-[10px] text-ink-faint">{timeAgo(item.at)}</span></div></div></div>)}{!data.recentActivity.length&&<p className="py-5 text-center text-[12px] text-ink-faint">No recent activity.</p>}</div></Card>
+            <Card>
+              <div className="flex items-center justify-between">
+                <CardHeader title="Pending Leave Approvals" />
+                <Link
+                  to="/app/leave"
+                  className="mr-5 text-[11px] font-medium text-brand-600 hover:underline"
+                >
+                  View all
+                </Link>
+              </div>
+              <div className="px-5 pb-5">
+                <div className="rounded-2xl border border-warning-100 bg-warning-50/40 p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-gold-600 shadow-sm">
+                      <CalendarClock size={18} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xl font-semibold text-ink">
+                        {myPendingLeaves.length}
+                      </p>
+                      <p className="text-[10px] text-ink-faint">
+                        {myPendingLeaves.length === 1
+                          ? "leave request waiting for approval"
+                          : "leave requests waiting for approval"}
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    to="/app/leave"
+                    className="mt-3 inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-[9px] font-medium text-brand-600 shadow-sm"
+                  >
+                    View my leaves <ArrowRight size={11} />
+                  </Link>
+                </div>
+              </div>
+            </Card>
             <Card><div className="flex items-center justify-between"><CardHeader title="Upcoming holidays & festivals"/><Link to="/app/announcements" className="mr-5 text-[11px] font-medium text-brand-600 hover:underline">View calendar</Link></div><div className="space-y-2 px-5 pb-5">{upcomingHolidays.slice(0,4).map(h=><div key={h.id} className="flex items-center gap-3 rounded-xl border border-success-100 bg-success-50/40 p-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-success-700 shadow-sm"><PartyPopper size={15}/></div><div className="min-w-0 flex-1"><p className="truncate text-[12px] font-medium text-ink">{h.title}</p><p className="mt-0.5 text-[10px] text-ink-faint">{formatDate(h.eventStartAt,{day:"numeric",month:"short",year:"numeric"})}</p></div><Badge tone="brand" className="shrink-0 px-2 py-0.5 text-[9px]">Holiday</Badge></div>)}{!upcomingHolidays.length&&<p className="py-5 text-center text-[12px] text-ink-faint">No upcoming holidays.</p>}</div></Card>
           </div>
           <Link to="/app/recruitment" className="mt-5 block"><Card hoverable className="overflow-hidden border-0 bg-gradient-to-r from-brand-600 via-brand-600 to-brand-800 text-white shadow-lg"><div className="relative flex min-h-[105px] items-center justify-between overflow-hidden px-6 py-5"><div className="absolute -right-10 -top-16 h-40 w-40 rounded-full bg-white/10"/><div className="absolute right-24 -bottom-20 h-40 w-40 rounded-full bg-white/10"/><div className="relative flex items-center gap-4"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15"><Briefcase size={23}/></div><div><p className="text-[11px] font-medium text-white/70">Recruitment pipeline</p><p className="mt-1 font-display text-2xl font-medium">{kpis.openRoles} open roles</p></div></div><div className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-brand-600 shadow-sm"><ArrowRight size={19}/></div></div></Card></Link>
@@ -705,12 +775,12 @@ export default function Dashboard() {
         {/* Headcount trend */}
         <Card>
           <CardHeader
-            title="Headcount trend"
+            title="Headcount Trend"
             subtitle="Active employees over the last 6 months"
             action={
               <span className="rounded-lg border border-line/60 bg-white px-2.5 py-1 text-[10px] text-ink-faint">
                 Last 6 months
-              </span>
+              </span> 
             }
           />
           <div className="px-4 pb-4">
@@ -734,7 +804,7 @@ export default function Dashboard() {
 
         {/* Headcount by department */}
         <Card>
-          <CardHeader title="Headcount by department" />
+          <CardHeader title="Headcount by Department" />
           <div className="px-4 pb-4">
             {(() => {
               const departments = (data.headcountByDepartment ?? []).filter(
@@ -852,7 +922,7 @@ export default function Dashboard() {
         {/* Attendance trend */}
         <Card>
           <CardHeader
-            title="Attendance trend"
+            title="Attendance Trend"
             subtitle="% present, last 6 months"
             action={<span className="rounded-lg border border-line/60 bg-white px-2.5 py-1 text-[10px] text-ink-faint">Last 6 months</span>}
           />
@@ -982,6 +1052,7 @@ export default function Dashboard() {
     </div>
   );
 }
+
 
 
 
