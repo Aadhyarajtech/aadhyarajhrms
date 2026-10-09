@@ -1180,56 +1180,66 @@ export async function updateJobStatus(
 }
 
 export async function listPublicJobPostings() {
+  // Employee-facing listings must only expose vacancies that are open and
+  // approved. Keep this query separate from listJobPostings(), which is used
+  // by recruitment management and must continue returning its full dataset.
   const rows = (await JobPosting.find({
     requisitionStatus: "APPROVED",
     status: "OPEN",
   })
     .select(
-      "title departmentId designationId location employmentType experienceMin experienceMax description openings postedAt postingChannels screeningQuestions hiringMode skills budgetCtc",
+      "title departmentId designationId location employmentType experienceMin experienceMax description openings headcount postedAt postingChannels screeningQuestions hiringMode skills",
     )
-    .sort({ postedAt: -1 })
+    .sort({ postedAt: -1, requestedAt: -1 })
     .lean()) as AnyDoc[];
 
   if (!rows.length) return [];
 
-  const departmentIds = [...new Set(rows.map((row) => row.departmentId))];
-  const designationIds = [...new Set(rows.map((row) => row.designationId))];
+  const departmentIds = [...new Set(rows.map((row) => String(row.departmentId)))];
+  const designationIds = [...new Set(rows.map((row) => String(row.designationId)))];
 
   const [departments, designations] = await Promise.all([
     Department.find({ _id: { $in: departmentIds } })
-      .select("title")
+      .select("_id name title")
       .lean(),
     Designation.find({ _id: { $in: designationIds } })
-      .select("title")
+      .select("_id title name")
       .lean(),
   ]);
 
+  // Normalize ObjectIds to strings. Map lookups using raw ObjectId objects
+  // can fail because separate ObjectId instances are not reference-equal.
   const departmentMap = new Map(
-    departments.map((item: AnyDoc) => [item._id, item.title]),
+    (departments as AnyDoc[]).map((item) => [
+      String(item._id),
+      item.name ?? item.title ?? "",
+    ]),
   );
   const designationMap = new Map(
-    designations.map((item: AnyDoc) => [item._id, item.title]),
+    (designations as AnyDoc[]).map((item) => [
+      String(item._id),
+      item.title ?? item.name ?? "",
+    ]),
   );
 
   return rows.map((row) => ({
-    id: row._id,
+    id: String(row._id),
     title: row.title,
-    departmentId: row.departmentId,
-    departmentName: departmentMap.get(row.departmentId) ?? "",
-    designationId: row.designationId,
-    designationTitle: designationMap.get(row.designationId) ?? "",
+    departmentId: String(row.departmentId ?? ""),
+    departmentName: departmentMap.get(String(row.departmentId)) ?? "",
+    designationId: String(row.designationId ?? ""),
+    designationTitle: designationMap.get(String(row.designationId)) ?? "",
     location: row.location,
     employmentType: row.employmentType,
     experienceMin: row.experienceMin,
     experienceMax: row.experienceMax,
     description: row.description,
-    openings: row.openings,
+    openings: row.openings ?? row.headcount ?? 0,
     postedAt: row.postedAt,
     postingChannels: row.postingChannels ?? [],
     screeningQuestions: row.screeningQuestions ?? [],
     hiringMode: row.hiringMode,
     skills: row.skills ?? [],
-    budgetCtc: row.budgetCtc ?? null,
   }));
 }
 
@@ -3560,3 +3570,4 @@ export async function getVolumeHiringAnalytics() {
     campus: normalize(campus as AnyDoc[], "Campus"),
   };
 }
+

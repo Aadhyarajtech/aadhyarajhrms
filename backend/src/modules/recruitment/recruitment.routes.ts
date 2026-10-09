@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { NextFunction, Request, Response, Router } from "express";
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
@@ -23,20 +23,95 @@ recruitmentRouter.use(authenticate);
 // JOBS
 // ============================================================================
 
+/**
+ * Employees may read published vacancies, but must not gain access to
+ * recruitment management, candidate data, or recruitment analytics.
+ *
+ * Keep the existing recruitment.view permission requirement for every
+ * non-employee role. Role aliases are normalized because auth payloads may
+ * contain values such as "employee", "employees", or "EMPLOYEE".
+ */
+const normalizeRecruitmentRole = (value: unknown): string =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const getRecruitmentRoles = (req: Request): string[] => {
+  const user = req.user as
+    | { role?: unknown; roles?: unknown }
+    | undefined;
+
+  const roleValues = [
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+    ...(Array.isArray(user?.role) ? user.role : [user?.role]),
+  ];
+
+  return roleValues
+    .filter((value): value is string => typeof value === "string")
+    .map(normalizeRecruitmentRole);
+};
+
+const hasRecruitmentManagementRole = (roles: string[]): boolean =>
+  roles.some((role) =>
+    ["super_admin", "superadmin", "hr_admin", "hradmin", "recruiter"].includes(role),
+  );
+
+const isReadOnlyJobViewer = (req: Request): boolean => {
+  const roles = getRecruitmentRoles(req);
+  if (hasRecruitmentManagementRole(roles)) return false;
+
+  return roles.some((role) =>
+    [
+      "employee",
+      "employees",
+      "manager",
+      "finance",
+      "it_support",
+      "itsupport",
+      "it_support_staff",
+    ].includes(role),
+  );
+};
+
+const requireJobListReadAccess = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  // Read-only roles can access only the public job-list/detail routes below.
+  if (isReadOnlyJobViewer(req)) return next();
+  return requirePermission("recruitment.view")(req, res, next);
+};
+
 recruitmentRouter.get(
   "/jobs",
-  requirePermission("recruitment.view"),
+  requireJobListReadAccess,
   async (req, res, next) => {
     try {
-      const status =
-        typeof req.query.status === "string" ? req.query.status : undefined;
+      const isReadOnlyViewer = isReadOnlyJobViewer(req);
 
-      const requisitionStatus =
-        typeof req.query.requisitionStatus === "string"
+      // Do not allow employees to use query parameters to retrieve pending,
+      // on-hold, or closed requisitions. Management users retain the existing
+      // filtering behavior unchanged.
+      const status = isReadOnlyViewer
+        ? "OPEN"
+        : typeof req.query.status === "string"
+          ? req.query.status
+          : undefined;
+
+      const requisitionStatus = isReadOnlyViewer
+        ? "APPROVED"
+        : typeof req.query.requisitionStatus === "string"
           ? req.query.requisitionStatus
           : undefined;
 
-      const jobs = await repo.listJobPostings(status, requisitionStatus);
+      // Employees receive a minimal, read-only list of currently open and
+      // approved roles. Recruiter/admin users keep the existing management
+      // listing (including filters and candidate counts).
+      const jobs = isReadOnlyViewer
+        ? await repo.listPublicJobPostings()
+        : await repo.listJobPostings(status, requisitionStatus);
 
       res.json({ jobs });
     } catch (err) {
@@ -47,13 +122,58 @@ recruitmentRouter.get(
 
 recruitmentRouter.get(
   "/jobs/:id",
-  requirePermission("recruitment.view"),
+  requireJobListReadAccess,
   async (req, res, next) => {
     try {
       const job = await repo.getJobPosting(req.params.id);
 
       if (!job) {
         throw AppError.notFound("Job posting not found.");
+      }
+
+      if (isReadOnlyJobViewer(req)) {
+        const publicJobRecord = job as {
+          id?: unknown;
+          _id?: unknown;
+          title?: unknown;
+          description?: unknown;
+          location?: unknown;
+          employmentType?: unknown;
+          experienceMin?: unknown;
+          experienceMax?: unknown;
+          skills?: unknown;
+          department?: unknown;
+          designation?: unknown;
+          openings?: unknown;
+          status?: unknown;
+          requisitionStatus?: unknown;
+        };
+
+        const status = String(publicJobRecord.status ?? "").toUpperCase();
+        const requisitionStatus = String(publicJobRecord.requisitionStatus ?? "").toUpperCase();
+
+        if (status !== "OPEN" || requisitionStatus !== "APPROVED") {
+          throw AppError.notFound("Job posting not found.");
+        }
+
+        // Public details only; internal approval/budget/candidate metadata stays private.
+        const publicJob = {
+          id: publicJobRecord.id,
+          _id: publicJobRecord._id,
+          title: publicJobRecord.title,
+          description: publicJobRecord.description,
+          location: publicJobRecord.location,
+          employmentType: publicJobRecord.employmentType,
+          experienceMin: publicJobRecord.experienceMin,
+          experienceMax: publicJobRecord.experienceMax,
+          skills: publicJobRecord.skills,
+          department: publicJobRecord.department,
+          designation: publicJobRecord.designation,
+          openings: publicJobRecord.openings,
+        };
+
+        res.json({ job: publicJob });
+        return;
       }
 
       res.json({ job });
@@ -1537,3 +1657,6 @@ recruitmentRouter.post(
 );
 
 export default recruitmentRouter;
+
+
+

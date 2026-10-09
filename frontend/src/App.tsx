@@ -279,7 +279,17 @@ export default function App() {
           <Route
             path="recruitment"
             element={
-              <ProtectedRoute permissions={["recruitment.view"]}>
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "RECRUITER",
+                  "EMPLOYEE",
+                  "MANAGER",
+                  "FINANCE",
+                  "IT_SUPPORT",
+                ]}
+              >
                 <Recruitment />
               </ProtectedRoute>
             }
@@ -287,12 +297,25 @@ export default function App() {
 
           {/* =================================================
               RECRUITMENT JOB DETAIL
+              Employees may open job details for viewing.
+              Editing/applying actions must remain role-guarded
+              inside the page and backend.
           ================================================= */}
 
           <Route
             path="recruitment/:jobId"
             element={
-              <ProtectedRoute permissions={["recruitment.view"]}>
+              <ProtectedRoute
+                roles={[
+                  "SUPER_ADMIN",
+                  "HR_ADMIN",
+                  "RECRUITER",
+                  "EMPLOYEE",
+                  "MANAGER",
+                  "FINANCE",
+                  "IT_SUPPORT",
+                ]}
+              >
                 <JobDetail />
               </ProtectedRoute>
             }
@@ -433,3 +456,4 @@ export default function App() {
     </Suspense>
   );
 }
+

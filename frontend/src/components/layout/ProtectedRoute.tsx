@@ -31,12 +31,36 @@ if (user.mustResetPwd) {
   return <Navigate to="/change-temporary-password" replace />;
 }
 
-const roleAllowed = !roles || roles.includes(user.role);
+// Normalize role values because some accounts may receive aliases such as
+// "employee", "employees", "superadmin", or "super admin" from auth data.
+const normalizeRole = (value: unknown): string =>
+  String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\\s-]+/g, "_");
+
+const roleAliases: Record<string, string> = {
+  EMPLOYEES: "EMPLOYEE",
+  SUPERADMIN: "SUPER_ADMIN",
+  "SUPER ADMIN": "SUPER_ADMIN",
+};
+
+const normalizedUserRole = normalizeRole(user.role);
+const canonicalUserRole =
+  roleAliases[normalizedUserRole] ?? normalizedUserRole;
+
+const normalizedAllowedRoles = (roles ?? []).map((role) => {
+  const normalizedRole = normalizeRole(role);
+  return roleAliases[normalizedRole] ?? normalizedRole;
+});
+
+const roleAllowed =
+  !roles || normalizedAllowedRoles.includes(canonicalUserRole);
   const managerAllowed =
     !managerOnly ||
     user.employee?.isManager === true ||
-    user.role === "SUPER_ADMIN" ||
-    user.role === "HR_ADMIN";
+    canonicalUserRole === "SUPER_ADMIN" ||
+    canonicalUserRole === "HR_ADMIN";
   const permissionAllowed =
     !permissions?.length || permissions.some(hasPermission);
   if (!managerAllowed)
@@ -53,3 +77,4 @@ const roleAllowed = !roles || roles.includes(user.role);
 
   return <>{children}</>;
 }
+

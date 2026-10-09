@@ -25,6 +25,7 @@ import {
 import { RecruitmentApi, OrganizationApi } from "@/lib/endpoints";
 import { api, getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
+import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -243,7 +244,14 @@ const STAGE_ORDER = [
 
 export default function Recruitment() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // Only roles that already manage recruitment can access the management workspace.
+  // Every other authenticated role receives the read-only available-roles view.
+  const role = String(user?.role ?? "").trim().toUpperCase();
+  const canManageRecruitment = ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER"].includes(role);
+  const isEmployeeView = !canManageRecruitment;
   const [postOpen, setPostOpen] = useState(false);
+  const [selectedAvailableJob, setSelectedAvailableJob] = useState<any | null>(null);
 
   // Frontend-only workspace filters. Existing recruitment APIs and workflows are unchanged.
   const [searchTerm, setSearchTerm] = useState("");
@@ -251,14 +259,22 @@ export default function Recruitment() {
   const [hiringModeFilter, setHiringModeFilter] = useState("ALL");
   const [departmentFilter, setDepartmentFilter] = useState("ALL");
 
-  const { data: jobs, isLoading } = useQuery({
+  const {
+    data: jobs,
+    isLoading,
+    isError: jobsLoadFailed,
+    error: jobsLoadError,
+    refetch: refetchJobs,
+  } = useQuery({
     queryKey: ["recruitment", "jobs"],
     queryFn: () => RecruitmentApi.jobs(),
+    retry: 1,
   });
 
   const { data: pipeline } = useQuery({
     queryKey: ["recruitment", "pipeline"],
     queryFn: RecruitmentApi.pipelineSummary,
+    enabled: canManageRecruitment,
   });
 
   const { data: sourceAnalytics } = useQuery({
@@ -279,6 +295,7 @@ export default function Recruitment() {
           }>;
         }>("/recruitment/analytics/sources")
         .then((response) => response.data.data ?? []),
+    enabled: canManageRecruitment,
   });
 
   const { data: referralAnalytics } = useQuery({
@@ -297,6 +314,7 @@ export default function Recruitment() {
           };
         }>("/recruitment/analytics/referrals")
         .then((response) => response.data.data),
+    enabled: canManageRecruitment,
   });
 
   const { data: volumeHiringAnalytics } = useQuery({
@@ -324,6 +342,7 @@ export default function Recruitment() {
           };
         }>("/recruitment/analytics/volume-hiring")
         .then((response) => response.data.data),
+    enabled: canManageRecruitment,
   });
 
   const pipelineData = useMemo(
@@ -426,6 +445,222 @@ export default function Recruitment() {
     setHiringModeFilter("ALL");
     setDepartmentFilter("ALL");
   };
+
+  // Employees can browse available roles but must not see recruitment management tools.
+  // Keep the existing recruiter/admin workspace unchanged below.
+  if (isEmployeeView) {
+    const availableJobs = (jobs ?? []).filter((job: any) => {
+      const status = String(job.status ?? "").trim().toUpperCase();
+      const requisitionStatus = String(job.requisitionStatus ?? "").trim().toUpperCase();
+
+      // Do not expose drafts, closed roles, or requisitions that still need approval.
+      const unavailableStatuses = [
+        "CLOSED", "CANCELLED", "CANCELED", "INACTIVE", "DRAFT", "REJECTED",
+      ];
+      const unavailableRequisitionStatuses = [
+        "PENDING_APPROVAL", "REJECTED", "CANCELLED", "CANCELED", "DRAFT",
+      ];
+
+      return (
+        !unavailableStatuses.includes(status) &&
+        !unavailableRequisitionStatuses.includes(requisitionStatus)
+      );
+    });
+
+    const isReferralRole = (job: any) => {
+      const channels = Array.isArray(job.postingChannels)
+        ? job.postingChannels.map((channel: unknown) => String(channel).toUpperCase())
+        : [];
+      return (
+        channels.includes("REFERRALS") ||
+        job.referralEligible === true ||
+        job.isReferralEligible === true
+      );
+    };
+
+    const formatEmploymentType = (value: unknown) =>
+      String(value ?? "Not specified").replace(/_/g, " ").toLowerCase()
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+    return (
+      <div className="premium-page space-y-4">
+        <PageHeader
+          title="Available Job Roles"
+          subtitle="Browse approved openings and identify positions available for employee referrals. Candidate information and recruitment management remain restricted."
+        />
+
+        {!isLoading && !jobsLoadFailed && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-indigo-100 bg-white px-4 py-3 shadow-sm">
+              <p className="text-xs font-medium text-slate-500">Available roles</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-900">{availableJobs.length}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm">
+              <p className="text-xs font-medium text-slate-500">Referral opportunities</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-900">
+                {availableJobs.filter(isReferralRole).length}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {jobsLoadFailed ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <h2 className="font-semibold text-amber-950">Unable to load available job roles</h2>
+            <p className="mt-1 text-sm text-amber-900">
+              The job-listing request failed. This is different from having no open roles.
+              {jobsLoadError instanceof Error ? ` ${jobsLoadError.message}` : ""}
+            </p>
+            <Button className="mt-3" variant="outline" onClick={() => void refetchJobs()}>
+              Try again
+            </Button>
+          </div>
+        ) : isLoading ? (
+          <div className="grid items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Skeleton key={index} className="h-44 rounded-3xl" />
+            ))}
+          </div>
+        ) : availableJobs.length === 0 ? (
+          <EmptyState
+            icon={Briefcase}
+            title="No available roles"
+            description="There are no currently available job roles to display."
+          />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {availableJobs.map((job: any) => (
+              <Card key={job.id} className="flex h-full min-h-[300px] flex-col border-slate-200/80 bg-white p-4 shadow-[0_3px_12px_rgba(15,23,42,0.04)] transition-shadow hover:shadow-md">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                    <Briefcase size={17} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="line-clamp-2 font-display text-sm font-semibold leading-5 text-slate-900">{job.title}</h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {[job.departmentName, job.designationTitle].filter(Boolean).join(" · ") || "Department not specified"}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 flex-1 space-y-1.5 text-xs leading-5 text-slate-600">
+                  <p className="flex items-center gap-2"><MapPin size={14} className="text-slate-400" />{job.location || "Location not specified"}</p>
+                  <p><span className="font-medium">Experience:</span> {job.experienceMin ?? 0}–{job.experienceMax ?? 0} years</p>
+                  <p><span className="font-medium">Employment type:</span> {formatEmploymentType(job.employmentType)}</p>
+                  <p><span className="font-medium">Open positions:</span> {job.openings ?? job.headcount ?? 1}</p>
+                  {isReferralRole(job) && (
+                    <p className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+                      <UserPlus size={13} /> Employee referral available
+                    </p>
+                  )}
+                  {Array.isArray(job.skills) && job.skills.length > 0 && (
+                    <p className="line-clamp-2"><span className="font-medium">Required skills:</span> {job.skills.join(", ")}</p>
+                  )}
+                  {typeof job.skills === "string" && job.skills.trim() && (
+                    <p className="line-clamp-2"><span className="font-medium">Required skills:</span> {job.skills}</p>
+                  )}
+                  {job.description && (
+                    <p className="line-clamp-4 min-h-[5rem] border-t border-slate-100 pt-2 leading-5 text-slate-500">{job.description}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAvailableJob(job)}
+                  className="mt-3 flex w-full items-center justify-between border-t border-slate-100 pt-3 text-left text-[11px] font-semibold text-indigo-600 transition hover:text-indigo-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+                  aria-label={`Read full details for ${job.title}`}
+                >
+                  <span>Read role details</span>
+                  <ChevronRight size={14} />
+                </button>
+              </Card>
+            ))}
+          </div>
+        )}
+        {selectedAvailableJob && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setSelectedAvailableJob(null);
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="available-job-detail-title"
+              className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            >
+              <div className="sticky top-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-5 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Available job role</p>
+                  <h2 id="available-job-detail-title" className="mt-1 font-display text-xl font-semibold text-slate-900">
+                    {selectedAvailableJob.title}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {[selectedAvailableJob.departmentName, selectedAvailableJob.designationTitle].filter(Boolean).join(" · ") || "Department not specified"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAvailableJob(null)}
+                  className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  aria-label="Close job details"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-5 px-5 py-5 sm:px-6">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 p-3">
+                    <p className="text-xs text-slate-500">Location</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">{selectedAvailableJob.location || "Not specified"}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 p-3">
+                    <p className="text-xs text-slate-500">Employment type</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">{formatEmploymentType(selectedAvailableJob.employmentType)}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 p-3">
+                    <p className="text-xs text-slate-500">Experience</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">{selectedAvailableJob.experienceMin ?? 0}–{selectedAvailableJob.experienceMax ?? 0} years</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 p-3">
+                    <p className="text-xs text-slate-500">Open positions</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">{selectedAvailableJob.openings ?? selectedAvailableJob.headcount ?? 1}</p>
+                  </div>
+                </div>
+
+                {isReferralRole(selectedAvailableJob) && (
+                  <p className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                    <UserPlus size={14} /> Employee referral available
+                  </p>
+                )}
+
+                {(Array.isArray(selectedAvailableJob.skills) ? selectedAvailableJob.skills.length > 0 : Boolean(String(selectedAvailableJob.skills ?? "").trim())) && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Required skills</h3>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                      {Array.isArray(selectedAvailableJob.skills) ? selectedAvailableJob.skills.join(", ") : selectedAvailableJob.skills}
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">Job description</h3>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                    {selectedAvailableJob.description || "No job description has been provided."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end border-t border-slate-100 px-5 py-4 sm:px-6">
+                <Button variant="outline" onClick={() => setSelectedAvailableJob(null)}>Close</Button>
+              </div>
+            </section>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="premium-page space-y-5">
@@ -1829,3 +2064,5 @@ function PostJobModal({
     </Modal>
   );
 }
+
+
