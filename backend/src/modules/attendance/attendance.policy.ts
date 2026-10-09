@@ -140,10 +140,20 @@ function roundHoursInternal(value: number): number {
 }
 
 function hoursBetween(start: string, end: string): number {
-  if (/^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end)) {
+  const startIsClock = /^\d{2}:\d{2}$/.test(start);
+  const endIsClock = /^\d{2}:\d{2}$/.test(end);
+
+  if (startIsClock && endIsClock) {
     const startMinutes = timeToMinutes(start);
     const endMinutes = timeToMinutes(end);
     if (endMinutes < startMinutes) return 0;
+    return (endMinutes - startMinutes) / 60;
+  }
+
+  if (startIsClock || endIsClock) {
+    const startMinutes = localClockMinutes(start, "check-in time");
+    let endMinutes = localClockMinutes(end, "check-out time");
+    if (endMinutes < startMinutes) endMinutes += 24 * 60;
     return (endMinutes - startMinutes) / 60;
   }
 

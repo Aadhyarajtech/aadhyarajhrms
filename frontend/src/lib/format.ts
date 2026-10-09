@@ -57,6 +57,11 @@ export function formatTime(
     return "—";
   }
 
+  if (typeof value === "string") {
+    const clock = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
+    if (clock) return `${clock[1]}:${clock[2]}`;
+  }
+
   const d = typeof value === "string" ? new Date(value) : value;
 
   if (Number.isNaN(d.getTime())) {
