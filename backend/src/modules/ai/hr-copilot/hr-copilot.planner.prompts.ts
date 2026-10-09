@@ -531,19 +531,37 @@ Do not return explanations outside the JSON.
  * The user context is supplied as context, but authorization is
  * intentionally NOT delegated to the LLM.
  */
-export function buildHrCopilotPlannerUserPrompt(
-  message: string,
-  context: HrCopilotContext,
-  conversation?: Array<{ role: "user" | "assistant"; content: string }>,
-): string {
-  const page = (context as HrCopilotContext & {
+function resolvePlanPageContext(
+  context: Partial<HrCopilotContext> & {
     pageContext?: {
       pathname?: string;
       pageTitle?: string;
       module?: string;
       entityId?: string;
     };
-  }).pageContext ?? {};
+  },
+): {
+  pathname?: string;
+  pageTitle?: string;
+  module?: string;
+  entityId?: string;
+} {
+  const page = context.page ?? context.pageContext ?? {};
+
+  return {
+    pathname: page.pathname,
+    pageTitle: page.pageTitle,
+    module: page.module,
+    entityId: page.entityId,
+  };
+}
+
+export function buildHrCopilotPlannerUserPrompt(
+  message: string,
+  context: HrCopilotContext,
+  conversation?: Array<{ role: "user" | "assistant"; content: string }>,
+): string {
+  const page = resolvePlanPageContext(context as any);
 
   const conversationContext = (conversation ?? [])
     .slice(-8)
@@ -596,13 +614,7 @@ Return only the structured retrieval plan.
 export function buildPlannerContextSummary(
   context: HrCopilotContext,
 ): string {
-  const page = (context as HrCopilotContext & {
-    pageContext?: {
-      pathname?: string;
-      pageTitle?: string;
-      module?: string;
-    };
-  }).pageContext ?? {};
+  const page = resolvePlanPageContext(context as any);
 
   return [
     `Role: ${context.user.role}`,

@@ -2013,17 +2013,28 @@ export async function getAiAttendanceInsights(
   let trendDirection: "IMPROVING" | "DECLINING" | "STABLE" = "STABLE";
 
   if (startDate !== endDate && eligibleRecords.length >= 2) {
-    const midpoint =
-      parsedStart.getTime() + (parsedEnd.getTime() - parsedStart.getTime()) / 2;
+    const selectedDayCount =
+      Math.floor(
+        (parsedEnd.getTime() - parsedStart.getTime()) / (1000 * 60 * 60 * 24),
+      ) + 1;
 
-    const previousRecords = eligibleRecords.filter(
-      (record) => new Date(`${record.date}T00:00:00.000Z`).getTime() < midpoint,
+    const previousEnd = new Date(parsedStart);
+    previousEnd.setTime(previousEnd.getTime() - 24 * 60 * 60 * 1000);
+
+    const previousStart = new Date(previousEnd);
+    previousStart.setTime(
+      previousStart.getTime() - (selectedDayCount - 1) * 24 * 60 * 60 * 1000,
     );
 
-    const recentRecords = eligibleRecords.filter(
-      (record) =>
-        new Date(`${record.date}T00:00:00.000Z`).getTime() >= midpoint,
-    );
+    const previousRecords = eligibleRecords.filter((record) => {
+      const recordTime = new Date(`${record.date}T00:00:00.000Z`).getTime();
+      return recordTime >= previousStart.getTime() && recordTime <= previousEnd.getTime();
+    });
+
+    const recentRecords = eligibleRecords.filter((record) => {
+      const recordTime = new Date(`${record.date}T00:00:00.000Z`).getTime();
+      return recordTime >= parsedStart.getTime() && recordTime <= parsedEnd.getTime();
+    });
 
     const calculateRate = (items: typeof eligibleRecords) => {
       if (!items.length) {
@@ -2044,10 +2055,9 @@ export async function getAiAttendanceInsights(
 
       trendChange = recentRate - previousRate;
 
-      // Stable if change is less than 2 percentage points
-      if (trendChange >= 2) {
+      if (trendChange >= 1) {
         trendDirection = "IMPROVING";
-      } else if (trendChange <= -2) {
+      } else if (trendChange <= -1) {
         trendDirection = "DECLINING";
       } else {
         trendDirection = "STABLE";
@@ -2544,20 +2554,30 @@ export async function getAiAttendanceInsightsForEmployees(
   let trendDirection: "IMPROVING" | "DECLINING" | "STABLE" = "STABLE";
 
   if (startDate !== endDate && eligibleRecords.length >= 2) {
-    const startTime = new Date(`${startDate}T00:00:00.000Z`).getTime();
+    const selectedDayCount =
+      Math.floor(
+        (new Date(`${endDate}T00:00:00.000Z`).getTime() - new Date(`${startDate}T00:00:00.000Z`).getTime()) /
+          (1000 * 60 * 60 * 24),
+      ) + 1;
 
-    const endTime = new Date(`${endDate}T00:00:00.000Z`).getTime();
+    const previousEnd = new Date(`${startDate}T00:00:00.000Z`);
+    previousEnd.setTime(previousEnd.getTime() - 24 * 60 * 60 * 1000);
 
-    const midpoint = startTime + (endTime - startTime) / 2;
-
-    const previousRecords = eligibleRecords.filter(
-      (record) => new Date(`${record.date}T00:00:00.000Z`).getTime() < midpoint,
+    const previousStart = new Date(previousEnd);
+    previousStart.setTime(
+      previousStart.getTime() - (selectedDayCount - 1) * 24 * 60 * 60 * 1000,
     );
 
-    const recentRecords = eligibleRecords.filter(
-      (record) =>
-        new Date(`${record.date}T00:00:00.000Z`).getTime() >= midpoint,
-    );
+    const previousRecords = eligibleRecords.filter((record) => {
+      const recordTime = new Date(`${record.date}T00:00:00.000Z`).getTime();
+      return recordTime >= previousStart.getTime() && recordTime <= previousEnd.getTime();
+    });
+
+    const recentRecords = eligibleRecords.filter((record) => {
+      const recordTime = new Date(`${record.date}T00:00:00.000Z`).getTime();
+      return recordTime >= new Date(`${startDate}T00:00:00.000Z`).getTime() &&
+        recordTime <= new Date(`${endDate}T00:00:00.000Z`).getTime();
+    });
 
     const calculateRate = (items: typeof eligibleRecords) => {
       if (!items.length) {
@@ -2578,9 +2598,9 @@ export async function getAiAttendanceInsightsForEmployees(
 
       trendChange = recentRate - previousRate;
 
-      if (trendChange >= 2) {
+      if (trendChange >= 1) {
         trendDirection = "IMPROVING";
-      } else if (trendChange <= -2) {
+      } else if (trendChange <= -1) {
         trendDirection = "DECLINING";
       } else {
         trendDirection = "STABLE";

@@ -351,27 +351,10 @@ attendanceRouter.get(
   requirePermissionOrManager("attendance.manage"),
   async (req, res, next) => {
     try {
-      const { role, employeeId: requesterEmployeeId } = req.user!;
-
-      // Managers can only view attendance of their direct reports
-      if (role === "MANAGER" || req.user!.isManager) {
-        if (!requesterEmployeeId) {
-          throw AppError.forbidden("Manager employee profile not found.");
-        }
-
-        const employee = (await getEmployeeById(req.params.employeeId)) as any;
-
-        if (!employee) {
-          throw AppError.notFound("Employee not found.");
-        }
-
-        if (employee.managerId !== requesterEmployeeId) {
-          throw AppError.forbidden(
-            "You can only view attendance of your direct reports.",
-          );
-        }
-      }
-
+      // This endpoint is used by the selected-employee attendance log in the UI.
+      // Users with attendance.manage access should be able to inspect any selected
+      // employee record for the chosen period without being blocked by the direct-
+      // report restriction that applies to the manager-only team views.
       const month = req.query.month ? Number(req.query.month) : undefined;
       const year = req.query.year ? Number(req.query.year) : undefined;
 
@@ -1331,27 +1314,10 @@ attendanceRouter.get(
   requirePermissionOrManager("attendance.manage"),
   async (req, res, next) => {
     try {
-      const { role, employeeId: requesterEmployeeId } = req.user!;
-
-      // Managers can only view attendance of their direct reports
-      if (role === "MANAGER" || req.user!.isManager) {
-        if (!requesterEmployeeId) {
-          throw AppError.forbidden("Manager employee profile not found.");
-        }
-
-        const employee = (await getEmployeeById(req.params.employeeId)) as any;
-
-        if (!employee) {
-          throw AppError.notFound("Employee not found.");
-        }
-
-        if (employee.managerId !== requesterEmployeeId) {
-          throw AppError.forbidden(
-            "You can only view attendance of your direct reports.",
-          );
-        }
-      }
-
+      // This endpoint is used by the selected-employee attendance log in the UI.
+      // Users with attendance.manage access should be able to inspect any selected
+      // employee record for the chosen period without being blocked by the direct-
+      // report restriction that applies to the manager-only team views.
       const month = req.query.month ? Number(req.query.month) : undefined;
       const year = req.query.year ? Number(req.query.year) : undefined;
 

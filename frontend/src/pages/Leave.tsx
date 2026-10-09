@@ -36,6 +36,7 @@ import { ProgressRing } from "@/components/ui/ProgressRing";
 import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, monthName, cx } from "@/lib/format";
 import ExpiryBadge from "@/components/common/ExpiryBadge";
+import { EmployeeSearchSelect } from "@/components/common/EmployeeSearchSelect";
 import { AiLeaveAssistantView } from "@/components/leave/AiLeaveAssistantView";
 import { AiLeaveApprovalModal } from "@/components/leave/AiLeaveApprovalModal";
 
@@ -801,7 +802,7 @@ function LeaveAnalytics() {
 
   return (
     <div className="space-y-6">
-      <Card>
+      <Card className="!overflow-visible">
         <CardHeader
           title="AI Leave Analytics"
           subtitle="Understand leave usage, trends, and approval patterns."
@@ -826,27 +827,13 @@ function LeaveAnalytics() {
             <label className="mb-1 block text-sm font-medium text-ink">
               Employee
             </label>
-            <select
+            <EmployeeSearchSelect
+              employees={employees}
               value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
+              onChange={setEmployeeId}
+              allLabel="Overall"
               disabled={employeesLoading}
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm focus:border-brand-300 focus:ring-2 focus:ring-brand-100 text-ink"
-            >
-              <option value="">Overall</option>
-
-              {employees.map((employee) => (
-                <option
-                  key={employee.id}
-                  value={employee.id}
-                >
-                  {employee.firstName}{" "}
-                  {employee.lastName}
-                  {employee.employeeCode
-                    ? ` · ${employee.employeeCode}`
-                    : ""}
-                </option>
-              ))}
-            </select>
+            />
           </div>
         </div>
       </Card>
@@ -1189,7 +1176,7 @@ function LeavePatternDetection() {
 
   return (
     <div className="space-y-6">
-      <Card>
+      <Card className="!overflow-visible">
         <CardHeader
           title="AI Leave Pattern Detection"
           subtitle="Identify recurring leave patterns from recorded HRMS leave data."
@@ -1214,27 +1201,13 @@ function LeavePatternDetection() {
             <label className="mb-1 block text-sm font-medium text-ink">
               Employee
             </label>
-            <select
+            <EmployeeSearchSelect
+              employees={employees}
               value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
+              onChange={setEmployeeId}
+              allLabel="Overall"
               disabled={employeesLoading}
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm focus:border-brand-300 focus:ring-2 focus:ring-brand-100 text-ink"
-            >
-              <option value="">Overall</option>
-
-              {employees.map((employee) => (
-                <option
-                  key={employee.id}
-                  value={employee.id}
-                >
-                  {employee.firstName}{" "}
-                  {employee.lastName}
-                  {employee.employeeCode
-                    ? ` · ${employee.employeeCode}`
-                    : ""}
-                </option>
-              ))}
-            </select>
+            />
           </div>
         </div>
       </Card>

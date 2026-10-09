@@ -230,11 +230,11 @@ export function HrCopilot() {
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-ink">
                     <Bot size={26} />
                   </div>
-                  <h3 className="text-base font-semibold text-ink">
+                  <h3 className="text-base font-bold text-ink">
                     How can I help?
                   </h3>
-                  <p className="mt-1 text-xs leading-5 text-ink-faint">
-                    I can answer questions using the HRMS information you are
+                  <p className="mt-1 text-xs font-semibold leading-5 text-ink">
+                    I can answer questions using HRMS information that I am
                     authorized to access.
                   </p>
 

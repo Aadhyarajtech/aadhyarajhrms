@@ -1,4 +1,5 @@
 import ExpiryBadge from "@/components/common/ExpiryBadge";
+import { EmployeeSearchSelect } from "@/components/common/EmployeeSearchSelect";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -188,6 +189,7 @@ function AttendanceExceptionReview({
     employeeId?: string;
     employeeName?: string | null;
   }> = data?.anomalies ?? [];
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<{
     title: string;
     content: string;
@@ -205,9 +207,41 @@ function AttendanceExceptionReview({
     IGNORED: "bg-gray-100 text-gray-700 border-gray-200",
   };
 
+  const groupedEmployees =
+    anomalies.reduce<
+      Record<
+        string,
+        {
+          employeeId: string;
+          employeeName: string;
+          items: typeof anomalies;
+        }
+      >
+    >((acc, anomaly) => {
+      const employeeId = anomaly.employeeId ?? "selected";
+      const employeeName =
+        anomaly.employeeName ||
+        (employeeId === "selected"
+          ? "Selected employee"
+          : employeeId === "all"
+            ? "All Employees"
+            : "Employee");
+
+      if (!acc[employeeId]) {
+        acc[employeeId] = {
+          employeeId,
+          employeeName,
+          items: [],
+        };
+      }
+
+      acc[employeeId].items.push(anomaly);
+      return acc;
+    }, {});
+
   return (
     <div className="mb-6 space-y-4">
-      <Card>
+      <Card className="!overflow-visible">
         <CardHeader
           title="Attendance Exceptions"
           subtitle="Review system-detected attendance issues for the selected employee."
@@ -217,20 +251,13 @@ function AttendanceExceptionReview({
             <label className="mb-1.5 block text-[12px] font-medium text-ink">
               Employee
             </label>
-            <select
+            <EmployeeSearchSelect
+              employees={employees}
               value={employeeId ?? ""}
-              onChange={(e) => onEmployeeChange(e.target.value || undefined)}
+              onChange={(id) => onEmployeeChange(id || undefined)}
+              allLabel="All Employees"
               disabled={employeesLoading}
-              className="h-11 w-full rounded-xl border border-line bg-white px-3 text-base text-ink outline-none focus:border-brand-400"
-            >
-              <option value="">All Employees</option>
-              {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.firstName} {employee.lastName}
-                  {employee.employeeCode ? ` · ${employee.employeeCode}` : ""}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -279,69 +306,102 @@ function AttendanceExceptionReview({
             </div>
           ) : (
             <div className="space-y-3">
-              {anomalies.map((anomaly) => {
-                const reasonText = anomaly.reason?.trim() || "No reason provided.";
-                const detailText = anomaly.description?.trim() || "No details available.";
+              {Object.values(groupedEmployees).map((group) => {
+                const isExpanded = expandedEmployeeId === group.employeeId;
 
                 return (
                   <div
-                    key={anomaly.id}
+                    key={group.employeeId}
                     className="rounded-2xl border border-line bg-white p-4 shadow-sm"
                   >
                     <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                      <div className="grid flex-1 gap-3 text-[13px] md:grid-cols-2 xl:grid-cols-7">
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Employee</p>
-                          <p className="mt-1 font-medium text-ink">
-                            {anomaly.employeeName ||
-                              (employeeId
-                                ? employees.find((emp) => emp.id === employeeId)?.firstName ?? "Selected employee"
-                                : "All Employees")}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Date</p>
-                          <p className="mt-1 font-medium text-ink">{anomaly.date ? formatDate(anomaly.date) : "—"}</p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Problem</p>
-                          <p className="mt-1 font-medium text-ink">{anomaly.title}</p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Severity</p>
-                          <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium capitalize ${severityStyles[String(anomaly.severity).toUpperCase()] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
-                            {String(anomaly.severity ?? "LOW").toLowerCase()}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Status</p>
-                          <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium ${statusStyles.OPEN ?? "bg-sky-50 text-sky-700 border-sky-200"}`}>Open</span>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Reason</p>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDetail({ title: "Reason", content: reasonText })}
-                            className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
-                          >
-                            {reasonText.length > 40 ? `${reasonText.slice(0, 40)}...` : reasonText}
-                          </button>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Details</p>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDetail({ title: "Details", content: detailText })}
-                            className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
-                          >
-                            {detailText.length > 40 ? `${detailText.slice(0, 40)}...` : detailText}
-                          </button>
-                        </div>
+                      <div className="flex-1">
+                        <p className="text-lg font-semibold text-ink">{group.employeeName}</p>
+                        <p className="text-sm text-ink-faint">
+                          {group.items.length} {group.items.length === 1 ? "anomaly" : "anomalies"}
+                        </p>
                       </div>
-                      <div className="flex items-center justify-end xl:pl-3">
-                        <Button size="sm" onClick={onOpenRegularization}>Create Regularization</Button>
-                      </div>
+
+                      <Button
+                        size="sm"
+                        type="button"
+                        onClick={() => setExpandedEmployeeId(isExpanded ? null : group.employeeId)}
+                        className="bg-white text-ink hover:bg-surface border border-line"
+                      >
+                        {isExpanded ? "Hide" : "View"}
+                      </Button>
                     </div>
+
+                    {isExpanded && (
+                      <div className="mt-4 space-y-3">
+                        {group.items.map((anomaly) => {
+                          const reasonText = anomaly.reason?.trim() || "No reason provided.";
+                          const detailText = anomaly.description?.trim() || "No details available.";
+
+                          return (
+                            <div
+                              key={anomaly.id}
+                              className="rounded-2xl border border-line bg-surface p-4"
+                            >
+                              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                                <div className="grid flex-1 gap-3 text-[13px] md:grid-cols-2 xl:grid-cols-7">
+                                  <div>
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Employee</p>
+                                    <p className="mt-1 font-medium text-ink">
+                                      {anomaly.employeeName ||
+                                        (employeeId
+                                          ? employees.find((emp) => emp.id === employeeId)?.firstName ?? "Selected employee"
+                                          : "All Employees")}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Date</p>
+                                    <p className="mt-1 font-medium text-ink">{anomaly.date ? formatDate(anomaly.date) : "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Problem</p>
+                                    <p className="mt-1 font-medium text-ink">{anomaly.title}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Severity</p>
+                                    <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium capitalize ${severityStyles[String(anomaly.severity).toUpperCase()] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
+                                      {String(anomaly.severity ?? "LOW").toLowerCase()}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Status</p>
+                                    <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium ${statusStyles.OPEN ?? "bg-sky-50 text-sky-700 border-sky-200"}`}>Open</span>
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Reason</p>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedDetail({ title: "Reason", content: reasonText })}
+                                      className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
+                                    >
+                                      {reasonText.length > 40 ? `${reasonText.slice(0, 40)}...` : reasonText}
+                                    </button>
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Details</p>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedDetail({ title: "Details", content: detailText })}
+                                      className="mt-1 max-w-full cursor-pointer text-left text-ink-faint transition hover:text-brand-600"
+                                    >
+                                      {detailText.length > 40 ? `${detailText.slice(0, 40)}...` : detailText}
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-end xl:pl-3">
+                                  <Button size="sm" onClick={onOpenRegularization}>Create Regularization</Button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -547,6 +607,33 @@ function MyAttendance({
       totalHours: Math.round(totalHours * 100) / 100,
     };
   }, [records]);
+
+  const selectedEmployeeName =
+    selectedEmployeeId && employees.length
+      ? employees.find((employee) => employee.id === selectedEmployeeId)
+      : null;
+
+  const topLogEmployeeId =
+    canSelectEmployee ? selectedEmployeeId : attendanceUserId;
+
+  const {
+    data: periodRecords,
+    isLoading: periodLoading,
+    isError: periodError,
+  } = useQuery({
+    queryKey: [
+      "attendance",
+      "selected-employee-log",
+      topLogEmployeeId,
+      month,
+      year,
+    ],
+    queryFn: () =>
+      topLogEmployeeId === selectedEmployeeId && selectedEmployeeId
+        ? AttendanceApi.forEmployee(selectedEmployeeId, month, year)
+        : AttendanceApi.mine(month, year),
+    enabled: !!user && (!!selectedEmployeeId || !canSelectEmployee),
+  });
 
   const goMonth = (delta: number) => {
     const next = shiftMonth(month, year, delta);
@@ -819,7 +906,7 @@ function MyAttendance({
       </Modal>
 
       {canSelectEmployee && (
-        <Card>
+        <Card className="!overflow-visible">
           <CardHeader
             title="Attendance AI Analysis"
             subtitle="Select an employee optionally. Leave it as All Employees to view the overall attendance analysis."
@@ -829,24 +916,60 @@ function MyAttendance({
               <label className="mb-1.5 block text-[12px] font-medium text-ink">
                 Employee
               </label>
-              <select
+              <EmployeeSearchSelect
+                employees={employees}
                 value={selectedEmployeeId ?? ""}
-                onChange={(e) => onEmployeeChange(e.target.value || undefined)}
+                onChange={(id) => onEmployeeChange(id || undefined)}
+                allLabel="All Employees"
                 disabled={employeesLoading}
-                className="h-10 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none focus:border-brand-400"
-              >
-                <option value="">All Employees</option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.firstName} {employee.lastName}
-                    {employee.employeeCode ? ` · ${employee.employeeCode}` : ""}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           </div>
         </Card>
       )}
+
+      <Card>
+        <CardHeader
+          title={
+            selectedEmployeeId
+              ? `${selectedEmployeeName?.firstName ?? "Selected employee"} ${selectedEmployeeName?.lastName ?? ""}`.trim() + " attendance log"
+              : "Attendance log"
+          }
+          subtitle={`Selected period: ${monthName(month)} ${year}`}
+          action={
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => goMonth(-1)}>
+                Previous
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => goMonth(1)}>
+                Next
+              </Button>
+            </div>
+          }
+        />
+        {canSelectEmployee && !selectedEmployeeId ? (
+          <EmptyState
+            icon={Clock}
+            title="Select an employee to view the attendance log"
+            description="Choose a person from the dropdown above."
+          />
+        ) : periodLoading ? (
+          <Skeleton className="h-64 rounded-2xl" />
+        ) : periodError ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title="Unable to load attendance log"
+            description="Please try again."
+          />
+        ) : !periodRecords?.length ? (
+          <EmptyState
+            icon={Clock}
+            title="No attendance for this period"
+          />
+        ) : (
+          <AttendanceTable records={periodRecords} />
+        )}
+      </Card>
 
       <AskAI employeeId={selectedEmployeeId} />
       <AiAttendanceInsights employeeId={selectedEmployeeId} />

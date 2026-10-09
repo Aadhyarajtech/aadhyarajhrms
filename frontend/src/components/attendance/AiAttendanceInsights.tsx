@@ -34,6 +34,13 @@ function getToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function getFirstDayOfCurrentMonth(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}-01`;
+}
+
 function formatDate(date: string): string {
   if (!date) return "";
 
@@ -58,19 +65,20 @@ export default function AiAttendanceInsights({
   // --------------------------------------------------------------------------
 
   const today = getToday();
+  const firstDayOfMonth = getFirstDayOfCurrentMonth();
 
   // --------------------------------------------------------------------------
   // DATE PICKERS
   // --------------------------------------------------------------------------
 
-  const [startDate, setStartDate] = useState(today);
+  const [startDate, setStartDate] = useState(firstDayOfMonth);
   const [endDate, setEndDate] = useState(today);
 
   // --------------------------------------------------------------------------
   // APPLIED DATE RANGE
   // --------------------------------------------------------------------------
 
-  const [appliedStartDate, setAppliedStartDate] = useState(today);
+  const [appliedStartDate, setAppliedStartDate] = useState(firstDayOfMonth);
   const [appliedEndDate, setAppliedEndDate] = useState(today);
 
   // --------------------------------------------------------------------------
@@ -143,7 +151,7 @@ export default function AiAttendanceInsights({
   // ==========================================================================
 
   useEffect(() => {
-    loadInsights(today, today);
+    loadInsights(firstDayOfMonth, today);
   }, [employeeId]);
 
   // ==========================================================================

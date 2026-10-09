@@ -9,21 +9,38 @@ import{
  * ============================================================================
  */
 
+function resolvePageContext(
+  context: Partial<HrCopilotContext> & {
+    pageContext?: {
+      pathname?: string;
+      pageTitle?: string;
+      module?: string;
+      entityId?: string;
+    };
+  },
+): {
+  pathname?: string;
+  pageTitle?: string;
+  module?: string;
+  entityId?: string;
+} {
+  const page = context.page ?? context.pageContext ?? {};
+
+  return {
+    pathname: page.pathname,
+    pageTitle: page.pageTitle,
+    module: page.module,
+    entityId: page.entityId,
+  };
+}
+
 export function buildHrCopilotAnswerPrompt(
   message: string,
   context: HrCopilotContext,
   plan: HrCopilotPlan,
   authorizedData: unknown,
 ): string {
-  const page = (
-    context as HrCopilotContext & {
-      pageContext?: {
-        pathname?: string;
-        pageTitle?: string;
-        module?: string;
-      };
-    }
-  ).pageContext ?? {};
+  const page = resolvePageContext(context as any);
 
   return `
 Answer the user's HRMS question using ONLY the authorized backend data below.
@@ -391,15 +408,7 @@ export function buildHrCopilotPlannerPrompt(
   context: HrCopilotContext,
   heuristicIntent?: string,
 ): string {
-  const page = (
-    context as HrCopilotContext & {
-      pageContext?: {
-        pathname?: string;
-        pageTitle?: string;
-        module?: string;
-      };
-    }
-  ).pageContext ?? {};
+  const page = resolvePageContext(context as any);
 
   return `
 Create a retrieval plan for this HRMS Copilot request.

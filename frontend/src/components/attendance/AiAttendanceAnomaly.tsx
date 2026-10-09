@@ -17,10 +17,12 @@ import { Card, Button } from "../ui";
 type Anomaly = {
   id: string;
   type: string;
-  severity: "low" | "medium" | "high";
+  severity: "low" | "medium" | "high" | "LOW" | "MEDIUM" | "HIGH";
   date?: string;
   title: string;
   description: string;
+  employeeId?: string;
+  employeeName?: string | null;
 };
 
 type AnomalyResponse = {
@@ -54,6 +56,7 @@ export default function AiAttendanceAnomaly({
   const [data, setData] = useState<AnomalyResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
 
   const loadAnomalies = async () => {
     try {
@@ -91,7 +94,9 @@ export default function AiAttendanceAnomaly({
   }, [month, year, employeeId]);
 
   const getSeverityClasses = (severity: Anomaly["severity"]) => {
-    switch (severity) {
+    const normalized = String(severity).toLowerCase();
+
+    switch (normalized) {
       case "high":
         return "bg-red-50 text-red-600 border-red-200";
 
@@ -102,6 +107,26 @@ export default function AiAttendanceAnomaly({
         return "bg-yellow-50 text-yellow-600 border-yellow-200";
     }
   };
+
+  const groupedEmployees =
+    data?.anomalies.reduce<Record<string, { employeeName: string; employeeId: string; anomalies: Anomaly[] }>>(
+      (acc, anomaly) => {
+        const employeeId = anomaly.employeeId ?? "unknown";
+        const employeeName = anomaly.employeeName || "Unknown Employee";
+
+        if (!acc[employeeId]) {
+          acc[employeeId] = {
+            employeeId,
+            employeeName,
+            anomalies: [],
+          };
+        }
+
+        acc[employeeId].anomalies.push(anomaly);
+        return acc;
+      },
+      {},
+    ) ?? {};
 
   const getAnomalyIcon = (type: string) => {
     const value = type.toLowerCase();
@@ -317,48 +342,86 @@ export default function AiAttendanceAnomaly({
               </div>
             ) : (
               <div className="space-y-3">
-                {data.anomalies.map((anomaly) => (
-                  <div
-                    key={anomaly.id}
-                    className="rounded-xl border border-gray-200 p-4"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${getSeverityClasses(
-                          anomaly.severity,
-                        )}`}
-                      >
-                        {getAnomalyIcon(anomaly.type)}
-                      </div>
+                {Object.values(groupedEmployees).map((group) => {
+                  const isExpanded = expandedEmployeeId === group.employeeId;
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="font-medium text-gray-900">
-                            {anomaly.title}
-                          </h3>
-
-                          <span
-                            className={`rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getSeverityClasses(
-                              anomaly.severity,
-                            )}`}
-                          >
-                            {anomaly.severity}
-                          </span>
+                  return (
+                    <div
+                      key={group.employeeId}
+                      className="rounded-xl border border-gray-200 bg-white p-4"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-lg font-semibold text-gray-900">
+                            {group.employeeName}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {group.anomalies.length} {group.anomalies.length === 1 ? "anomaly" : "anomalies"}
+                          </p>
                         </div>
 
-                        {anomaly.date && (
-                          <p className="mt-1 text-xs text-gray-400">
-                            {new Date(anomaly.date).toLocaleDateString()}
-                          </p>
-                        )}
-
-                        <p className="mt-2 text-sm leading-6 text-gray-600">
-                          {anomaly.description}
-                        </p>
+                        <Button
+                          type="button"
+                          onClick={() =>
+                            setExpandedEmployeeId(
+                              isExpanded ? null : group.employeeId,
+                            )
+                          }
+                          className="border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        >
+                          {isExpanded ? "Hide" : "View"}
+                        </Button>
                       </div>
+
+                      {isExpanded && (
+                        <div className="mt-4 space-y-3">
+                          {group.anomalies.map((anomaly) => (
+                            <div
+                              key={anomaly.id}
+                              className="rounded-xl border border-gray-200 p-4"
+                            >
+                              <div className="flex items-start gap-3">
+                                <div
+                                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${getSeverityClasses(
+                                    anomaly.severity,
+                                  )}`}
+                                >
+                                  {getAnomalyIcon(anomaly.type)}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h3 className="font-medium text-gray-900">
+                                      {anomaly.title}
+                                    </h3>
+
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getSeverityClasses(
+                                        anomaly.severity,
+                                      )}`}
+                                    >
+                                      {String(anomaly.severity).toLowerCase()}
+                                    </span>
+                                  </div>
+
+                                  {anomaly.date && (
+                                    <p className="mt-1 text-xs text-gray-400">
+                                      {new Date(anomaly.date).toLocaleDateString()}
+                                    </p>
+                                  )}
+
+                                  <p className="mt-2 text-sm leading-6 text-gray-600">
+                                    {anomaly.description}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>

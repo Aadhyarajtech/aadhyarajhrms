@@ -415,7 +415,7 @@ export async function runSeed() {
   const financeManager = findByTitle("Finance Manager")[0];
   const swEngineeringReport = allEmployees.find((e) => e.managerId === engManager?.id) ?? findByTitle("Senior Software Engineer")[0];
   const itSupportSpecialist =findByTitle("IT Support Specialist")[0];
-  
+
   await reassignDemoAccount(itVp, "admin@aadhyaraj.com", "SUPER_ADMIN");
   await reassignDemoAccount(hrVp, "hr.admin@aadhyaraj.com", "HR_ADMIN");
   await reassignDemoAccount(engManager, "manager.demo@aadhyaraj.com", "MANAGER");
