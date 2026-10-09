@@ -561,7 +561,7 @@ function MultiSelectCategory({
           </div>
 
           <div className="border-t border-gray-100 px-3 py-2 text-[11px] text-ink-faint">
-            {value.length} selected
+            {value.length} Selected
           </div>
         </div>
       )}
@@ -780,7 +780,7 @@ export default function Announcements() {
         action={
           isAdmin ? (
             <Button leftIcon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>
-              New announcement
+              New Announcement
             </Button>
           ) : undefined
         }
@@ -892,7 +892,7 @@ export default function Announcements() {
               {Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-3xl" />)}
             </div>
           ) : isError ? (
-            <Card><div className="p-6 text-sm text-red-600">Failed to load announcements.</div></Card>
+            <Card><div className="p-6 text-sm text-red-600">Failed to Load Announcements.</div></Card>
           ) : !allAnnouncements.length ? (
             <EmptyState icon={Megaphone} title="No announcements yet" />
           ) : !filteredAnnouncements.length ? (
@@ -938,14 +938,14 @@ export default function Announcements() {
                           </div>
 
                           {status === "EXPIRED" ? (
-                            <p className="mt-1.5 text-[13px] text-ink-faint">This announcement has expired and its content is no longer accessible.</p>
+                            <p className="mt-1.5 text-[13px] text-ink-faint">This Announcement has expired and its content is no longer Accessible.</p>
                           ) : (
                             <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-soft">{announcement.body}</p>
                           )}
 
                           {announcement.eventStartAt && (
                             <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2.5">
-                              <p className="text-[12px] font-medium text-brand-700">Calendar event</p>
+                              <p className="text-[12px] font-medium text-brand-700">Calendar Event</p>
                               <p className="mt-0.5 text-[12px] text-ink-soft">{formatEventDateRange(announcement.eventStartAt, announcement.eventEndAt)}</p>
                               {announcement.eventLocation && <p className="mt-0.5 text-[12px] text-ink-faint">{announcement.eventLocation}</p>}
                             </div>
@@ -953,7 +953,7 @@ export default function Announcements() {
 
                           {status === "SCHEDULED" && announcement.scheduledAt && (
                             <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2.5">
-                              <p className="text-[12px] font-medium text-amber-700">Scheduled publish</p>
+                              <p className="text-[12px] font-medium text-amber-700">Scheduled Publish</p>
                               <p className="mt-0.5 text-[12px] text-ink-soft">{formatEventRange(announcement.scheduledAt)}</p>
                             </div>
                           )}
@@ -990,7 +990,7 @@ export default function Announcements() {
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             {status !== "EXPIRED" && !announcement.receipt?.isRead && (
                               <Button variant="outline" size="sm" onClick={() => handleMarkRead(announcement.id)} isLoading={markReadMutation.isPending}>
-                                Mark as read
+                                Mark as Read
                               </Button>
                             )}
 
@@ -1003,12 +1003,12 @@ export default function Announcements() {
                             {isAdmin && (
                               <>
                                 <Button variant="outline" size="sm" onClick={() => handleViewStatus(announcement)}>
-                                  View receipts
+                                  View Receipts
                                 </Button>
 
                                 {requiresAcknowledgement && (
                                   <Button variant="outline" size="sm" onClick={() => handleViewStatus(announcement)}>
-                                    View acknowledgements
+                                    View Acknowledgements
                                   </Button>
                                 )}
 
@@ -1056,7 +1056,7 @@ export default function Announcements() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[13px] font-semibold text-ink">Announcement Overview</p>
-                  <p className="mt-0.5 text-xs text-ink-faint">Current records and engagement</p>
+                  <p className="mt-0.5 text-xs text-ink-faint">Current Records and Engagement</p>
                 </div>
                 <BarChart3 size={18} className="text-brand-600" />
               </div>
@@ -1070,21 +1070,21 @@ export default function Announcements() {
 
               <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-ink-faint">My read rate</span>
+                  <span className="text-ink-faint">My Read Rate</span>
                   <span className="font-semibold text-ink">{overview.readRate}%</span>
                 </div>
                 <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200">
                   <div className="h-full rounded-full bg-brand-500" style={{ width: `${overview.readRate}%` }} />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-ink-faint">
-                  <span>{overview.read} read</span>
-                  <span>{overview.acknowledged} acknowledged</span>
+                  <span>{overview.read} Read</span>
+                  <span>{overview.acknowledged} Acknowledged</span>
                 </div>
               </div>
 
               {overview.drafts > 0 && (
                 <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 p-3 text-xs text-amber-800">
-                  {overview.drafts} draft announcement{overview.drafts === 1 ? "" : "s"} returned by the backend.
+                  {overview.drafts} Draft Announcement{overview.drafts === 1 ? "" : "s"} Returned by the Backend.
                 </div>
               )}
             </div>
@@ -1095,7 +1095,7 @@ export default function Announcements() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[13px] font-semibold text-ink">Upcoming Events</p>
-                  <p className="mt-0.5 text-xs text-ink-faint">From existing calendar announcements</p>
+                  <p className="mt-0.5 text-xs text-ink-faint">From Existing Calendar Announcements</p>
                 </div>
                 <CalendarDays size={18} className="text-brand-600" />
               </div>
@@ -1116,7 +1116,7 @@ export default function Announcements() {
                   ))}
                 </div>
               ) : (
-                <div className="mt-4 rounded-xl border border-dashed border-gray-200 p-4 text-center text-xs text-ink-faint">No upcoming events.</div>
+                <div className="mt-4 rounded-xl border border-dashed border-gray-200 p-4 text-center text-xs text-ink-faint">No Upcoming Events.</div>
               )}
             </div>
           </Card>
@@ -1205,7 +1205,7 @@ function QuickTemplateSelector({
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-[13px] font-medium text-ink">Quick templates</p>
-          <p className="mt-0.5 text-xs text-ink-faint">Start with a template; you can edit everything before publishing.</p>
+          <p className="mt-0.5 text-xs text-ink-faint">Start with a template; you can edit Everything before Publishing.</p>
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -1594,7 +1594,7 @@ function CreateModal({
           </select>
 
           <p className="mt-1 text-xs text-ink-faint">
-            Choose who should receive this announcement.
+            Choose who should receive this Announcement.
           </p>
         </div>
 
@@ -1695,7 +1695,7 @@ function CreateModal({
           </div>
 
           <p className="mt-1 text-xs text-ink-faint">
-            Select one or more notification channels.
+            Select one or more Notification Channels.
           </p>
         </div>
 
@@ -1704,7 +1704,7 @@ function CreateModal({
             <div>
               <p className="text-[13px] font-medium text-ink">Calendar event</p>
               <p className="mt-0.5 text-xs text-ink-faint">
-                Add the event date to the employee calendar.
+                Add the Event date to the Employee Calendar.
               </p>
             </div>
 
@@ -1742,11 +1742,11 @@ function CreateModal({
 
               <span>
                 <span className="block text-[13px] font-medium text-ink">
-                  Require employee acknowledgement
+                  Require Employee Acknowledgement
                 </span>
 
                 <span className="mt-0.5 block text-xs text-ink-faint">
-                  Employees must acknowledge this announcement before it is considered complete.
+                  Employees must Acknowledge this Announcement Before it is Considered Complete.
                 </span>
               </span>
             </label>
@@ -1770,7 +1770,7 @@ function CreateModal({
                 <span className="font-medium text-ink">Publish Now</span>
 
                 <span className="ml-1 text-ink-faint">
-                  Publish the announcement immediately.
+                  Publish the Announcement Immediately.
                 </span>
               </span>
             </label>
@@ -1787,7 +1787,7 @@ function CreateModal({
                 <span className="font-medium text-ink">Schedule for Later</span>
 
                 <span className="ml-1 text-ink-faint">
-                  Publish automatically at the selected time.
+                  Publish Automatically at the Selected Time.
                 </span>
               </span>
             </label>
@@ -1796,7 +1796,7 @@ function CreateModal({
 
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Expiry after publishing
+            Expiry After Publishing
           </label>
           <select
             {...register("expiryDays")}
@@ -1812,7 +1812,7 @@ function CreateModal({
             <option value="90">90 days</option>
             <option value="365">365 days</option>
           </select>
-          <p className="mt-1 text-[11px] text-ink-faint">The announcement stays in history after expiry, but users cannot open it.</p>
+          <p className="mt-1 text-[11px] text-ink-faint">The Announcement stays in History After Expiry, but users cannot open it.</p>
         </div>
 
         {watch("publishMode") === "SCHEDULED" && (
@@ -1832,7 +1832,7 @@ function CreateModal({
             />
 
             <p className="sm:col-span-2 text-xs text-ink-faint">
-              Past dates are disabled. Scheduled publishing must be in the
+              Past dates are Disabled. Scheduled Publishing must be in the
               future.
             </p>
           </div>
@@ -1851,7 +1851,7 @@ function CreateModal({
             <span className="font-medium text-ink">Pin to top</span>
 
             <span className="ml-1 text-ink-faint">
-              Keep this announcement highlighted.
+              Keep this Announcement highlighted.
             </span>
           </span>
         </label>
@@ -1930,13 +1930,13 @@ function ReadReceiptsModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Announcement engagement"
+      title="Announcement Engagement"
       subtitle={`Track reads and acknowledgements for "${announcement.title}".`}
       size="lg"
       footer={<Button variant="outline" onClick={onClose}>Close</Button>}
     >
       {isLoading ? (
-        <div className="py-8 text-center text-sm text-ink-faint">Loading engagement records...</div>
+        <div className="py-8 text-center text-sm text-ink-faint">Loading Engagement Records...</div>
       ) : (
         <div className="space-y-5">
           <div className={`grid grid-cols-2 gap-3 ${requiresAcknowledgement ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
@@ -1949,9 +1949,9 @@ function ReadReceiptsModal({
 
           {requiresAcknowledgement && (
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-              <div className="flex items-center justify-between text-xs"><span className="text-ink-faint">Acknowledgement rate</span><span className="font-semibold text-ink">{acknowledgementPercentage}%</span></div>
+              <div className="flex items-center justify-between text-xs"><span className="text-ink-faint">Acknowledgement Rate</span><span className="font-semibold text-ink">{acknowledgementPercentage}%</span></div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-brand-500" style={{ width: `${acknowledgementPercentage}%` }} /></div>
-              <p className="mt-2 text-[11px] text-ink-faint">{pendingAcknowledgement} employee{pendingAcknowledgement === 1 ? "" : "s"} pending acknowledgement.</p>
+              <p className="mt-2 text-[11px] text-ink-faint">{pendingAcknowledgement} Employee{pendingAcknowledgement === 1 ? "" : "s"} Pending Acknowledgement.</p>
             </div>
           )}
 
@@ -1964,14 +1964,14 @@ function ReadReceiptsModal({
               <option value="ALL">All recipients</option>
               <option value="READ">Read</option>
               <option value="UNREAD">Unread</option>
-              {requiresAcknowledgement && <><option value="ACKNOWLEDGED">Acknowledged</option><option value="PENDING_ACK">Pending acknowledgement</option></>}
+              {requiresAcknowledgement && <><option value="ACKNOWLEDGED">Acknowledged</option><option value="PENDING_ACK">Pending Acknowledgement</option></>}
             </select>
           </div>
 
           {!status.length ? (
-            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-ink-faint">No receipt records are available yet.</div>
+            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-ink-faint">No Receipt records are available yet.</div>
           ) : !filteredStatus.length ? (
-            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-ink-faint">No employees match this filter.</div>
+            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-ink-faint">No Employees match this filter.</div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-gray-100">
               <table className="w-full min-w-[820px] text-left text-sm">
@@ -2226,7 +2226,7 @@ function EditModal({
             isLoading={isLoading}
             form="edit-announcement-form"
           >
-            Save changes
+            Save Changes
           </Button>
         </>
       }
@@ -2419,9 +2419,9 @@ function EditModal({
         {watch("notificationMethods")?.includes("CALENDAR") && (
           <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
             <div>
-              <p className="text-[13px] font-medium text-ink">Calendar event</p>
+              <p className="text-[13px] font-medium text-ink">Calendar Event</p>
               <p className="mt-0.5 text-xs text-ink-faint">
-                Event date will be shown on the announcement.
+                Event date will be shown on the Announcement.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -2453,14 +2453,14 @@ function EditModal({
             className="mt-0.5 rounded accent-brand-500"
           />
           <span>
-            <span className="block text-[13px] font-medium text-ink">Require employee acknowledgement</span>
-            <span className="mt-0.5 block text-xs text-ink-faint">Employees must acknowledge this announcement.</span>
+            <span className="block text-[13px] font-medium text-ink">Require Employee Acknowledgement</span>
+            <span className="mt-0.5 block text-xs text-ink-faint">Employees must Acknowledge this Announcement.</span>
           </span>
         </label>
 
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Expiry after publishing
+            Expiry After Publishing
           </label>
           <select
             {...register("expiryDays")}
@@ -2500,7 +2500,7 @@ function EditModal({
 
         {announcement.attachment && (
           <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-            <p className="text-xs text-ink-faint">Current attachment</p>
+            <p className="text-xs text-ink-faint">Current Attachment</p>
 
             <a
               href={getAttachmentUrl(announcement.attachment)}
@@ -2513,7 +2513,7 @@ function EditModal({
               ) : (
                 <FileText size={15} />
               )}
-              View current attachment
+              View Current Attachment
             </a>
           </div>
         )}
@@ -2526,10 +2526,10 @@ function EditModal({
           />
 
           <span>
-            <span className="font-medium text-ink">Pin to top</span>
+            <span className="font-medium text-ink">Pin to Top</span>
 
             <span className="ml-1 text-ink-faint">
-              Keep this announcement highlighted.
+              Keep this Announcement Highlighted.
             </span>
           </span>
         </label>
@@ -2557,7 +2557,7 @@ function AttachmentField({
       <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-ink-soft transition hover:border-brand-400 hover:bg-brand-50">
         <Paperclip size={16} />
 
-        <span>Choose PDF, Word document, or image</span>
+        <span>Choose PDF, Word Document, or Image</span>
 
         <input
           type="file"

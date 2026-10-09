@@ -585,7 +585,7 @@ export default function Documents() {
       {canProcessCompanyRequests && (
         <Card>
           <CardHeader
-            title="Company document requests"
+            title="Company Document Requests"
             subtitle="Company-issued documents employees have requested. Upload the completed document to fulfil each request."
           />
 
