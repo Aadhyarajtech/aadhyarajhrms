@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Eye,
@@ -471,9 +471,9 @@ Adithya Nuthakki· Chief Executive Officer, Aadhyaraj Technologies
             </div>
           </div> */}
 
-          <p className="mt-6 text-center text-[12px] text-ink-faint">
+          {/* <p className="mt-6 text-center text-[12px] text-ink-faint">
             New employee? <Link to="/register" className="font-medium text-brand-600 hover:text-brand-700">Create an account</Link>
-          </p>
+          </p> */}
           {/* <p className="mt-4 text-center text-[12px] text-ink-faint">
             <Link to="/" className="hover:text-ink-soft">← Back to homepage</Link>
           </p> */}

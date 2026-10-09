@@ -113,6 +113,12 @@ export default function EmployeeProfile() {
   const [docTypeOpen, setDocTypeOpen] = useState(false);
 
   const effectiveId = id ?? user?.employee?.id;
+
+  // React Router can reuse this component when navigating between employee IDs.
+  // Reset the selected tab so every newly opened employee profile starts on Overview.
+  useEffect(() => {
+    setTab("overview");
+  }, [effectiveId]);
   const employeeQuery = useQuery({
     queryKey: ["employee", effectiveId],
     queryFn: () => EmployeesApi.get(effectiveId!),
