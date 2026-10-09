@@ -1149,6 +1149,7 @@ export async function requestRegularization(
       | "WORK_FROM_HOME"
       | "ON_LEAVE";
   }> = {},
+  requestedBy?: { actorId: string; actorRole: string },
 ) {
   if (!isValidDateString(date)) {
     throw new Error("Invalid attendance date.");
@@ -1224,8 +1225,8 @@ export async function requestRegularization(
     auditTrail: [
       {
         action: "REQUESTED",
-        actorId: employeeId,
-        actorRole: "EMPLOYEE",
+        actorId: requestedBy?.actorId ?? employeeId,
+        actorRole: requestedBy?.actorRole ?? "EMPLOYEE",
         at: now,
         note: reason,
       },
@@ -1273,12 +1274,16 @@ export async function listTeamRegularizationRequests(
 
   return requests.map((request) => {
     const employee = employeeMap.get(String(request.employeeId));
+    const requestAudit = (request.auditTrail ?? []).find(
+      (entry) => entry.action === "REQUESTED",
+    );
 
     return {
       ...toApiRecord(request),
       firstName: employee?.firstName ?? null,
       lastName: employee?.lastName ?? null,
       employeeCode: employee?.employeeCode ?? null,
+      requestedByRole: requestAudit?.actorRole ?? "EMPLOYEE",
     };
   });
 }
@@ -1339,10 +1344,14 @@ export async function approveRegularization(
 
   let attendance = request.attendanceId
     ? await Attendance.findOne({ _id: request.attendanceId }).lean()
-    : await Attendance.findOne({
-        employeeId: request.employeeId,
-        date: request.date,
-      }).lean();
+    : null;
+
+  if (!attendance) {
+    attendance = await Attendance.findOne({
+      employeeId: request.employeeId,
+      date: request.date,
+    }).lean();
+  }
 
   if (attendance) {
     await Attendance.updateOne(

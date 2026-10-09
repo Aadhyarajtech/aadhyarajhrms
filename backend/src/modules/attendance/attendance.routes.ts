@@ -47,6 +47,7 @@ const regularizationSchema = z.object({
     .regex(/^$|^\d{2}:\d{2}$/i, "Invalid check-out time.")
     .optional()
     .nullable(),
+  employeeId: z.string().trim().optional(),
 });
 
 const regularizationDecisionSchema = z.object({
@@ -1499,14 +1500,38 @@ attendanceRouter.post(
       const {
         date,
         note,
+        employeeId: requestedEmployeeId,
         requestedCheckIn,
         requestedCheckOut,
         requestedStatus,
       } = req.body as z.infer<typeof regularizationSchema>;
 
+      let targetEmployeeId: string | undefined = req.user!.employeeId;
+      if (requestedEmployeeId) {
+        if (!["MANAGER", "HR_ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
+          throw AppError.forbidden(
+            "You are not authorized to create a request for another employee.",
+          );
+        }
+
+        const scope = await resolveAttendanceScope(
+          {
+            userId: req.user!.userId,
+            employeeId: req.user!.employeeId,
+            role: req.user!.role,
+          },
+          requestedEmployeeId,
+        );
+        targetEmployeeId = scope.employeeId ?? undefined;
+      }
+
+      if (!targetEmployeeId) {
+        throw AppError.forbidden("Employee profile not found.");
+      }
+
       res.json({
         record: await repo.requestRegularization(
-          req.user!.employeeId,
+          targetEmployeeId,
           date,
           note,
           {
@@ -1514,6 +1539,12 @@ attendanceRouter.post(
             requestedCheckOut: requestedCheckOut || null,
             requestedStatus,
           },
+          requestedEmployeeId
+            ? {
+                actorId: req.user!.userId,
+                actorRole: req.user!.role,
+              }
+            : undefined,
         ),
       });
     } catch (err) {

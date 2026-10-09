@@ -1154,6 +1154,7 @@ export const AttendanceApi = {
           firstName: string | null;
           lastName: string | null;
           employeeCode: string | null;
+          requestedByRole: string;
           expiresAt: string | null;
           expiredAt: string | null;
         }>;

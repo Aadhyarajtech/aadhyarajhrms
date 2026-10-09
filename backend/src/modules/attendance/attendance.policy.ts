@@ -99,6 +99,16 @@ function timestamp(value: string, fieldName: string): number {
 }
 
 function localClockMinutes(value: string, fieldName: string): number {
+  const clock = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (clock) {
+    const hour = Number(clock[1]);
+    const minute = Number(clock[2]);
+    if (hour > 23 || minute > 59) {
+      throw new Error(`Invalid ${fieldName}.`);
+    }
+    return hour * 60 + minute;
+  }
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`Invalid ${fieldName}.`);
 
@@ -130,6 +140,13 @@ function roundHoursInternal(value: number): number {
 }
 
 function hoursBetween(start: string, end: string): number {
+  if (/^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end)) {
+    const startMinutes = timeToMinutes(start);
+    const endMinutes = timeToMinutes(end);
+    if (endMinutes < startMinutes) return 0;
+    return (endMinutes - startMinutes) / 60;
+  }
+
   const startTimestamp = timestamp(start, "check-in time");
   const endTimestamp = timestamp(end, "check-out time");
   if (endTimestamp < startTimestamp) return 0;

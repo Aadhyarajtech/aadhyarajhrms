@@ -79,6 +79,8 @@ export default function Attendance() {
       : "mine";
   const [tab, setTab] = useState<string>(initialTab);
   const [regOpen, setRegOpen] = useState(false);
+  const [regularizationEmployeeId, setRegularizationEmployeeId] =
+    useState<string | undefined>();
 
   const handleTabChange = (nextTab: string) => {
     setTab(nextTab);
@@ -109,7 +111,10 @@ export default function Attendance() {
             size="sm"
             variant="outline"
             leftIcon={<CalendarClock size={14} />}
-            onClick={() => setRegOpen(true)}
+            onClick={() => {
+              setRegularizationEmployeeId(undefined);
+              setRegOpen(true);
+            }}
           >
             Request regularization
           </Button>
@@ -133,10 +138,17 @@ export default function Attendance() {
         <AttendanceExceptionReview
           employeeId={selectedEmployeeId}
           onEmployeeChange={setSelectedEmployeeId}
-          onOpenRegularization={() => setRegOpen(true)}
+          onOpenRegularization={(employeeId) => {
+            setRegularizationEmployeeId(employeeId);
+            setRegOpen(true);
+          }}
         />
       )}
-      <RegularizeModal open={regOpen} onClose={() => setRegOpen(false)} />
+      <RegularizeModal
+        open={regOpen}
+        employeeId={regularizationEmployeeId}
+        onClose={() => setRegOpen(false)}
+      />
     </div>
   );
 }
@@ -159,7 +171,7 @@ function AttendanceExceptionReview({
 }: {
   employeeId?: string;
   onEmployeeChange: (id?: string) => void;
-  onOpenRegularization: () => void;
+  onOpenRegularization: (employeeId?: string) => void;
 }) {
   const { user, hasPermission } = useAuth();
   const canSelectEmployee = hasPermission("attendance.manage");
@@ -394,7 +406,17 @@ function AttendanceExceptionReview({
                                   </div>
                                 </div>
                                 <div className="flex items-center justify-end xl:pl-3">
-                                  <Button size="sm" onClick={onOpenRegularization}>Create Regularization</Button>
+                                  <Button
+                                    size="sm"
+                                    disabled={!anomaly.employeeId && !employeeId}
+                                    onClick={() =>
+                                      onOpenRegularization(
+                                        anomaly.employeeId ?? employeeId,
+                                      )
+                                    }
+                                  >
+                                    Create Regularization
+                                  </Button>
                                 </div>
                               </div>
                             </div>
@@ -1438,6 +1460,11 @@ function TeamRegularizationRequests() {
                   <p className="mt-1 text-[12px] text-ink-faint">
                     {request.employeeCode ?? "—"} · {formatDate(request.date)}
                   </p>
+                  {request.requestedByRole !== "EMPLOYEE" && (
+                    <p className="mt-1 text-[12px] text-ink-faint">
+                      Submitted by {request.requestedByRole.replaceAll("_", " ")} on behalf of this employee
+                    </p>
+                  )}
                 </div>
                 {request.status === "PENDING" && (
                   <div className="flex gap-2">
@@ -1575,9 +1602,11 @@ function TeamRegularizationRequests() {
 
 function RegularizeModal({
   open,
+  employeeId,
   onClose,
 }: {
   open: boolean;
+  employeeId?: string;
   onClose: () => void;
 }) {
   const { showToast } = useToast();
@@ -1611,7 +1640,7 @@ function RegularizeModal({
 
       const normalizedReason = `${problemLabel}: ${value.note.trim()}`;
 
-      return AttendanceApi.regularize(value.date, normalizedReason, undefined, {
+      return AttendanceApi.regularize(value.date, normalizedReason, employeeId, {
         requestedStatus: value.requestedStatus,
         requestedCheckIn: value.checkIn || null,
         requestedCheckOut: value.checkOut || null,
@@ -1636,8 +1665,12 @@ function RegularizeModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Request attendance regularization"
-      subtitle="Submit a correction request for a missed or incorrect attendance entry."
+      title={employeeId ? "Create attendance regularization" : "Request attendance regularization"}
+      subtitle={
+        employeeId
+          ? "Submit an attendance correction request on behalf of the selected employee."
+          : "Submit a correction request for a missed or incorrect attendance entry."
+      }
       footer={
         <>
           <Button
