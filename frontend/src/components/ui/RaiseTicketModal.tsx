@@ -34,6 +34,7 @@ export default function RaiseTicketModal({
   const [priority, setPriority] = useState<"CRITICAL" | "LOW" | "MEDIUM" | "HIGH">("MEDIUM");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  const [otherConcern, setOtherConcern] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -152,6 +153,11 @@ export default function RaiseTicketModal({
       return;
     }
 
+    if (category === "Other" && !otherConcern.trim()) {
+      showToast("Please write about your concern.", "error");
+      return;
+    }
+
     if (!subject.trim()) {
       showToast("Please enter a subject.", "error");
       return;
@@ -171,7 +177,10 @@ export default function RaiseTicketModal({
       formData.append("category", category);
       formData.append("priority", priority);
       formData.append("subject", subject.trim());
-      formData.append("description", description.trim());
+      const submittedDescription = category === "Other"
+        ? `Other Concern: ${otherConcern.trim()}\n\n${description.trim()}`
+        : description.trim();
+      formData.append("description", submittedDescription);
       if (expiryDate) {
         formData.append("expiryDate", expiryDate);
       }
@@ -194,6 +203,7 @@ export default function RaiseTicketModal({
       userChangedCategoryRef.current = false;
       setSubject("");
       setDescription("");
+      setOtherConcern("");
       setExpiryDate("");
       setAttachment(null);
       setAiResult(null);
@@ -331,6 +341,26 @@ export default function RaiseTicketModal({
   Other Concern
 </option>
             </select>
+
+            {category === "Other" && (
+              <div className="mt-3 animate-fade-in">
+                <label className="mb-2 block text-sm font-medium text-gray-800">
+                  Write about your concern <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={otherConcern}
+                  onChange={(e) => setOtherConcern(e.target.value)}
+                  placeholder="Write about your concern..."
+                  maxLength={200}
+                  aria-required="true"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Briefly specify the concern you need help with.
+                </p>
+              </div>
+            )}
 
             {/* POSH / Harassment Special Protection Notice */}
             {category === "Harassment Complaint" && (
