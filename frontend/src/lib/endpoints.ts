@@ -215,6 +215,11 @@ export const EmployeesApi = {
       .patch<{ employee: Employee }>(`/employees/${id}`, payload)
       .then((r) => r.data.employee),
 
+  updateRole: (id: string, role: Exclude<Employee["role"], "MANAGER" | null | undefined>) =>
+    api
+      .patch<{ employee: Employee }>(`/employees/${id}/role`, { role })
+      .then((r) => r.data.employee),
+
   updateMe: (payload: Record<string, unknown>) =>
     api
       .patch<{ employee: Employee }>("/employees/me", payload)

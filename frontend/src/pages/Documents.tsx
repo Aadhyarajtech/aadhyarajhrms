@@ -189,7 +189,8 @@ export default function Documents() {
   const canUploadOwn = !!employeeId;
 
   const canRequestFromEmployee =
-    !!role && ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role);
+    (!!role && ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role)) ||
+    user?.isManager === true;
 
   const canProcessCompanyRequests =
     !!role && ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
@@ -621,6 +622,7 @@ export default function Documents() {
         onClose={() => setIsUploadOpen(false)}
         selfEmployeeId={employeeId}
         role={role}
+        isManager={user?.isManager === true}
       />
 
       <FulfillRequestModal
@@ -639,6 +641,7 @@ export default function Documents() {
         onClose={() => setIsRequestOpen(false)}
         selfEmployeeId={employeeId}
         role={role}
+        isManager={user?.isManager === true}
       />
 
       <RequestCompanyDocumentModal
@@ -1078,11 +1081,13 @@ function UploadDocumentModal({
   onClose,
   selfEmployeeId,
   role,
+  isManager,
 }: {
   open: boolean;
   onClose: () => void;
   selfEmployeeId: string;
   role?: string;
+  isManager: boolean;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -1092,7 +1097,7 @@ function UploadDocumentModal({
   const [targetEmployeeId, setTargetEmployeeId] = useState(selfEmployeeId);
   const [expiryDate, setExpiryDate] = useState("");
 
-  const isManager = role === "MANAGER";
+  const isManagerCapability = isManager || role === "MANAGER";
 
   // Sync target employee ID when modal opens or selfEmployeeId becomes available
   useEffect(() => {
@@ -1105,10 +1110,10 @@ function UploadDocumentModal({
   }, [open, selfEmployeeId]);
 
   const { data: employeesData } = useQuery({
-    queryKey: ["employees", "for-document-upload", isManager, selfEmployeeId],
+    queryKey: ["employees", "for-document-upload", isManagerCapability, selfEmployeeId],
     queryFn: () =>
       EmployeesApi.list(
-        isManager
+        isManagerCapability
           ? { managerId: selfEmployeeId, pageSize: 100 }
           : { pageSize: 100 },
       ),
@@ -1360,11 +1365,13 @@ function RequestDocumentModal({
   onClose,
   selfEmployeeId,
   role,
+  isManager,
 }: {
   open: boolean;
   onClose: () => void;
   selfEmployeeId: string;
   role?: string;
+  isManager: boolean;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -1373,19 +1380,19 @@ function RequestDocumentModal({
   const [type, setType] = useState<EmployeeProvidedDocType>("ID_PROOF");
   const [note, setNote] = useState("");
 
-  const isManager = role === "MANAGER";
+  const isManagerCapability = isManager || role === "MANAGER";
 
   const { data: employeesData, isLoading: employeesLoading } = useQuery({
     queryKey: [
       "employees",
       "for-document-request",
-      isManager,
+      isManagerCapability,
       selfEmployeeId,
       employeeSearch,
     ],
     queryFn: () =>
       EmployeesApi.list(
-        isManager
+        isManagerCapability
           ? {
               managerId: selfEmployeeId,
               pageSize: 100,

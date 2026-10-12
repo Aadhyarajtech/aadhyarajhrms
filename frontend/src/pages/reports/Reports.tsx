@@ -98,7 +98,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export default function Reports() {
   const { user } = useAuth();
-  const isManager = user?.role === "MANAGER";
+  const isManager = user?.role === "MANAGER" || user?.isManager === true;
   const canRecruitment =
     user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
   const canAudit = canRecruitment;

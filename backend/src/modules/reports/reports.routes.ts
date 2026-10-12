@@ -86,6 +86,7 @@ reportsRouter.get("/overview", async (req, res, next) => {
       filtersFromRequest(req),
       req.user!.role,
       req.user!.employeeId,
+      req.user!.isManager,
     );
     res.json(data);
   } catch (err) {
@@ -193,6 +194,7 @@ reportsRouter.get("/export/:format", async (req, res, next) => {
       filtersFromRequest(req),
       req.user!.role,
       req.user!.employeeId,
+      req.user!.isManager,
     );
 
     const section = exportSectionFromRequest(req);

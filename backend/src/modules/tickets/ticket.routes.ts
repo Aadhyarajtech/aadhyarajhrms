@@ -72,12 +72,12 @@ async function canAccessTicket(
     return true;
   }
 
-  if (role === "HR_ADMIN") return ticket.assignedTo === "HR_ADMIN";
-  if (role === "RECRUITER") return ticket.assignedTo === "RECRUITER";
-  if (role === "FINANCE") return ticket.assignedTo === "FINANCE";
-  if (role === "IT_SUPPORT") return ticket.assignedTo === "IT_SUPPORT";
+  if (role === "HR_ADMIN" && ticket.assignedTo === "HR_ADMIN") return true;
+  if (role === "RECRUITER" && ticket.assignedTo === "RECRUITER") return true;
+  if (role === "FINANCE" && ticket.assignedTo === "FINANCE") return true;
+  if (role === "IT_SUPPORT" && ticket.assignedTo === "IT_SUPPORT") return true;
 
-  if (role === "MANAGER") {
+  if (role === "MANAGER" || user.isManager) {
     if (!user.employeeId) return false;
 
     if (
@@ -434,7 +434,7 @@ ticketRouter.get(
         "RECRUITER",
       ];
 
-      if (!allowedRoles.includes(role)) {
+      if (!allowedRoles.includes(role) && !req.user.isManager) {
         return res.status(403).json({
           error: {
             message: "You are not authorized to access tickets",
@@ -442,7 +442,7 @@ ticketRouter.get(
         });
       }
 
-      if (role === "MANAGER" && !req.user.employeeId) {
+      if ((role === "MANAGER" || req.user.isManager) && !req.user.employeeId) {
         return res.status(401).json({
           error: {
             message: "Manager employee profile not found",
@@ -453,6 +453,7 @@ ticketRouter.get(
       const rawTickets = await repo.getTicketsForDepartment(
         role,
         req.user.employeeId,
+        req.user.isManager,
       );
 
       const tickets = enrichTicketsWithSlaRisk(rawTickets);
@@ -558,7 +559,7 @@ ticketRouter.get(
         "RECRUITER",
       ];
 
-      if (!allowedRoles.includes(role)) {
+      if (!allowedRoles.includes(role) && !req.user.isManager) {
         return res.status(403).json({
           error: {
             message:
@@ -569,7 +570,7 @@ ticketRouter.get(
 
       const departmentFilter = getDepartmentFilterForRole(role);
 
-      if (role !== "SUPER_ADMIN" && role !== "MANAGER" && !departmentFilter) {
+      if (role !== "SUPER_ADMIN" && !req.user.isManager && !departmentFilter) {
         return res.status(403).json({
           error: {
             message:
@@ -579,7 +580,7 @@ ticketRouter.get(
       }
 
       const analytics = await getHelpdeskExecutiveAnalytics(
-        role === "MANAGER"
+        (role === "MANAGER" || req.user.isManager)
           ? {
               managerEmployeeId: req.user.employeeId,
             }
@@ -618,7 +619,7 @@ ticketRouter.get(
 
       if (
         role !== "SUPER_ADMIN" &&
-        role !== "MANAGER" &&
+        !req.user.isManager &&
         !departmentFilter
       ) {
         return res.status(403).json({
@@ -631,7 +632,7 @@ ticketRouter.get(
 
       const query: any = {};
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user.isManager) {
         if (!req.user.employeeId) {
           return res.status(401).json({
             error: {
@@ -707,7 +708,7 @@ ticketRouter.get(
 
       if (
         role !== "SUPER_ADMIN" &&
-        role !== "MANAGER" &&
+        !req.user.isManager &&
         !departmentFilter
       ) {
         return res.status(403).json({
@@ -725,7 +726,7 @@ ticketRouter.get(
       const groups = await detectRecurringIssueGroups(
         2,
         windowHours,
-        role === "MANAGER"
+        (role === "MANAGER" || req.user.isManager)
           ? {
               managerEmployeeId: req.user.employeeId,
             }
@@ -788,7 +789,7 @@ ticketRouter.post(
         "RECRUITER",
       ];
 
-      if (!allowedRoles.includes(role)) {
+      if (!allowedRoles.includes(role) && !req.user.isManager) {
         return res.status(403).json({
           error: {
             message:

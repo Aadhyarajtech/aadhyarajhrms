@@ -106,6 +106,8 @@ authRouter.post(
       const now = nowIso();
       const passwordHash = bcrypt.hashSync(password, 10);
 
+      // Self-registration must never grant an administrative or manager role.
+      // Privileged roles are assigned later by an authorized administrator.
       const user = await User.create({
         email: normalizedEmail,
         passwordHash,

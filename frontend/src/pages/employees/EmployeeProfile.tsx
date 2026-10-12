@@ -3129,9 +3129,57 @@ function EditEmployeeModal({
         avatarUrl = result.avatarUrl;
       }
 
+      // Self-service profile saves must not call organization-management APIs.
+      // Department/designation lookup and creation are reserved for Admin and Super Admin.
+      const commonPayload = {
+        ...payload,
+        avatarUrl,
+        dateOfBirth: payload.dateOfBirth || null,
+        state: payload.state || null,
+        emergencyContactRelationship: payload.emergencyContactRelationship || null,
+        emergencyContactEmail: payload.emergencyContactEmail || null,
+        employeeAadhaar: payload.employeeAadhaar || null,
+        employeePan: payload.employeePan || null,
+        signature: payload.signature || null,
+      };
+
+      if (!isAdmin) {
+        // Only send fields accepted by the self-service endpoint. In particular,
+        // don't send blank bank/TAN fields that fail administrative validation,
+        // and don't allow self-service payloads to attempt organizational changes.
+        return EmployeesApi.updateMe({
+          firstName: payload.firstName,
+          lastName: payload.lastName,
+          gender: payload.gender,
+          maritalStatus: payload.maritalStatus,
+          dateOfBirth: commonPayload.dateOfBirth,
+          phone: payload.phone,
+          personalEmail: payload.personalEmail,
+          address: payload.address,
+          city: payload.city,
+          state: commonPayload.state,
+          country: payload.country,
+          emergencyContactName: payload.emergencyContactName,
+          emergencyContactPhone: payload.emergencyContactPhone,
+          emergencyContactRelationship: commonPayload.emergencyContactRelationship,
+          emergencyContactEmail: commonPayload.emergencyContactEmail,
+          emergencyContacts: payload.emergencyContacts,
+          medicalConditions: payload.medicalConditions,
+          bloodGroup: payload.bloodGroup,
+          insurancePolicyNumber: payload.insurancePolicyNumber,
+          employeeAadhaar: commonPayload.employeeAadhaar,
+          employeePan: commonPayload.employeePan,
+          avatarUrl,
+          signature: commonPayload.signature,
+          education: payload.education,
+          certifications: payload.certifications,
+          workHistory: payload.workHistory,
+          skills: payload.skills,
+        });
+      }
+
       const departmentName = departmentInput.trim();
       const designationTitle = designationInput.trim();
-
       const existingDepartment = (departments ?? []).find(
         (department: any) =>
           String(department.name ?? "").trim().toLowerCase() ===
@@ -3173,21 +3221,11 @@ function EditEmployeeModal({
         });
       }
 
-      const updatedPayload = {
-        ...payload,
+      const adminPayload = {
+        ...commonPayload,
         departmentId: departmentId || null,
         designationId: designationId || null,
-        avatarUrl,
-        // Reporting manager is optional. An empty selection explicitly clears
-        // the manager so top-level employees (such as Admin) can be saved.
         managerId: payload.managerId || null,
-        dateOfBirth: payload.dateOfBirth || null,
-        state: payload.state || null,
-        emergencyContactRelationship:
-          payload.emergencyContactRelationship || null,
-        emergencyContactEmail: payload.emergencyContactEmail || null,
-        employeeAadhaar: payload.employeeAadhaar || null,
-        employeePan: payload.employeePan || null,
         employeeTan: payload.employeeTan || null,
         bankAccountNumber: payload.bankAccountNumber || null,
         bankIfscCode: payload.bankIfscCode || null,
@@ -3197,12 +3235,9 @@ function EditEmployeeModal({
           deduction80C: Number(payload.investmentDeclarations?.deduction80C ?? 0),
           other: Number(payload.investmentDeclarations?.other ?? 0),
         },
-        signature: payload.signature || null,
       };
 
-      return isAdmin
-        ? EmployeesApi.update(employee.id, updatedPayload)
-        : EmployeesApi.updateMe(updatedPayload);
+      return EmployeesApi.update(employee.id, adminPayload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employee", employee.id] });

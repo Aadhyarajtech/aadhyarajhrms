@@ -17,6 +17,7 @@ export const PERMISSION_CATALOG = [
   { key: "payroll.manage", module: "Payroll", action: "Manage" },
   { key: "recruitment.view", module: "Recruitment", action: "View" },
   { key: "recruitment.manage", module: "Recruitment", action: "Manage" },
+  { key: "recruitment.requisition.approve", module: "Recruitment", action: "Approve requisitions" },
   { key: "performance.view", module: "Performance", action: "View" },
   { key: "performance.manage", module: "Performance", action: "Manage" },
   { key: "documents.view", module: "Documents & Assets", action: "View" },
@@ -37,19 +38,6 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   HR_ADMIN: PERMISSION_CATALOG.filter((p) => p.key !== "payroll.manage").map(
     (p) => p.key,
   ),
-  MANAGER: [
-    "employees.view",
-    "attendance.view",
-    "attendance.manage",
-    "leave.view",
-    "leave.manage",
-    "performance.view",
-    "performance.manage",
-    "tickets.view",
-    "tickets.manage",
-    "announcements.view",
-    "reports.view",
-  ],
   RECRUITER: [
     "employees.view",
     "attendance.view",
@@ -105,17 +93,12 @@ const DEFAULT_ROLE_META: Record<
     description: "Full system governance and configuration access.",
   },
   HR_ADMIN: {
-    label: "HR Admin",
+    label: "Admin",
     description:
       "HR operations, people management and organization administration.",
   },
-  MANAGER: {
-    label: "Manager",
-    description:
-      "Team-level workforce, leave, attendance and performance access.",
-  },
   RECRUITER: {
-    label: "Recruiter",
+    label: "Recruitment Team",
     description: "Recruitment lifecycle and candidate management access.",
   },
   FINANCE: {
@@ -201,7 +184,7 @@ function toApi(doc: any) {
   return { id: _id, ...rest };
 }
 
-const BUILTIN_PERMISSION_VERSION = 2;
+const BUILTIN_PERMISSION_VERSION = 3;
 
 // Permissions that are required by the current application navigation.
 // Existing production role records are migrated additively once so we do not
@@ -220,6 +203,13 @@ const REQUIRED_PERMISSION_MIGRATIONS: Record<number, Record<string, string[]>> =
       "performance.view",
       "documents.view",
     ],
+  },
+  3: {
+    // Requisition approval is intentionally separate from recruitment
+    // management. Super Admin and Admin can approve; recruiters can create
+    // and manage recruitment work without approving by default.
+    SUPER_ADMIN: ["recruitment.requisition.approve"],
+    HR_ADMIN: ["recruitment.requisition.approve"],
   },
 };
 
@@ -245,10 +235,17 @@ export async function ensureDefaults() {
         { upsert: true },
       );
 
+      // Keep visible labels aligned with the approved role names without
+      // overwriting any administrator-customized permission arrays.
+      await GovernanceRole.updateOne(
+        { role },
+        { $set: { label: meta.label, updatedAt: now } },
+      );
+
       // Apply additive built-in permission migrations to existing production
       // role documents. The version marker prevents us from re-adding a
       // permission after an administrator intentionally customizes a role.
-      if (["MANAGER", "RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"].includes(role)) {
+      if (["RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"].includes(role)) {
         await GovernanceRole.updateOne(
           { role },
           { $addToSet: { permissions: "employees.view" }, $set: { updatedAt: now } },
@@ -291,7 +288,7 @@ export async function ensureDefaults() {
 export async function getGovernance() {
   await ensureDefaults();
   const [roles, policies] = await Promise.all([
-    GovernanceRole.find({}).sort({ role: 1 }).lean(),
+    GovernanceRole.find({ role: { $in: ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"] } }).sort({ role: 1 }).lean(),
     GovernancePolicy.find({}).sort({ category: 1, label: 1 }).lean(),
   ]);
   return {

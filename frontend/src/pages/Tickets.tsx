@@ -39,35 +39,51 @@ const ALL_CATEGORIES = [
   { value: "Complaint", label: "Complaint / Grievance" },
 ];
 
-function getCategoryOptions(role?: string) {
+function getCategoryOptions(role?: string, isManager = false) {
+  let options: { value: string; label: string }[];
+
   if (role === "IT_SUPPORT") {
-    return [
+    options = [
       { value: "ALL", label: "All IT Support & Infra Tickets" },
       { value: "IT Support", label: "IT Support" },
       { value: "Infrastructure", label: "Infrastructure" },
     ];
-  }
-  if (role === "FINANCE") {
-    return [
+  } else if (role === "FINANCE") {
+    options = [
       { value: "ALL", label: "All Payroll Tickets" },
       { value: "Payroll Issue", label: "Payroll Issue" },
       { value: "Payroll", label: "Payroll" },
     ];
-  }
-  if (role === "MANAGER") {
-    return [
-      { value: "ALL", label: "All Team Grievances" },
-      { value: "Complaint", label: "Complaint / Grievance" },
-    ];
-  }
-  if (role === "RECRUITER") {
-    return [
+  } else if (role === "RECRUITER") {
+    options = [
       { value: "ALL", label: "All Recruitment Tickets" },
       { value: "Recruitment", label: "Recruitment" },
       { value: "Employee Referral", label: "Employee Referral" },
     ];
+  } else {
+    options = ALL_CATEGORIES;
   }
-  return ALL_CATEGORIES;
+
+  // Manager access is additive: managers with a department role retain their
+  // department filters and can also select team grievance categories.
+  if (isManager || role === "MANAGER") {
+    const managerOptions = [
+      { value: "Complaint", label: "Complaint / Grievance" },
+      { value: "Manager Concern", label: "Manager Concern" },
+    ];
+    const merged = [...options];
+    for (const option of managerOptions) {
+      if (!merged.some((existing) => existing.value === option.value)) {
+        merged.push(option);
+      }
+    }
+    if (!merged.some((option) => option.value === "ALL")) {
+      merged.unshift({ value: "ALL", label: "All Team Grievances" });
+    }
+    return merged;
+  }
+
+  return options;
 }
 
 const STATUS_OPTIONS = [
@@ -115,7 +131,7 @@ export default function Tickets() {
   const { showToast } = useToast();
   const { user } = useAuth();
   const currentEmployeeId = user?.employee?.id;
-  const categoryOptions = getCategoryOptions(user?.role);
+  const categoryOptions = getCategoryOptions(user?.role, user?.isManager === true || user?.employee?.isManager === true);
   const [activeTab, setActiveTab] = useState<"management" | "analytics">("management");
   const [escalationTicket, setEscalationTicket] = useState<any | null>(null);
   const [escalationTarget, setEscalationTarget] = useState<
@@ -177,22 +193,33 @@ export default function Tickets() {
       return (
         ticket.category === "IT Support" ||
         ticket.category === "Infrastructure" ||
-        ticket.assignedTo === "IT_SUPPORT"
+        ticket.assignedTo === "IT_SUPPORT" ||
+        ((user?.isManager === true || user?.employee?.isManager === true) &&
+          ["Complaint", "Manager Concern"].includes(ticket.category))
       );
     }
     if (user?.role === "FINANCE") {
       return (
         ticket.category === "Payroll" ||
         ticket.category === "Payroll Issue" ||
-        ticket.assignedTo === "FINANCE"
+        ticket.assignedTo === "FINANCE" ||
+        ((user?.isManager === true || user?.employee?.isManager === true) &&
+          ["Complaint", "Manager Concern"].includes(ticket.category))
       );
     }
-    if (user?.role === "MANAGER") {
-      // The backend already scopes /tickets to the authenticated manager
-      // using assignedManagerId plus the legacy direct-report Complaint rule.
-      // Do not apply a second assignedManagerId-only filter here, because that
-      // would hide valid legacy Complaint tickets returned by the backend.
-      return ["Complaint", "Manager Concern"].includes(ticket.category);
+    if (user?.role === "MANAGER" || user?.isManager === true || user?.employee?.isManager === true) {
+      // Backend results are already scoped to the user's department role plus
+      // any manager capability. Keep only the union of those relevant ticket
+      // categories in the UI rather than replacing the user's business role.
+      const managerCategories = ["Complaint", "Manager Concern"];
+      if (user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN") {
+        return true;
+      }
+      if (user?.role === "RECRUITER") {
+        return managerCategories.includes(ticket.category) ||
+          ["Recruitment", "Employee Referral"].includes(ticket.category);
+      }
+      return managerCategories.includes(ticket.category);
     }
     if (user?.role === "RECRUITER") {
       // Recruitment ownership is category-based so legacy recruitment

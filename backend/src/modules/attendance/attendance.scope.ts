@@ -14,6 +14,7 @@ export interface AttendanceScopeUser {
   userId: string;
   employeeId?: string | null;
   role: AttendanceScopeRole;
+  isManager?: boolean;
 }
 
 export interface AttendanceScope {
@@ -201,7 +202,7 @@ export async function resolveAttendanceScope(
   // MANAGER
   // ============================================================
 
-  if (user.role === "MANAGER") {
+  if (user.role === "MANAGER" || user.isManager === true) {
     const currentEmployee = await getCurrentEmployee(user);
 
 

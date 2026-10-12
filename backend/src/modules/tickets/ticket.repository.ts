@@ -655,76 +655,53 @@ async function enrichTicketsWithRaisedBy(tickets: any[]) {
 export async function getTicketsForDepartment(
   role: string,
   managerEmployeeId?: string | null,
+  isManager = false,
 ) {
   const normalizedRole = String(role || "").trim();
 
-  // SUPER_ADMIN → all tickets
   if (normalizedRole === "SUPER_ADMIN") {
-    const tickets = await Ticket.find({})
-      .sort({ createdAt: -1 })
-      .lean();
-
+    const tickets = await Ticket.find({}).sort({ createdAt: -1 }).lean();
     return enrichTicketsWithRaisedBy(tickets);
   }
 
-  // HR_ADMIN → HR tickets
-  if (normalizedRole === "HR_ADMIN") {
-    const tickets = await Ticket.find({
-      assignedTo: "HR_ADMIN",
-    })
-      .sort({ createdAt: -1 })
-      .lean();
+  // Department roles only receive tickets explicitly assigned to that role.
+  // Manager capabilities are additive and come from the employee hierarchy,
+  // not from a separate assignable MANAGER role.
+  const roleAssignment: Record<string, string> = {
+    HR_ADMIN: "HR_ADMIN",
+    RECRUITER: "RECRUITER",
+    FINANCE: "FINANCE",
+    IT_SUPPORT: "IT_SUPPORT",
+  };
+  const assignedTo = roleAssignment[normalizedRole];
+  const ticketSets: any[][] = [];
 
-    return enrichTicketsWithRaisedBy(tickets);
-  }
-
-  // RECRUITER → Recruitment tickets
-  if (normalizedRole === "RECRUITER") {
-    const tickets = await Ticket.find({
-      assignedTo: "RECRUITER",
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    return enrichTicketsWithRaisedBy(tickets);
-  }
-
-  // FINANCE → Finance tickets
-  if (normalizedRole === "FINANCE") {
-    const tickets = await Ticket.find({
-      assignedTo: "FINANCE",
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    return enrichTicketsWithRaisedBy(tickets);
-  }
-
-  // IT_SUPPORT → IT tickets
-  if (normalizedRole === "IT_SUPPORT") {
-    const tickets = await Ticket.find({
-      assignedTo: "IT_SUPPORT",
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    return enrichTicketsWithRaisedBy(tickets);
-  }
-
-  // MANAGER → manager/team tickets
-  if (normalizedRole === "MANAGER") {
-    if (!managerEmployeeId) {
-      return [];
-    }
-
-    const tickets = await getTeamGrievanceTickets(
-      String(managerEmployeeId),
+  if (assignedTo) {
+    ticketSets.push(
+      await Ticket.find({ assignedTo }).sort({ createdAt: -1 }).lean(),
     );
-
-    return enrichTicketsWithRaisedBy(tickets);
   }
 
-  return [];
+  if (normalizedRole === "MANAGER" || isManager) {
+    if (managerEmployeeId) {
+      ticketSets.push(
+        await getTeamGrievanceTickets(String(managerEmployeeId)),
+      );
+    }
+  }
+
+  const uniqueTickets = new Map<string, any>();
+  for (const tickets of ticketSets) {
+    for (const ticket of tickets) {
+      uniqueTickets.set(String(ticket._id ?? ticket.id), ticket);
+    }
+  }
+
+  return enrichTicketsWithRaisedBy(
+    [...uniqueTickets.values()].sort((a, b) =>
+      String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")),
+    ),
+  );
 }
 
 // =========================================================

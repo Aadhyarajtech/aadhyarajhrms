@@ -757,6 +757,34 @@ export async function completeOnboarding(id: string, completedBy: string) {
   return enrichEmployee(updated);
 }
 
+export type AssignableEmployeeRole =
+  | "SUPER_ADMIN"
+  | "HR_ADMIN"
+  | "RECRUITER"
+  | "FINANCE"
+  | "IT_SUPPORT"
+  | "EMPLOYEE";
+
+/**
+ * Updates the linked login account role without changing the employee profile,
+ * manager flag, reporting line, or any other employee data.
+ */
+export async function updateEmployeeRole(id: string, role: AssignableEmployeeRole) {
+  const employee = await Employee.findById(id).select("_id userId").lean<any>();
+  if (!employee) throw AppError.notFound("Employee not found.");
+  if (!employee.userId) {
+    throw AppError.badRequest("This employee does not have a linked user account.");
+  }
+
+  const result = await User.updateOne({ _id: employee.userId }, { $set: { role } });
+  if (result.matchedCount === 0) {
+    throw AppError.badRequest("The employee's linked user account could not be found.");
+  }
+
+  const updated = await Employee.findById(id).lean();
+  return enrichEmployee(updated);
+}
+
 export async function getEmployeeByCode(employeeCode: string) {
   const employee = await Employee.findOne({ employeeCode }).lean();
   return employee ? enrichEmployee(employee) : undefined;
@@ -1095,7 +1123,8 @@ export async function getManagersList() {
       // Also retain employees who already have reports, so restored data does
       // not disappear from the manager selector.
       return (
-        role === "MANAGER" ||
+        employee.isManager === true ||
+        role === "MANAGER" || // legacy records remain discoverable until reassigned
         role === "HR_ADMIN" ||
         role === "SUPER_ADMIN" ||
         (reportMap.get(employee._id) ?? 0) > 0

@@ -58,6 +58,7 @@ const roleAllowed =
   !roles || normalizedAllowedRoles.includes(canonicalUserRole);
   const managerAllowed =
     !managerOnly ||
+    user.isManager === true ||
     user.employee?.isManager === true ||
     canonicalUserRole === "SUPER_ADMIN" ||
     canonicalUserRole === "HR_ADMIN";

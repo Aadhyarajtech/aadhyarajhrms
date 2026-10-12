@@ -1,7 +1,7 @@
 export type Role =
   | "SUPER_ADMIN"
   | "HR_ADMIN"
-  | "MANAGER"
+  | "MANAGER" // Legacy-only stored role; do not offer for new assignments.
   | "RECRUITER"
   | "FINANCE"
   | "IT_SUPPORT"

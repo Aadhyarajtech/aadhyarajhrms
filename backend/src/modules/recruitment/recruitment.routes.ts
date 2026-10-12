@@ -2,7 +2,7 @@ import { NextFunction, Request, Response, Router } from "express";
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import { requirePermission } from "@/middleware/permissions";
+import { requirePermission, requireRequisitionApprovalPermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import {
@@ -441,7 +441,7 @@ const approvalSchema = z.object({
 
 recruitmentRouter.patch(
   "/jobs/:id/approve",
-  requirePermission("recruitment.manage"),
+  requireRequisitionApprovalPermission(),
   validate(approvalSchema),
   async (req, res, next) => {
     try {
@@ -479,7 +479,7 @@ const rejectionSchema = z.object({
 
 recruitmentRouter.patch(
   "/jobs/:id/reject",
-  requirePermission("recruitment.manage"),
+  requireRequisitionApprovalPermission(),
   validate(rejectionSchema),
   async (req, res, next) => {
     try {

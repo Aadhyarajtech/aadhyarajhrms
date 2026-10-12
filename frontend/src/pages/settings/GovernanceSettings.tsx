@@ -22,7 +22,6 @@ import { Skeleton } from "@/components/ui/EmptyState";
 const ROLE_ORDER = [
   "SUPER_ADMIN",
   "HR_ADMIN",
-  "MANAGER",
   "RECRUITER",
   "FINANCE",
   "IT_SUPPORT",
@@ -47,9 +46,11 @@ export default function GovernanceSettings() {
     queryFn: GovernanceApi.get,
   });
 
+  // Governance manages permission templates for business roles. MANAGER is
+  // a legacy stored value and must not appear as an assignable role template.
   const roles = useMemo(
     () =>
-      [...(data?.roles ?? [])].sort(
+      [...(data?.roles ?? [])].filter((item) => item.role !== "MANAGER").sort(
         (a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role),
       ),
     [data?.roles],
@@ -175,10 +176,10 @@ export default function GovernanceSettings() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-violet-700">
               <ShieldCheck size={13} />
-              Access Control Center
+              Access control center
             </div>
             <h3 className="mt-3 font-display text-2xl font-semibold tracking-[-0.03em] text-ink">
-              Roles, Permissions & Policies
+              Roles, permissions & policies
             </h3>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-faint">
               Manage built-in HRMS roles, module permissions and organization
@@ -212,7 +213,7 @@ export default function GovernanceSettings() {
       {/* Roles & permissions */}
       <Card className="overflow-hidden border-indigo-100/80 shadow-[0_12px_32px_-25px_rgba(79,70,229,0.28)]">
         <CardHeader
-          title="Roles & Permissions"
+          title="Roles & permissions"
           subtitle="Control which HRMS modules and actions each built-in role can access."
           action={
             <Badge tone="brand">
@@ -227,7 +228,7 @@ export default function GovernanceSettings() {
               No governance roles returned
             </p>
             <p className="mt-1 text-xs text-ink-faint">
-              The Governance API responded Successfully, but no role records were returned.
+              The Governance API responded successfully, but no role records were returned.
             </p>
           </div>
         ) : (
@@ -235,7 +236,7 @@ export default function GovernanceSettings() {
             <div className="rounded-2xl border border-line/60 bg-surface-muted/60 p-2">
               <div className="mb-2 flex items-center justify-between px-2 py-1">
                 <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
-                  Built-in Roles
+                  Built-in roles
                 </span>
                 <span className="text-[10px] text-ink-faint">{roles.length}</span>
               </div>
@@ -260,7 +261,7 @@ export default function GovernanceSettings() {
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
                       <span className="text-[11px] opacity-70">
-                        {item.permissions.length} Permissions
+                        {item.permissions.length} permissions
                       </span>
                       {item.role === "SUPER_ADMIN" && (
                         <span className="text-[9px] font-bold uppercase tracking-[0.1em] opacity-60">
@@ -292,7 +293,7 @@ export default function GovernanceSettings() {
                     </div>
                     {role.role === "SUPER_ADMIN" ? (
                       <Badge tone="gold">
-                        <LockKeyhole size={12} /> Full Access
+                        <LockKeyhole size={12} /> Full access
                       </Badge>
                     ) : (
                       <Badge tone="neutral">Configurable</Badge>
@@ -303,7 +304,7 @@ export default function GovernanceSettings() {
                 {!groupedPermissions.length ? (
                   <div className="rounded-2xl border border-dashed border-line px-5 py-10 text-center">
                     <p className="text-sm font-semibold text-ink">
-                      No Permissions Returned
+                      No permissions returned
                     </p>
                     <p className="mt-1 text-xs text-ink-faint">
                       The role exists, but the permission catalog is empty.
@@ -379,7 +380,7 @@ export default function GovernanceSettings() {
                     isLoading={roleMutation.isPending}
                     onClick={() => roleMutation.mutate()}
                   >
-                    Save Permissions
+                    Save permissions
                   </Button>
                 </div>
               </div>
@@ -475,7 +476,7 @@ export default function GovernanceSettings() {
                 isLoading={policyMutation.isPending}
                 onClick={() => policyMutation.mutate()}
               >
-                Save Policies
+                Save policies
               </Button>
             </div>
           </>

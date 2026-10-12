@@ -50,6 +50,7 @@ import {
 import { RecruitmentApi, EmployeesApi } from "@/lib/endpoints";
 import { api, getErrorMessage, resolveAssetUrl } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
+import { useAuth } from "@/context/AuthContext";
 
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -225,6 +226,20 @@ export default function JobDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { user, hasPermission } = useAuth();
+
+  // These two Recruitment Team Leads retain the RECRUITER role, but are
+  // explicitly authorized to approve/reject requisitions. The backend has
+  // the matching user-specific authorization check in place.
+  const isRecruitmentHead =
+    user?.role === "RECRUITER" &&
+    [
+      "geetha.balachandran@aadhyarajtech.com",
+      "meghana.sahithi@aadhyarajtech.com",
+    ].includes(user.email.trim().toLowerCase());
+
+  const canApproveRequisitions =
+    hasPermission("recruitment.requisition.approve") || isRecruitmentHead;
 
   const [addOpen, setAddOpen] = useState(false);
   const [scheduleFor, setScheduleFor] = useState<Candidate | null>(null);
@@ -754,6 +769,7 @@ export default function JobDetail() {
       {job && (
         <RequisitionPanel
           job={job}
+          canApproveRequisitions={canApproveRequisitions}
           approvePending={approveMutation.isPending}
           rejectPending={rejectMutation.isPending}
           onApprove={() => approveMutation.mutate()}
@@ -2723,12 +2739,14 @@ function RecruitmentAtsToolsModal({
 
 function RequisitionPanel({
   job,
+  canApproveRequisitions,
   approvePending,
   rejectPending,
   onApprove,
   onReject,
 }: {
   job: RecruitmentJob;
+  canApproveRequisitions: boolean;
   approvePending: boolean;
   rejectPending: boolean;
   onApprove: () => void;
@@ -2761,7 +2779,7 @@ function RequisitionPanel({
           </p>
         </div>
 
-        {job.requisitionStatus === "PENDING_APPROVAL" && (
+        {canApproveRequisitions && job.requisitionStatus === "PENDING_APPROVAL" && (
           <div className="flex gap-2">
             <Button
               variant="outline"

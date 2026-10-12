@@ -39,8 +39,9 @@ async function scopeEmployeeIds(
   role: string,
   employeeId: string | null,
   departmentId?: string,
+  isManager = false,
 ) {
-  if (role !== "MANAGER" || !employeeId) {
+  if ((role !== "MANAGER" && !isManager) || !employeeId) {
     if (!departmentId) return undefined;
     const rows = await Employee.find({ departmentId }).select("_id").lean();
     return rows.map((row) => row._id);
@@ -866,11 +867,13 @@ export async function getReports(
   filters: ReportFilters,
   role: string,
   employeeId: string | null,
+  isManager = false,
 ) {
   const employeeIds = await scopeEmployeeIds(
     role,
     employeeId,
     filters.departmentId,
+    isManager,
   );
 
   const [
@@ -897,7 +900,7 @@ export async function getReports(
 
   return {
     filters,
-    scope: role === "MANAGER" ? "TEAM" : "ORGANIZATION",
+    scope: role === "MANAGER" || isManager ? "TEAM" : "ORGANIZATION",
     workforce: workforceData,
     attendance: attendanceData,
     leave: leaveData,

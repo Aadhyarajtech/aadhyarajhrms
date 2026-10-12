@@ -66,8 +66,8 @@ function getDisplayAttendanceStatus(
 }
 
 export default function Attendance() {
-  const { hasPermission } = useAuth();
-  const isManager = hasPermission("attendance.manage");
+  const { user, hasPermission } = useAuth();
+  const isManager = hasPermission("attendance.manage") || user?.isManager === true;
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const initialTab: string =

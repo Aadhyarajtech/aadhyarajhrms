@@ -402,8 +402,16 @@ export async function runSeed() {
   function findByTitle(title: string) {
     return allEmployees.filter((e) => e.designationTitle === title);
   }
-  async function reassignDemoAccount(employee: SeededEmployee, email: string, role: string) {
+  async function reassignDemoAccount(
+    employee: SeededEmployee,
+    email: string,
+    role: string,
+    isManager?: boolean,
+  ) {
     await User.updateOne({ _id: employee.userId }, { $set: { email, role } });
+    if (typeof isManager === "boolean") {
+      await Employee.updateOne({ _id: employee.id }, { $set: { isManager } });
+    }
     employee.email = email;
     return employee;
   }
@@ -415,10 +423,10 @@ export async function runSeed() {
   const financeManager = findByTitle("Finance Manager")[0];
   const swEngineeringReport = allEmployees.find((e) => e.managerId === engManager?.id) ?? findByTitle("Senior Software Engineer")[0];
   const itSupportSpecialist =findByTitle("IT Support Specialist")[0];
-
+  
   await reassignDemoAccount(itVp, "admin@aadhyaraj.com", "SUPER_ADMIN");
   await reassignDemoAccount(hrVp, "hr.admin@aadhyaraj.com", "HR_ADMIN");
-  await reassignDemoAccount(engManager, "manager.demo@aadhyaraj.com", "MANAGER");
+  await reassignDemoAccount(engManager, "manager.demo@aadhyaraj.com", "EMPLOYEE", true);
   await reassignDemoAccount(taSpecialist, "recruiter.demo@aadhyaraj.com", "RECRUITER");
   await reassignDemoAccount(financeManager, "finance.demo@aadhyaraj.com", "FINANCE");
   await reassignDemoAccount(swEngineeringReport, "employee.demo@aadhyaraj.com", "EMPLOYEE");

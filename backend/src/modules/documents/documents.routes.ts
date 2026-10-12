@@ -194,7 +194,7 @@ documentsRouter.post(
       );
       let isAuthorized = isOwner || isAdminPrivileged;
 
-      if (!isAuthorized && req.user!.role === "MANAGER") {
+      if (!isAuthorized && (req.user!.role === "MANAGER" || req.user!.isManager)) {
         isAuthorized = await repo.isDirectReport(
           req.user!.employeeId as string,
           employeeId,
@@ -249,7 +249,7 @@ documentsRouter.get("/:id/download", async (req, res, next) => {
     );
     let isAuthorized = isOwner || isAdminPrivileged;
 
-    if (!isAuthorized && req.user!.role === "MANAGER") {
+    if (!isAuthorized && (req.user!.role === "MANAGER" || req.user!.isManager)) {
       isAuthorized = await repo.isDirectReport(
         req.user!.employeeId as string,
         String(document.employeeId),
@@ -305,7 +305,7 @@ documentsRouter.patch(
     try {
       const isReviewer = ["SUPER_ADMIN", "HR_ADMIN"].includes(
         req.user!.role,
-      );
+      ) || req.user!.isManager === true;
       if (!isReviewer) {
         throw AppError.forbidden();
       }
@@ -313,7 +313,7 @@ documentsRouter.patch(
         throw AppError.badRequest("Rejection reason is required.");
       }
 
-      if (req.user!.role === "MANAGER") {
+      if (req.user!.role === "MANAGER" || req.user!.isManager) {
         const existing = await repo.getDocument(req.params.id);
         if (!existing) throw AppError.notFound("Document not found.");
         const allowed = await repo.isDirectReport(
@@ -345,7 +345,7 @@ documentsRouter.post(
     try {
       const role = req.user!.role;
       const wantsToRequestFromEmployee = !!req.body.employeeId;
-      const isPrivilegedRequester = REQUESTER_ROLES.includes(role);
+      const isPrivilegedRequester = REQUESTER_ROLES.includes(role) || req.user!.isManager === true;
       const isEmployeeRequester = !!req.user!.employeeId;
 
       let direction: "COMPANY_TO_EMPLOYEE" | "EMPLOYEE_TO_COMPANY";
@@ -359,7 +359,7 @@ documentsRouter.post(
             "This document type cannot be requested from an employee.",
           );
         }
-        if (role === "MANAGER") {
+        if (role === "MANAGER" || req.user!.isManager) {
           const allowed = await repo.isDirectReport(
             req.user!.employeeId as string,
             req.body.employeeId,

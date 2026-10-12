@@ -479,22 +479,40 @@ employeesRouter.get(
 
 employeesRouter.get(
   "/:id",
-  requirePermission("employees.view"),
+  // Employees may read their own profile without needing the directory-wide
+  // employees.view permission. All other profile reads still pass through the
+  // existing permission system, and employees cannot use this endpoint to read
+  // another person's profile by changing the URL ID.
+  async (req, res, next) => {
+    try {
+      const requester = req.user;
+      if (!requester) return next(AppError.unauthorized());
+
+      const requestedId = String(req.params.id ?? "");
+      const linkedEmployee = await repo.getEmployeeByUserId(requester.userId);
+      const linkedEmployeeId = String(
+        (linkedEmployee as any)?.id ?? (linkedEmployee as any)?._id ?? "",
+      );
+      const tokenEmployeeId = String(requester.employeeId ?? "");
+      const isSelf =
+        (!!linkedEmployeeId && linkedEmployeeId === requestedId) ||
+        (!!tokenEmployeeId && tokenEmployeeId === requestedId);
+
+      if (requester.role === "EMPLOYEE" && !isSelf) {
+        return next(AppError.forbidden());
+      }
+
+      if (isSelf) return next();
+
+      return requirePermission("employees.view")(req, res, next);
+    } catch (err) {
+      return next(err);
+    }
+  },
   async (req, res, next) => {
     try {
       const employee = await repo.getEmployeeById(req.params.id);
-
-      if (!employee) {
-        throw AppError.notFound("Employee not found.");
-      }
-
-      if (
-        req.user?.role === "EMPLOYEE" &&
-        req.user.employeeId !== req.params.id
-      ) {
-        throw AppError.forbidden();
-      }
-
+      if (!employee) throw AppError.notFound("Employee not found.");
       res.json({ employee });
     } catch (err) {
       next(err);
@@ -519,14 +537,16 @@ employeesRouter.get(
 
       // Managers may only request their own direct reports.
       if (
-        requester.role === "MANAGER" &&
+        requester.isManager &&
+        requester.role !== "SUPER_ADMIN" &&
+        requester.role !== "HR_ADMIN" &&
         requester.employeeId !== employeeId
       ) {
         throw AppError.forbidden();
       }
 
       // Employees cannot access direct-report lists.
-      if (!isAdmin && requester.role !== "MANAGER") {
+      if (!isAdmin && !requester.isManager) {
         throw AppError.forbidden();
       }
 
@@ -567,9 +587,9 @@ const createEmployeeSchema = z.object({
     .enum([
       "SUPER_ADMIN",
       "HR_ADMIN",
-      "MANAGER",
       "RECRUITER",
       "FINANCE",
+      "IT_SUPPORT",
       "EMPLOYEE",
     ])
     .default("EMPLOYEE"),

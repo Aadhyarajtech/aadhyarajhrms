@@ -4,7 +4,6 @@ import { genId } from "@/utils/id";
 export const GOVERNANCE_ROLES = [
   "SUPER_ADMIN",
   "HR_ADMIN",
-  "MANAGER",
   "RECRUITER",
   "FINANCE",
   "IT_SUPPORT",

@@ -111,6 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string): Promise<AuthUser> => {
       queryClient.clear();
 
+      // The API response contains the server-resolved role and manager
+      // capability. Do not infer or rewrite role from employee.isManager.
       const { token, user: loggedInUser } = await AuthApi.login(
         email,
         password,

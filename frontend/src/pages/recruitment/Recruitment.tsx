@@ -244,11 +244,14 @@ const STAGE_ORDER = [
 
 export default function Recruitment() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  // Only roles that already manage recruitment can access the management workspace.
-  // Every other authenticated role receives the read-only available-roles view.
+  const { user, hasPermission } = useAuth();
+  // Keep recruitment management limited to the existing authorized roles or
+  // users explicitly granted the recruitment.manage permission.
   const role = String(user?.role ?? "").trim().toUpperCase();
-  const canManageRecruitment = ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER"].includes(role);
+  const canManageRecruitment =
+    hasPermission("recruitment.manage") ||
+    ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER"].includes(role);
+  // Other authenticated roles receive the read-only available-roles view.
   const isEmployeeView = !canManageRecruitment;
   const [postOpen, setPostOpen] = useState(false);
   const [selectedAvailableJob, setSelectedAvailableJob] = useState<any | null>(null);
@@ -668,12 +671,14 @@ export default function Recruitment() {
         title="Recruitment"
         subtitle="Manage job requisitions, approvals, postings, and every candidate's journey."
         action={
-          <Button
-            leftIcon={<Plus size={16} />}
-            onClick={() => setPostOpen(true)}
-          >
-            Create requisition
-          </Button>
+          canManageRecruitment ? (
+            <Button
+              leftIcon={<Plus size={16} />}
+              onClick={() => setPostOpen(true)}
+            >
+              Create requisition
+            </Button>
+          ) : undefined
         }
       />
 

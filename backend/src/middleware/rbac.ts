@@ -12,10 +12,16 @@ export function requireRole(...roles: AuthUser["role"][]) {
       return next(AppError.unauthorized());
     }
 
-    if (!roles.includes(req.user.role)) {
+    // Manager is a capability derived from Employee.isManager/reporting lines,
+    // not a separately assignable business role. Keep legacy routes working by
+    // interpreting a requested MANAGER gate as the manager capability.
+    const requestsManagerCapability = roles.includes("MANAGER" as AuthUser["role"]);
+    const roleAllowed = req.user.role !== "MANAGER" && roles.includes(req.user.role);
+    const managerCapabilityAllowed = requestsManagerCapability && req.user.isManager === true;
+    if (!roleAllowed && !managerCapabilityAllowed) {
       return next(
         AppError.forbidden(
-          `This action requires one of the following roles: ${roles.join(", ")}`
+          `This action requires one of the following roles or an authorized reporting-manager capability: ${roles.join(", ")}`
         )
       );
     }
@@ -41,12 +47,17 @@ export const isAdminOrRecruiter = requireRole(
   "RECRUITER"
 );
 
-export const isAdminOrRecruiterOrManager = requireRole(
-  "SUPER_ADMIN",
-  "HR_ADMIN",
-  "RECRUITER",
-  "MANAGER"
-);
+export function isAdminOrRecruiterOrManager(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
+  if (!req.user) return next(AppError.unauthorized());
+  if (["SUPER_ADMIN", "HR_ADMIN", "RECRUITER"].includes(req.user.role) || req.user.isManager) {
+    return next();
+  }
+  return next(AppError.forbidden("This action requires an administrator, recruiter, or reporting manager."));
+}
 
 export function isManagerOrAbove(
   req: Request,
@@ -57,7 +68,6 @@ export function isManagerOrAbove(
   if (
     req.user.role === "SUPER_ADMIN" ||
     req.user.role === "HR_ADMIN" ||
-    req.user.role === "MANAGER" ||
     req.user.isManager
   ) {
     return next();

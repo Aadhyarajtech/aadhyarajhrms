@@ -21,6 +21,8 @@ export interface UserDoc {
   _id: string;
   email: string;
   passwordHash: string;
+  // MANAGER is retained for legacy persisted users only. New role assignment
+  // endpoints intentionally expose only the six supported business roles.
   role:
   | "SUPER_ADMIN"
   | "HR_ADMIN"

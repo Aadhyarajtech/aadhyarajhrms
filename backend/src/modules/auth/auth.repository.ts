@@ -115,9 +115,7 @@ export async function findAuthProfile(
     designationTitle,
     isManager:
       !!employee &&
-      (employee.isManager === true ||
-        hasDirectReports ||
-        user.role === "MANAGER"),
+      (user.role === "MANAGER" || employee.isManager === true || hasDirectReports),
   };
 }
 

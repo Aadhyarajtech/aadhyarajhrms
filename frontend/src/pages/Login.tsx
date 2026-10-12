@@ -394,7 +394,7 @@ Adithya Nuthakki· Chief Executive Officer, Aadhyaraj Technologies
           <div className="mb-8 lg:hidden">
             <BrandWordmark />
           </div>
-          <h1 className="font-display text-2xl font-medium text-ink">Welcome back</h1>
+          <h1 className="font-display text-2xl font-medium text-ink">Welcome Back</h1>
           <p className="mt-1.5 text-sm text-ink-faint">
             Sign in to your Aadhyaraj HRMS workspace.
           </p>

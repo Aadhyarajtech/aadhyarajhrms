@@ -607,6 +607,7 @@ attendanceRouter.get("/ai-anomalies", async (req, res, next) => {
         userId: req.user!.userId,
         employeeId: req.user!.employeeId,
         role: req.user!.role,
+        isManager: req.user!.isManager,
       },
       requestedEmployeeId,
     );
@@ -717,6 +718,7 @@ attendanceRouter.get("/ai-forecast", async (req, res, next) => {
         userId: req.user!.userId,
         employeeId: req.user!.employeeId,
         role: req.user!.role,
+        isManager: req.user!.isManager,
       },
       requestedEmployeeId,
     );
@@ -1014,6 +1016,7 @@ attendanceRouter.get("/ai-patterns", async (req, res, next) => {
         userId: req.user!.userId,
         employeeId: req.user!.employeeId,
         role: req.user!.role,
+        isManager: req.user!.isManager,
       },
       requestedEmployeeId,
     );
@@ -1454,6 +1457,7 @@ attendanceRouter.get("/smart-regularization", async (req, res, next) => {
         userId: req.user!.userId,
         employeeId: req.user!.employeeId,
         role: req.user!.role,
+        isManager: req.user!.isManager,
       },
       requestedEmployeeId,
     );
@@ -1592,6 +1596,7 @@ attendanceRouter.get("/ai-insights", async (req, res, next) => {
         userId: req.user!.userId,
         employeeId: req.user!.employeeId,
         role: req.user!.role,
+        isManager: req.user!.isManager,
       },
       requestedEmployeeId,
     );
@@ -1656,6 +1661,7 @@ attendanceRouter.post(
           userId: req.user!.userId,
           employeeId: req.user!.employeeId,
           role: req.user!.role,
+        isManager: req.user!.isManager,
         },
         requestedEmployeeId,
       );

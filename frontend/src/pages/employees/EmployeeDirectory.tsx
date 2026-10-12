@@ -45,9 +45,9 @@ const addEmployeeSchema = z.object({
   role: z.enum([
     "SUPER_ADMIN",
     "HR_ADMIN",
-    "MANAGER",
     "RECRUITER",
     "FINANCE",
+    "IT_SUPPORT",
     "EMPLOYEE",
   ]),
   temporaryPassword: z.string().min(8, "At least 8 characters"),
@@ -147,6 +147,18 @@ export default function EmployeeDirectory() {
       );
     }
   };
+
+  const [roleDrafts, setRoleDrafts] = useState<Record<string, string>>({});
+
+  const roleMutation = useMutation({
+    mutationFn: ({ id, role }: { id: string; role: "SUPER_ADMIN" | "HR_ADMIN" | "RECRUITER" | "FINANCE" | "IT_SUPPORT" | "EMPLOYEE" }) =>
+      EmployeesApi.updateRole(id, role),
+    onSuccess: (employee) => {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      showToast(`Role updated for ${employee.firstName} ${employee.lastName}.`);
+    },
+    onError: (err) => showToast(getErrorMessage(err), "error"),
+  });
 
   const createMutation = useMutation({
     mutationFn: EmployeesApi.create,
@@ -395,6 +407,43 @@ export default function EmployeeDirectory() {
                   </div>
                 </div>
 
+                {isAdmin && (
+                  <div
+                    className="mt-3 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <label className="block text-[11px] font-semibold text-slate-600" htmlFor={`role-${emp.id}`}>
+                      System role
+                    </label>
+                    <select
+                      id={`role-${emp.id}`}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-700"
+                      value={roleDrafts[emp.id] ?? (emp.role === "MANAGER" ? "EMPLOYEE" : emp.role ?? "EMPLOYEE")}
+                      onChange={(event) => setRoleDrafts((current) => ({ ...current, [emp.id]: event.target.value }))}
+                    >
+                      <option value="EMPLOYEE">Employee</option>
+                      <option value="RECRUITER">Recruitment Team</option>
+                      <option value="FINANCE">Finance</option>
+                      <option value="IT_SUPPORT">IT Support</option>
+                      <option value="HR_ADMIN">Admin</option>
+                      {user?.role === "SUPER_ADMIN" && <option value="SUPER_ADMIN">Super Admin</option>}
+                    </select>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={roleMutation.isPending || (roleDrafts[emp.id] ?? (emp.role === "MANAGER" ? "EMPLOYEE" : emp.role ?? "EMPLOYEE")) === emp.role}
+                      onClick={() => {
+                        const role = roleDrafts[emp.id] ?? (emp.role === "MANAGER" ? "EMPLOYEE" : emp.role ?? "EMPLOYEE");
+                        if (["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"].includes(role)) {
+                          roleMutation.mutate({ id: emp.id, role: role as "SUPER_ADMIN" | "HR_ADMIN" | "RECRUITER" | "FINANCE" | "IT_SUPPORT" | "EMPLOYEE" });
+                        }
+                      }}
+                    >
+                      Save role
+                    </Button>
+                  </div>
+                )}
+
                 <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
                   <p className="flex min-w-0 items-start gap-1.5 text-[11px] text-slate-500">
                     <Mail size={12} className="mt-0.5 shrink-0 text-slate-400" />
@@ -552,10 +601,10 @@ export default function EmployeeDirectory() {
 
           <SelectField label="System role" required {...register("role")}>
             <option value="EMPLOYEE">Employee</option>
-            <option value="MANAGER">Manager</option>
-            <option value="RECRUITER">Recruiter</option>
+            <option value="RECRUITER">Recruitment Team</option>
             <option value="FINANCE">Finance</option>
-            <option value="HR_ADMIN">HR Admin</option>
+            <option value="HR_ADMIN">Admin</option>
+            <option value="IT_SUPPORT">IT Support</option>
             <option value="SUPER_ADMIN">Super Admin</option>
           </SelectField>
 

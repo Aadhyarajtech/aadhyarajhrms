@@ -16,6 +16,7 @@ import { nowIso } from "../../db/connection";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { sendRecruitmentEmail } from "@/services/email.service";
 import { env } from "@/config/env";
+import { isRecruitmentHeadEmail } from "./requisitionApprovalAccess";
 import {
   generateInterviewCopilotAI,
   generateJobRequisitionAI,
@@ -57,6 +58,22 @@ async function notifyRecruitmentTeam(input: {
       }),
     ),
   );
+}
+
+
+/**
+ * Approval is limited to admins and the two named recruitment heads.
+ * This check lives in the repository as well as the route guard so direct API
+ * calls cannot let an ordinary recruiter approve or reject a requisition.
+ */
+async function canActAsRequisitionApprover(userId: string): Promise<boolean> {
+  const user = (await User.findById(userId)
+    .select("_id email role isActive")
+    .lean()) as AnyDoc | null;
+
+  if (!user || user.isActive === false) return false;
+  if (user.role === "SUPER_ADMIN" || user.role === "HR_ADMIN") return true;
+  return user.role === "RECRUITER" && isRecruitmentHeadEmail(user.email);
 }
 
 async function notifyCandidateEmail(
@@ -872,6 +889,10 @@ export async function approveJob(
     return undefined;
   }
 
+  if (!(await canActAsRequisitionApprover(approverId))) {
+    throw new Error("You are not authorized to approve this requisition.");
+  }
+
   const approvalSteps = ((job as AnyDoc).approvalSteps ?? []) as AnyDoc[];
 
   // Legacy/single-step requisitions without an approval workflow.
@@ -939,9 +960,10 @@ export async function approveJob(
     return getJobPosting(id);
   }
 
-  // Only the assigned approver can approve the current step.
+  // Admins and the two designated recruitment heads may act on the current
+  // pending step. Record the actual actor in the step for an accurate audit trail.
   if (String(pendingStep.approverId) !== String(approverId)) {
-    throw new Error("You are not the current approver for this requisition.");
+    pendingStep.approverId = approverId;
   }
 
   pendingStep.status = "APPROVED";
@@ -987,6 +1009,10 @@ export async function rejectJob(
     return undefined;
   }
 
+  if (!(await canActAsRequisitionApprover(approverId))) {
+    throw new Error("You are not authorized to reject this requisition.");
+  }
+
   const rejectionReason = reason.trim();
 
   if (!rejectionReason) {
@@ -1003,13 +1029,13 @@ export async function rejectJob(
     (step: AnyDoc) => step.status === "PENDING",
   );
 
-  if (
-    !currentPendingStep ||
-    String(currentPendingStep.approverId) !== String(approverId)
-  ) {
-    throw new Error("You are not the current approver for this requisition.");
+  if (!currentPendingStep) {
+    throw new Error("There is no pending approval step for this requisition.");
   }
 
+  // Record the person who actually rejected the requisition, even when an
+  // admin or designated recruitment head acts on another user's pending step.
+  currentPendingStep.approverId = approverId;
   currentPendingStep.status = "REJECTED";
 
   currentPendingStep.actedAt = nowIso();

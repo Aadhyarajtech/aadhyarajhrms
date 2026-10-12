@@ -569,13 +569,13 @@ performanceRouter.get("/goals", async (req, res, next) => {
     }
 
     if (requestedEmployeeId && requestedEmployeeId !== employeeId) {
-      if (!["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role)) {
+      if (!["SUPER_ADMIN", "HR_ADMIN"].includes(role) && req.user!.isManager !== true) {
         throw AppError.forbidden(
           "You are not authorized to view another employee's goals.",
         );
       }
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager === true) {
         const employee = (await getEmployeeById(requestedEmployeeId)) as any;
         if (!employee || employee.managerId !== employeeId) {
           throw AppError.forbidden(
@@ -631,13 +631,13 @@ performanceRouter.post(
       // Managers can create goals only for direct reports.
       // HR Admins and Super Admins can create goals for any employee.
       if (targetEmployeeId !== creatorEmployeeId) {
-        if (!["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role)) {
+        if (!["SUPER_ADMIN", "HR_ADMIN"].includes(role) && req.user!.isManager !== true) {
           throw AppError.forbidden(
             "You are not authorized to assign goals to another employee.",
           );
         }
 
-        if (role === "MANAGER") {
+        if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = (await getEmployeeById(targetEmployeeId)) as any;
           if (!employee) {
             throw AppError.notFound("Employee not found.");
@@ -752,7 +752,7 @@ performanceRouter.patch(
       if (goal.employeeId !== employeeId) {
         if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
-        } else if (role === "MANAGER") {
+        } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = (await getEmployeeById(goal.employeeId)) as any;
           if (!employee || employee.managerId !== employeeId) {
             throw AppError.forbidden(
@@ -841,7 +841,7 @@ performanceRouter.delete(
       if (goal.employeeId !== employeeId) {
         if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
           // Privileged roles may delete any goal.
-        } else if (role === "MANAGER") {
+        } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = (await getEmployeeById(goal.employeeId)) as any;
           if (!employee || employee.managerId !== employeeId) {
             throw AppError.forbidden(
@@ -881,7 +881,7 @@ performanceRouter.patch(
       if (goal.employeeId !== employeeId) {
         if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
-        } else if (role === "MANAGER") {
+        } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = await getEmployeeById(goal.employeeId) as any;
           if (!employee || employee.managerId !== employeeId) {
             throw AppError.forbidden(
@@ -929,7 +929,7 @@ performanceRouter.patch(
       if (goal.employeeId !== employeeId) {
         if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
-        } else if (role === "MANAGER") {
+        } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = (await getEmployeeById(goal.employeeId)) as any;
           if (!employee || employee.managerId !== employeeId) {
             throw AppError.forbidden(
@@ -970,7 +970,7 @@ performanceRouter.patch(
       if (goal.employeeId !== employeeId) {
         if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
-        } else if (role === "MANAGER") {
+        } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = (await getEmployeeById(goal.employeeId)) as any;
           if (!employee || employee.managerId !== employeeId) {
             throw AppError.forbidden(
@@ -1021,13 +1021,13 @@ performanceRouter.get("/goals/cascade", async (req, res, next) => {
     const targetEmployeeId = requestedEmployeeId ?? employeeId;
 
     if (targetEmployeeId !== employeeId) {
-      if (!["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role)) {
+      if (!["SUPER_ADMIN", "HR_ADMIN"].includes(role) && req.user!.isManager !== true) {
         throw AppError.forbidden(
           "You are not authorized to view another employee's goal cascade.",
         );
       }
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager === true) {
         const employee = await getEmployeeById(targetEmployeeId) as any;
         if (!employee || employee.managerId !== employeeId) {
           throw AppError.forbidden(
@@ -1057,13 +1057,13 @@ performanceRouter.get("/goals/trend", async (req, res, next) => {
     const requestedEmployeeId = req.query.employeeId as string | undefined;
 
     if (requestedEmployeeId && requestedEmployeeId !== employeeId) {
-      if (!["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role)) {
+      if (!["SUPER_ADMIN", "HR_ADMIN"].includes(role) && req.user!.isManager !== true) {
         throw AppError.forbidden(
           "You are not authorized to view another employee's goal trend.",
         );
       }
 
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager === true) {
         const employee = (await getEmployeeById(requestedEmployeeId)) as any;
         if (!employee || employee.managerId !== employeeId) {
           throw AppError.forbidden(
@@ -1165,7 +1165,7 @@ performanceRouter.post(
       const reviewee = (await getEmployeeById(req.body.revieweeEmployeeId)) as any;
       if (!reviewer || !reviewee) throw AppError.notFound("Reviewer or reviewee not found.");
       if (reviewer.id === reviewee.id) throw AppError.badRequest("Reviewer and reviewee must be different employees.");
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager === true) {
         if (reviewer.managerId !== employeeId || reviewee.managerId !== employeeId) {
           throw AppError.forbidden("Managers can only assign 360 feedback within their direct-report team.");
         }
@@ -1878,7 +1878,7 @@ performanceRouter.get(
       const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
 
       const reviewFilters: any = {};
-      if (role === "MANAGER") {
+      if (role === "MANAGER" || req.user!.isManager === true) {
         reviewFilters.reviewerId = employeeId;
       } else if (!isPrivileged) {
         reviewFilters.revieweeId = employeeId;
@@ -1919,7 +1919,7 @@ performanceRouter.get(
 
       // Managers may only inspect their direct reports' goals through the
       // employeeId filter; non-privileged users remain restricted to themselves.
-      if (role === "MANAGER" && goalEmployeeId !== employeeId) {
+      if ((role === "MANAGER" || req.user!.isManager === true) && goalEmployeeId !== employeeId) {
         const employee = (await getEmployeeById(goalEmployeeId)) as any;
         if (!employee || employee.managerId !== employeeId) {
           throw AppError.forbidden(
@@ -1931,6 +1931,7 @@ performanceRouter.get(
       if (
         !isPrivileged &&
         role !== "MANAGER" &&
+        req.user!.isManager !== true &&
         goalEmployeeId !== employeeId
       ) {
         throw AppError.forbidden(
@@ -1971,7 +1972,7 @@ performanceRouter.get(
           : 0;
 
       const pips = await repo.listPips(
-        role === "MANAGER"
+        (role === "MANAGER" || req.user!.isManager === true)
           ? { managerId: employeeId }
           : isPrivileged
             ? { employeeId: req.query.employeeId as string | undefined }

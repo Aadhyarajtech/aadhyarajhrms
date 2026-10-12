@@ -63,7 +63,6 @@ const NAV_ITEMS: NavItem[] = [
     roles: [
       "SUPER_ADMIN",
       "HR_ADMIN",
-      "MANAGER",
       "RECRUITER",
       "FINANCE",
       "IT_SUPPORT",
@@ -94,7 +93,6 @@ const NAV_ITEMS: NavItem[] = [
     roles: [
       "SUPER_ADMIN",
       "HR_ADMIN",
-      "MANAGER",
       "RECRUITER",
       "FINANCE",
       "IT_SUPPORT",
@@ -186,6 +184,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/app/recruitment",
     label: "Recruitment",
     icon: Briefcase,
+    permission: "recruitment.view",
     roles: [
       "SUPER_ADMIN",
       "HR_ADMIN",
@@ -201,7 +200,6 @@ const NAV_ITEMS: NavItem[] = [
   roles: [
     "SUPER_ADMIN",
     "HR_ADMIN",
-    "MANAGER",
     "RECRUITER",
     "FINANCE",
     "IT_SUPPORT",
@@ -221,7 +219,6 @@ const NAV_ITEMS: NavItem[] = [
   roles: [
     "SUPER_ADMIN",
     "HR_ADMIN",
-    "MANAGER",
     "RECRUITER",
     "FINANCE",
     "IT_SUPPORT",
@@ -261,12 +258,12 @@ export function Sidebar({
   const role = user?.role;
 
   /* -------------------------------------------------------
-     FILTER NAVIGATION BY ROLE
-     
-     All non-EMPLOYEE roles receive the full sidebar.
-     EMPLOYEE receives only items explicitly containing
-     EMPLOYEE in their roles list or items without a role
-     restriction.
+     FILTER NAVIGATION BY ROLE AND PERMISSION
+
+     Role-restricted items require an explicitly allowed business role.
+     Permission-restricted items require the matching governance permission.
+     My Team is a capability-based exception: managers keep their real
+     business role and gain access through isManager/reporting relationships.
   ------------------------------------------------------- */
 
   const items = NAV_ITEMS.filter((item) => {
@@ -274,7 +271,6 @@ export function Sidebar({
       return (
         role === "SUPER_ADMIN" ||
         role === "HR_ADMIN" ||
-        role === "MANAGER" ||
         user?.isManager === true ||
         user?.employee?.isManager === true
       );
