@@ -345,7 +345,7 @@ export async function createDocumentRequest(input: {
     }
   } else {
     const recipients = await User.find({
-      role: { $in: ["SUPER_ADMIN", "HR_ADMIN", "ADMIN"] },
+      role: { $in: ["SUPER_ADMIN", "ADMIN", "ADMIN"] },
       isActive: true,
     }).lean();
     for (const recipient of recipients) {

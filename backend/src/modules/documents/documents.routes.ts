@@ -76,8 +76,8 @@ const ALL_DOC_TYPES = [
   "OTHER",
 ] as const;
 
-const REQUESTER_ROLES = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"];
-const COMPANY_PROCESSOR_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
+const REQUESTER_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"];
+const COMPANY_PROCESSOR_ROLES = ["SUPER_ADMIN", "ADMIN"];
 
 // --- Schemas ---
 const directUploadTypeSchema = z.enum(ALL_DOC_TYPES);
@@ -119,7 +119,7 @@ documentsRouter.get("/employee/:employeeId", async (req, res, next) => {
   try {
     const targetEmployeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
     const isOwner = targetEmployeeId === String(req.user!.employeeId ?? "");
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+    const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
     if (!isOwner && !isPrivileged) throw AppError.forbidden();
     res.json({ documents: await repo.listDocuments(targetEmployeeId) });
   } catch (err) {
@@ -189,7 +189,7 @@ documentsRouter.post(
 
       // --- Normal, non-request-based upload ---
       const isOwner = employeeId === String(req.user!.employeeId ?? "");
-      const isAdminPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(
+      const isAdminPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(
         req.user!.role,
       );
       let isAuthorized = isOwner || isAdminPrivileged;
@@ -244,7 +244,7 @@ documentsRouter.get("/:id/download", async (req, res, next) => {
     if (!document) throw AppError.notFound("Document not found.");
 
     const isOwner = String(document.employeeId) === String(req.user!.employeeId ?? "");
-    const isAdminPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(
+    const isAdminPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(
       req.user!.role,
     );
     let isAuthorized = isOwner || isAdminPrivileged;
@@ -303,7 +303,7 @@ documentsRouter.patch(
   validate(documentReviewSchema),
   async (req, res, next) => {
     try {
-      const isReviewer = ["SUPER_ADMIN", "HR_ADMIN"].includes(
+      const isReviewer = ["SUPER_ADMIN", "ADMIN"].includes(
         req.user!.role,
       ) || req.user!.isManager === true;
       if (!isReviewer) {
@@ -400,7 +400,7 @@ documentsRouter.get(
     try {
       const targetEmployeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
       const isOwner = targetEmployeeId === String(req.user!.employeeId ?? "");
-      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+      const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
       if (!isOwner && !isPrivileged) throw AppError.forbidden();
       res.json({
         requests: await repo.listDocumentRequestsForEmployee(
@@ -438,7 +438,7 @@ documentsRouter.get("/assets/employee/:employeeId", async (req, res, next) => {
   try {
     const targetEmployeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
     const isOwner = targetEmployeeId === String(req.user!.employeeId ?? "");
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+    const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
     if (!isOwner && !isPrivileged) throw AppError.forbidden();
     res.json({ assets: await repo.listAssets(targetEmployeeId) });
   } catch (err) {

@@ -239,8 +239,8 @@ app.use("/api", requirePasswordResetComplete);
   // /api/tickets/:id/messages
   //
   // This router handles:
-  // Employee -> HR Admin messages
-  // HR Admin -> Employee messages
+  // Employee -> Admin messages
+  // Admin -> Employee messages
   // =======================================================
 
   app.use("/api/tickets", ticketMessageRouter);

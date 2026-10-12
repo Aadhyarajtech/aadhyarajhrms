@@ -39,7 +39,7 @@ announcementRouter.use(authenticate);
 
 const ADMIN_ROLES = [
   "SUPER_ADMIN",
-  "HR_ADMIN",
+  "ADMIN",
 ] as const;
 
 const ANNOUNCEMENT_TYPES = [
@@ -55,7 +55,7 @@ const ANNOUNCEMENT_TYPES = [
 
 const ANNOUNCEMENT_AUDIENCES = [
   "ALL",
-  "HR_ADMIN",
+  "ADMIN",
   "FINANCE",
   "MANAGER",
   "RECRUITER",

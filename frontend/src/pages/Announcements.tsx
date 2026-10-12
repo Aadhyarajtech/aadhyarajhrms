@@ -1,2594 +1,487 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
 import {
-  Megaphone,
-  Plus,
-  Pin,
-  Paperclip,
-  FileText,
-  Image as ImageIcon,
-  Pencil,
-  Trash2,
-  ChevronDown,
-  X,
-  Search,
-  Filter,
-  CalendarDays,
-  BarChart3,
-  Users,
-  CheckCircle2,
-  Clock3,
-  AlertCircle,
+  Check,
+  LockKeyhole,
+  Save,
+  ShieldCheck,
+  SlidersHorizontal,
 } from "lucide-react";
-
-import { AnnouncementsApi } from "@/lib/endpoints";
+import {
+  GovernanceApi,
+  type GovernancePolicy,
+  type GovernancePermission,
+} from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
-import { useAuth } from "@/context/AuthContext";
-
-import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
+import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Modal } from "@/components/ui/Modal";
-import { TextField, TextareaField } from "@/components/ui/Field";
-import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
+import { Skeleton } from "@/components/ui/EmptyState";
 
-import type { Announcement as BaseAnnouncement } from "@/types";
-import { ExpiryBadge } from "@/components/common/ExpiryBadge";
-
-/* Backend announcement fields used by this page.
-   Keep these optional so this page remains compatible with the existing
-   shared frontend Announcement type while the backend exposes the newer fields. */
-type Announcement = BaseAnnouncement & {
-  status?: "DRAFT" | "SCHEDULED" | "PUBLISHED" | "EXPIRED" | string;
-  channels?: string[];
-  showBanner?: boolean;
-  requiresAcknowledgement?: boolean;
-  scheduledAt?: string | null;
-  publishedAt?: string | null;
-  departments?: string[];
-  locations?: string[];
-  targetRoles?: string[];
-  calendarEnabled?: boolean;
-  eventStartAt?: string | null;
-  eventEndAt?: string | null;
-  eventLocation?: string | null;
-};
-
-import { formatDate, timeAgo } from "@/lib/format";
-
-function isAnnouncementExpired(announcement: Announcement) {
-  return (
-    announcement.status === "EXPIRED" ||
-    Boolean(
-      announcement.expiresAt &&
-        new Date(announcement.expiresAt).getTime() <= Date.now(),
-    )
-  );
-}
-
-/* =========================================================
-   ADMIN ROLES
-========================================================= */
-
-/* =========================================================
-   ANNOUNCEMENT TYPES
-========================================================= */
-
-const ANNOUNCEMENT_TYPE_OPTIONS = [
-  {
-    value: "HOLIDAY_NOTICE",
-    label: "Holiday Notice",
-  },
-  {
-    value: "COMPANY_EVENT",
-    label: "Company Event",
-  },
-  {
-    value: "POLICY_UPDATE",
-    label: "Policy Update",
-  },
-  {
-    value: "EMPLOYEE_RECOGNITION",
-    label: "Employee Recognition",
-  },
-  {
-    value: "MEETING_NOTICE",
-    label: "Meeting Notice",
-  },
-  {
-    value: "BENEFITS_UPDATE",
-    label: "Benefits Update",
-  },
-  {
-    value: "TRAINING_LD",
-    label: "Training & L&D",
-  },
-  {
-    value: "GENERAL_NOTICE",
-    label: "General Notice",
-  },
-] as const;
-
-/* =========================================================
-   AUDIENCE
-========================================================= */
-
-const AUDIENCE_OPTIONS = [
-  {
-    value: "ALL",
-    label: "All Employees",
-  },
-  {
-    value: "HR_ADMIN",
-    label: "HR",
-  },
-  {
-    value: "FINANCE",
-    label: "Finance / Payroll",
-  },
-  {
-    value: "MANAGER",
-    label: "Managers",
-  },
-  {
-    value: "RECRUITER",
-    label: "Recruitment",
-  },
-  {
-    value: "IT_SUPPORT",
-    label: "IT Support",
-  },
-  {
-    value: "EMPLOYEE",
-    label: "Employees",
-  },
-] as const;
-
-/* =========================================================
-   FORM
-========================================================= */
-
-interface AnnouncementStatusEntryLocal {
-  id?: string;
-  employeeId?: string;
-  employeeName?: string;
-  employeeEmail?: string;
-  employeeFullName?: string;
-  departmentName?: string;
-  department?: string;
-  role?: string;
-  employeeRole?: string;
-  isRead?: boolean;
-  read?: boolean;
-  hasRead?: boolean;
-  readAt?: string | null;
-  name?: string;
-  email?: string;
-  acknowledged?: boolean;
-  isAcknowledged?: boolean;
-  hasAcknowledged?: boolean;
-  acknowledgedAt?: string | null;
-}
-
-interface AnnouncementForm {
-  title: string;
-  body: string;
-  type: string;
-  audience: string;
-  departments: string;
-  locations: string;
-  targetRoles: string;
-  pinned: boolean;
-  notificationMethods: string[];
-  publishMode: "NOW" | "SCHEDULED";
-  scheduledDate: string;
-  scheduledTime: string;
-  requiresAcknowledgement: boolean;
-  calendarEnabled: boolean;
-  eventStartAt: string;
-  eventEndAt: string;
-  eventLocation: string;
-  expiryDays: string;
-  attachment?: FileList;
-}
-
-/* =========================================================
-   HELPERS
-========================================================= */
-
-function getAudienceLabel(audience: string) {
-  const found = AUDIENCE_OPTIONS.find((option) => option.value === audience);
-
-  return found?.label || audience;
-}
-
-function getTypeLabel(type?: string) {
-  const found = ANNOUNCEMENT_TYPE_OPTIONS.find(
-    (option) => option.value === type,
-  );
-
-  return found?.label || type || "General Notice";
-}
-
-function getAttachmentUrl(attachment?: string) {
-  if (!attachment) {
-    return "";
-  }
-
-  if (attachment.startsWith("http://") || attachment.startsWith("https://")) {
-    return attachment;
-  }
-
-  if (attachment.startsWith("/")) {
-    return attachment;
-  }
-
-  return `/${attachment.replace(/^\/+/, "")}`;
-}
-
-function isImageAttachment(attachment?: string) {
-  if (!attachment) {
-    return false;
-  }
-
-  return /\.(png|jpe?g|webp)$/i.test(attachment);
-}
-
-/* =========================================================
-   TARGETING OPTIONS
-========================================================= */
-
-const DEPARTMENT_OPTIONS = [
-  "Engineering",
-  "Sales",
-  "Product",
-  "Design",
-  "Marketing",
-  "Customer Success",
-  "IT & Security",
-  "Finance",
-  "Human Resources",
-  "Operations",
-];
-
-const LOCATION_OPTIONS = [
-  "Hyderabad",
-  "Bengaluru",
-  "Chennai",
-  "Mumbai",
-  "Pune",
-  "Delhi",
-  "Kolkata",
-  "Ahmedabad",
-  "Noida",
-];
-
-const ROLE_OPTIONS = [
+const ROLE_ORDER = [
   "SUPER_ADMIN",
-  "HR_ADMIN",
-  "FINANCE",
-  "MANAGER",
+  "ADMIN",
   "RECRUITER",
+  "FINANCE",
   "IT_SUPPORT",
   "EMPLOYEE",
 ];
 
-const ANNOUNCEMENT_CHANNELS = [
-  "IN_APP",
-  "EMAIL",
-  "BANNER",
-  "CALENDAR",
-] as const;
-
-function normalizeChannels(values?: string[]) {
-  return Array.from(
-    new Set(
-      (values ?? [])
-        .map((value) => String(value).trim().toUpperCase())
-        .filter((value): value is (typeof ANNOUNCEMENT_CHANNELS)[number] =>
-          ANNOUNCEMENT_CHANNELS.includes(
-            value as (typeof ANNOUNCEMENT_CHANNELS)[number],
-          ),
-        ),
-    ),
-  );
-}
-
-function csvToArray(value?: string) {
-  return String(value ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function arrayToCsv(value?: string[]) {
-  return (value ?? []).join(", ");
-}
-
-function todayLocalDate() {
-  const now = new Date();
-  const offset = now.getTimezoneOffset();
-  const local = new Date(now.getTime() - offset * 60 * 1000);
-  return local.toISOString().slice(0, 10);
-}
-
-
-function localTimeValue(date = new Date()) {
-  const offset = date.getTimezoneOffset();
-  const local = new Date(date.getTime() - offset * 60 * 1000);
-  return local.toISOString().slice(11, 16);
-}
-
-function scheduledTimeMin(dateValue?: string) {
-  if (!dateValue || dateValue !== todayLocalDate()) {
-    return undefined;
-  }
-
-  return localTimeValue();
-}
-
-function formatEventRange(start?: string | null, end?: string | null) {
-  if (!start) return "";
-
-  const startDate = new Date(start);
-  if (Number.isNaN(startDate.getTime())) return "";
-
-  const endDate = end ? new Date(end) : null;
-  const dateOptions: Intl.DateTimeFormatOptions = {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  };
-  const timeOptions: Intl.DateTimeFormatOptions = {
-    hour: "numeric",
-    minute: "2-digit",
-  };
-
-  const startDateText = startDate.toLocaleDateString(undefined, dateOptions);
-  const startTimeText = startDate.toLocaleTimeString(undefined, timeOptions);
-
-  if (!endDate || Number.isNaN(endDate.getTime())) {
-    return `${startDateText} · ${startTimeText}`;
-  }
-
-  const endDateText = endDate.toLocaleDateString(undefined, dateOptions);
-  const endTimeText = endDate.toLocaleTimeString(undefined, timeOptions);
-
-  if (startDateText === endDateText) {
-    return `${startDateText} · ${startTimeText} – ${endTimeText}`;
-  }
-
-  return `${startDateText} ${startTimeText} – ${endDateText} ${endTimeText}`;
-}
-
-function formatEventDateRange(start?: string | null, end?: string | null) {
-  if (!start) return "";
-
-  const startDate = new Date(start);
-  if (Number.isNaN(startDate.getTime())) return "";
-
-  const endDate = end ? new Date(end) : null;
-  const options: Intl.DateTimeFormatOptions = {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  };
-
-  const startText = startDate.toLocaleDateString(undefined, options);
-
-  if (!endDate || Number.isNaN(endDate.getTime())) {
-    return startText;
-  }
-
-  const endText = endDate.toLocaleDateString(undefined, options);
-
-  return startText === endText
-    ? startText
-    : `${startText} – ${endText}`;
-}
-
-function getAnnouncementStatus(announcement: Announcement) {
-  const explicitStatus = String(announcement.status || "").toUpperCase();
-
-  if (explicitStatus === "DRAFT") return "DRAFT";
-  if (explicitStatus === "SCHEDULED") return "SCHEDULED";
-  if (explicitStatus === "EXPIRED") return "EXPIRED";
-
-  if (isAnnouncementExpired(announcement)) return "EXPIRED";
-
-  return "PUBLISHED";
-}
-
-function getAnnouncementBucket(announcement: Announcement) {
-  const type = String(announcement.type || "").toUpperCase();
-
-  if (type === "HOLIDAY_NOTICE") return "HOLIDAYS";
-  if (type === "COMPANY_EVENT" || type === "MEETING_NOTICE") return "EVENTS";
-  if (type === "POLICY_UPDATE" || type === "BENEFITS_UPDATE" || type === "TRAINING_LD") return "HR_POLICY";
-  if (type === "EMPLOYEE_RECOGNITION") return "CELEBRATIONS";
-
-  return "COMPANY";
-}
-
-function getAnnouncementPriority(announcement: Announcement) {
-  const requiresAcknowledgement = Boolean(
-    (announcement as unknown as Record<string, unknown>).requiresAcknowledgement,
-  );
-
-  if (announcement.pinned || requiresAcknowledgement || announcement.type === "POLICY_UPDATE") {
-    return "Important";
-  }
-
-  return "Normal";
-}
-
-function getEventDate(announcement: Announcement) {
-  const value = announcement.eventStartAt || announcement.scheduledAt || announcement.publishedAt || announcement.createdAt;
-  if (!value) return null;
-
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-
-
-function formatEventTime(date: Date) {
-  return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(date);
-}
-
-function MultiSelectCategory({
-  label,
-  placeholder,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  placeholder: string;
-  options: string[];
-  value: string[];
-  onChange: (values: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const toggle = (option: string) => {
-    if (value.includes(option)) {
-      onChange(value.filter((item) => item !== option));
-    } else {
-      onChange([...value, option]);
-    }
-    // Close after every selection so the form stays compact.
-    setOpen(false);
-  };
-
-  const clear = () => {
-    onChange([]);
-    setOpen(false);
-  };
-
-  const selectAll = () => {
-    onChange(Array.from(new Set(options)));
-    setOpen(false);
-  };
-
-  return (
-    <div className="relative">
-      <label className="mb-1.5 block text-[13px] font-medium text-ink">
-        {label}
-        <span className="ml-1 text-xs font-normal text-ink-faint">
-          (optional)
-        </span>
-      </label>
-
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="flex min-h-10 w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-ink outline-none transition hover:border-gray-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-        aria-expanded={open}
-      >
-        <span className={value.length ? "text-ink" : "text-ink-faint"}>
-          {value.length
-            ? value.length === 1
-              ? value[0]
-              : `${value.length} selected`
-            : placeholder}
-        </span>
-        <ChevronDown
-          size={16}
-          className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {value.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {value.map((item) => (
-            <span
-              key={item}
-              className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700"
-            >
-              {item}
-              <button
-                type="button"
-                onClick={() => toggle(item)}
-                className="rounded-full hover:bg-brand-100"
-                aria-label={`Remove ${item}`}
-              >
-                <X size={11} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {open && (
-        <div className="absolute left-0 right-0 z-50 mt-1 max-h-[min(18rem,45vh)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lifted">
-          <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2.5 text-[11px] font-medium">
-            <button
-              type="button"
-              onClick={selectAll}
-              className="text-brand-600 hover:text-brand-700"
-            >
-              Select All
-            </button>
-            <button
-              type="button"
-              onClick={clear}
-              className="text-red-500 hover:text-red-600"
-            >
-              Clear All
-            </button>
-          </div>
-
-          <div className="max-h-56 overflow-y-auto p-1.5">
-            {options.map((option) => (
-              <label
-                key={option}
-                className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-ink-soft hover:bg-gray-50"
-              >
-                <input
-                  type="checkbox"
-                  checked={value.includes(option)}
-                  onChange={() => toggle(option)}
-                  className="rounded accent-brand-500"
-                />
-                <span>{option}</span>
-              </label>
-            ))}
-          </div>
-
-          <div className="border-t border-gray-100 px-3 py-2 text-[11px] text-ink-faint">
-            {value.length} Selected
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* =========================================================
-   PAGE
-========================================================= */
-
-export default function Announcements() {
-  const { user, hasPermission } = useAuth();
-  const isAdmin = hasPermission("announcements.manage");
-
-
-  // Only Adithya Nuthakki and Sreevidya Talasila can see the announcement
-  // overview/sidebar panels. Compare normalized account emails, not display names.
-  const announcementOverviewAllowedEmails = [
-    "adithya.nuthakki@aadhyarajtech.com",
-    "sreevidya.talasila@aadhyarajtech.com",
-  ];
-  const currentUserEmail = String(user?.email ?? "").trim().toLowerCase();
-  const showAnnouncementAdminPanels =
-    announcementOverviewAllowedEmails.includes(currentUserEmail);
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
-  const [statusOpen, setStatusOpen] = useState(false);
-  const [statusAnnouncement, setStatusAnnouncement] = useState<Announcement | null>(null);
-
-  // New UI-only filters/dashboard state. Existing API behaviour is unchanged.
-  const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState("ALL");
-  const [typeFilter, setTypeFilter] = useState("ALL");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [departmentFilter, setDepartmentFilter] = useState("ALL");
-
-  const queryClient = useQueryClient();
-
-  const { data: announcementStatus, isLoading: isStatusLoading } = useQuery<
-    AnnouncementStatusEntryLocal[],
-    Error
-  >({
-    queryKey: ["announcement-status", statusAnnouncement?.id],
-    queryFn: () => AnnouncementsApi.status(statusAnnouncement!.id),
-    enabled: isAdmin && statusOpen && !!statusAnnouncement,
-  });
-
-  const markReadMutation = useMutation({
-    mutationFn: AnnouncementsApi.markRead,
-    onSuccess: (_data, announcementId) => {
-      queryClient.setQueryData<Announcement[]>(["announcements"], (current) => {
-        if (!current) return current;
-        return current.map((announcement) =>
-          announcement.id !== announcementId
-            ? announcement
-            : {
-                ...announcement,
-                receipt: {
-                  isRead: true,
-                  readAt: new Date().toISOString(),
-                  isAcknowledged: announcement.receipt?.isAcknowledged ?? false,
-                  acknowledgedAt: announcement.receipt?.acknowledgedAt ?? null,
-                },
-              },
-        );
-      });
-      void queryClient.invalidateQueries({ queryKey: ["announcements"] });
-    },
-  });
-
-  const acknowledgeMutation = useMutation({
-    mutationFn: AnnouncementsApi.acknowledge,
-    onSuccess: () => {
-      void queryClient.refetchQueries({ queryKey: ["announcements"], type: "active" });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: FormData }) => AnnouncementsApi.update(id, data),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["announcements"] });
-      setEditOpen(false);
-      setSelectedAnnouncement(null);
-      window.dispatchEvent(
-        new CustomEvent("announcement-toast", {
-          detail: "Announcement updated successfully.",
-        }),
-      );
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: AnnouncementsApi.delete,
-    onSuccess: () => {
-      void queryClient.refetchQueries({ queryKey: ["announcements"], type: "active" });
-    },
-  });
-
-  const { data, isLoading, isError } = useQuery<Announcement[], Error>({
-    queryKey: ["announcements"],
-    queryFn: () => AnnouncementsApi.list(),
-  });
-
-  const allAnnouncements = data ?? [];
-
-  const departmentOptions = useMemo(() => {
-    const values = new Set<string>();
-    allAnnouncements.forEach((announcement) => {
-      (announcement.departments ?? []).forEach((department) => {
-        if (department) values.add(department);
-      });
-    });
-    return Array.from(values).sort();
-  }, [allAnnouncements]);
-
-  const filteredAnnouncements = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
-
-    return allAnnouncements
-      .filter((announcement) => {
-        if (!normalizedSearch) return true;
-        return [
-          announcement.title,
-          announcement.body,
-          getTypeLabel(announcement.type),
-          getAudienceLabel(announcement.audience),
-          ...(announcement.departments ?? []),
-          ...(announcement.locations ?? []),
-          ...(announcement.targetRoles ?? []),
-        ]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(normalizedSearch));
-      })
-      .filter((announcement) => typeFilter === "ALL" || announcement.type === typeFilter)
-      .filter((announcement) => statusFilter === "ALL" || getAnnouncementStatus(announcement) === statusFilter)
-      .filter((announcement) => departmentFilter === "ALL" || (announcement.departments ?? []).includes(departmentFilter))
-      .filter((announcement) => {
-        if (activeTab === "ALL") return true;
-        if (activeTab === "IMPORTANT") return getAnnouncementPriority(announcement) === "Important";
-        if (activeTab === "DRAFTS") return getAnnouncementStatus(announcement) === "DRAFT";
-        if (activeTab === "SCHEDULED") return getAnnouncementStatus(announcement) === "SCHEDULED";
-        if (activeTab === "EXPIRED") return getAnnouncementStatus(announcement) === "EXPIRED";
-        return getAnnouncementBucket(announcement) === activeTab;
-      })
-      .sort((a, b) => {
-        if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
-  }, [activeTab, allAnnouncements, departmentFilter, search, statusFilter, typeFilter]);
-
-  const tabCounts = useMemo(() => {
-    const count = (predicate: (announcement: Announcement) => boolean) => allAnnouncements.filter(predicate).length;
-    return {
-      ALL: allAnnouncements.length,
-      IMPORTANT: count((announcement) => getAnnouncementPriority(announcement) === "Important"),
-      COMPANY: count((announcement) => getAnnouncementBucket(announcement) === "COMPANY"),
-      EVENTS: count((announcement) => getAnnouncementBucket(announcement) === "EVENTS"),
-      HOLIDAYS: count((announcement) => getAnnouncementBucket(announcement) === "HOLIDAYS"),
-      HR_POLICY: count((announcement) => getAnnouncementBucket(announcement) === "HR_POLICY"),
-      CELEBRATIONS: count((announcement) => getAnnouncementBucket(announcement) === "CELEBRATIONS"),
-      DRAFTS: count((announcement) => getAnnouncementStatus(announcement) === "DRAFT"),
-      SCHEDULED: count((announcement) => getAnnouncementStatus(announcement) === "SCHEDULED"),
-      EXPIRED: count((announcement) => getAnnouncementStatus(announcement) === "EXPIRED"),
-    };
-  }, [allAnnouncements]);
-
-  const overview = useMemo(() => {
-    const published = allAnnouncements.filter((a) => getAnnouncementStatus(a) === "PUBLISHED").length;
-    const scheduled = allAnnouncements.filter((a) => getAnnouncementStatus(a) === "SCHEDULED").length;
-    const drafts = allAnnouncements.filter((a) => getAnnouncementStatus(a) === "DRAFT").length;
-    const expired = allAnnouncements.filter((a) => getAnnouncementStatus(a) === "EXPIRED").length;
-    const read = allAnnouncements.filter((a) => a.receipt?.isRead).length;
-    const acknowledged = allAnnouncements.filter((a) => a.receipt?.isAcknowledged).length;
-    const readRate = allAnnouncements.length ? Math.round((read / allAnnouncements.length) * 100) : 0;
-    return { total: allAnnouncements.length, published, scheduled, drafts, expired, read, acknowledged, readRate };
-  }, [allAnnouncements]);
-
-  const upcomingEvents = useMemo(() => {
-    const now = Date.now();
-    return allAnnouncements
-      .filter(
-        (announcement) =>
-          announcement.calendarEnabled ||
-          announcement.type === "HOLIDAY_NOTICE" ||
-          announcement.type === "COMPANY_EVENT" ||
-          announcement.type === "MEETING_NOTICE",
-      )
-      .map((announcement) => ({ announcement, date: getEventDate(announcement) }))
-      .filter((item): item is { announcement: Announcement; date: Date } => !!item.date && item.date.getTime() >= now)
-      .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .slice(0, 5);
-  }, [allAnnouncements]);
-
-  const resetFilters = () => {
-    setSearch("");
-    setActiveTab("ALL");
-    setTypeFilter("ALL");
-    setStatusFilter("ALL");
-    setDepartmentFilter("ALL");
-  };
-
-  const handleMarkRead = (id: string) => markReadMutation.mutate(id);
-  const handleAcknowledge = (id: string) => acknowledgeMutation.mutate(id);
-  const handleViewStatus = (announcement: Announcement) => {
-    setStatusAnnouncement(announcement);
-    setStatusOpen(true);
-  };
-  const handleEdit = (announcement: Announcement) => {
-    if (isAnnouncementExpired(announcement)) return;
-    setSelectedAnnouncement(announcement);
-    setEditOpen(true);
-  };
-  const handleDelete = (announcement: Announcement) => {
-    if (isAnnouncementExpired(announcement)) return;
-    if (!window.confirm(`Are you sure you want to delete "${announcement.title}"?`)) return;
-    deleteMutation.mutate(announcement.id);
-  };
-
-  return (
-    <div className="w-full space-y-5">
-      <PageHeader
-        title="Announcements"
-        subtitle="Company-wide news, updates, events and important information."
-        action={
-          isAdmin ? (
-            <Button leftIcon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>
-              New Announcement
-            </Button>
-          ) : undefined
-        }
-      />
-
-      {/* New: category tabs. Existing announcement data/actions remain unchanged. */}
-      <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white p-1.5 shadow-sm">
-        <div className="flex min-w-max items-center gap-1">
-          {[
-            ["ALL", "All"],
-            ["IMPORTANT", "Important"],
-            ["COMPANY", "Company"],
-            ["EVENTS", "Events"],
-            ["HOLIDAYS", "Holidays"],
-            ["HR_POLICY", "HR Policy"],
-            ["CELEBRATIONS", "Celebrations"],
-            ["DRAFTS", "Drafts"],
-            ["SCHEDULED", "Scheduled"],
-            ["EXPIRED", "Expired"],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActiveTab(key)}
-              className={`rounded-xl px-3 py-2 text-xs font-medium transition ${
-                activeTab === key ? "bg-brand-50 text-brand-700 shadow-sm" : "text-ink-soft hover:bg-gray-50 hover:text-ink"
-              }`}
-            >
-              {label}
-              <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-ink-faint">
-                {tabCounts[key as keyof typeof tabCounts]}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* New: local search and filters. No backend/API change required. */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm xl:flex-row xl:items-center">
-        <div className="relative min-w-0 flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search announcements..."
-            className="h-10 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          />
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <div className="relative">
-            <Filter size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
-            <select
-              value={typeFilter}
-              onChange={(event) => setTypeFilter(event.target.value)}
-              className="h-10 min-w-[150px] appearance-none rounded-xl border border-gray-200 bg-white pl-8 pr-8 text-xs text-ink outline-none focus:border-brand-500"
-            >
-              <option value="ALL">All Types</option>
-              {ANNOUNCEMENT_TYPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
-          </div>
-
-          <div className="relative">
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              className="h-10 min-w-[130px] appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-8 text-xs text-ink outline-none focus:border-brand-500"
-            >
-              <option value="ALL">All Status</option>
-              <option value="PUBLISHED">Published</option>
-              <option value="SCHEDULED">Scheduled</option>
-              <option value="DRAFT">Draft</option>
-              <option value="EXPIRED">Expired</option>
-            </select>
-            <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
-          </div>
-
-          {departmentOptions.length > 0 && (
-            <div className="relative">
-              <select
-                value={departmentFilter}
-                onChange={(event) => setDepartmentFilter(event.target.value)}
-                className="h-10 min-w-[150px] appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-8 text-xs text-ink outline-none focus:border-brand-500"
-              >
-                <option value="ALL">All Departments</option>
-                {departmentOptions.map((department) => (
-                  <option key={department} value={department}>{department}</option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
-            </div>
-          )}
-
-          {(search || activeTab !== "ALL" || typeFilter !== "ALL" || statusFilter !== "ALL" || departmentFilter !== "ALL") && (
-            <Button variant="outline" size="sm" onClick={resetFilters}>
-              Clear filters
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <div
-  className={`grid grid-cols-1 gap-5 ${
-    showAnnouncementAdminPanels
-      ? "xl:grid-cols-[minmax(0,1fr)_340px]"
-      : ""
-  }`}
->
-        <div className="min-w-0">
-          {isLoading ? (
-            <div className="space-y-4">
-              {Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-3xl" />)}
-            </div>
-          ) : isError ? (
-            <Card><div className="p-6 text-sm text-red-600">Failed to Load Announcements.</div></Card>
-          ) : !allAnnouncements.length ? (
-            <EmptyState icon={Megaphone} title="No announcements yet" />
-          ) : !filteredAnnouncements.length ? (
-            <EmptyState icon={Search} title="No announcements match your filters" />
-          ) : (
-            <div className="space-y-4">
-              {filteredAnnouncements.map((announcement) => {
-                const priority = getAnnouncementPriority(announcement);
-                const status = getAnnouncementStatus(announcement);
-                const requiresAcknowledgement = Boolean(announcement.requiresAcknowledgement);
-
-                return (
-                  <Card
-                    key={announcement.id}
-                    className={
-                      priority === "Important"
-                        ? "border-gold-300 bg-gold-50/40"
-                        : ""
-                    }
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex min-w-0 flex-1 items-start gap-3">
-                        <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${priority === "Important" ? "bg-amber-50 text-amber-600" : "bg-brand-50 text-brand-600"}`}>
-                          {announcement.type === "HOLIDAY_NOTICE" ? <CalendarDays size={18} /> : <Megaphone size={18} />}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-display text-[15px] font-medium text-ink">{announcement.title}</h3>
-
-                            {priority === "Important" && (
-                              <Badge tone="gold"><AlertCircle size={11} /> Important</Badge>
-                            )}
-                            {announcement.pinned && (
-                              <Badge tone="gold"><Pin size={11} /> Pinned</Badge>
-                            )}
-                            {status === "SCHEDULED" && <Badge><Clock3 size={11} /> Scheduled</Badge>}
-                            {status === "DRAFT" && <Badge>Draft</Badge>}
-                            {status === "EXPIRED" && <Badge>Expired</Badge>}
-
-                            <Badge>{getTypeLabel(announcement.type)}</Badge>
-                            <Badge>{getAudienceLabel(announcement.audience)}</Badge>
-                          </div>
-
-                          {status === "EXPIRED" ? (
-                            <p className="mt-1.5 text-[13px] text-ink-faint">This Announcement has expired and its content is no longer Accessible.</p>
-                          ) : (
-                            <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-soft">{announcement.body}</p>
-                          )}
-
-                          {announcement.eventStartAt && (
-                            <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2.5">
-                              <p className="text-[12px] font-medium text-brand-700">Calendar Event</p>
-                              <p className="mt-0.5 text-[12px] text-ink-soft">{formatEventDateRange(announcement.eventStartAt, announcement.eventEndAt)}</p>
-                              {announcement.eventLocation && <p className="mt-0.5 text-[12px] text-ink-faint">{announcement.eventLocation}</p>}
-                            </div>
-                          )}
-
-                          {status === "SCHEDULED" && announcement.scheduledAt && (
-                            <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2.5">
-                              <p className="text-[12px] font-medium text-amber-700">Scheduled Publish</p>
-                              <p className="mt-0.5 text-[12px] text-ink-soft">{formatEventRange(announcement.scheduledAt)}</p>
-                            </div>
-                          )}
-
-                          {announcement.attachment && (
-                            <div className="mt-4">
-                              <a
-                                href={getAttachmentUrl(announcement.attachment)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-50"
-                              >
-                                {isImageAttachment(announcement.attachment) ? <ImageIcon size={16} /> : <FileText size={16} />}
-                                View Attachment
-                              </a>
-                            </div>
-                          )}
-
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            {announcement.expiresAt && <ExpiryBadge expiresAt={announcement.expiresAt} expiredAt={announcement.expiredAt} />}
-                            <Badge>{announcement.receipt?.isRead ? "Read" : "Unread"}</Badge>
-                            {requiresAcknowledgement && (
-                              <Badge>{announcement.receipt?.isAcknowledged ? "Acknowledged" : "Requires acknowledgement"}</Badge>
-                            )}
-                          </div>
-
-                          {announcement.receipt?.readAt && (
-                            <p className="mt-2 text-[12px] text-ink-faint">Read {timeAgo(announcement.receipt.readAt)}</p>
-                          )}
-                          {announcement.receipt?.acknowledgedAt && (
-                            <p className="mt-1 text-[12px] text-ink-faint">Acknowledged {timeAgo(announcement.receipt.acknowledgedAt)}</p>
-                          )}
-
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            {status !== "EXPIRED" && !announcement.receipt?.isRead && (
-                              <Button variant="outline" size="sm" onClick={() => handleMarkRead(announcement.id)} isLoading={markReadMutation.isPending}>
-                                Mark as Read
-                              </Button>
-                            )}
-
-                            {status !== "EXPIRED" && requiresAcknowledgement && !announcement.receipt?.isAcknowledged && (
-                              <Button onClick={() => handleAcknowledge(announcement.id)} isLoading={acknowledgeMutation.isPending}>
-                                Acknowledge
-                              </Button>
-                            )}
-
-                            {isAdmin && (
-                              <>
-                                <Button variant="outline" size="sm" onClick={() => handleViewStatus(announcement)}>
-                                  View Receipts
-                                </Button>
-
-                                {requiresAcknowledgement && (
-                                  <Button variant="outline" size="sm" onClick={() => handleViewStatus(announcement)}>
-                                    View Acknowledgements
-                                  </Button>
-                                )}
-
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  leftIcon={<Pencil size={14} />}
-                                  onClick={() => handleEdit(announcement)}
-                                  disabled={isAnnouncementExpired(announcement)}
-                                  title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be edited" : "Edit announcement"}
-                                >
-                                  Edit
-                                </Button>
-
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  leftIcon={<Trash2 size={14} />}
-                                  onClick={() => handleDelete(announcement)}
-                                  isLoading={deleteMutation.isPending}
-                                  disabled={deleteMutation.isPending || isAnnouncementExpired(announcement)}
-                                  title={isAnnouncementExpired(announcement) ? "Expired announcements cannot be deleted" : "Delete announcement"}
-                                >
-                                  Delete
-                                </Button>
-                              </>
-                            )}
-                          </div>
-
-                          <p className="mt-3 text-[12px] text-ink-faint">{formatDate(announcement.createdAt)} · {timeAgo(announcement.createdAt)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-       {/* Admin-only announcement overview panels */}
-{showAnnouncementAdminPanels && (
-  <aside className="space-y-4">
-          <Card>
-            <div className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[13px] font-semibold text-ink">Announcement Overview</p>
-                  <p className="mt-0.5 text-xs text-ink-faint">Current Records and Engagement</p>
-                </div>
-                <BarChart3 size={18} className="text-brand-600" />
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <StatTile label="Total" value={overview.total} icon={<Megaphone size={15} />} />
-                <StatTile label="Published" value={overview.published} icon={<CheckCircle2 size={15} />} />
-                <StatTile label="Scheduled" value={overview.scheduled} icon={<Clock3 size={15} />} />
-                <StatTile label="Expired" value={overview.expired} icon={<AlertCircle size={15} />} />
-              </div>
-
-              <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-ink-faint">My Read Rate</span>
-                  <span className="font-semibold text-ink">{overview.readRate}%</span>
-                </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200">
-                  <div className="h-full rounded-full bg-brand-500" style={{ width: `${overview.readRate}%` }} />
-                </div>
-                <div className="mt-2 flex items-center justify-between text-[11px] text-ink-faint">
-                  <span>{overview.read} Read</span>
-                  <span>{overview.acknowledged} Acknowledged</span>
-                </div>
-              </div>
-
-              {overview.drafts > 0 && (
-                <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 p-3 text-xs text-amber-800">
-                  {overview.drafts} Draft Announcement{overview.drafts === 1 ? "" : "s"} Returned by the Backend.
-                </div>
-              )}
-            </div>
-          </Card>
-
-          <Card>
-            <div className="p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[13px] font-semibold text-ink">Upcoming Events</p>
-                  <p className="mt-0.5 text-xs text-ink-faint">From Existing Calendar Announcements</p>
-                </div>
-                <CalendarDays size={18} className="text-brand-600" />
-              </div>
-
-              {upcomingEvents.length ? (
-                <div className="mt-4 space-y-3">
-                  {upcomingEvents.map(({ announcement, date }) => (
-                    <div key={announcement.id} className="flex items-center gap-3 rounded-xl border border-gray-100 p-3">
-                      <div className="w-12 shrink-0 rounded-lg bg-brand-50 px-2 py-1.5 text-center">
-                        <div className="text-[10px] font-semibold uppercase text-brand-600">{new Intl.DateTimeFormat("en-IN", { month: "short" }).format(date)}</div>
-                        <div className="text-base font-bold text-brand-700">{date.getDate()}</div>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-ink">{announcement.title}</p>
-                        <p className="mt-0.5 text-[11px] text-ink-faint">{formatEventTime(date)} · {getTypeLabel(announcement.type)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-xl border border-dashed border-gray-200 p-4 text-center text-xs text-ink-faint">No Upcoming Events.</div>
-              )}
-            </div>
-          </Card>
-
-          <Card>
-            <div className="p-5">
-              <div className="flex items-center gap-2">
-                <Users size={17} className="text-brand-600" />
-                <p className="text-[13px] font-semibold text-ink">Existing Capabilities Kept</p>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {["Targeting", "Email", "In-App", "Banner", "Calendar", "Scheduling", "Expiry", "Attachments", "Pinning", "Read receipts", "Acknowledgement"].map((item) => (
-                  <span key={item} className="rounded-full bg-gray-50 px-2 py-1 text-[10px] font-medium text-ink-soft">{item}</span>
-                ))}
-              </div>
-            </div>
-          </Card>
-          </aside>
-)}
-      </div>
-
-      {isAdmin && <CreateModal open={createOpen} onClose={() => setCreateOpen(false)} />}
-
-      {isAdmin && statusAnnouncement && (
-        <ReadReceiptsModal
-          open={statusOpen}
-          announcement={statusAnnouncement}
-          status={announcementStatus ?? []}
-          isLoading={isStatusLoading}
-          onClose={() => {
-            setStatusOpen(false);
-            setStatusAnnouncement(null);
-          }}
-        />
-      )}
-
-      {isAdmin && selectedAnnouncement && (
-        <EditModal
-          open={editOpen}
-          announcement={selectedAnnouncement}
-          isLoading={updateMutation.isPending}
-          onClose={() => {
-            if (!updateMutation.isPending) {
-              setEditOpen(false);
-              setSelectedAnnouncement(null);
-            }
-          }}
-          onSubmit={(formData: FormData) => updateMutation.mutate({ id: selectedAnnouncement.id, data: formData })}
-        />
-      )}
-    </div>
-  );
-}
-
-function StatTile({ label, value, icon }: { label: string; value: number; icon: ReactNode }) {
-  return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-      <div className="flex items-center justify-between text-brand-600">{icon}<span className="text-lg font-semibold text-ink">{value}</span></div>
-      <p className="mt-1 text-[11px] text-ink-faint">{label}</p>
-    </div>
-  );
-}
-
-function QuickTemplateSelector({
-  onSelect,
-}: {
-  onSelect: (template: {
-    title: string;
-    body: string;
-    type: string;
-    audience: string;
-    notificationMethods: string[];
-    requiresAcknowledgement: boolean;
-  }) => void;
-}) {
-  const templates = [
-    { key: "GENERAL", label: "General Notice", icon: "📢", title: "", body: "", type: "GENERAL_NOTICE", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL"], requiresAcknowledgement: false },
-    { key: "HOLIDAY", label: "Holiday Notice", icon: "🏖️", title: "Upcoming Holiday", body: "Please note the upcoming company holiday and plan your work accordingly.", type: "HOLIDAY_NOTICE", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL", "CALENDAR"], requiresAcknowledgement: false },
-    { key: "POLICY", label: "HR Policy", icon: "💼", title: "Important HR Policy Update", body: "Please review the updated HR policy and acknowledge that you have read and understood it.", type: "POLICY_UPDATE", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL", "BANNER"], requiresAcknowledgement: true },
-    { key: "EVENT", label: "Company Event", icon: "📅", title: "Company Event", body: "We are pleased to announce an upcoming company event. More details will follow.", type: "COMPANY_EVENT", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL", "CALENDAR"], requiresAcknowledgement: false },
-    { key: "CELEBRATION", label: "Celebration", icon: "🎉", title: "Congratulations Team!", body: "Congratulations to everyone on this achievement. Thank you for your continued contribution.", type: "EMPLOYEE_RECOGNITION", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL"], requiresAcknowledgement: false },
-    { key: "EMERGENCY", label: "Emergency", icon: "🚨", title: "Important Emergency Notice", body: "Please follow the instructions in this announcement and contact HR if you need assistance.", type: "GENERAL_NOTICE", audience: "ALL", notificationMethods: ["IN_APP", "EMAIL", "BANNER"], requiresAcknowledgement: true },
-  ];
-
-  return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-[13px] font-medium text-ink">Quick templates</p>
-          <p className="mt-0.5 text-xs text-ink-faint">Start with a template; you can edit Everything before Publishing.</p>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {templates.map((template) => (
-          <button
-            key={template.key}
-            type="button"
-            onClick={() => onSelect(template)}
-            className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-brand-300 hover:bg-brand-50"
-          >
-            <span className="text-base">{template.icon}</span>
-            <span className="mt-1 block text-[11px] font-medium text-ink">{template.label}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   CREATE MODAL
-========================================================= */
-
-function CreateModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
+export default function GovernanceSettings() {
   const { showToast } = useToast();
-
   const queryClient = useQueryClient();
+  const [selectedRole, setSelectedRole] = useState("ADMIN");
+  const [draftPermissions, setDraftPermissions] = useState<string[]>([]);
+  const [draftPolicies, setDraftPolicies] = useState<GovernancePolicy[]>([]);
 
   const {
-    register,
-    handleSubmit,
-    reset,
-    watch,
-    setValue,
-    formState: { errors },
-  } = useForm<AnnouncementForm>({
-    defaultValues: {
-      title: "",
-      body: "",
-      type: "GENERAL_NOTICE",
-      audience: "ALL",
-      departments: "",
-      locations: "",
-      targetRoles: "",
-      pinned: false,
-      notificationMethods: ["IN_APP", "EMAIL"],
-      publishMode: "NOW",
-      scheduledDate: "",
-      scheduledTime: "",
-      requiresAcknowledgement: false,
-      calendarEnabled: false,
-      eventStartAt: "",
-      eventEndAt: "",
-      eventLocation: "",
-      expiryDays: "7",
-    },
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["governance"],
+    queryFn: GovernanceApi.get,
   });
 
-  const mutation = useMutation({
-    mutationFn: AnnouncementsApi.create,
+  // Governance manages permission templates for business roles. MANAGER is
+  // a legacy stored value and must not appear as an assignable role template.
+  const roles = useMemo(
+    () =>
+      [...(data?.roles ?? [])].filter((item) => item.role !== "MANAGER").sort(
+        (a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role),
+      ),
+    [data?.roles],
+  );
 
+  const role = roles.find((item) => item.role === selectedRole) ?? roles[0];
+
+  useEffect(() => {
+    if (!role) return;
+    setSelectedRole(role.role);
+    setDraftPermissions(role.permissions);
+  }, [role?.role, role?.permissions.join("|")]);
+
+  useEffect(() => {
+    setDraftPolicies(data?.policies ?? []);
+  }, [data?.policies]);
+
+  const roleMutation = useMutation({
+    mutationFn: () => GovernanceApi.updateRole(selectedRole, draftPermissions),
     onSuccess: () => {
-      void queryClient.refetchQueries({
-        queryKey: ["announcements"],
-        type: "active",
-      });
-
-      showToast("Announcement published successfully.");
-
-      reset();
-      onClose();
+      queryClient.invalidateQueries({ queryKey: ["governance"] });
+      showToast("Role permissions updated.");
     },
-
-    onError: (error) => {
-      showToast(getErrorMessage(error), "error");
-    },
+    onError: (error) => showToast(getErrorMessage(error), "error"),
   });
 
-  const onSubmit = (values: AnnouncementForm) => {
-    const title = values.title.trim();
-    const body = values.body.trim();
-
-    if (title.length < 3) {
-      showToast("Title must contain at least 3 characters.", "error");
-      return;
-    }
-
-    if (body.length < 5) {
-      showToast("Message must contain at least 5 characters.", "error");
-      return;
-    }
-
-    const formData = new FormData();
-
-    formData.append("title", title);
-    formData.append("body", body);
-    formData.append("type", values.type);
-    formData.append("audience", values.audience);
-
-    const expiryDays = Number(values.expiryDays);
-    if (!Number.isInteger(expiryDays) || expiryDays < 1 || expiryDays > 365) {
-      showToast("Expiry must be between 1 and 365 days.", "error");
-      return;
-    }
-    formData.append("expiryDays", String(expiryDays));
-
-    const departments = values.departments
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    const locations = values.locations
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    const targetRoles = values.targetRoles
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    formData.append("departments", JSON.stringify(departments));
-    formData.append("locations", JSON.stringify(locations));
-    formData.append("targetRoles", JSON.stringify(targetRoles));
-
-    formData.append("pinned", String(values.pinned));
-
-    const channels = normalizeChannels(values.notificationMethods);
-
-    if (!channels.length) {
-      showToast("Please select at least one notification method.", "error");
-      return;
-    }
-
-    formData.append("notificationMethods", JSON.stringify(channels));
-
-    formData.append("channels", JSON.stringify(channels));
-
-    // These are derived by the backend from channels as well.
-    // Sending them keeps compatibility with the current API.
-    formData.append("showBanner", String(channels.includes("BANNER")));
-
-    formData.append("calendarEnabled", String(channels.includes("CALENDAR")));
-
-    if (channels.includes("CALENDAR")) {
-      if (!values.eventStartAt) {
-        showToast(
-          "Please provide a calendar event date.",
-          "error",
-        );
-        return;
-      }
-
-      if (!values.eventEndAt) {
-        showToast(
-          "Please provide a calendar event end date.",
-          "error",
-        );
-        return;
-      }
-
-      const eventStart = new Date(`${values.eventStartAt}T00:00:00`);
-      const eventEnd = new Date(`${values.eventEndAt}T00:00:00`);
-
-      if (Number.isNaN(eventStart.getTime())) {
-        showToast(
-          "Please enter a valid calendar event date.",
-          "error",
-        );
-        return;
-      }
-
-      if (Number.isNaN(eventEnd.getTime())) {
-        showToast(
-          "Please enter a valid calendar event end date.",
-          "error",
-        );
-        return;
-      }
-
-      const today = new Date(`${todayLocalDate()}T00:00:00`);
-
-      if (eventStart.getTime() < today.getTime()) {
-        showToast(
-          "Calendar event date must be today or a future date.",
-          "error",
-        );
-        return;
-      }
-
-      if (eventEnd.getTime() < eventStart.getTime()) {
-        showToast(
-          "Calendar event end date must be on or after the start date.",
-          "error",
-        );
-        return;
-      }
-
-      // Calendar events are intentionally date-only. The backend accepts
-      // the ISO date string and no time is selected or stored by this form.
-      formData.append("eventStartAt", values.eventStartAt);
-
-      formData.append("eventEndAt", values.eventEndAt);
-
-      if (values.eventLocation.trim()) {
-        formData.append("eventLocation", values.eventLocation.trim());
-      }
-    }
-
-    formData.append("publishMode", values.publishMode);
-
-    formData.append(
-      "requiresAcknowledgement",
-      String(
-        Boolean(values.requiresAcknowledgement),
+  const policyMutation = useMutation({
+    mutationFn: () =>
+      GovernanceApi.updatePolicies(
+        draftPolicies.map(({ key, value }) => ({ key, value })),
       ),
-    );
-
-    if (values.publishMode === "SCHEDULED") {
-      if (!values.scheduledDate || !values.scheduledTime) {
-        showToast("Please select a publish date and time.", "error");
-        return;
-      }
-
-      const scheduledAt = new Date(
-        `${values.scheduledDate}T${values.scheduledTime}`,
+    onSuccess: (policies) => {
+      queryClient.setQueryData(["governance"], (current: typeof data) =>
+        current ? { ...current, policies } : current,
       );
-
-      if (Number.isNaN(scheduledAt.getTime())) {
-        showToast("Please enter a valid scheduled date and time.", "error");
-        return;
-      }
-
-      if (scheduledAt.getTime() <= Date.now()) {
-        showToast("Scheduled publish time must be in the future.", "error");
-        return;
-      }
-
-      formData.append("scheduledAt", scheduledAt.toISOString());
-    }
-
-    const file = values.attachment?.[0];
-
-    if (file) {
-      const maxSize = 8 * 1024 * 1024;
-
-      if (file.size > maxSize) {
-        showToast("Attachment must be smaller than 8MB.", "error");
-        return;
-      }
-
-      formData.append("attachment", file);
-    }
-
-    mutation.mutate(formData as any);
-  };
-
-  return (
-    <Modal
-      open={open}
-      onClose={() => {
-        if (!mutation.isPending) {
-          reset();
-          onClose();
-        }
-      }}
-      title="New announcement"
-      subtitle="Broadcast company updates to employees."
-      size="lg"
-      footer={
-        <>
-          <Button
-            variant="outline"
-            onClick={() => {
-              reset();
-              onClose();
-            }}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-
-          <Button
-            onClick={handleSubmit(onSubmit)}
-            isLoading={mutation.isPending}
-          >
-            Publish
-          </Button>
-        </>
-      }
-    >
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        className="max-h-[calc(100vh-220px)] space-y-5 overflow-y-auto pr-1 sm:pr-2"
-      >
-        <QuickTemplateSelector
-          onSelect={(template) => {
-            setValue("title", template.title, { shouldDirty: true });
-            setValue("body", template.body, { shouldDirty: true });
-            setValue("type", template.type, { shouldDirty: true });
-            setValue("audience", template.audience, { shouldDirty: true });
-            setValue("notificationMethods", template.notificationMethods, { shouldDirty: true });
-            setValue("requiresAcknowledgement", template.requiresAcknowledgement, { shouldDirty: true });
-          }}
-        />
-
-        <TextField
-          label="Title"
-          required
-          placeholder="Enter announcement title"
-          error={errors.title?.message}
-          {...register("title", {
-            required: "Title is required",
-            minLength: {
-              value: 3,
-              message: "Title must contain at least 3 characters",
-            },
-            maxLength: {
-              value: 200,
-              message: "Title cannot exceed 200 characters",
-            },
-          })}
-        />
-
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Announcement Type
-            <span className="ml-1 text-red-500">*</span>
-          </label>
-
-          <select
-            {...register("type", {
-              required: "Announcement type is required",
-            })}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          >
-            {ANNOUNCEMENT_TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <TextareaField
-          label="Message"
-          required
-          placeholder="Write the announcement message..."
-          error={errors.body?.message}
-          {...register("body", {
-            required: "Message is required",
-            minLength: {
-              value: 5,
-              message: "Message must contain at least 5 characters",
-            },
-            maxLength: {
-              value: 10000,
-              message: "Message cannot exceed 10000 characters",
-            },
-          })}
-        />
-
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Audience
-            <span className="ml-1 text-red-500">*</span>
-          </label>
-
-          <select
-            {...register("audience", {
-              required: "Audience is required",
-            })}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          >
-            {AUDIENCE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-
-          <p className="mt-1 text-xs text-ink-faint">
-            Choose who should receive this Announcement.
-          </p>
-        </div>
-
-        <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
-          <div>
-            <p className="text-[13px] font-medium text-ink">Targeting</p>
-            <p className="mt-0.5 text-xs text-ink-faint">
-              Optionally target specific departments, locations, or roles. Leave
-              blank to use the selected audience.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <MultiSelectCategory
-              label="Departments"
-              placeholder="Select departments"
-              options={DEPARTMENT_OPTIONS}
-              value={csvToArray(watch("departments"))}
-              onChange={(values) =>
-                setValue("departments", arrayToCsv(values), {
-                  shouldDirty: true,
-                })
-              }
-            />
-
-            <MultiSelectCategory
-              label="Locations"
-              placeholder="Select locations"
-              options={LOCATION_OPTIONS}
-              value={csvToArray(watch("locations"))}
-              onChange={(values) =>
-                setValue("locations", arrayToCsv(values), {
-                  shouldDirty: true,
-                })
-              }
-            />
-
-            <MultiSelectCategory
-              label="Target Roles"
-              placeholder="Select roles"
-              options={ROLE_OPTIONS}
-              value={csvToArray(watch("targetRoles"))}
-              onChange={(values) =>
-                setValue("targetRoles", arrayToCsv(values), {
-                  shouldDirty: true,
-                })
-              }
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Notification Method
-          </label>
-
-          <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-3">
-            {[
-              [
-                "IN_APP",
-                "In-App Notification",
-                "Instant alert inside the HRMS.",
-              ],
-              [
-                "EMAIL",
-                "Email Broadcast",
-                "Send to employee registered email.",
-              ],
-              [
-                "BANNER",
-                "Dashboard Banner",
-                "Show prominently on the employee dashboard.",
-              ],
-              [
-                "CALENDAR",
-                "Calendar",
-                "Add meeting/event details to the employee calendar.",
-              ],
-            ].map(([value, label, description]) => (
-              <label
-                key={value}
-                className="flex cursor-pointer items-center gap-3 text-[13px] text-ink-soft"
-              >
-                <input
-                  type="checkbox"
-                  value={value}
-                  {...register("notificationMethods")}
-                  className="rounded accent-brand-500"
-                />
-
-                <span>
-                  <span className="font-medium text-ink">{label}</span>
-
-                  <span className="ml-1 text-ink-faint">{description}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-
-          <p className="mt-1 text-xs text-ink-faint">
-            Select one or more Notification Channels.
-          </p>
-        </div>
-
-        {watch("notificationMethods")?.includes("CALENDAR") && (
-          <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
-            <div>
-              <p className="text-[13px] font-medium text-ink">Calendar event</p>
-              <p className="mt-0.5 text-xs text-ink-faint">
-                Add the Event date to the Employee Calendar.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <TextField
-                label="Event Date"
-                type="date"
-                min={todayLocalDate()}
-                {...register("eventStartAt")}
-              />
-
-              <TextField
-                label="Event End Date"
-                type="date"
-                min={watch("eventStartAt") || todayLocalDate()}
-                {...register("eventEndAt")}
-              />
-            </div>
-
-            <TextField
-              label="Event Location"
-              placeholder="Conference room, office, or meeting link"
-              {...register("eventLocation")}
-            />
-          </div>
-        )}
-
-        <div>
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
-              <input
-                type="checkbox"
-                {...register("requiresAcknowledgement")}
-                className="mt-0.5 rounded accent-brand-500"
-              />
-
-              <span>
-                <span className="block text-[13px] font-medium text-ink">
-                  Require Employee Acknowledgement
-                </span>
-
-                <span className="mt-0.5 block text-xs text-ink-faint">
-                  Employees must Acknowledge this Announcement Before it is Considered Complete.
-                </span>
-              </span>
-            </label>
-          </div>
-
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Publishing
-          </label>
-
-          <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-3">
-            <label className="flex cursor-pointer items-center gap-3 text-[13px] text-ink-soft">
-              <input
-                type="radio"
-                value="NOW"
-                {...register("publishMode")}
-                className="accent-brand-500"
-              />
-
-              <span>
-                <span className="font-medium text-ink">Publish Now</span>
-
-                <span className="ml-1 text-ink-faint">
-                  Publish the Announcement Immediately.
-                </span>
-              </span>
-            </label>
-
-            <label className="flex cursor-pointer items-center gap-3 text-[13px] text-ink-soft">
-              <input
-                type="radio"
-                value="SCHEDULED"
-                {...register("publishMode")}
-                className="accent-brand-500"
-              />
-
-              <span>
-                <span className="font-medium text-ink">Schedule for Later</span>
-
-                <span className="ml-1 text-ink-faint">
-                  Publish Automatically at the Selected Time.
-                </span>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Expiry After Publishing
-          </label>
-          <select
-            {...register("expiryDays")}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          >
-            <option value="1">1 day</option>
-            <option value="2">2 days</option>
-            <option value="3">3 days</option>
-            <option value="7">7 days (default)</option>
-            <option value="14">14 days</option>
-            <option value="30">30 days</option>
-            <option value="60">60 days</option>
-            <option value="90">90 days</option>
-            <option value="365">365 days</option>
-          </select>
-          <p className="mt-1 text-[11px] text-ink-faint">The Announcement stays in History After Expiry, but users cannot open it.</p>
-        </div>
-
-        {watch("publishMode") === "SCHEDULED" && (
-          <div className="grid grid-cols-1 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 sm:grid-cols-2">
-            <TextField
-              label="Publish Date"
-              type="date"
-              min={todayLocalDate()}
-              {...register("scheduledDate")}
-            />
-
-            <TextField
-              label="Publish Time"
-              type="time"
-              min={scheduledTimeMin(watch("scheduledDate"))}
-              {...register("scheduledTime")}
-            />
-
-            <p className="sm:col-span-2 text-xs text-ink-faint">
-              Past dates are Disabled. Scheduled Publishing must be in the
-              future.
-            </p>
-          </div>
-        )}
-
-        <AttachmentField register={register} />
-
-        <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-[13px] text-ink-soft">
-          <input
-            type="checkbox"
-            {...register("pinned")}
-            className="rounded accent-brand-500"
-          />
-
-          <span>
-            <span className="font-medium text-ink">Pin to top</span>
-
-            <span className="ml-1 text-ink-faint">
-              Keep this Announcement highlighted.
-            </span>
-          </span>
-        </label>
-      </form>
-    </Modal>
-  );
-}
-
-/* =========================================================
-   READ RECEIPTS MODAL
-========================================================= */
-
-function ReadReceiptsModal({
-  open,
-  announcement,
-  status,
-  isLoading,
-  onClose,
-}: {
-  open: boolean;
-  announcement: Announcement;
-  status: AnnouncementStatusEntryLocal[];
-  isLoading: boolean;
-  onClose: () => void;
-}) {
-  const [searchEmployee, setSearchEmployee] = useState("");
-  const [receiptFilter, setReceiptFilter] = useState("ALL");
-
-  useEffect(() => {
-    if (!open) {
-      setSearchEmployee("");
-      setReceiptFilter("ALL");
-    }
-  }, [open, announcement.id]);
-
-  const getValue = (entry: AnnouncementStatusEntryLocal, keys: string[]) => {
-    const record = entry as unknown as Record<string, unknown>;
-    for (const key of keys) {
-      const value = record[key];
-      if (value !== undefined && value !== null && value !== "") return value;
-    }
-    return undefined;
-  };
-
-  const isTruthy = (value: unknown) => value === true || value === "true";
-
-  const readCount = status.filter((entry) => isTruthy(getValue(entry, ["isRead", "read", "hasRead"]))).length;
-  const acknowledgementCount = status.filter((entry) => isTruthy(getValue(entry, ["acknowledged", "isAcknowledged", "hasAcknowledged"]))).length;
-  const totalCount = status.length;
-  const unreadCount = Math.max(totalCount - readCount, 0);
-  const pendingAcknowledgement = Math.max(totalCount - acknowledgementCount, 0);
-  const readPercentage = totalCount > 0 ? Math.round((readCount / totalCount) * 100) : 0;
-  const acknowledgementPercentage = totalCount > 0 ? Math.round((acknowledgementCount / totalCount) * 100) : 0;
-  const requiresAcknowledgement = Boolean(announcement.requiresAcknowledgement);
-
-  const filteredStatus = status.filter((entry) => {
-    const name = String(getValue(entry, ["employeeName", "name", "employeeFullName"]) ?? "").toLowerCase();
-    const email = String(getValue(entry, ["employeeEmail", "email"]) ?? "").toLowerCase();
-    const department = String(getValue(entry, ["departmentName", "department"]) ?? "").toLowerCase();
-    const query = searchEmployee.trim().toLowerCase();
-
-    if (query && ![name, email, department].some((value) => value.includes(query))) return false;
-
-    const isRead = isTruthy(getValue(entry, ["isRead", "read", "hasRead"]));
-    const isAcknowledged = isTruthy(getValue(entry, ["acknowledged", "isAcknowledged", "hasAcknowledged"]));
-
-    if (receiptFilter === "READ" && !isRead) return false;
-    if (receiptFilter === "UNREAD" && isRead) return false;
-    if (receiptFilter === "ACKNOWLEDGED" && !isAcknowledged) return false;
-    if (receiptFilter === "PENDING_ACK" && isAcknowledged) return false;
-
-    return true;
+      showToast("Governance policies updated.");
+    },
+    onError: (error) => showToast(getErrorMessage(error), "error"),
   });
 
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Announcement Engagement"
-      subtitle={`Track reads and acknowledgements for "${announcement.title}".`}
-      size="lg"
-      footer={<Button variant="outline" onClick={onClose}>Close</Button>}
-    >
-      {isLoading ? (
-        <div className="py-8 text-center text-sm text-ink-faint">Loading Engagement Records...</div>
-      ) : (
-        <div className="space-y-5">
-          <div className={`grid grid-cols-2 gap-3 ${requiresAcknowledgement ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Recipients</p><p className="mt-1 text-xl font-semibold text-ink">{totalCount}</p></div>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Read</p><p className="mt-1 text-xl font-semibold text-ink">{readCount}</p></div>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Unread</p><p className="mt-1 text-xl font-semibold text-ink">{unreadCount}</p></div>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Read rate</p><p className="mt-1 text-xl font-semibold text-ink">{readPercentage}%</p></div>
-            {requiresAcknowledgement && <div className="rounded-xl border border-gray-100 bg-gray-50 p-4"><p className="text-xs text-ink-faint">Acknowledged</p><p className="mt-1 text-xl font-semibold text-ink">{acknowledgementCount}</p></div>}
-          </div>
-
-          {requiresAcknowledgement && (
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-              <div className="flex items-center justify-between text-xs"><span className="text-ink-faint">Acknowledgement Rate</span><span className="font-semibold text-ink">{acknowledgementPercentage}%</span></div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-brand-500" style={{ width: `${acknowledgementPercentage}%` }} /></div>
-              <p className="mt-2 text-[11px] text-ink-faint">{pendingAcknowledgement} Employee{pendingAcknowledgement === 1 ? "" : "s"} Pending Acknowledgement.</p>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="relative min-w-0 flex-1">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
-              <input value={searchEmployee} onChange={(event) => setSearchEmployee(event.target.value)} placeholder="Search employee, email or department..." className="h-10 w-full rounded-xl border border-gray-200 pl-9 pr-3 text-sm outline-none focus:border-brand-500" />
-            </div>
-            <select value={receiptFilter} onChange={(event) => setReceiptFilter(event.target.value)} className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-xs text-ink outline-none focus:border-brand-500">
-              <option value="ALL">All recipients</option>
-              <option value="READ">Read</option>
-              <option value="UNREAD">Unread</option>
-              {requiresAcknowledgement && <><option value="ACKNOWLEDGED">Acknowledged</option><option value="PENDING_ACK">Pending Acknowledgement</option></>}
-            </select>
-          </div>
-
-          {!status.length ? (
-            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-ink-faint">No Receipt records are available yet.</div>
-          ) : !filteredStatus.length ? (
-            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-ink-faint">No Employees match this filter.</div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-gray-100">
-              <table className="w-full min-w-[820px] text-left text-sm">
-                <thead className="bg-gray-50 text-xs text-ink-faint"><tr>
-                  <th className="px-4 py-3 font-medium">Employee</th>
-                  <th className="px-4 py-3 font-medium">Department</th>
-                  <th className="px-4 py-3 font-medium">Role</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Read At</th>
-                  {requiresAcknowledgement && <th className="px-4 py-3 font-medium">Acknowledgement</th>}
-                </tr></thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredStatus.map((entry, index) => {
-                    const name = getValue(entry, ["employeeName", "name", "employeeFullName"]);
-                    const email = getValue(entry, ["employeeEmail", "email"]);
-                    const department = getValue(entry, ["departmentName", "department"]);
-                    const role = getValue(entry, ["role", "employeeRole"]);
-                    const isRead = isTruthy(getValue(entry, ["isRead", "read", "hasRead"]));
-                    const readAt = getValue(entry, ["readAt", "read_at"]);
-                    const isAcknowledged = isTruthy(getValue(entry, ["acknowledged", "isAcknowledged", "hasAcknowledged"]));
-
-                    return (
-                      <tr key={`${String(name ?? email ?? "entry")}-${index}`}>
-                        <td className="px-4 py-3"><div className="font-medium text-ink">{String(name ?? "Employee")}</div>{email && <div className="mt-0.5 text-xs text-ink-faint">{String(email)}</div>}</td>
-                        <td className="px-4 py-3 text-ink-soft">{String(department ?? "—")}</td>
-                        <td className="px-4 py-3 text-ink-soft">{String(role ?? "—")}</td>
-                        <td className="px-4 py-3"><Badge className={isRead ? "text-emerald-600" : "text-ink-faint"}>{isRead ? "Read" : "Unread"}</Badge></td>
-                        <td className="px-4 py-3 text-ink-faint">{readAt ? formatDate(String(readAt)) : "—"}</td>
-                        {requiresAcknowledgement && <td className="px-4 py-3"><Badge className={isAcknowledged ? "text-emerald-600" : "text-ink-faint"}>{isAcknowledged ? "Acknowledged" : "Pending"}</Badge></td>}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-/* =========================================================
-   EDIT MODAL
-========================================================= */
-function EditModal({
-  open,
-  announcement,
-  isLoading,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  announcement: Announcement;
-  isLoading: boolean;
-  onClose: () => void;
-  onSubmit: (formData: FormData) => void;
-}) {
-  const {
-    register,
-    handleSubmit,
-    reset,
-    watch,
-    setValue,
-    formState: { errors },
-  } = useForm<AnnouncementForm>();
-
-  useEffect(() => {
-    if (!open || !announcement) {
-      return;
+  const groupedPermissions = useMemo(() => {
+    const groups = new Map<string, GovernancePermission[]>();
+    for (const permission of data?.permissions ?? []) {
+      const list = groups.get(permission.module) ?? [];
+      list.push(permission);
+      groups.set(permission.module, list);
     }
+    return [...groups.entries()];
+  }, [data?.permissions]);
 
-    reset({
-      title: announcement.title ?? "",
-      body: announcement.body ?? "",
-      type: announcement.type ?? "GENERAL_NOTICE",
-      audience: announcement.audience ?? "ALL",
-      departments: announcement.departments?.join(", ") ?? "",
-      locations: announcement.locations?.join(", ") ?? "",
-      targetRoles: announcement.targetRoles?.join(", ") ?? "",
-      pinned: Boolean(announcement.pinned),
-      notificationMethods: normalizeChannels(announcement.channels).length
-        ? normalizeChannels(announcement.channels)
-        : ["IN_APP"],
-      publishMode: announcement.status === "SCHEDULED" ? "SCHEDULED" : "NOW",
-      scheduledDate: announcement.scheduledAt
-        ? new Date(announcement.scheduledAt).toISOString().slice(0, 10)
-        : "",
-      scheduledTime: announcement.scheduledAt
-        ? new Date(announcement.scheduledAt).toISOString().slice(11, 16)
-        : "",
-      requiresAcknowledgement: Boolean(announcement.requiresAcknowledgement),
-      calendarEnabled: Boolean(announcement.calendarEnabled),
-      eventStartAt: announcement.eventStartAt
-        ? new Date(announcement.eventStartAt).toISOString().slice(0, 10)
-        : "",
-      eventEndAt: announcement.eventEndAt
-        ? new Date(announcement.eventEndAt).toISOString().slice(0, 10)
-        : "",
-      eventLocation: announcement.eventLocation ?? "",
-      expiryDays: String(announcement.expiryDays ?? 7),
-      attachment: undefined,
-    });
-  }, [open, announcement, reset]);
-
-  const submit = (data: AnnouncementForm) => {
-    const formData = new FormData();
-
-    formData.append("title", data.title.trim());
-    formData.append("body", data.body.trim());
-    formData.append("type", data.type);
-    formData.append("audience", data.audience);
-
-    const expiryDays = Number(data.expiryDays);
-    if (!Number.isInteger(expiryDays) || expiryDays < 1 || expiryDays > 365) {
-      throw new Error("Expiry must be between 1 and 365 days.");
-    }
-    formData.append("expiryDays", String(expiryDays));
-
-    const departments = data.departments
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    const locations = data.locations
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    const targetRoles = data.targetRoles
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    formData.append("departments", JSON.stringify(departments));
-    formData.append("locations", JSON.stringify(locations));
-    formData.append("targetRoles", JSON.stringify(targetRoles));
-    formData.append("pinned", String(data.pinned ?? false));
-
-    const channels = normalizeChannels(data.notificationMethods);
-
-    if (!channels.length) {
-      throw new Error("Please select at least one notification method.");
-    }
-
-    formData.append("notificationMethods", JSON.stringify(channels));
-    formData.append("channels", JSON.stringify(channels));
-    formData.append("showBanner", String(channels.includes("BANNER")));
-    formData.append("calendarEnabled", String(channels.includes("CALENDAR")));
-
-    formData.append(
-      "requiresAcknowledgement",
-      String(
-        Boolean(data.requiresAcknowledgement),
-      ),
+  const togglePermission = (permission: string) => {
+    if (selectedRole === "SUPER_ADMIN") return;
+    setDraftPermissions((current) =>
+      current.includes(permission)
+        ? current.filter((item) => item !== permission)
+        : [...current, permission],
     );
-
-    if (data.publishMode === "SCHEDULED") {
-      if (!data.scheduledDate || !data.scheduledTime) {
-        throw new Error("Please select a publish date and time.");
-      }
-
-      const scheduledAt = new Date(
-        `${data.scheduledDate}T${data.scheduledTime}`,
-      );
-
-      if (
-        Number.isNaN(scheduledAt.getTime()) ||
-        scheduledAt.getTime() <= Date.now()
-      ) {
-        throw new Error("Scheduled publish time must be in the future.");
-      }
-
-      formData.append("scheduledAt", scheduledAt.toISOString());
-      formData.append("publishMode", "SCHEDULED");
-    } else {
-      formData.append("publishMode", "NOW");
-    }
-
-    if (channels.includes("CALENDAR")) {
-      if (!data.eventStartAt) {
-        throw new Error("Please provide a calendar event date.");
-      }
-
-      if (!data.eventEndAt) {
-        throw new Error("Please provide a calendar event end date.");
-      }
-
-      const eventStart = new Date(`${data.eventStartAt}T00:00:00`);
-      const eventEnd = new Date(`${data.eventEndAt}T00:00:00`);
-
-      if (Number.isNaN(eventStart.getTime())) {
-        throw new Error("Please enter a valid calendar event date.");
-      }
-
-      if (Number.isNaN(eventEnd.getTime())) {
-        throw new Error("Please enter a valid calendar event end date.");
-      }
-
-      const today = new Date(`${todayLocalDate()}T00:00:00`);
-
-      if (eventStart.getTime() < today.getTime()) {
-        throw new Error(
-          "Calendar event date must be today or a future date.",
-        );
-      }
-
-      if (eventEnd.getTime() < eventStart.getTime()) {
-        throw new Error(
-          "Calendar event end date must be on or after the start date.",
-        );
-      }
-
-      formData.append("eventStartAt", data.eventStartAt);
-
-      formData.append("eventEndAt", data.eventEndAt);
-
-      if (data.eventLocation?.trim()) {
-        formData.append("eventLocation", data.eventLocation.trim());
-      }
-    }
-
-    const files = data.attachment as FileList | undefined;
-
-    if (files && files.length > 0) {
-      formData.append("attachment", files[0]);
-    }
-
-    onSubmit(formData);
   };
 
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Edit announcement"
-      subtitle="Update the announcement details."
-      size="lg"
-      footer={
-        <>
+  const updatePolicy = (
+    policy: GovernancePolicy,
+    value: GovernancePolicy["value"],
+  ) => {
+    setDraftPolicies((current) =>
+      current.map((item) =>
+        item.key === policy.key ? { ...item, value } : item,
+      ),
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-5">
+        <Skeleton className="h-28 rounded-[24px]" />
+        <div className="grid gap-5 xl:grid-cols-[280px_1fr]">
+          <Skeleton className="h-[430px] rounded-[24px]" />
+          <Skeleton className="h-[430px] rounded-[24px]" />
+        </div>
+        <Skeleton className="h-[260px] rounded-[24px]" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="overflow-hidden border-red-100 bg-gradient-to-br from-white to-red-50/40">
+        <div className="flex min-h-[340px] flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-red-50 text-red-600 ring-1 ring-red-100">
+            <ShieldCheck size={25} />
+          </div>
+          <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.16em] text-red-600">
+            Governance unavailable
+          </p>
+          <h3 className="mt-2 text-lg font-semibold text-ink">
+            Governance configuration could not be loaded
+          </h3>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-ink-faint">
+            {getErrorMessage(error)}
+          </p>
           <Button
-            type="button"
+            className="mt-6"
             variant="outline"
-            onClick={onClose}
-            disabled={isLoading}
+            onClick={() => void refetch()}
           >
-            Cancel
+            Try again
           </Button>
-
-          <Button
-            type="submit"
-            isLoading={isLoading}
-            form="edit-announcement-form"
-          >
-            Save Changes
-          </Button>
-        </>
-      }
-    >
-      <form
-        id="edit-announcement-form"
-        className="max-h-[calc(100vh-220px)] space-y-5 overflow-y-auto pr-1 sm:pr-2"
-        onSubmit={handleSubmit(submit)}
-      >
-        <TextField
-          label="Title"
-          required
-          placeholder="Enter announcement title"
-          error={errors.title?.message}
-          {...register("title", {
-            required: "Title is required",
-            minLength: {
-              value: 3,
-              message: "Title must contain at least 3 characters",
-            },
-            maxLength: {
-              value: 200,
-              message: "Title cannot exceed 200 characters",
-            },
-          })}
-        />
-
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Announcement Type
-            <span className="ml-1 text-red-500">*</span>
-          </label>
-
-          <select
-            {...register("type", {
-              required: "Announcement type is required",
-            })}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          >
-            {ANNOUNCEMENT_TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-
-          {errors.type?.message && (
-            <p className="mt-1 text-xs text-red-500">{errors.type.message}</p>
-          )}
         </div>
+      </Card>
+    );
+  }
 
-        <TextareaField
-          label="Message"
-          required
-          placeholder="Write the announcement message..."
-          error={errors.body?.message}
-          {...register("body", {
-            required: "Message is required",
-            minLength: {
-              value: 5,
-              message: "Message must contain at least 5 characters",
-            },
-            maxLength: {
-              value: 10000,
-              message: "Message cannot exceed 10000 characters",
-            },
-          })}
-        />
+  const permissionCount = data?.permissions?.length ?? 0;
+  const policyCount = data?.policies?.length ?? 0;
 
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Audience
-            <span className="ml-1 text-red-500">*</span>
-          </label>
-
-          <select
-            {...register("audience", {
-              required: "Audience is required",
-            })}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          >
-            {AUDIENCE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-
-          {errors.audience?.message && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.audience.message}
-            </p>
-          )}
-        </div>
-
-        <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
-          <div>
-            <p className="text-[13px] font-medium text-ink">Targeting</p>
-            <p className="mt-0.5 text-xs text-ink-faint">
-              Select optional categories to restrict recipients. Leave all three
-              blank to use the selected audience only.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <MultiSelectCategory
-              label="Departments"
-              placeholder="Select departments"
-              options={DEPARTMENT_OPTIONS}
-              value={csvToArray(watch("departments"))}
-              onChange={(values) =>
-                setValue("departments", arrayToCsv(values), {
-                  shouldDirty: true,
-                })
-              }
-            />
-
-            <MultiSelectCategory
-              label="Locations"
-              placeholder="Select locations"
-              options={LOCATION_OPTIONS}
-              value={csvToArray(watch("locations"))}
-              onChange={(values) =>
-                setValue("locations", arrayToCsv(values), {
-                  shouldDirty: true,
-                })
-              }
-            />
-
-            <MultiSelectCategory
-              label="Target Roles"
-              placeholder="Select roles"
-              options={ROLE_OPTIONS}
-              value={csvToArray(watch("targetRoles"))}
-              onChange={(values) =>
-                setValue("targetRoles", arrayToCsv(values), {
-                  shouldDirty: true,
-                })
-              }
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Notification Method
-          </label>
-          <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-3">
-            {[
-              [
-                "IN_APP",
-                "In-App Notification",
-                "Instant alert inside the HRMS.",
-              ],
-              [
-                "EMAIL",
-                "Email Broadcast",
-                "Send to employee registered email.",
-              ],
-              [
-                "BANNER",
-                "Dashboard Banner",
-                "Show prominently on the employee dashboard.",
-              ],
-              [
-                "CALENDAR",
-                "Calendar",
-                "Add meeting/event details to the employee calendar.",
-              ],
-            ].map(([value, label, description]) => (
-              <label
-                key={value}
-                className="flex cursor-pointer items-center gap-3 text-[13px] text-ink-soft"
-              >
-                <input
-                  type="checkbox"
-                  value={value}
-                  {...register("notificationMethods")}
-                  className="rounded accent-brand-500"
-                />
-                <span>
-                  <span className="font-medium text-ink">{label}</span>
-                  <span className="ml-1 text-ink-faint">{description}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {watch("notificationMethods")?.includes("CALENDAR") && (
-          <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
-            <div>
-              <p className="text-[13px] font-medium text-ink">Calendar Event</p>
-              <p className="mt-0.5 text-xs text-ink-faint">
-                Event date will be shown on the Announcement.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <TextField
-                label="Event Date"
-                type="date"
-                min={todayLocalDate()}
-                {...register("eventStartAt")}
-              />
-              <TextField
-                label="Event End Date"
-                type="date"
-                min={watch("eventStartAt") || todayLocalDate()}
-                {...register("eventEndAt")}
-              />
-            </div>
-            <TextField
-              label="Event Location"
-              placeholder="Conference room, office, or meeting link"
-              {...register("eventLocation")}
-            />
-          </div>
-        )}
-
-        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
-          <input
-            type="checkbox"
-            {...register("requiresAcknowledgement")}
-            className="mt-0.5 rounded accent-brand-500"
-          />
-          <span>
-            <span className="block text-[13px] font-medium text-ink">Require Employee Acknowledgement</span>
-            <span className="mt-0.5 block text-xs text-ink-faint">Employees must Acknowledge this Announcement.</span>
-          </span>
-        </label>
-
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink">
-            Expiry After Publishing
-          </label>
-          <select
-            {...register("expiryDays")}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          >
-            <option value="1">1 day</option>
-            <option value="2">2 days</option>
-            <option value="3">3 days</option>
-            <option value="7">7 days (default)</option>
-            <option value="14">14 days</option>
-            <option value="30">30 days</option>
-            <option value="60">60 days</option>
-            <option value="90">90 days</option>
-            <option value="365">365 days</option>
-          </select>
-          <p className="mt-1 text-[11px] text-ink-faint">After expiry, the announcement remains in history with an EXPIRED badge but cannot be opened.</p>
-        </div>
-
-        {watch("publishMode") === "SCHEDULED" && (
-          <div className="grid grid-cols-1 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 sm:grid-cols-2">
-            <TextField
-              label="Publish Date"
-              type="date"
-              min={todayLocalDate()}
-              {...register("scheduledDate")}
-            />
-            <TextField
-              label="Publish Time"
-              type="time"
-              min={scheduledTimeMin(watch("scheduledDate"))}
-              {...register("scheduledTime")}
-            />
-          </div>
-        )}
-
-        <AttachmentField register={register} />
-
-        {announcement.attachment && (
-          <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-            <p className="text-xs text-ink-faint">Current Attachment</p>
-
-            <a
-              href={getAttachmentUrl(announcement.attachment)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 inline-flex items-center gap-2 text-sm font-medium text-brand-600 hover:underline"
-            >
-              {isImageAttachment(announcement.attachment) ? (
-                <ImageIcon size={15} />
-              ) : (
-                <FileText size={15} />
-              )}
-              View Current Attachment
-            </a>
-          </div>
-        )}
-
-        <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-[13px] text-ink-soft">
-          <input
-            type="checkbox"
-            {...register("pinned")}
-            className="rounded accent-brand-500"
-          />
-
-          <span>
-            <span className="font-medium text-ink">Pin to Top</span>
-
-            <span className="ml-1 text-ink-faint">
-              Keep this Announcement Highlighted.
-            </span>
-          </span>
-        </label>
-      </form>
-    </Modal>
-  );
-}
-
-/* =========================================================
-   ATTACHMENT FIELD
-========================================================= */
-
-function AttachmentField({
-  register,
-}: {
-  register: ReturnType<typeof useForm<AnnouncementForm>>["register"];
-}) {
   return (
-    <div>
-      <label className="mb-1.5 block text-[13px] font-medium text-ink">
-        Attachment{" "}
-        <span className="font-normal text-ink-faint">(Optional)</span>
-      </label>
+    <div className="space-y-5">
+      {/* Governance overview */}
+      <div className="relative overflow-hidden rounded-[24px] border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-indigo-50/60 p-5 shadow-[0_16px_40px_-28px_rgba(79,70,229,0.32)]">
+        <div className="absolute -right-12 -top-16 h-36 w-36 rounded-full bg-violet-200/30 blur-3xl" />
+        <div className="absolute -bottom-16 left-1/3 h-32 w-32 rounded-full bg-indigo-200/25 blur-3xl" />
 
-      <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-ink-soft transition hover:border-brand-400 hover:bg-brand-50">
-        <Paperclip size={16} />
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-violet-700">
+              <ShieldCheck size={13} />
+              Access control center
+            </div>
+            <h3 className="mt-3 font-display text-2xl font-semibold tracking-[-0.03em] text-ink">
+              Roles, permissions & policies
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-faint">
+              Manage built-in HRMS roles, module permissions and organization
+              governance defaults without changing the existing authorization workflow.
+            </p>
+          </div>
 
-        <span>Choose PDF, Word Document, or Image</span>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="min-w-[86px] rounded-2xl border border-white/80 bg-white/80 px-3 py-3 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+                Roles
+              </p>
+              <p className="mt-1 text-xl font-semibold text-ink">{roles.length}</p>
+            </div>
+            <div className="min-w-[86px] rounded-2xl border border-white/80 bg-white/80 px-3 py-3 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+                Permissions
+              </p>
+              <p className="mt-1 text-xl font-semibold text-ink">{permissionCount}</p>
+            </div>
+            <div className="min-w-[86px] rounded-2xl border border-white/80 bg-white/80 px-3 py-3 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+                Policies
+              </p>
+              <p className="mt-1 text-xl font-semibold text-ink">{policyCount}</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        <input
-          type="file"
-          accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
-          {...register("attachment")}
-          className="hidden"
+      {/* Roles & permissions */}
+      <Card className="overflow-hidden border-indigo-100/80 shadow-[0_12px_32px_-25px_rgba(79,70,229,0.28)]">
+        <CardHeader
+          title="Roles & permissions"
+          subtitle="Control which HRMS modules and actions each built-in role can access."
+          action={
+            <Badge tone="brand">
+              <ShieldCheck size={13} /> Governance
+            </Badge>
+          }
         />
-      </label>
 
-      <p className="mt-1 text-xs text-ink-faint">
-        Optional · Maximum file size: 8MB
-      </p>
+        {!roles.length ? (
+          <div className="mx-5 mb-5 rounded-2xl border border-dashed border-line bg-surface-muted px-5 py-10 text-center">
+            <p className="text-sm font-semibold text-ink">
+              No governance roles returned
+            </p>
+            <p className="mt-1 text-xs text-ink-faint">
+              The Governance API responded successfully, but no role records were returned.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-5 px-5 pb-5 lg:grid-cols-[250px_1fr]">
+            <div className="rounded-2xl border border-line/60 bg-surface-muted/60 p-2">
+              <div className="mb-2 flex items-center justify-between px-2 py-1">
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+                  Built-in roles
+                </span>
+                <span className="text-[10px] text-ink-faint">{roles.length}</span>
+              </div>
+
+              <div className="space-y-1">
+                {roles.map((item) => (
+                  <button
+                    key={item.role}
+                    type="button"
+                    onClick={() => setSelectedRole(item.role)}
+                    className={`group w-full rounded-xl border px-3 py-3 text-left transition ${
+                      selectedRole === item.role
+                        ? "border-brand-200 bg-white text-brand-700 shadow-sm"
+                        : "border-transparent text-ink-soft hover:border-line hover:bg-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[13px] font-medium">{item.label}</span>
+                      {item.role === "SUPER_ADMIN" && (
+                        <LockKeyhole size={13} className="text-amber-600" />
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="text-[11px] opacity-70">
+                        {item.permissions.length} permissions
+                      </span>
+                      {item.role === "SUPER_ADMIN" && (
+                        <span className="text-[9px] font-bold uppercase tracking-[0.1em] opacity-60">
+                          System
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {role && (
+              <div className="min-w-0">
+                <div className="mb-4 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/80 via-white to-violet-50/50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-semibold text-ink">
+                          {role.label}
+                        </h4>
+                        <Badge tone={role.role === "SUPER_ADMIN" ? "gold" : "neutral"}>
+                          {role.role}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-ink-faint">
+                        {role.description}
+                      </p>
+                    </div>
+                    {role.role === "SUPER_ADMIN" ? (
+                      <Badge tone="gold">
+                        <LockKeyhole size={12} /> Full access
+                      </Badge>
+                    ) : (
+                      <Badge tone="neutral">Configurable</Badge>
+                    )}
+                  </div>
+                </div>
+
+                {!groupedPermissions.length ? (
+                  <div className="rounded-2xl border border-dashed border-line px-5 py-10 text-center">
+                    <p className="text-sm font-semibold text-ink">
+                      No permissions returned
+                    </p>
+                    <p className="mt-1 text-xs text-ink-faint">
+                      The role exists, but the permission catalog is empty.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {groupedPermissions.map(([module, permissions]) => (
+                      <div
+                        key={module}
+                        className="rounded-2xl border border-line/60 bg-white p-4 transition hover:border-indigo-100 hover:shadow-sm"
+                      >
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <p className="text-[13px] font-semibold text-ink">
+                            {module}
+                          </p>
+                          <span className="rounded-full bg-surface-muted px-2 py-1 text-[10px] font-medium text-ink-faint">
+                            {permissions.length}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          {permissions.map((permission) => {
+                            const checked = draftPermissions.includes(permission.key);
+
+                            return (
+                              <label
+                                key={permission.key}
+                                className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-2.5 transition ${
+                                  checked
+                                    ? "border-brand-200 bg-brand-50/50"
+                                    : "border-line/60 hover:border-line hover:bg-surface-muted/50"
+                                } ${
+                                  selectedRole === "SUPER_ADMIN"
+                                    ? "cursor-not-allowed opacity-80"
+                                    : ""
+                                }`}
+                              >
+                                <span className="min-w-0">
+                                  <span className="block text-xs font-medium text-ink">
+                                    {permission.action}
+                                  </span>
+                                  <span className="mt-0.5 block truncate text-[11px] text-ink-faint">
+                                    {permission.key}
+                                  </span>
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={selectedRole === "SUPER_ADMIN"}
+                                  onChange={() => togglePermission(permission.key)}
+                                  className="h-4 w-4 shrink-0 rounded accent-brand-500"
+                                />
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[11px] text-ink-faint">
+                    {role.role === "SUPER_ADMIN"
+                      ? "Super Administrator permissions are system-controlled."
+                      : `${draftPermissions.length} permission${draftPermissions.length === 1 ? "" : "s"} selected for this role.`}
+                  </p>
+
+                  <Button
+                    leftIcon={<Save size={14} />}
+                    disabled={selectedRole === "SUPER_ADMIN"}
+                    isLoading={roleMutation.isPending}
+                    onClick={() => roleMutation.mutate()}
+                  >
+                    Save permissions
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {/* Governance policies */}
+      <Card className="overflow-hidden border-emerald-100/80 shadow-[0_12px_32px_-25px_rgba(16,185,129,0.22)]">
+        <CardHeader
+          title="Governance policies"
+          subtitle="Configure security, approval workflow and HR governance defaults."
+          action={
+            <Badge tone="neutral">
+              <SlidersHorizontal size={13} /> Policies
+            </Badge>
+          }
+        />
+
+        {!draftPolicies.length ? (
+          <div className="mx-5 mb-5 rounded-2xl border border-dashed border-line bg-surface-muted px-5 py-10 text-center">
+            <p className="text-sm font-semibold text-ink">
+              No governance policies returned
+            </p>
+            <p className="mt-1 text-xs text-ink-faint">
+              The policy catalog is empty, so there is nothing to configure yet.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-3 px-5">
+              {draftPolicies.map((policy) => (
+                <div
+                  key={policy.key}
+                  className="flex flex-col gap-4 rounded-2xl border border-line/60 bg-white p-4 transition hover:border-emerald-100 hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0 max-w-2xl">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[13px] font-semibold text-ink">
+                        {policy.label}
+                      </p>
+                      <span className="rounded-full bg-surface-muted px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-ink-faint">
+                        {policy.type === "BOOLEAN" ? "Security / Workflow" : "HR Policy"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[12px] leading-5 text-ink-faint">
+                      {policy.description}
+                    </p>
+                    <p className="mt-1 text-[10px] font-medium text-ink-faint">
+                      {policy.key}
+                    </p>
+                  </div>
+
+                  {policy.type === "BOOLEAN" ? (
+                    <button
+                      type="button"
+                      onClick={() => updatePolicy(policy, !policy.value)}
+                      className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border px-4 text-xs font-semibold transition ${
+                        policy.value
+                          ? "border-success-200 bg-success-50 text-success-700 hover:bg-success-100"
+                          : "border-line bg-white text-ink-faint hover:bg-surface-muted"
+                      }`}
+                    >
+                      <Check size={14} />
+                      {policy.value ? "Enabled" : "Disabled"}
+                    </button>
+                  ) : (
+                    <input
+                      type={policy.type === "NUMBER" ? "number" : "text"}
+                      value={String(policy.value)}
+                      onChange={(event) =>
+                        updatePolicy(
+                          policy,
+                          policy.type === "NUMBER"
+                            ? Number(event.target.value)
+                            : event.target.value,
+                        )
+                      }
+                      className="h-10 w-full shrink-0 rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none transition focus:border-brand-300 focus:ring-2 focus:ring-brand-100 sm:w-40"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-3 border-t border-line/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[11px] text-ink-faint">
+                Changes remain in draft until you save the governance policies.
+              </p>
+              <Button
+                leftIcon={<Save size={14} />}
+                isLoading={policyMutation.isPending}
+                onClick={() => policyMutation.mutate()}
+              >
+                Save policies
+              </Button>
+            </div>
+          </>
+        )}
+      </Card>
     </div>
   );
 }

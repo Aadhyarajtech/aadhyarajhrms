@@ -61,7 +61,7 @@ const roleAllowed =
     user.isManager === true ||
     user.employee?.isManager === true ||
     canonicalUserRole === "SUPER_ADMIN" ||
-    canonicalUserRole === "HR_ADMIN";
+    canonicalUserRole === "ADMIN";
   const permissionAllowed =
     !permissions?.length || permissions.some(hasPermission);
   if (!managerAllowed)

@@ -21,7 +21,7 @@ async function checkProbationReminders() {
     }
 
     const hrUsers = await User.find({
-      role: "HR_ADMIN",
+      role: "ADMIN",
       isActive: true,
     })
       .select("_id")

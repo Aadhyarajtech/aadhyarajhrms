@@ -759,7 +759,7 @@ export async function completeOnboarding(id: string, completedBy: string) {
 
 export type AssignableEmployeeRole =
   | "SUPER_ADMIN"
-  | "HR_ADMIN"
+  | "ADMIN"
   | "RECRUITER"
   | "FINANCE"
   | "IT_SUPPORT"
@@ -1125,7 +1125,7 @@ export async function getManagersList() {
       return (
         employee.isManager === true ||
         role === "MANAGER" || // legacy records remain discoverable until reassigned
-        role === "HR_ADMIN" ||
+        role === "ADMIN" ||
         role === "SUPER_ADMIN" ||
         (reportMap.get(employee._id) ?? 0) > 0
       );

@@ -98,9 +98,9 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export default function Reports() {
   const { user } = useAuth();
-  const isManager = user?.role === "MANAGER" || user?.isManager === true;
+  const isManager = user?.isManager === true;
   const canRecruitment =
-    user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
+    user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
   const canAudit = canRecruitment;
   const [tab, setTab] = useState<Tab>("overview");
   const [selectedAiQuery, setSelectedAiQuery] = useState("");

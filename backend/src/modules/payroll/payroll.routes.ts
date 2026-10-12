@@ -344,7 +344,7 @@ async function checkPayslipAccess(
   payslip: any,
   user: { userId: string; role: string; employeeId?: string | null },
 ) {
-  const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"].includes(
+  const isPrivileged = ["SUPER_ADMIN", "ADMIN", "FINANCE"].includes(
     user.role,
   );
   if (isPrivileged) return;

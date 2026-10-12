@@ -625,7 +625,7 @@ export function getCopilotScopeDescription(
 
   if (
     role === "SUPER_ADMIN" ||
-    role === "HR_ADMIN"
+    role === "ADMIN"
   ) {
     return "organization-wide data scope";
   }

@@ -7,7 +7,7 @@ export interface UserRow {
   passwordHash: string;
   role:
     | "SUPER_ADMIN"
-    | "HR_ADMIN"
+    | "ADMIN"
     | "MANAGER"
     | "RECRUITER"
     | "FINANCE"

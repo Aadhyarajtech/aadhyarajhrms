@@ -42,19 +42,19 @@ import { AiLeaveApprovalModal } from "@/components/leave/AiLeaveApprovalModal";
 
 const MANAGER_ROLES: string[] = [
   "SUPER_ADMIN",
-  "HR_ADMIN",
+  "ADMIN",
   "MANAGER",
 ];
 
 /**
  * Roles that can access Team Approvals.
- * SUPER_ADMIN / HR_ADMIN can see all team requests.
+ * SUPER_ADMIN / ADMIN can see all team requests.
  * MANAGER / RECRUITER / FINANCE / IT_SUPPORT see only their
  * own direct team's requests through the backend scope=team filter.
  */
 const TEAM_LEAVE_APPROVAL_ROLES: string[] = [
   "SUPER_ADMIN",
-  "HR_ADMIN",
+  "ADMIN",
   "MANAGER",
   "RECRUITER",
   "FINANCE",
@@ -213,7 +213,7 @@ export default function Leave() {
     !!user && TEAM_LEAVE_APPROVAL_ROLES.includes(user.role);
 
   const isLeaveAdmin =
-    user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
+    user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
 
   const [tab, setTab] = useState(
     params.get("tab") === "team" && isManager
@@ -464,7 +464,7 @@ function MyLeave() {
 
 /**
  * Team Approvals:
- * - SUPER_ADMIN / HR_ADMIN can decide requests across the organization.
+ * - SUPER_ADMIN / ADMIN can decide requests across the organization.
  * - MANAGER / RECRUITER / FINANCE / IT_SUPPORT can decide requests
  *   shown for their own direct reports.
  *
@@ -2061,7 +2061,7 @@ function BulkApplyLeaveModal({
             Admin bulk leave
           </p>
           <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">
-            Super Admin and HR Admin can create the same leave request for all
+            Super Admin and Admin can create the same leave request for all
             eligible employees or a selected group. Existing leave rules and
             balances are still checked for every employee.
           </p>

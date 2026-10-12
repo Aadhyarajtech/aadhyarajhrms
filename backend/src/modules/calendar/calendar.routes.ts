@@ -17,7 +17,7 @@ calendarRouter.use(authenticate);
 
 const ADMIN_ROLES = new Set([
   "SUPER_ADMIN",
-  "HR_ADMIN",
+  "ADMIN",
 ]);
 
 function canManageCalendar(req: any) {

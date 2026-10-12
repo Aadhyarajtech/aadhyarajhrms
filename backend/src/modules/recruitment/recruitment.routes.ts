@@ -1611,7 +1611,7 @@ const hireCandidateSchema = z.object({
       "RECRUITER",
       "FINANCE",
       "IT_SUPPORT",
-      "HR_ADMIN",
+      "ADMIN",
     ])
     .optional(),
 });

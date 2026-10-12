@@ -25,7 +25,7 @@ export interface UserDoc {
   // endpoints intentionally expose only the six supported business roles.
   role:
   | "SUPER_ADMIN"
-  | "HR_ADMIN"
+  | "ADMIN"
   | "MANAGER"
   | "RECRUITER"
   | "FINANCE"
@@ -63,7 +63,7 @@ const userSchema = new Schema<UserDoc>(
       type: String,
       enum: [
         "SUPER_ADMIN",
-        "HR_ADMIN",
+        "ADMIN",
         "MANAGER",
         "RECRUITER",
         "FINANCE",
@@ -831,7 +831,7 @@ const attendanceAuditEntrySchema = new Schema<AttendanceAuditEntry>(
       type: String,
       enum: [
         "SUPER_ADMIN",
-        "HR_ADMIN",
+        "ADMIN",
         "MANAGER",
         "RECRUITER",
         "FINANCE",
@@ -984,7 +984,7 @@ const attendanceRegularizationAuditSchema =
         type: String,
         enum: [
           "SUPER_ADMIN",
-          "HR_ADMIN",
+          "ADMIN",
           "MANAGER",
           "RECRUITER",
           "FINANCE",
@@ -4596,7 +4596,7 @@ export interface TicketDoc {
   isEscalated: boolean;
   escalatedAt: string | null;
   escalatedById: string | null;
-  escalatedTo: "HR_ADMIN" | "SUPER_ADMIN" | null;
+  escalatedTo: "ADMIN" | "SUPER_ADMIN" | null;
   escalationReason: string | null;
 
   // AI classification metadata
@@ -4743,7 +4743,7 @@ const ticketSchema = new Schema<TicketDoc>(
 
     escalatedTo: {
       type: String,
-      enum: ["HR_ADMIN", "SUPER_ADMIN", null],
+      enum: ["ADMIN", "SUPER_ADMIN", null],
       default: null,
     },
 

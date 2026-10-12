@@ -294,7 +294,7 @@ export async function buildLeaveAssistantContext(params: {
 
   // Determine active employee for balances
   const effectiveEmployeeId =
-    (requesterRole === "SUPER_ADMIN" || requesterRole === "HR_ADMIN") && targetEmployeeId
+    (requesterRole === "SUPER_ADMIN" || requesterRole === "ADMIN") && targetEmployeeId
       ? targetEmployeeId
       : requesterId;
 
@@ -349,7 +349,7 @@ export async function buildLeaveAssistantContext(params: {
   let teamSummary = undefined;
   let teamMemberIds: string[] = [];
 
-  if (requesterRole === "SUPER_ADMIN" || requesterRole === "HR_ADMIN") {
+  if (requesterRole === "SUPER_ADMIN" || requesterRole === "ADMIN") {
     const allEmps = await Employee.find({ status: "ACTIVE" }).select("_id").limit(50).lean();
     teamMemberIds = allEmps.map((e) => String(e._id));
   } else if (requesterRole === "MANAGER" || employee?.isManager) {
@@ -673,7 +673,7 @@ export async function askLeaveAI(params: {
           return `| ${l.employeeName} | ${l.leaveTypeName} | ${dateStr} (${durationStr}) | **${l.status || "APPROVED"}** |`;
         });
         const rolePrefix =
-          params.requesterRole === "SUPER_ADMIN" || params.requesterRole === "HR_ADMIN"
+          params.requesterRole === "SUPER_ADMIN" || params.requesterRole === "ADMIN"
             ? "Across the organization / department"
             : "In your team";
 

@@ -347,7 +347,7 @@ export async function listRequests(filters: {
   } else if (filters.excludeEmployeeId) {
     /*
      * Preserve an explicit employeeId filter when an administrator
-     * also asks to exclude a specific employee (for example, HR_ADMIN
+     * also asks to exclude a specific employee (for example, ADMIN
      * viewing Team Approvals while excluding their own requests).
      */
     if (filters.employeeId) {
@@ -924,7 +924,7 @@ export async function decideRequest(
   /*
    * Managers can approve only their own direct reports.
    *
-   * HR_ADMIN and SUPER_ADMIN are allowed to approve/reject
+   * ADMIN and SUPER_ADMIN are allowed to approve/reject
    * leave requests across the organization. The route passes
    * canApproveAny=true only for those roles.
    */
@@ -1283,7 +1283,7 @@ export async function getLeaveCalendar(
   const monthEnd =
     monthEndDate.toISOString().slice(0, 10);
 
-  const isAdmin = role === "SUPER_ADMIN" || role === "HR_ADMIN";
+  const isAdmin = role === "SUPER_ADMIN" || role === "ADMIN";
 
   let employeeFilter: Record<string, any> | null = null;
 

@@ -3,7 +3,7 @@ import { genId } from "@/utils/id";
 
 export const GOVERNANCE_ROLES = [
   "SUPER_ADMIN",
-  "HR_ADMIN",
+  "ADMIN",
   "RECRUITER",
   "FINANCE",
   "IT_SUPPORT",

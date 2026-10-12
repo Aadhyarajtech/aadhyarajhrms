@@ -205,7 +205,7 @@ export default function App() {
               <ProtectedRoute
                 roles={[
                   "SUPER_ADMIN",
-                  "HR_ADMIN",
+                  "ADMIN",
                   "MANAGER",
                   "RECRUITER",
                   "FINANCE",
@@ -282,7 +282,7 @@ export default function App() {
               <ProtectedRoute
                 roles={[
                   "SUPER_ADMIN",
-                  "HR_ADMIN",
+                  "ADMIN",
                   "RECRUITER",
                   "EMPLOYEE",
                   "MANAGER",
@@ -308,7 +308,7 @@ export default function App() {
               <ProtectedRoute
                 roles={[
                   "SUPER_ADMIN",
-                  "HR_ADMIN",
+                  "ADMIN",
                   "RECRUITER",
                   "EMPLOYEE",
                   "MANAGER",
@@ -418,7 +418,7 @@ export default function App() {
               <ProtectedRoute
                 roles={[
                   "SUPER_ADMIN",
-                  "HR_ADMIN",
+                  "ADMIN",
                   "MANAGER",
                   "RECRUITER",
                   "FINANCE",

@@ -10,7 +10,7 @@ export interface AuthUser {
   mustResetPwd: boolean;
   role:
     | "SUPER_ADMIN"
-    | "HR_ADMIN"
+    | "ADMIN"
     | "MANAGER"
     | "RECRUITER"
     | "FINANCE"

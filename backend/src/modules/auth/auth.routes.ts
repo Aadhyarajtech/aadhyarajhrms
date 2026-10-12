@@ -180,7 +180,7 @@ authRouter.post(
       // Notify HR admins. Notification failures must not fail registration.
       try {
         const hrAdmins = await User.find({
-          role: "HR_ADMIN",
+          role: "ADMIN",
           isActive: true,
         })
           .select("_id")
@@ -275,7 +275,7 @@ authRouter.get("/me", authenticate, async (req, res, next) => {
 /* =========================================================
    ADMIN EMPLOYEE LOGIN CREDENTIAL UPDATE
 
-   Allows SUPER_ADMIN / HR_ADMIN to change both the login
+   Allows SUPER_ADMIN / ADMIN to change both the login
    email and password of an employee without knowing the
    employee's existing password.
 

@@ -225,7 +225,7 @@ export function enrichTicketsWithSlaRisk<T extends Record<string, any>>(
 ): Array<T & SlaRiskEvaluation> {
   const now = new Date();
   return tickets.map((t) => {
-    const dept = t.assignedTo || "HR_ADMIN";
+    const dept = t.assignedTo || "ADMIN";
     const backlog = backlogCountsByDept ? backlogCountsByDept[dept] || 0 : 0;
     const evalResult = calculatePredictiveSlaRisk(t as any, backlog, now);
     return {

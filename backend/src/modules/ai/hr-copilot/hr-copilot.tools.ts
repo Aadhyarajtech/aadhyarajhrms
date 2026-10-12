@@ -62,7 +62,7 @@ type HrCopilotExecutorScope =
  * Role/data scope is intentionally separate from normal UI permissions.
  *
  * SUPER_ADMIN -> ALL
- * HR_ADMIN    -> ALL
+ * ADMIN    -> ALL
  * MANAGER     -> SELF + DIRECT REPORTS
  * EMPLOYEE    -> SELF
  * FINANCE     -> SELF
@@ -78,7 +78,7 @@ function hasPermission(
 ): boolean {
   if (
     user.role === "SUPER_ADMIN" ||
-    user.role === "HR_ADMIN"
+    user.role === "ADMIN"
   ) {
     return true;
   }
@@ -105,7 +105,7 @@ function getRoleScope(
 ): "ALL" | "TEAM" | "SELF" {
   if (
     user.role === "SUPER_ADMIN" ||
-    user.role === "HR_ADMIN"
+    user.role === "ADMIN"
   ) {
     return "ALL";
   }
@@ -738,14 +738,14 @@ async function resolveEmployeeTarget(
     ).toUpperCase();
 
   /**
-   * SUPER_ADMIN / HR_ADMIN
+   * SUPER_ADMIN / ADMIN
    *
    * Organization-wide access.
    */
 
   if (
     role === "SUPER_ADMIN" ||
-    role === "HR_ADMIN"
+    role === "ADMIN"
   ) {
     return {
       employee:
@@ -1723,7 +1723,7 @@ async function executeAnnouncements(
  * ORGANIZATION ATTENDANCE
  * ============================================================================
  *
- * Organization-wide attendance is allowed only for SUPER_ADMIN / HR_ADMIN.
+ * Organization-wide attendance is allowed only for SUPER_ADMIN / ADMIN.
  * Managers must use the TEAM scope, and other roles remain SELF-only.
  *
  * The attendance repository performs the actual attendance calculation.
@@ -1738,7 +1738,7 @@ async function executeOrganizationAttendance(
     user.role !==
       "SUPER_ADMIN" &&
     user.role !==
-      "HR_ADMIN"
+      "ADMIN"
   ) {
     return {
       message:
@@ -1936,7 +1936,7 @@ async function executeReports(
             )
             .filter(Boolean)
         : [];
-    } else if (user.role !== "SUPER_ADMIN" && user.role !== "HR_ADMIN") {
+    } else if (user.role !== "SUPER_ADMIN" && user.role !== "ADMIN") {
       employeeIds = user.employeeId ? [String(user.employeeId)] : [];
     }
 
@@ -3333,14 +3333,14 @@ export async function executeHrCopilotPlan(
   ) {
     /**
      * Organization-wide employee data is only allowed
-     * for SUPER_ADMIN and HR_ADMIN.
+     * for SUPER_ADMIN and ADMIN.
      */
 
     if (
       user.role ===
         "SUPER_ADMIN" ||
       user.role ===
-        "HR_ADMIN"
+        "ADMIN"
     ) {
       const repository =
         organizationRepo as any;

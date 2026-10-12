@@ -135,7 +135,7 @@ function hasPermission(
 ): boolean {
   if (
     user.role === "SUPER_ADMIN" ||
-    user.role === "HR_ADMIN"
+    user.role === "ADMIN"
   ) {
     return true;
   }

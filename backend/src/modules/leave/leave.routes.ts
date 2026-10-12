@@ -22,7 +22,7 @@ export const leaveRouter = Router();
 
 /**
  * The Leave AI service intentionally accepts the legacy management-role
- * union (SUPER_ADMIN / HR_ADMIN / MANAGER).  Manager status is separate
+ * union (SUPER_ADMIN / ADMIN / MANAGER).  Manager status is separate
  * from the employee's business role, so a FINANCE / IT_SUPPORT /
  * RECRUITER employee with isManager=true is represented as MANAGER only
  * at this AI-service boundary. The actual authenticated role is never
@@ -38,16 +38,16 @@ const TEAM_LEAVE_APPROVAL_ROLES = [
 const getLeaveAiRequesterRole = (requester: {
   role:
     | "SUPER_ADMIN"
-    | "HR_ADMIN"
+    | "ADMIN"
     | "MANAGER"
     | "RECRUITER"
     | "FINANCE"
     | "IT_SUPPORT"
     | "EMPLOYEE";
   isManager?: boolean;
-}): "SUPER_ADMIN" | "HR_ADMIN" | "MANAGER" => {
+}): "SUPER_ADMIN" | "ADMIN" | "MANAGER" => {
   if (requester.role === "SUPER_ADMIN") return "SUPER_ADMIN";
-  if (requester.role === "HR_ADMIN") return "HR_ADMIN";
+  if (requester.role === "ADMIN") return "ADMIN";
   if (requester.role === "MANAGER") return "MANAGER";
 
   // A non-MANAGER business role can still be a manager when isManager=true.
@@ -88,7 +88,7 @@ leaveRouter.get("/types", async (_req, res, next) => {
  * LEAVE BALANCES
  * ============================================================
  *
- * SUPER_ADMIN / HR_ADMIN
+ * SUPER_ADMIN / ADMIN
  *   -> Can request any employee's balance.
  *
  * Everyone else
@@ -104,7 +104,7 @@ leaveRouter.get("/balances", async (req, res, next) => {
         : undefined;
 
     const isAdminUser =
-      requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
+      requester.role === "SUPER_ADMIN" || requester.role === "ADMIN";
 
     let employeeId: string;
 
@@ -159,7 +159,7 @@ leaveRouter.get("/comp-off/balance", async (req, res, next) => {
         : undefined;
 
     const isAdminUser =
-      requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
+      requester.role === "SUPER_ADMIN" || requester.role === "ADMIN";
 
     let employeeId: string;
 
@@ -194,7 +194,7 @@ leaveRouter.get("/comp-off/credits", async (req, res, next) => {
         : undefined;
 
     const isAdminUser =
-      requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
+      requester.role === "SUPER_ADMIN" || requester.role === "ADMIN";
 
     let employeeId: string;
 
@@ -231,14 +231,14 @@ leaveRouter.get("/comp-off/credits", async (req, res, next) => {
  *   MANAGER / RECRUITER / FINANCE / IT_SUPPORT
  *   -> Can view their direct team's requests when scope=team.
  *
- * HR_ADMIN / SUPER_ADMIN:
+ * ADMIN / SUPER_ADMIN:
  *   -> Can view all team leave requests.
  */
 leaveRouter.get("/requests", async (req, res, next) => {
   try {
     const { role, employeeId } = req.user!;
 
-    const isPrivileged = role === "SUPER_ADMIN" || role === "HR_ADMIN";
+    const isPrivileged = role === "SUPER_ADMIN" || role === "ADMIN";
 
     const filters: {
       status?: string;
@@ -255,7 +255,7 @@ leaveRouter.get("/requests", async (req, res, next) => {
        * MANAGER / RECRUITER / FINANCE / IT_SUPPORT
        *   -> Only their own direct reports.
        *
-       * HR_ADMIN / SUPER_ADMIN
+       * ADMIN / SUPER_ADMIN
        *   -> Can view all team leave requests.
        *
        * This keeps Team Approvals restricted to the authenticated
@@ -281,13 +281,13 @@ leaveRouter.get("/requests", async (req, res, next) => {
           filters.employeeId = req.query.employeeId;
         }
 
-        if (role === "HR_ADMIN" && employeeId) {
+        if (role === "ADMIN" && employeeId) {
           filters.excludeEmployeeId = employeeId;
         }
       }
     } else if (isPrivileged) {
       /*
-       * HR_ADMIN / SUPER_ADMIN may optionally filter
+       * ADMIN / SUPER_ADMIN may optionally filter
        * requests by employee.
        */
       if (typeof req.query.employeeId === "string") {
@@ -466,7 +466,7 @@ leaveRouter.post(
  * MANAGER
  *   -> Can analyze requests from direct reports.
  *
- * HR_ADMIN / SUPER_ADMIN
+ * ADMIN / SUPER_ADMIN
  *   -> Can analyze requests across the organization.
  */
 
@@ -488,7 +488,7 @@ leaveRouter.post(
 
       if (
         requester.role !== "SUPER_ADMIN" &&
-        requester.role !== "HR_ADMIN" &&
+        requester.role !== "ADMIN" &&
         requester.role !== "MANAGER" &&
         !requester.isManager
       ) {
@@ -514,7 +514,7 @@ leaveRouter.post(
  * AI LEAVE PATTERN DETECTION
  * ============================================================
  *
- * SUPER_ADMIN / HR_ADMIN
+ * SUPER_ADMIN / ADMIN
  *   -> Organization patterns by default.
  *   -> Can optionally analyze a specific employee.
  *
@@ -545,7 +545,7 @@ leaveRouter.post(
 
       if (
         requester.role !== "SUPER_ADMIN" &&
-        requester.role !== "HR_ADMIN" &&
+        requester.role !== "ADMIN" &&
         requester.role !== "MANAGER" &&
         !requester.isManager
       ) {
@@ -574,7 +574,7 @@ leaveRouter.post(
  * AI LEAVE ANALYTICS
  * ============================================================
  *
- * SUPER_ADMIN / HR_ADMIN
+ * SUPER_ADMIN / ADMIN
  *   -> Organization analytics by default.
  *   -> Can optionally analyze a specific employee.
  *
@@ -609,7 +609,7 @@ leaveRouter.post(
 
       if (
         requester.role !== "SUPER_ADMIN" &&
-        requester.role !== "HR_ADMIN" &&
+        requester.role !== "ADMIN" &&
         requester.role !== "MANAGER" &&
         !requester.isManager
       ) {
@@ -739,10 +739,10 @@ leaveRouter.post(
  * BULK LEAVE REQUESTS
  * ============================================================
  *
- * SUPER_ADMIN / HR_ADMIN only.
+ * SUPER_ADMIN / ADMIN only.
  * Creates leave requests for the selected employees. The normal leave-balance
  * and eligibility rules are preserved for every employee. Super Admin-created
- * requests are automatically approved; HR Admin-created requests retain the
+ * requests are automatically approved; Admin-created requests retain the
  * existing approval workflow.
  */
 const bulkCreateRequestSchema = z
@@ -796,10 +796,10 @@ leaveRouter.post(
 
       if (
         requester.role !== "SUPER_ADMIN" &&
-        requester.role !== "HR_ADMIN"
+        requester.role !== "ADMIN"
       ) {
         throw AppError.forbidden(
-          "Only Super Admin and HR Admin can apply leave for multiple employees.",
+          "Only Super Admin and Admin can apply leave for multiple employees.",
         );
       }
 
@@ -880,7 +880,7 @@ leaveRouter.post(
  * LEAVE DECISION
  * ============================================================
  *
- * SUPER_ADMIN / HR_ADMIN / MANAGER
+ * SUPER_ADMIN / ADMIN / MANAGER
  *
  * The repository is responsible for validating that a Manager
  * is actually the employee's assigned manager. The authenticated
@@ -899,7 +899,7 @@ const decisionSchema = z.object({
 /**
  * Leave approval/rejection authorization.
  *
- * SUPER_ADMIN / HR_ADMIN
+ * SUPER_ADMIN / ADMIN
  *   -> Can approve/reject any leave request.
  *
  * MANAGER / RECRUITER / FINANCE / IT_SUPPORT
@@ -917,7 +917,7 @@ const requireLeaveDecisionAccess: RequestHandler = (req, _res, next) => {
 
   const allowedRoles = [
     "SUPER_ADMIN",
-    "HR_ADMIN",
+    "ADMIN",
     "MANAGER",
     "RECRUITER",
     "FINANCE",
@@ -952,7 +952,7 @@ leaveRouter.post(
           : undefined;
 
       const canApproveAny =
-        req.user!.role === "SUPER_ADMIN" || req.user!.role === "HR_ADMIN";
+        req.user!.role === "SUPER_ADMIN" || req.user!.role === "ADMIN";
 
       const request = await repo.decideRequest(
         req.params.id,

@@ -32,7 +32,7 @@ import { Modal } from "@/components/ui/Modal";
 import { EmptyState, Skeleton } from "@/components/ui/EmptyState";
 
 const PAGE_SIZE = 50;
-const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN"];
 
 const addEmployeeSchema = z.object({
   firstName: z.string().min(1, "Required"),
@@ -44,7 +44,7 @@ const addEmployeeSchema = z.object({
   dateOfJoining: z.string().min(1, "Required"),
   role: z.enum([
     "SUPER_ADMIN",
-    "HR_ADMIN",
+    "ADMIN",
     "RECRUITER",
     "FINANCE",
     "IT_SUPPORT",
@@ -151,7 +151,7 @@ export default function EmployeeDirectory() {
   const [roleDrafts, setRoleDrafts] = useState<Record<string, string>>({});
 
   const roleMutation = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: "SUPER_ADMIN" | "HR_ADMIN" | "RECRUITER" | "FINANCE" | "IT_SUPPORT" | "EMPLOYEE" }) =>
+    mutationFn: ({ id, role }: { id: string; role: "SUPER_ADMIN" | "ADMIN" | "RECRUITER" | "FINANCE" | "IT_SUPPORT" | "EMPLOYEE" }) =>
       EmployeesApi.updateRole(id, role),
     onSuccess: (employee) => {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
@@ -425,7 +425,7 @@ export default function EmployeeDirectory() {
                       <option value="RECRUITER">Recruitment Team</option>
                       <option value="FINANCE">Finance</option>
                       <option value="IT_SUPPORT">IT Support</option>
-                      <option value="HR_ADMIN">Admin</option>
+                      <option value="ADMIN">Admin</option>
                       {user?.role === "SUPER_ADMIN" && <option value="SUPER_ADMIN">Super Admin</option>}
                     </select>
                     <Button
@@ -434,8 +434,8 @@ export default function EmployeeDirectory() {
                       disabled={roleMutation.isPending || (roleDrafts[emp.id] ?? (emp.role === "MANAGER" ? "EMPLOYEE" : emp.role ?? "EMPLOYEE")) === emp.role}
                       onClick={() => {
                         const role = roleDrafts[emp.id] ?? (emp.role === "MANAGER" ? "EMPLOYEE" : emp.role ?? "EMPLOYEE");
-                        if (["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"].includes(role)) {
-                          roleMutation.mutate({ id: emp.id, role: role as "SUPER_ADMIN" | "HR_ADMIN" | "RECRUITER" | "FINANCE" | "IT_SUPPORT" | "EMPLOYEE" });
+                        if (["SUPER_ADMIN", "ADMIN", "RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"].includes(role)) {
+                          roleMutation.mutate({ id: emp.id, role: role as "SUPER_ADMIN" | "ADMIN" | "RECRUITER" | "FINANCE" | "IT_SUPPORT" | "EMPLOYEE" });
                         }
                       }}
                     >
@@ -603,7 +603,7 @@ export default function EmployeeDirectory() {
             <option value="EMPLOYEE">Employee</option>
             <option value="RECRUITER">Recruitment Team</option>
             <option value="FINANCE">Finance</option>
-            <option value="HR_ADMIN">Admin</option>
+            <option value="ADMIN">Admin</option>
             <option value="IT_SUPPORT">IT Support</option>
             <option value="SUPER_ADMIN">Super Admin</option>
           </SelectField>

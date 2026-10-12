@@ -999,7 +999,7 @@ attendanceRouter.get("/ai-patterns", async (req, res, next) => {
     // ---------------------------------------------------------------------
     // Resolve the correct attendance scope
     //
-    // SUPER_ADMIN / HR_ADMIN:
+    // SUPER_ADMIN / ADMIN:
     //   no employee -> All Employees
     //   employee     -> selected employee
     //
@@ -1512,7 +1512,7 @@ attendanceRouter.post(
 
       let targetEmployeeId: string | undefined = req.user!.employeeId;
       if (requestedEmployeeId) {
-        if (!["MANAGER", "HR_ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
+        if (!["MANAGER", "ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
           throw AppError.forbidden(
             "You are not authorized to create a request for another employee.",
           );
@@ -1651,7 +1651,7 @@ attendanceRouter.post(
       //   -> selected employee
       //
       // If no employee is selected:
-      //   SUPER_ADMIN / HR_ADMIN -> All Employees
+      //   SUPER_ADMIN / ADMIN -> All Employees
       //   MANAGER                 -> My Team
       //   EMPLOYEE                -> Own attendance
       // ---------------------------------------------------------------------
@@ -1691,14 +1691,14 @@ attendanceRouter.get(
     try {
       const { role, employeeId } = req.user!;
 
-      const allowedRoles = ["MANAGER", "HR_ADMIN", "SUPER_ADMIN"];
+      const allowedRoles = ["MANAGER", "ADMIN", "SUPER_ADMIN"];
       if (!allowedRoles.includes(role)) {
         throw AppError.forbidden(
           "You are not authorized to review regularization requests.",
         );
       }
 
-      const includeAll = role === "HR_ADMIN" || role === "SUPER_ADMIN";
+      const includeAll = role === "ADMIN" || role === "SUPER_ADMIN";
       if (!includeAll && !employeeId) {
         throw AppError.forbidden("Manager employee profile not found.");
       }
@@ -1738,14 +1738,14 @@ attendanceRouter.post(
     try {
       const { role, employeeId } = req.user!;
 
-      const allowedRoles = ["MANAGER", "HR_ADMIN", "SUPER_ADMIN"];
+      const allowedRoles = ["MANAGER", "ADMIN", "SUPER_ADMIN"];
       if (!allowedRoles.includes(role)) {
         throw AppError.forbidden(
           "You are not authorized to approve regularization requests.",
         );
       }
 
-      const includeAll = role === "HR_ADMIN" || role === "SUPER_ADMIN";
+      const includeAll = role === "ADMIN" || role === "SUPER_ADMIN";
       if (!employeeId) {
         throw AppError.forbidden("Approver employee profile not found.");
       }
@@ -1785,14 +1785,14 @@ attendanceRouter.post(
     try {
       const { role, employeeId } = req.user!;
 
-      const allowedRoles = ["MANAGER", "HR_ADMIN", "SUPER_ADMIN"];
+      const allowedRoles = ["MANAGER", "ADMIN", "SUPER_ADMIN"];
       if (!allowedRoles.includes(role)) {
         throw AppError.forbidden(
           "You are not authorized to reject regularization requests.",
         );
       }
 
-      const includeAll = role === "HR_ADMIN" || role === "SUPER_ADMIN";
+      const includeAll = role === "ADMIN" || role === "SUPER_ADMIN";
       if (!employeeId) {
         throw AppError.forbidden("Approver employee profile not found.");
       }

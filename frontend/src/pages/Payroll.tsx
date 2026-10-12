@@ -33,7 +33,7 @@ import { Skeleton, EmptyState } from "@/components/ui/EmptyState";
 import { formatCurrencyINR, monthName } from "@/lib/format";
 import type { Payslip, PayslipRequest, PayslipRequestPeriod, PayrollRun } from "@/types";
 
-const PAYSLIP_REQUEST_ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"];
+const PAYSLIP_REQUEST_ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN", "FINANCE"];
 
 const PERIOD_LABELS: Record<PayslipRequestPeriod, string> = {
   "3_MONTHS": "Last 3 Months",

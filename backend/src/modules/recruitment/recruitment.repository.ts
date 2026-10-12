@@ -41,7 +41,7 @@ async function notifyRecruitmentTeam(input: {
   link?: string;
 }) {
   const users = await User.find({
-    role: { $in: ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER"] },
+    role: { $in: ["SUPER_ADMIN", "ADMIN", "RECRUITER"] },
     isActive: true,
   })
     .select("_id")
@@ -72,7 +72,7 @@ async function canActAsRequisitionApprover(userId: string): Promise<boolean> {
     .lean()) as AnyDoc | null;
 
   if (!user || user.isActive === false) return false;
-  if (user.role === "SUPER_ADMIN" || user.role === "HR_ADMIN") return true;
+  if (user.role === "SUPER_ADMIN" || user.role === "ADMIN") return true;
   return user.role === "RECRUITER" && isRecruitmentHeadEmail(user.email);
 }
 
@@ -696,11 +696,11 @@ export async function createJobPosting(input: CreateJobInput) {
   }
 
   const isAdminRequester =
-    requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
+    requester.role === "SUPER_ADMIN" || requester.role === "ADMIN";
 
   const approvers: AnyDoc[] = (await User.find({
     role: {
-      $in: ["SUPER_ADMIN", "HR_ADMIN"],
+      $in: ["SUPER_ADMIN", "ADMIN"],
     },
     isActive: true,
   })
@@ -712,7 +712,7 @@ export async function createJobPosting(input: CreateJobInput) {
     .lean()) as AnyDoc[];
 
   /*
-   * SUPER_ADMIN and HR_ADMIN are allowed to create requisitions.
+   * SUPER_ADMIN and ADMIN are allowed to create requisitions.
    * A recruiter creates a requisition for admin approval.
    *
    * When an admin creates a requisition, the creator can act as the

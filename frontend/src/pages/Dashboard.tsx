@@ -145,7 +145,7 @@ export default function Dashboard() {
 
 
 
-  // Super Admin and HR Admin keep the complete dashboard.
+  // Super Admin and Admin keep the complete dashboard.
 
   // Recruiters and all other roles see only the shared dashboard sections.
 
@@ -153,7 +153,7 @@ export default function Dashboard() {
 
     user?.role === "SUPER_ADMIN" ||
 
-    user?.role === "HR_ADMIN";
+    user?.role === "ADMIN";
 
 
 

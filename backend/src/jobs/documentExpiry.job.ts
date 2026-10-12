@@ -114,7 +114,7 @@ export async function checkDocumentExpiryAlerts() {
 
   const hrUsers = await User.find({
     role: {
-      $in: ["SUPER_ADMIN", "HR_ADMIN"],
+      $in: ["SUPER_ADMIN", "ADMIN"],
     },
     isActive: true,
   })

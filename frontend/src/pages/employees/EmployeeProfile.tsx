@@ -59,7 +59,7 @@ import {
   cx,
 } from "@/lib/format";
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "HR_ADMIN"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN"];
 
 const ONBOARDING_STAGES = [
   "HR Creates Employee Account in System",
@@ -127,7 +127,7 @@ export default function EmployeeProfile() {
 
   // Admin employee-profile pages must not remain on the skeleton forever if
   // the single-employee endpoint fails. The Employees directory endpoint is
-  // already available to SUPER_ADMIN/HR_ADMIN, so use it as a safe fallback.
+  // already available to SUPER_ADMIN/ADMIN, so use it as a safe fallback.
   const employeeListFallbackQuery = useQuery({
     queryKey: ["employee", "profile-fallback", effectiveId],
     queryFn: () => EmployeesApi.list({ page: 1, pageSize: 100 }),

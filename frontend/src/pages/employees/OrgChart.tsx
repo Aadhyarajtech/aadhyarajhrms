@@ -28,7 +28,7 @@ const ADMIN_QUICK_QUERIES: QuickQuery[] = [
   {
     id: "q-1",
     category: "HR & Leadership",
-    question: "List all HR Admins & System Leadership with access roles",
+    question: "List all Admins & System Leadership with access roles",
     renderResponse: (tree) => {
       const allEmps = flattenTree(tree);
       const hrAdmins = allEmps.filter(
@@ -44,7 +44,7 @@ const ADMIN_QUICK_QUERIES: QuickQuery[] = [
         <div className="space-y-2">
           <p className="font-semibold text-gray-800 text-xs flex items-center gap-1.5">
             <Shield size={13} className="text-purple-600" />
-            HR Admin & System Leadership Roster ({hrAdmins.length})
+            Admin & System Leadership Roster ({hrAdmins.length})
           </p>
           <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg bg-white text-[11px]">
             {hrAdmins.map((emp) => (

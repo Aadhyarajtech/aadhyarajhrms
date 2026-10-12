@@ -19,7 +19,7 @@ import { ensureDefaults } from "@/modules/governance/governance.repository";
 
 const APPROVED_ROLE_BY_EMAIL: Record<string, string> = {
   "adithya.nuthakki@aadhyarajtech.com": "SUPER_ADMIN",
-  "sreevidya.talasila@aadhyarajtech.com": "HR_ADMIN",
+  "sreevidya.talasila@aadhyarajtech.com": "ADMIN",
   "gangadhar.yedla@aadhyarajtech.com": "FINANCE",
 
   "geetha.balachandran@aadhyarajtech.com": "RECRUITER",

@@ -40,7 +40,7 @@ employeesRouter.post(
       if (!employee) throw AppError.notFound("Employee not found.");
 
       const isSelf = requester.employeeId === req.params.id;
-      const isPrevileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(requester.role);
+      const isPrevileged = ["SUPER_ADMIN", "ADMIN"].includes(requester.role);
 
       if (!isSelf && !isPrevileged) throw AppError.forbidden();
 
@@ -67,7 +67,7 @@ employeesRouter.get(
   validate(listQuerySchema, "query"),
   requireRole(
     "SUPER_ADMIN",
-    "HR_ADMIN",
+    "ADMIN",
     "MANAGER",
     "RECRUITER",
     "FINANCE",
@@ -533,13 +533,13 @@ employeesRouter.get(
       }
 
       const isAdmin =
-        requester.role === "SUPER_ADMIN" || requester.role === "HR_ADMIN";
+        requester.role === "SUPER_ADMIN" || requester.role === "ADMIN";
 
       // Managers may only request their own direct reports.
       if (
         requester.isManager &&
         requester.role !== "SUPER_ADMIN" &&
-        requester.role !== "HR_ADMIN" &&
+        requester.role !== "ADMIN" &&
         requester.employeeId !== employeeId
       ) {
         throw AppError.forbidden();
@@ -586,7 +586,7 @@ const createEmployeeSchema = z.object({
   role: z
     .enum([
       "SUPER_ADMIN",
-      "HR_ADMIN",
+      "ADMIN",
       "RECRUITER",
       "FINANCE",
       "IT_SUPPORT",

@@ -3,7 +3,7 @@ import { AppError } from "@/utils/errors";
 
 export type AttendanceScopeRole =
   | "SUPER_ADMIN"
-  | "HR_ADMIN"
+  | "ADMIN"
   | "MANAGER"
   | "RECRUITER"
   | "FINANCE"
@@ -161,7 +161,7 @@ export async function resolveAttendanceScope(
   // HR ADMIN
   // ============================================================
 
-  if (user.role === "HR_ADMIN") {
+  if (user.role === "ADMIN") {
     // Selected employee
     if (requestedEmployeeId) {
       const employee = await Employee.findOne({

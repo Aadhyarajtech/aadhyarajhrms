@@ -325,7 +325,7 @@ async function notifyAttendanceException(params: {
   }
 
   const hrUsers = await User.find({
-    role: { $in: ["HR_ADMIN", "SUPER_ADMIN"] },
+    role: { $in: ["ADMIN", "SUPER_ADMIN"] },
   })
     .select("_id")
     .lean();

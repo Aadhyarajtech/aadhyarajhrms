@@ -51,7 +51,7 @@ performanceRouter.get(
 
       const allowed =
         req.user!.employeeId === req.params.employeeId ||
-        ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(
+        ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(
           req.user!.role,
         ) ||
         req.user!.isManager;
@@ -168,7 +168,7 @@ performanceRouter.patch(
 performanceRouter.get("/reviews", async (req, res, next) => {
   try {
     const { role, employeeId } = req.user!;
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+    const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(role);
     const isTeamScope = req.query.scope === "team";
     const filters: any = {
       cycleId: req.query.cycleId as string | undefined,
@@ -188,7 +188,7 @@ performanceRouter.get("/reviews", async (req, res, next) => {
         );
       }
 
-      // Super Admin and HR Admin can view all team reviews. Other team-lead
+      // Super Admin and Admin can view all team reviews. Other team-lead
       // roles, including users explicitly flagged as managers, are restricted
       // to reviews assigned to their own employee profile.
       if (!isPrivileged) {
@@ -232,7 +232,7 @@ performanceRouter.get("/reviews", async (req, res, next) => {
 
       filters.revieweeId = employeeId;
     } else if (req.query.revieweeId) {
-      // HR Admin/Super Admin may optionally filter by a specific employee.
+      // Admin/Super Admin may optionally filter by a specific employee.
       filters.revieweeId = req.query.revieweeId;
     }
 
@@ -254,7 +254,7 @@ performanceRouter.get("/team/direct-reports", async (req, res, next) => {
     // employees who are actually managers. Recruiter, Finance, and IT
     // Support users must be explicitly marked as managers to use this API.
     const canAccessTeam =
-      ["SUPER_ADMIN", "HR_ADMIN"].includes(role) ||
+      ["SUPER_ADMIN", "ADMIN"].includes(role) ||
       role === "MANAGER" ||
       req.user!.isManager === true;
 
@@ -266,8 +266,8 @@ performanceRouter.get("/team/direct-reports", async (req, res, next) => {
 
     const requestedManagerId = req.query.managerId as string | undefined;
 
-    // Super Admin and HR Admin may request another manager's team.
-    if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+    // Super Admin and Admin may request another manager's team.
+    if (["SUPER_ADMIN", "ADMIN"].includes(role)) {
       res.json({
         employees: await repo.listDirectReports(
           requestedManagerId ?? employeeId,
@@ -362,7 +362,7 @@ const ensureSchema = z.object({
 performanceRouter.post(
   "/reviews",
   (req, _res, next) => {
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+    const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
     const isTeamManager =
       req.user!.role === "MANAGER" || req.user!.isManager === true;
 
@@ -380,9 +380,9 @@ performanceRouter.post(
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
-      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+      const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(role);
 
-      // Super Admin and HR Admin can start reviews for any employee.
+      // Super Admin and Admin can start reviews for any employee.
       // Their reviewerId is accepted as provided; the manager-only
       // direct-report restrictions below apply only to regular managers.
       if (!isPrivileged && (role === "MANAGER" || req.user!.isManager)) {
@@ -461,7 +461,7 @@ const managerReviewSchema = z.object({
 performanceRouter.post(
   "/reviews/:id/manager",
   (req, _res, next) => {
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+    const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
     const isTeamManager =
       req.user!.role === "MANAGER" || req.user!.isManager === true;
 
@@ -485,7 +485,7 @@ performanceRouter.post(
       }
 
       const { role, employeeId } = req.user!;
-      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+      const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(role);
       const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
 
       if (!isPrivileged && !isTeamManager) {
@@ -569,7 +569,7 @@ performanceRouter.get("/goals", async (req, res, next) => {
     }
 
     if (requestedEmployeeId && requestedEmployeeId !== employeeId) {
-      if (!["SUPER_ADMIN", "HR_ADMIN"].includes(role) && req.user!.isManager !== true) {
+      if (!["SUPER_ADMIN", "ADMIN"].includes(role) && req.user!.isManager !== true) {
         throw AppError.forbidden(
           "You are not authorized to view another employee's goals.",
         );
@@ -629,9 +629,9 @@ performanceRouter.post(
 
       // Employees can create goals for themselves.
       // Managers can create goals only for direct reports.
-      // HR Admins and Super Admins can create goals for any employee.
+      // Admins and Super Admins can create goals for any employee.
       if (targetEmployeeId !== creatorEmployeeId) {
-        if (!["SUPER_ADMIN", "HR_ADMIN"].includes(role) && req.user!.isManager !== true) {
+        if (!["SUPER_ADMIN", "ADMIN"].includes(role) && req.user!.isManager !== true) {
           throw AppError.forbidden(
             "You are not authorized to assign goals to another employee.",
           );
@@ -666,7 +666,7 @@ performanceRouter.post(
 
         if (
           parentGoal.employeeId !== targetEmployeeId &&
-          !["SUPER_ADMIN", "HR_ADMIN"].includes(role)
+          !["SUPER_ADMIN", "ADMIN"].includes(role)
         ) {
           throw AppError.forbidden(
             "You can only use an authorized parent goal.",
@@ -750,7 +750,7 @@ performanceRouter.patch(
       }
 
       if (goal.employeeId !== employeeId) {
-        if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+        if (["SUPER_ADMIN", "ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
         } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = (await getEmployeeById(goal.employeeId)) as any;
@@ -839,7 +839,7 @@ performanceRouter.delete(
       }
 
       if (goal.employeeId !== employeeId) {
-        if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+        if (["SUPER_ADMIN", "ADMIN"].includes(role)) {
           // Privileged roles may delete any goal.
         } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = (await getEmployeeById(goal.employeeId)) as any;
@@ -879,7 +879,7 @@ performanceRouter.patch(
       }
 
       if (goal.employeeId !== employeeId) {
-        if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+        if (["SUPER_ADMIN", "ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
         } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = await getEmployeeById(goal.employeeId) as any;
@@ -927,7 +927,7 @@ performanceRouter.patch(
       }
 
       if (goal.employeeId !== employeeId) {
-        if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+        if (["SUPER_ADMIN", "ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
         } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = (await getEmployeeById(goal.employeeId)) as any;
@@ -968,7 +968,7 @@ performanceRouter.patch(
       }
 
       if (goal.employeeId !== employeeId) {
-        if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+        if (["SUPER_ADMIN", "ADMIN"].includes(role)) {
           // Privileged roles may update any goal.
         } else if (role === "MANAGER" || req.user!.isManager === true) {
           const employee = (await getEmployeeById(goal.employeeId)) as any;
@@ -1021,7 +1021,7 @@ performanceRouter.get("/goals/cascade", async (req, res, next) => {
     const targetEmployeeId = requestedEmployeeId ?? employeeId;
 
     if (targetEmployeeId !== employeeId) {
-      if (!["SUPER_ADMIN", "HR_ADMIN"].includes(role) && req.user!.isManager !== true) {
+      if (!["SUPER_ADMIN", "ADMIN"].includes(role) && req.user!.isManager !== true) {
         throw AppError.forbidden(
           "You are not authorized to view another employee's goal cascade.",
         );
@@ -1057,7 +1057,7 @@ performanceRouter.get("/goals/trend", async (req, res, next) => {
     const requestedEmployeeId = req.query.employeeId as string | undefined;
 
     if (requestedEmployeeId && requestedEmployeeId !== employeeId) {
-      if (!["SUPER_ADMIN", "HR_ADMIN"].includes(role) && req.user!.isManager !== true) {
+      if (!["SUPER_ADMIN", "ADMIN"].includes(role) && req.user!.isManager !== true) {
         throw AppError.forbidden(
           "You are not authorized to view another employee's goal trend.",
         );
@@ -1237,7 +1237,7 @@ performanceRouter.get(
       const allowed =
         review.revieweeId === employeeId ||
         review.reviewerId === employeeId ||
-        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+        ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
 
       if (!allowed) {
         throw AppError.forbidden(
@@ -1257,7 +1257,7 @@ performanceRouter.get(
 performanceRouter.get("/outcomes", async (req, res, next) => {
   try {
     const { role, employeeId } = req.user!;
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+    const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(role);
     const isTeamManager =
       role === "MANAGER" || req.user!.isManager === true;
 
@@ -1293,7 +1293,7 @@ performanceRouter.get("/reviews/:id/outcome", async (req, res, next) => {
     const allowed =
       review.revieweeId === req.user!.employeeId ||
       review.reviewerId === req.user!.employeeId ||
-      ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+      ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
     if (!allowed) throw AppError.forbidden();
     res.json({ outcome: await repo.getOutcome(req.params.id) });
   } catch (err) {
@@ -1311,7 +1311,7 @@ performanceRouter.get("/reviews/:id/ai-insights", async (req, res, next) => {
     const allowed =
       review.revieweeId === req.user!.employeeId ||
       review.reviewerId === req.user!.employeeId ||
-      ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+      ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
 
     if (!allowed) {
       throw AppError.forbidden();
@@ -1337,7 +1337,7 @@ performanceRouter.get(
       const allowed =
         review.revieweeId === req.user!.employeeId ||
         review.reviewerId === req.user!.employeeId ||
-        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+        ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
 
       if (!allowed) {
         throw AppError.forbidden();
@@ -1368,7 +1368,7 @@ const performanceOutcomeSchema = z.object({
 performanceRouter.patch(
   "/reviews/:id/outcome",
   (req, _res, next) => {
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+    const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
     const isTeamManager =
       req.user!.role === "MANAGER" || req.user!.isManager === true;
 
@@ -1425,7 +1425,7 @@ performanceRouter.patch(
         }
       }
 
-      // HR Admin and Super Admin may update outcomes for any completed review.
+      // Admin and Super Admin may update outcomes for any completed review.
       const outcome = await repo.upsertOutcome(req.params.id, req.body);
 
       res.json({ outcome });
@@ -1447,7 +1447,7 @@ performanceRouter.post(
       const allowed =
         review.revieweeId === req.user!.employeeId ||
         review.reviewerId === req.user!.employeeId ||
-        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+        ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
 
       if (!allowed) {
         throw AppError.forbidden();
@@ -1503,7 +1503,7 @@ performanceRouter.post(
 
       const allowed =
         goal.employeeId === req.user!.employeeId ||
-        ["SUPER_ADMIN", "HR_ADMIN"].includes(req.user!.role);
+        ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
 
       if (!allowed) {
         throw AppError.forbidden();
@@ -1594,7 +1594,7 @@ performanceRouter.get(
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
-      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+      const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(role);
       const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
 
       if (!employeeId && !isPrivileged) {
@@ -1613,7 +1613,7 @@ performanceRouter.get(
         return res.json({ reviews: completedReviews });
       }
 
-      if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+      if (["SUPER_ADMIN", "ADMIN"].includes(role)) {
         const employeeIdFilter = req.query.employeeId as string | undefined;
 
         const reviews = await repo.listReviews({
@@ -1641,7 +1641,7 @@ performanceRouter.get("/pips", async (req, res, next) => {
     const { role, employeeId } = req.user!;
     const requestedEmployeeId = req.query.employeeId as string | undefined;
 
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+    const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(role);
     const isTeamManager = role === "MANAGER" || req.user!.isManager === true;
 
     if (isTeamManager) {
@@ -1667,7 +1667,7 @@ performanceRouter.get("/pips", async (req, res, next) => {
       return;
     }
 
-    if (["SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+    if (["SUPER_ADMIN", "ADMIN"].includes(role)) {
       res.json({
         pips: await repo.listPips({
           employeeId: requestedEmployeeId,
@@ -1695,7 +1695,7 @@ performanceRouter.get("/pips/:id", async (req, res, next) => {
     if (!pip) throw AppError.notFound("PIP not found.");
 
     const { role, employeeId } = req.user!;
-    const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+    const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(role);
     const isOwner = pip.employeeId === employeeId;
     const isTeamManager = (role === "MANAGER" || req.user!.isManager === true) &&
       pip.managerId === employeeId;
@@ -1875,7 +1875,7 @@ performanceRouter.get(
         throw AppError.forbidden("Employee profile not found.");
       }
 
-      const isPrivileged = ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+      const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(role);
 
       const reviewFilters: any = {};
       if (role === "MANAGER" || req.user!.isManager === true) {

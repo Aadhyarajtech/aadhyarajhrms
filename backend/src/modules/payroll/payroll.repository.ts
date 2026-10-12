@@ -1151,7 +1151,7 @@ export async function createPayslipRequest(
     ? `${employee.firstName} ${employee.lastName}`
     : "An employee";
   const admins = await User.find({
-    role: { $in: ["SUPER_ADMIN", "HR_ADMIN", "FINANCE"] },
+    role: { $in: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
     isActive: true,
   })
     .select("_id")

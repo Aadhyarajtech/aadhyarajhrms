@@ -31,7 +31,7 @@ export function isTicketStatus(
   );
 }
 
-const TICKET_ESCALATION_TARGETS = ["HR_ADMIN", "SUPER_ADMIN"] as const;
+const TICKET_ESCALATION_TARGETS = ["ADMIN", "SUPER_ADMIN"] as const;
 
 type TicketEscalationTarget = (typeof TICKET_ESCALATION_TARGETS)[number];
 
@@ -150,7 +150,7 @@ export function assignDepartment(category: string) {
     case "Harassment Complaint":
     case "Infrastructure":
     case "Other":
-      return "HR_ADMIN";
+      return "ADMIN";
 
     case "Employee Referral":
     case "Recruitment":
@@ -166,13 +166,13 @@ export function assignDepartment(category: string) {
       return "SUPER_ADMIN";
 
     case "Complaint":
-      return "HR_ADMIN";
+      return "ADMIN";
 
     case "IT Support":
       return "IT_SUPPORT";
 
     default:
-      return "HR_ADMIN";
+      return "ADMIN";
   }
 }
 
@@ -668,7 +668,7 @@ export async function getTicketsForDepartment(
   // Manager capabilities are additive and come from the employee hierarchy,
   // not from a separate assignable MANAGER role.
   const roleAssignment: Record<string, string> = {
-    HR_ADMIN: "HR_ADMIN",
+    ADMIN: "ADMIN",
     RECRUITER: "RECRUITER",
     FINANCE: "FINANCE",
     IT_SUPPORT: "IT_SUPPORT",
@@ -749,8 +749,8 @@ export function isUserAuthorizedForTicket(
   // HR ADMIN
   // =======================================================
 
-  if (role === "HR_ADMIN") {
-    return ticket.assignedTo === "HR_ADMIN";
+  if (role === "ADMIN") {
+    return ticket.assignedTo === "ADMIN";
   }
 
   // =======================================================

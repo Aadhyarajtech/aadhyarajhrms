@@ -1226,7 +1226,7 @@ export async function analyzeLeaveApproval(
     requestId: string;
     requesterRole:
     | "SUPER_ADMIN"
-    | "HR_ADMIN"
+    | "ADMIN"
     | "MANAGER";
     requesterEmployeeId: string;
   },
@@ -1249,7 +1249,7 @@ export async function analyzeLeaveApproval(
 
   const allowedRoles = [
     "SUPER_ADMIN",
-    "HR_ADMIN",
+    "ADMIN",
     "MANAGER",
   ];
 
@@ -1296,7 +1296,7 @@ export async function analyzeLeaveApproval(
    * Managers can only analyze requests from
    * their own direct reports.
    *
-   * HR Admin and Super Admin can analyze
+   * Admin and Super Admin can analyze
    * requests across the organization.
    */
   if (requesterRole === "MANAGER") {
@@ -1882,7 +1882,7 @@ export async function analyzeLeaveAnalytics(
     endDate: string;
     requesterRole:
     | "SUPER_ADMIN"
-    | "HR_ADMIN"
+    | "ADMIN"
     | "MANAGER";
     requesterEmployeeId: string;
     employeeId?: string;
@@ -1919,7 +1919,7 @@ export async function analyzeLeaveAnalytics(
 
   const isManagementRole =
     requesterRole === "SUPER_ADMIN" ||
-    requesterRole === "HR_ADMIN";
+    requesterRole === "ADMIN";
 
   let allowedEmployeeIds: string[] | null = null;
 
@@ -2651,7 +2651,7 @@ export async function analyzeLeavePatterns(
     endDate: string;
     requesterRole:
     | "SUPER_ADMIN"
-    | "HR_ADMIN"
+    | "ADMIN"
     | "MANAGER";
     requesterEmployeeId: string;
     employeeId?: string;
@@ -2688,7 +2688,7 @@ export async function analyzeLeavePatterns(
 
   const isAdmin =
     requesterRole === "SUPER_ADMIN" ||
-    requesterRole === "HR_ADMIN";
+    requesterRole === "ADMIN";
 
   let allowedEmployeeIds: string[] | null = null;
 

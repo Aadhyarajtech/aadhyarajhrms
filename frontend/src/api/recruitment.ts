@@ -605,7 +605,7 @@ export const RecruitmentApi = {
       | "RECRUITER"
       | "FINANCE"
       | "IT_SUPPORT"
-      | "HR_ADMIN" = "EMPLOYEE",
+      | "ADMIN" = "EMPLOYEE",
   ) =>
     api
       .post<{

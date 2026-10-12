@@ -135,8 +135,8 @@ export default function Tickets() {
   const [activeTab, setActiveTab] = useState<"management" | "analytics">("management");
   const [escalationTicket, setEscalationTicket] = useState<any | null>(null);
   const [escalationTarget, setEscalationTarget] = useState<
-    "HR_ADMIN" | "SUPER_ADMIN"
-  >("HR_ADMIN");
+    "ADMIN" | "SUPER_ADMIN"
+  >("ADMIN");
   const [escalationReason, setEscalationReason] = useState("");
   const [historyTicket, setHistoryTicket] = useState<any | null>(null);
   const [analyzingTicketId, setAnalyzingTicketId] = useState<string | null>(null);
@@ -212,7 +212,7 @@ export default function Tickets() {
       // any manager capability. Keep only the union of those relevant ticket
       // categories in the UI rather than replacing the user's business role.
       const managerCategories = ["Complaint", "Manager Concern"];
-      if (user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN") {
+      if (user?.role === "SUPER_ADMIN" || user?.role === "ADMIN") {
         return true;
       }
       if (user?.role === "RECRUITER") {
@@ -320,7 +320,7 @@ export default function Tickets() {
       reason,
     }: {
       id: string;
-      escalatedTo: "HR_ADMIN" | "SUPER_ADMIN";
+      escalatedTo: "ADMIN" | "SUPER_ADMIN";
       reason: string;
     }) => {
       const res = await api.post(`/tickets/${id}/escalate`, {
@@ -342,7 +342,7 @@ export default function Tickets() {
 
       setEscalationTicket(null);
       setEscalationReason("");
-      setEscalationTarget("HR_ADMIN");
+      setEscalationTarget("ADMIN");
     },
   });
 
@@ -758,7 +758,7 @@ export default function Tickets() {
                               onClick={() => {
                                 setEscalationTicket(ticket);
                                 setEscalationReason("");
-                                setEscalationTarget("HR_ADMIN");
+                                setEscalationTarget("ADMIN");
                               }}
                               disabled={escalateTicket.isPending}
                               className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 transition"
@@ -914,13 +914,13 @@ export default function Tickets() {
                   value={escalationTarget}
                   onChange={(e) =>
                     setEscalationTarget(
-                      e.target.value as "HR_ADMIN" | "SUPER_ADMIN",
+                      e.target.value as "ADMIN" | "SUPER_ADMIN",
                     )
                   }
                   disabled={escalateTicket.isPending}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
                 >
-                  <option value="HR_ADMIN">HR Administrator</option>
+                  <option value="ADMIN">Administrator</option>
                   <option value="SUPER_ADMIN">Senior Leadership</option>
                 </select>
               </div>

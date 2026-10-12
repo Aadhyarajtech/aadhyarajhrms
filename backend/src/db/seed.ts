@@ -425,7 +425,7 @@ export async function runSeed() {
   const itSupportSpecialist =findByTitle("IT Support Specialist")[0];
   
   await reassignDemoAccount(itVp, "admin@aadhyaraj.com", "SUPER_ADMIN");
-  await reassignDemoAccount(hrVp, "hr.admin@aadhyaraj.com", "HR_ADMIN");
+  await reassignDemoAccount(hrVp, "hr.admin@aadhyaraj.com", "ADMIN");
   await reassignDemoAccount(engManager, "manager.demo@aadhyaraj.com", "EMPLOYEE", true);
   await reassignDemoAccount(taSpecialist, "recruiter.demo@aadhyaraj.com", "RECRUITER");
   await reassignDemoAccount(financeManager, "finance.demo@aadhyaraj.com", "FINANCE");
@@ -791,7 +791,7 @@ export async function runSeed() {
   console.log("----------------------------------------------------------------");
   console.log("Demo accounts (all use password: Welcome@123)");
   console.log(`  Super Admin    -> admin@aadhyaraj.com`);
-  console.log(`  HR Admin       -> hr.admin@aadhyaraj.com`);
+  console.log(`  Admin       -> hr.admin@aadhyaraj.com`);
   console.log(`  Manager        -> manager.demo@aadhyaraj.com`);
   console.log(`  Recruiter      -> recruiter.demo@aadhyaraj.com`);
   console.log(`  Finance        -> finance.demo@aadhyaraj.com`);

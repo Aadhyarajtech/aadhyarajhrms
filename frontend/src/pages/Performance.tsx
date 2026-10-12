@@ -49,7 +49,7 @@ export default function Performance() {
   const { user } = useAuth();
   const isTeamManager =
     user?.role === "MANAGER" || user?.isManager === true;
-  const isAdmin = user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
+  const isAdmin = user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
   const canAccessTeamReviews = isTeamManager || isAdmin;
   // Performance Outcomes uses the same access rule as Team Reviews.
   const canAccessPerformanceOutcomes = canAccessTeamReviews;
@@ -1862,11 +1862,11 @@ function TeamReviews({
   const [feedbackFor, setFeedbackFor] = useState<{ reviewId: string; revieweeId: string; revieweeName: string; managerId?: string; managerName?: string } | null>(null);
   const employeeId = user?.employee?.id;
 
-  // Only Super Admin and HR Admin can see the complete employee population.
+  // Only Super Admin and Admin can see the complete employee population.
   // Manager, Recruiter, Finance, and IT Support are restricted to their own
   // team members returned by the protected Performance team endpoint.
   const isTeamAdmin =
-    user?.role === "SUPER_ADMIN" || user?.role === "HR_ADMIN";
+    user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
 
   const { data: reports, isLoading: reportsLoading } = useQuery({
     queryKey: [

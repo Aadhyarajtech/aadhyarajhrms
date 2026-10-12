@@ -166,7 +166,7 @@ export async function getHelpdeskExecutiveAnalytics(
   const deptBacklog: Record<string, number> = {};
   for (const t of tickets) {
     if (t.status === "OPEN" || t.status === "IN_PROGRESS") {
-      const dept = t.assignedTo || "HR_ADMIN";
+      const dept = t.assignedTo || "ADMIN";
       deptBacklog[dept] = (deptBacklog[dept] || 0) + 1;
     }
   }
@@ -232,7 +232,7 @@ export async function getHelpdeskExecutiveAnalytics(
       }
     } else {
       // Active ticket: calculate predictive risk
-      const backlog = deptBacklog[t.assignedTo || "HR_ADMIN"] || 0;
+      const backlog = deptBacklog[t.assignedTo || "ADMIN"] || 0;
       const risk = calculatePredictiveSlaRisk(t as any, backlog, now);
 
       if (risk.isBreached) {

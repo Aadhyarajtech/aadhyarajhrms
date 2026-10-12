@@ -35,7 +35,7 @@ export const PERMISSION_CATALOG = [
 
 const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   SUPER_ADMIN: PERMISSION_CATALOG.map((p) => p.key),
-  HR_ADMIN: PERMISSION_CATALOG.filter((p) => p.key !== "payroll.manage").map(
+  ADMIN: PERMISSION_CATALOG.filter((p) => p.key !== "payroll.manage").map(
     (p) => p.key,
   ),
   RECRUITER: [
@@ -92,7 +92,7 @@ const DEFAULT_ROLE_META: Record<
     label: "Super Admin",
     description: "Full system governance and configuration access.",
   },
-  HR_ADMIN: {
+  ADMIN: {
     label: "Admin",
     description:
       "HR operations, people management and organization administration.",
@@ -209,7 +209,7 @@ const REQUIRED_PERMISSION_MIGRATIONS: Record<number, Record<string, string[]>> =
     // management. Super Admin and Admin can approve; recruiters can create
     // and manage recruitment work without approving by default.
     SUPER_ADMIN: ["recruitment.requisition.approve"],
-    HR_ADMIN: ["recruitment.requisition.approve"],
+    ADMIN: ["recruitment.requisition.approve"],
   },
 };
 
@@ -288,7 +288,7 @@ export async function ensureDefaults() {
 export async function getGovernance() {
   await ensureDefaults();
   const [roles, policies] = await Promise.all([
-    GovernanceRole.find({ role: { $in: ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"] } }).sort({ role: 1 }).lean(),
+    GovernanceRole.find({ role: { $in: ["SUPER_ADMIN", "ADMIN", "RECRUITER", "FINANCE", "IT_SUPPORT", "EMPLOYEE"] } }).sort({ role: 1 }).lean(),
     GovernancePolicy.find({}).sort({ category: 1, label: 1 }).lean(),
   ]);
   return {

@@ -71,7 +71,7 @@ export function buildPageContext(
  * Scope rules:
  *
  * SUPER_ADMIN → ALL
- * HR_ADMIN    → ALL
+ * ADMIN    → ALL
  * MANAGER     → TEAM
  * Others      → SELF
  *
@@ -151,7 +151,7 @@ export async function buildUserContext(
  *
  * ALL:
  *   SUPER_ADMIN
- *   HR_ADMIN
+ *   ADMIN
  *
  * TEAM:
  *   MANAGER
@@ -180,7 +180,7 @@ export function getHrCopilotRoleScope(
 
   switch (role) {
     case "SUPER_ADMIN":
-    case "HR_ADMIN":
+    case "ADMIN":
       return "ALL";
 
     case "MANAGER":
@@ -255,7 +255,7 @@ export function hasHrCopilotSelfOnlyAccess(
  *
  * SELF and TEAM scoped users need an employeeId for employee-level HR data.
  *
- * SUPER_ADMIN / HR_ADMIN may operate organization-wide without a personal
+ * SUPER_ADMIN / ADMIN may operate organization-wide without a personal
  * employeeId.
  */
 export function requiresHrCopilotEmployeeId(

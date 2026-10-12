@@ -165,7 +165,7 @@ export default function Documents() {
   const employeeId = user?.employee?.id ?? "";
   const role = user?.role;
   const canManageDocuments =
-    !!role && ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+    !!role && ["SUPER_ADMIN", "ADMIN"].includes(role);
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(employeeId);
 
@@ -189,11 +189,11 @@ export default function Documents() {
   const canUploadOwn = !!employeeId;
 
   const canRequestFromEmployee =
-    (!!role && ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role)) ||
+    (!!role && ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(role)) ||
     user?.isManager === true;
 
   const canProcessCompanyRequests =
-    !!role && ["SUPER_ADMIN", "HR_ADMIN"].includes(role);
+    !!role && ["SUPER_ADMIN", "ADMIN"].includes(role);
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isRequestOpen, setIsRequestOpen] = useState(false);
@@ -657,7 +657,7 @@ function DocumentRow({ doc }: { doc: any }): JSX.Element {
   const { showToast } = useToast();
   const { user, hasPermission } = useAuth();
 
-  const canDelete = ["SUPER_ADMIN", "HR_ADMIN"].includes((user as any)?.role);
+  const canDelete = ["SUPER_ADMIN", "ADMIN"].includes((user as any)?.role);
 
   const canReview =
     hasPermission("documents.manage") &&
@@ -1190,7 +1190,7 @@ function UploadDocumentModal({
           >
             <option value={selfEmployeeId}>Myself</option>
             {role &&
-              ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(role) &&
+              ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(role) &&
               employees
                 .filter((emp: any) => emp.id !== selfEmployeeId)
                 .map((emp: any) => (

@@ -20,7 +20,7 @@ export interface IAnnouncement extends Document {
 
   audience:
     | "ALL"
-    | "HR_ADMIN"
+    | "ADMIN"
     | "FINANCE"
     | "MANAGER"
     | "RECRUITER"
@@ -89,7 +89,7 @@ const announcementSchema = new Schema<IAnnouncement>(
       default: "ALL",
       enum: [
         "ALL",
-        "HR_ADMIN",
+        "ADMIN",
         "FINANCE",
         "MANAGER",
         "RECRUITER",

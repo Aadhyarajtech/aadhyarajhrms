@@ -290,8 +290,8 @@ function getRoleLabel(role?: string) {
     case "SUPER_ADMIN":
       return "Super Admin";
 
-    case "HR_ADMIN":
-      return "HR Admin";
+    case "ADMIN":
+      return "Admin";
 
     case "IT_SUPPORT":
       return "IT Support";
@@ -384,7 +384,7 @@ export default function TicketDetails() {
     useState(false);
 
   const [escalatedTo, setEscalatedTo] =
-    useState<"HR_ADMIN" | "SUPER_ADMIN">("HR_ADMIN");
+    useState<"ADMIN" | "SUPER_ADMIN">("ADMIN");
 
   const [escalationReason, setEscalationReason] =
     useState("");
@@ -476,7 +476,7 @@ export default function TicketDetails() {
 
       setEscalationOpen(false);
       setEscalationReason("");
-      setEscalatedTo("HR_ADMIN");
+      setEscalatedTo("ADMIN");
 
       showToast("Grievance escalated successfully.");
     },
@@ -1101,7 +1101,7 @@ export default function TicketDetails() {
                     Escalate Grievance
                   </h3>
                   <p className="mt-0.5 text-xs text-gray-500">
-                    Send this manager grievance to HR Admin or Super Admin.
+                    Send this manager grievance to Admin or Super Admin.
                   </p>
                 </div>
 
@@ -1120,14 +1120,14 @@ export default function TicketDetails() {
                   onChange={(event) =>
                     setEscalatedTo(
                       event.target.value as
-                        | "HR_ADMIN"
+                        | "ADMIN"
                         | "SUPER_ADMIN",
                     )
                   }
                   className="h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
                 >
-                  <option value="HR_ADMIN">
-                    HR Admin
+                  <option value="ADMIN">
+                    Admin
                   </option>
                   <option value="SUPER_ADMIN">
                     Super Admin

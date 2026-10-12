@@ -182,13 +182,13 @@ export async function getPendingLeavesForDashboard(params: {
   } = params;
 
   const isPrivileged =
-    role === "SUPER_ADMIN" || role === "HR_ADMIN";
+    role === "SUPER_ADMIN" || role === "ADMIN";
 
   const query: Record<string, any> = {
     status: "PENDING",
   };
 
-  // Super Admin and HR Admin can see everyone's pending leaves.
+  // Super Admin and Admin can see everyone's pending leaves.
   if (!isPrivileged) {
     if (!employeeId) {
       return [];

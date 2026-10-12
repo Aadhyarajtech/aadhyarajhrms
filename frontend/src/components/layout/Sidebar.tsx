@@ -62,7 +62,7 @@ const NAV_ITEMS: NavItem[] = [
     permission: "tickets.view",
     roles: [
       "SUPER_ADMIN",
-      "HR_ADMIN",
+      "ADMIN",
       "RECRUITER",
       "FINANCE",
       "IT_SUPPORT",
@@ -92,7 +92,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: CalendarDays,
     roles: [
       "SUPER_ADMIN",
-      "HR_ADMIN",
+      "ADMIN",
       "RECRUITER",
       "FINANCE",
       "IT_SUPPORT",
@@ -149,7 +149,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Users,
     roles: [
       "SUPER_ADMIN",
-      "HR_ADMIN",
+      "ADMIN",
     ],
     section: "people",
   },
@@ -160,7 +160,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Network,
     roles: [
       "SUPER_ADMIN",
-      "HR_ADMIN",
+      "ADMIN",
     ],
     section: "people",
   },
@@ -175,7 +175,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: BarChart3,
     roles: [
       "SUPER_ADMIN",
-      "HR_ADMIN",
+      "ADMIN",
     ],
     section: "management",
   },
@@ -187,7 +187,7 @@ const NAV_ITEMS: NavItem[] = [
     permission: "recruitment.view",
     roles: [
       "SUPER_ADMIN",
-      "HR_ADMIN",
+      "ADMIN",
       "RECRUITER",
     ],
     section: "management",
@@ -199,7 +199,7 @@ const NAV_ITEMS: NavItem[] = [
   icon: Megaphone,
   roles: [
     "SUPER_ADMIN",
-    "HR_ADMIN",
+    "ADMIN",
     "RECRUITER",
     "FINANCE",
     "IT_SUPPORT",
@@ -218,7 +218,7 @@ const NAV_ITEMS: NavItem[] = [
   icon: Settings,
   roles: [
     "SUPER_ADMIN",
-    "HR_ADMIN",
+    "ADMIN",
     "RECRUITER",
     "FINANCE",
     "IT_SUPPORT",
@@ -270,7 +270,7 @@ export function Sidebar({
     if (item.to === "/app/my-team") {
       return (
         role === "SUPER_ADMIN" ||
-        role === "HR_ADMIN" ||
+        role === "ADMIN" ||
         user?.isManager === true ||
         user?.employee?.isManager === true
       );

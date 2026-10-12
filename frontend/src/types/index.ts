@@ -1,6 +1,6 @@
 export type Role =
   | "SUPER_ADMIN"
-  | "HR_ADMIN"
+  | "ADMIN"
   | "MANAGER" // Legacy-only stored role; do not offer for new assignments.
   | "RECRUITER"
   | "FINANCE"
@@ -997,7 +997,7 @@ export type AnnouncementType =
 
 export type AnnouncementAudience =
   | "ALL"
-  | "HR_ADMIN"
+  | "ADMIN"
   | "FINANCE"
   | "MANAGER"
   | "RECRUITER"

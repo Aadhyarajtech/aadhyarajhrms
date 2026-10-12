@@ -250,7 +250,7 @@ export default function Recruitment() {
   const role = String(user?.role ?? "").trim().toUpperCase();
   const canManageRecruitment =
     hasPermission("recruitment.manage") ||
-    ["SUPER_ADMIN", "HR_ADMIN", "RECRUITER"].includes(role);
+    ["SUPER_ADMIN", "ADMIN", "RECRUITER"].includes(role);
   // Other authenticated roles receive the read-only available-roles view.
   const isEmployeeView = !canManageRecruitment;
   const [postOpen, setPostOpen] = useState(false);

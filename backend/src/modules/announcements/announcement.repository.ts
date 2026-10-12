@@ -143,7 +143,7 @@ async function getEmployeeTargetingInfo(userId: string, role?: string) {
    * This is important for:
    * - Recruiter
    * - IT Support
-   * - HR Admin
+   * - Admin
    * - Finance
    * - Manager
    * - Employee
@@ -172,7 +172,7 @@ async function getEmployeeTargetingInfo(userId: string, role?: string) {
       "human_resources",
       "human_resources_team",
       "human resources",
-      "hr admin",
+      "admin",
     ],
     finance: [
       "finance",
@@ -330,7 +330,7 @@ function matchesAudience(announcementAudience: string, role?: string) {
       "human_resources",
       "human_resources_team",
       "human resources",
-      "hr admin",
+      "admin",
     ],
     finance: [
       "finance",
@@ -397,7 +397,7 @@ export async function getAnnouncements(role?: string, userId?: string) {
 
   /*
    * Audience and targeting apply to EVERY role,
-   * including SUPER_ADMIN and HR_ADMIN.
+   * including SUPER_ADMIN and ADMIN.
    *
    * ALL means no role restriction, but
    * department/location/target-role restrictions
@@ -448,7 +448,7 @@ export async function getAnnouncements(role?: string, userId?: string) {
    *
    * This applies to:
    * - Super Admin
-   * - HR Admin
+   * - Admin
    * - Recruiter
    * - Manager
    * - Finance
@@ -991,7 +991,7 @@ export async function listAnnouncementReadStatus(
           "admin",
         ],
         hr_admin: [
-          "hr admin",
+          "admin",
           "hr",
           "human resources",
           "human resource",

@@ -22,7 +22,7 @@ export type AnnouncementType = (typeof ANNOUNCEMENT_TYPES)[number];
    AUDIENCE TYPES
 
    ALL           -> All employees
-   HR_ADMIN      -> HR team
+   ADMIN      -> HR team
    FINANCE       -> Finance / Payroll
    MANAGER       -> Managers
    RECRUITER     -> Recruitment team
@@ -34,7 +34,7 @@ export type AnnouncementType = (typeof ANNOUNCEMENT_TYPES)[number];
 
 export const ANNOUNCEMENT_AUDIENCES = [
   "ALL",
-  "HR_ADMIN",
+  "ADMIN",
   "FINANCE",
   "MANAGER",
   "RECRUITER",

@@ -21,7 +21,7 @@ import { Skeleton } from "@/components/ui/EmptyState";
 
 const ROLE_ORDER = [
   "SUPER_ADMIN",
-  "HR_ADMIN",
+  "ADMIN",
   "RECRUITER",
   "FINANCE",
   "IT_SUPPORT",
@@ -31,7 +31,7 @@ const ROLE_ORDER = [
 export default function GovernanceSettings() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedRole, setSelectedRole] = useState("HR_ADMIN");
+  const [selectedRole, setSelectedRole] = useState("ADMIN");
   const [draftPermissions, setDraftPermissions] = useState<string[]>([]);
   const [draftPolicies, setDraftPolicies] = useState<GovernancePolicy[]>([]);
 

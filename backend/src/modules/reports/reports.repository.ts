@@ -814,7 +814,7 @@ async function documents(filters: ReportFilters, employeeIds?: string[]) {
 }
 
 async function audit(filters: ReportFilters, role: string) {
-  if (role !== "SUPER_ADMIN" && role !== "HR_ADMIN") {
+  if (role !== "SUPER_ADMIN" && role !== "ADMIN") {
     return {
       total: 0,
       byAction: [],
@@ -896,7 +896,7 @@ export async function getReports(
     audit(filters, role),
   ]);
 
-  const canViewRecruitment = role === "SUPER_ADMIN" || role === "HR_ADMIN";
+  const canViewRecruitment = role === "SUPER_ADMIN" || role === "ADMIN";
 
   return {
     filters,

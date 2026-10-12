@@ -27,7 +27,7 @@ type FormValues = z.infer<typeof schema>;
 
 // const DEMO_ACCOUNTS = [
 //   { label: "Super Admin", email: "adithya.nuthakki@aadhyarajtech.com" },
-//   { label: "HR Admin", email: "geetha.balachandran@aadhyarajtech.com" },
+//   { label: "Admin", email: "geetha.balachandran@aadhyarajtech.com" },
 //   { label: "Manager", email: "gangadhar.yedla@aadhyarajtech.com" },
 //   { label: "Recruiter", email: "meghana.sahithi@aadhyarajtech.com" },
 //   { label: "Finance", email: "sreevidya.talasila@aadhyarajtech.com" },

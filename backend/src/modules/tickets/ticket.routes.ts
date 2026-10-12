@@ -48,7 +48,7 @@ ticketRouter.use(requirePermission("tickets.view"));
 // STRICT TICKET AUTHORIZATION
 // =========================================================
 // SUPER_ADMIN -> all tickets
-// HR_ADMIN    -> assignedTo === HR_ADMIN
+// ADMIN    -> assignedTo === ADMIN
 // RECRUITER   -> assignedTo === RECRUITER
 // FINANCE     -> assignedTo === FINANCE
 // IT_SUPPORT  -> assignedTo === IT_SUPPORT
@@ -72,7 +72,7 @@ async function canAccessTicket(
     return true;
   }
 
-  if (role === "HR_ADMIN" && ticket.assignedTo === "HR_ADMIN") return true;
+  if (role === "ADMIN" && ticket.assignedTo === "ADMIN") return true;
   if (role === "RECRUITER" && ticket.assignedTo === "RECRUITER") return true;
   if (role === "FINANCE" && ticket.assignedTo === "FINANCE") return true;
   if (role === "IT_SUPPORT" && ticket.assignedTo === "IT_SUPPORT") return true;
@@ -427,7 +427,7 @@ ticketRouter.get(
 
       const allowedRoles = [
         "SUPER_ADMIN",
-        "HR_ADMIN",
+        "ADMIN",
         "FINANCE",
         "MANAGER",
         "IT_SUPPORT",
@@ -505,9 +505,9 @@ function getDepartmentFilterForRole(role: string) {
     return undefined;
   }
 
-  if (role === "HR_ADMIN") {
+  if (role === "ADMIN") {
     return {
-      assignedTo: ["HR_ADMIN"],
+      assignedTo: ["ADMIN"],
       categories: [],
     };
   }
@@ -552,7 +552,7 @@ ticketRouter.get(
 
       const allowedRoles = [
         "SUPER_ADMIN",
-        "HR_ADMIN",
+        "ADMIN",
         "FINANCE",
         "MANAGER",
         "IT_SUPPORT",
@@ -782,7 +782,7 @@ ticketRouter.post(
 
       const allowedRoles = [
         "SUPER_ADMIN",
-        "HR_ADMIN",
+        "ADMIN",
         "FINANCE",
         "MANAGER",
         "IT_SUPPORT",
@@ -868,7 +868,7 @@ ticketRouter.post(
 
       const senderRole =
         req.user.role ||
-        "HR_ADMIN";
+        "ADMIN";
 
       const results: Array<{
         ticketId: string;
@@ -1016,7 +1016,7 @@ const updateSchema = z.object({
 
 const escalateSchema = z.object({
   escalatedTo: z.enum([
-    "HR_ADMIN",
+    "ADMIN",
     "SUPER_ADMIN",
   ]),
   reason: z
@@ -1543,7 +1543,7 @@ ticketRouter.post(
       if (
         ![
           "SUPER_ADMIN",
-          "HR_ADMIN",
+          "ADMIN",
         ].includes(
           String(req.user.role),
         )
@@ -1551,7 +1551,7 @@ ticketRouter.post(
         return res.status(403).json({
           error: {
             message:
-              "Only HR Admin or Super Admin can refresh grievance SLA",
+              "Only Admin or Super Admin can refresh grievance SLA",
           },
         });
       }
@@ -1662,7 +1662,7 @@ ticketRouter.get(
 
       const staffRoles = [
         "SUPER_ADMIN",
-        "HR_ADMIN",
+        "ADMIN",
         "FINANCE",
         "MANAGER",
         "IT_SUPPORT",
@@ -1749,7 +1749,7 @@ ticketRouter.post(
 
       const staffRoles = [
         "SUPER_ADMIN",
-        "HR_ADMIN",
+        "ADMIN",
         "FINANCE",
         "MANAGER",
         "IT_SUPPORT",
@@ -2184,7 +2184,7 @@ ticketRouter.post(
 ========================================================= */
 
 const STAFF_ROLES = [
-  "HR_ADMIN",
+  "ADMIN",
   "FINANCE",
   "IT_SUPPORT",
   "SUPER_ADMIN",

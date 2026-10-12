@@ -268,9 +268,9 @@ function canonicalRole(value: unknown): string {
     SUPERADMIN: "SUPER_ADMIN",
     SUPER_ADMIN: "SUPER_ADMIN",
 
-    HR: "HR_ADMIN",
-    HRADMIN: "HR_ADMIN",
-    HR_ADMIN: "HR_ADMIN",
+    HR: "ADMIN",
+    HRADMIN: "ADMIN",
+    ADMIN: "ADMIN",
 
     FINANCE: "FINANCE",
     PAYROLL: "FINANCE",
@@ -296,7 +296,7 @@ function getRoleAliases(role: string): string[] {
 
   const aliases: Record<string, string[]> = {
     SUPER_ADMIN: ["SUPER_ADMIN", "SUPERADMIN"],
-    HR_ADMIN: ["HR_ADMIN", "HRADMIN", "HR"],
+    ADMIN: ["ADMIN", "HRADMIN", "HR"],
     FINANCE: ["FINANCE", "PAYROLL"],
     MANAGER: ["MANAGER"],
     RECRUITER: ["RECRUITER", "RECRUITMENT"],
@@ -328,7 +328,7 @@ function escapeRegExp(value: string) {
 const AUDIENCE_ROLE_MAP: Record<string, string[]> = {
   ALL: [
     "SUPER_ADMIN",
-    "HR_ADMIN",
+    "ADMIN",
     "MANAGER",
     "RECRUITER",
     "FINANCE",
@@ -336,7 +336,7 @@ const AUDIENCE_ROLE_MAP: Record<string, string[]> = {
     "EMPLOYEE",
   ],
 
-  HR_ADMIN: ["HR_ADMIN"],
+  ADMIN: ["ADMIN"],
 
   FINANCE: ["FINANCE"],
 
@@ -474,7 +474,7 @@ async function resolveAnnouncementUsers(input: {
    * Multiple roles are OR; role + department/location are AND.
    *
    * Normalize both the selected audience and target role so
-   * "HR", "HR_ADMIN", "Manager", "SUPERADMIN", etc. all map
+   * "HR", "ADMIN", "Manager", "SUPERADMIN", etc. all map
    * consistently to the database role.
    */
   const normalizedTargetRoles = targetRoles.map(canonicalRole);
@@ -512,7 +512,7 @@ async function resolveAnnouncementUsers(input: {
    * Fast path: no department/location targeting.
    *
    * ALL without an explicit target role means EVERY active user.
-   * This includes SUPER_ADMIN, HR_ADMIN, FINANCE, MANAGER, RECRUITER,
+   * This includes SUPER_ADMIN, ADMIN, FINANCE, MANAGER, RECRUITER,
    * IT_SUPPORT, EMPLOYEE, and any future role added to the HRMS.
    *
    * A selected target role still restricts the recipients.

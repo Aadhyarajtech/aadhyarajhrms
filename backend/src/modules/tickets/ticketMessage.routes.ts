@@ -203,7 +203,7 @@ ticketMessageRouter.post(
         const senderUserId = req.user.userId;
 
         if (role === "EMPLOYEE") {
-          // Notify assigned role users (e.g., HR_ADMIN, FINANCE, MANAGER, IT_SUPPORT)
+          // Notify assigned role users (e.g., ADMIN, FINANCE, MANAGER, IT_SUPPORT)
           const recipients = await User.find({
             role: ticket.assignedTo,
             isActive: true,

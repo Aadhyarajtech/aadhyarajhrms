@@ -32,18 +32,18 @@ export function requireRole(...roles: AuthUser["role"][]) {
 
 export const isAdmin = requireRole(
   "SUPER_ADMIN",
-  "HR_ADMIN"
+  "ADMIN"
 );
 
 export const isAdminOrFinance = requireRole(
   "SUPER_ADMIN",
-  "HR_ADMIN",
+  "ADMIN",
   "FINANCE"
 );
 
 export const isAdminOrRecruiter = requireRole(
   "SUPER_ADMIN",
-  "HR_ADMIN",
+  "ADMIN",
   "RECRUITER"
 );
 
@@ -53,7 +53,7 @@ export function isAdminOrRecruiterOrManager(
   next: NextFunction,
 ) {
   if (!req.user) return next(AppError.unauthorized());
-  if (["SUPER_ADMIN", "HR_ADMIN", "RECRUITER"].includes(req.user.role) || req.user.isManager) {
+  if (["SUPER_ADMIN", "ADMIN", "RECRUITER"].includes(req.user.role) || req.user.isManager) {
     return next();
   }
   return next(AppError.forbidden("This action requires an administrator, recruiter, or reporting manager."));
@@ -67,7 +67,7 @@ export function isManagerOrAbove(
   if (!req.user) return next(AppError.unauthorized());
   if (
     req.user.role === "SUPER_ADMIN" ||
-    req.user.role === "HR_ADMIN" ||
+    req.user.role === "ADMIN" ||
     req.user.isManager
   ) {
     return next();

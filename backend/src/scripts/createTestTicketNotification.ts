@@ -43,7 +43,7 @@ async function main() {
     link: `/app/tickets/${ticket._id}`,
   });
 
-  console.log("Created a TICKET_MESSAGE notification for HR_ADMIN.");
+  console.log("Created a TICKET_MESSAGE notification for ADMIN.");
 
   const message = await messageRepo.createTicketMessage({
     ticketId: ticket._id,
@@ -64,7 +64,7 @@ async function main() {
     link: `/app/tickets/${ticket._id}`,
   });
 
-  console.log("Created a second TICKET_MESSAGE notification for HR_ADMIN.");
+  console.log("Created a second TICKET_MESSAGE notification for ADMIN.");
 
   process.exit(0);
 }

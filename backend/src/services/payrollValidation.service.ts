@@ -464,7 +464,7 @@ ${params.items
 
 Respond ONLY with valid JSON matching this schema:
 {
-  "aiSummary": "A concise, professional 2-3 sentence executive summary for the Finance & HR Admin team assessing whether it is safe to process payroll, matching the ${params.status} status and ${params.score}% score.",
+  "aiSummary": "A concise, professional 2-3 sentence executive summary for the Finance & Admin team assessing whether it is safe to process payroll, matching the ${params.status} status and ${params.score}% score.",
   "recommendations": ["2 to 4 bullet points of prioritized, clear action items"]
 }`;
 
