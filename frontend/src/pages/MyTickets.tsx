@@ -12,6 +12,7 @@ interface Ticket {
   category: string;
   priority: string;
   subject: string;
+  description?: string;
   status: string;
   createdAt: string;
   attachment?: string;
@@ -167,7 +168,15 @@ export default function MyTickets() {
                 </td>
 
                 <td className="p-3 text-sm text-gray-700">
-                  {ticket.category}
+                  <div>{ticket.category}</div>
+                  {ticket.category === "Other" && ticket.description?.match(/^Other Concern:\s*([^\n]+)/)?.[1] && (
+                    <div
+                      className="mt-0.5 max-w-[220px] truncate text-xs text-gray-500"
+                      title={ticket.description.match(/^Other Concern:\s*([^\n]+)/)?.[1]}
+                    >
+                      {ticket.description.match(/^Other Concern:\s*([^\n]+)/)?.[1]}
+                    </div>
+                  )}
                 </td>
 
                 <td className="p-3 text-sm whitespace-nowrap">

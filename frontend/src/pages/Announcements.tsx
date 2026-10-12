@@ -574,8 +574,19 @@ function MultiSelectCategory({
 ========================================================= */
 
 export default function Announcements() {
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const isAdmin = hasPermission("announcements.manage");
+
+
+  // Only Adithya Nuthakki and Sreevidya Talasila can see the announcement
+  // overview/sidebar panels. Compare normalized account emails, not display names.
+  const announcementOverviewAllowedEmails = [
+    "adithya.nuthakki@aadhyarajtech.com",
+    "sreevidya.talasila@aadhyarajtech.com",
+  ];
+  const currentUserEmail = String(user?.email ?? "").trim().toLowerCase();
+  const showAnnouncementAdminPanels =
+    announcementOverviewAllowedEmails.includes(currentUserEmail);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -885,7 +896,13 @@ export default function Announcements() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div
+  className={`grid grid-cols-1 gap-5 ${
+    showAnnouncementAdminPanels
+      ? "xl:grid-cols-[minmax(0,1fr)_340px]"
+      : ""
+  }`}
+>
         <div className="min-w-0">
           {isLoading ? (
             <div className="space-y-4">
@@ -1049,8 +1066,9 @@ export default function Announcements() {
           )}
         </div>
 
-        {/* New: lightweight admin overview. It uses existing announcement data only. */}
-        <aside className="space-y-4">
+       {/* Admin-only announcement overview panels */}
+{showAnnouncementAdminPanels && (
+  <aside className="space-y-4">
           <Card>
             <div className="p-5">
               <div className="flex items-center justify-between gap-3">
@@ -1134,7 +1152,8 @@ export default function Announcements() {
               </div>
             </div>
           </Card>
-        </aside>
+          </aside>
+)}
       </div>
 
       {isAdmin && <CreateModal open={createOpen} onClose={() => setCreateOpen(false)} />}

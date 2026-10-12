@@ -506,6 +506,14 @@ export default function TicketConversation() {
 
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500 mt-0.5">
             <span className="font-medium text-gray-700">{ticket.category}</span>
+            {ticket.category === "Other" && ticket.description?.match(/^Other Concern:\s*([^\n]+)/)?.[1] && (
+              <span
+                className="max-w-[260px] truncate text-gray-600"
+                title={ticket.description.match(/^Other Concern:\s*([^\n]+)/)?.[1]}
+              >
+                · {ticket.description.match(/^Other Concern:\s*([^\n]+)/)?.[1]}
+              </span>
+            )}
             <span>·</span>
             <span
               className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
@@ -834,7 +842,7 @@ export default function TicketConversation() {
                 Ticket Description
               </p>
 
-              <p>{ticket.description}</p>
+              <p>{ticket.description.replace(/^Other Concern:\s*[^\n]+\n*\n*/, "")}</p>
             </div>
           </div>
         )}
