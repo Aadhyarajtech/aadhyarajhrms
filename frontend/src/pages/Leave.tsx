@@ -216,7 +216,7 @@ export default function Leave() {
     user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
 
   const [tab, setTab] = useState(
-    params.get("tab") === "team" && isManager
+    params.get("tab") === "team" && isTeamLeaveApprover
       ? "team"
       : "mine",
   );
