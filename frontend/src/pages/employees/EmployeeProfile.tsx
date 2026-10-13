@@ -111,6 +111,23 @@ export default function EmployeeProfile() {
   const [editOpen, setEditOpen] = useState(false);
   const [salaryOpen, setSalaryOpen] = useState(false);
   const [docTypeOpen, setDocTypeOpen] = useState(false);
+  const [terminationOpen, setTerminationOpen] = useState(false);
+  const [terminationForm, setTerminationForm] = useState({
+    terminationDate: new Date().toISOString().split("T")[0],
+    terminationReason: "",
+    employeeRemarks: "",
+    hrRemarks: "",
+  });
+  const [terminationErrors, setTerminationErrors] = useState<Record<string, string>>({});
+  const [noticePeriodOpen, setNoticePeriodOpen] = useState(false);
+  const [noticePeriodForm, setNoticePeriodForm] = useState({
+    noticeDays: "30",
+    resignationDate: new Date().toISOString().split("T")[0],
+    resignationReason: "",
+    employeeRemarks: "",
+    hrRemarks: "",
+  });
+  const [noticePeriodErrors, setNoticePeriodErrors] = useState<Record<string, string>>({});
 
   const effectiveId = id ?? user?.employee?.id;
 
@@ -228,6 +245,8 @@ export default function EmployeeProfile() {
         queryKey: ["employee", effectiveId],
       });
       queryClient.invalidateQueries({ queryKey: ["employees"] });
+      setNoticePeriodOpen(false);
+      setNoticePeriodErrors({});
       showToast("Employee notice period started successfully.");
     },
     onError: (error) => {
@@ -550,64 +569,15 @@ export default function EmployeeProfile() {
                   variant="outline"
                   className="whitespace-nowrap"
                   onClick={() => {
-                    const value = window.prompt(
-                      "Enter notice period in days:",
-                      "30",
-                    );
-
-                    if (value === null) return;
-
-                    const noticeDays = Number(value);
-
-                    if (!Number.isInteger(noticeDays) || noticeDays < 1) {
-                      showToast(
-                        "Please enter a valid notice period of at least 1 day.",
-                        "error",
-                      );
-                      return;
-                    }
-
-                    const resignationDate = window.prompt(
-                      "Enter resignation date (YYYY-MM-DD):",
-                      new Date().toISOString().split("T")[0],
-                    );
-
-                    if (!resignationDate) {
-                      showToast("Please enter the resignation date.", "error");
-                      return;
-                    }
-
-                    const resignationReason = window.prompt(
-                      "Enter resignation reason:",
-                    );
-
-                    if (!resignationReason?.trim()) {
-                      showToast(
-                        "Please enter the resignation reason.",
-                        "error",
-                      );
-                      return;
-                    }
-
-                    const employeeRemarks =
-                      window.prompt("Enter employee remarks (optional):") ?? "";
-
-                    const hrRemarks =
-                      window.prompt("Enter HR remarks (optional):") ?? "";
-
-                    if (
-                      window.confirm(
-                        `Start ${noticeDays}-day notice period for this employee?`,
-                      )
-                    ) {
-                      startNoticePeriodMutation.mutate({
-                        noticeDays,
-                        resignationDate,
-                        resignationReason: resignationReason.trim(),
-                        employeeRemarks: employeeRemarks.trim(),
-                        hrRemarks: hrRemarks.trim(),
-                      });
-                    }
+                    setNoticePeriodForm({
+                      noticeDays: "30",
+                      resignationDate: new Date().toISOString().split("T")[0],
+                      resignationReason: "",
+                      employeeRemarks: "",
+                      hrRemarks: "",
+                    });
+                    setNoticePeriodErrors({});
+                    setNoticePeriodOpen(true);
                   }}
                   isLoading={startNoticePeriodMutation.isPending}
                 >
@@ -623,43 +593,14 @@ export default function EmployeeProfile() {
                   variant="danger"
                   className="whitespace-nowrap"
                   onClick={() => {
-                    const terminationDate = window.prompt(
-                      "Enter termination date (YYYY-MM-DD):",
-                      new Date().toISOString().split("T")[0],
-                    );
-
-                    if (!terminationDate) return;
-
-                    const terminationReason = window.prompt(
-                      "Enter termination reason:",
-                    );
-
-                    if (!terminationReason?.trim()) {
-                      showToast(
-                        "Please enter the termination reason.",
-                        "error",
-                      );
-                      return;
-                    }
-
-                    const employeeRemarks =
-                      window.prompt("Enter employee remarks (optional):") ?? "";
-
-                    const hrRemarks =
-                      window.prompt("Enter HR remarks (optional):") ?? "";
-
-                    if (
-                      window.confirm(
-                        "Are you sure you want to terminate this employee?",
-                      )
-                    ) {
-                      terminateEmployeeMutation.mutate({
-                        terminationDate,
-                        terminationReason: terminationReason.trim(),
-                        employeeRemarks: employeeRemarks.trim(),
-                        hrRemarks: hrRemarks.trim(),
-                      });
-                    }
+                    setTerminationForm({
+                      terminationDate: new Date().toISOString().split("T")[0],
+                      terminationReason: "",
+                      employeeRemarks: "",
+                      hrRemarks: "",
+                    });
+                    setTerminationErrors({});
+                    setTerminationOpen(true);
                   }}
                   isLoading={terminateEmployeeMutation.isPending}
                 >
@@ -900,6 +841,157 @@ export default function EmployeeProfile() {
           onClose={() => setDocTypeOpen(false)}
           employeeId={employee.id}
         />
+      )}
+      {isAdmin && (
+        <Modal
+          open={noticePeriodOpen}
+          onClose={() => {
+            if (!startNoticePeriodMutation.isPending) setNoticePeriodOpen(false);
+          }}
+          title="Start notice period"
+          subtitle={`Record resignation details for ${employee.firstName} ${employee.lastName}.`}
+          size="lg"
+          footer={
+            <>
+              <Button
+                variant="outline"
+                disabled={startNoticePeriodMutation.isPending}
+                onClick={() => setNoticePeriodOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                isLoading={startNoticePeriodMutation.isPending}
+                onClick={() => {
+                  const errors: Record<string, string> = {};
+                  const noticeDays = Number(noticePeriodForm.noticeDays);
+                  if (!Number.isInteger(noticeDays) || noticeDays < 1) {
+                    errors.noticeDays = "Notice period must be at least 1 whole day.";
+                  }
+                  if (!noticePeriodForm.resignationDate) {
+                    errors.resignationDate = "Resignation date is required.";
+                  }
+                  if (!noticePeriodForm.resignationReason.trim()) {
+                    errors.resignationReason = "Resignation reason is required.";
+                  }
+                  setNoticePeriodErrors(errors);
+                  if (Object.keys(errors).length) return;
+                  if (!window.confirm(`Start a ${noticeDays}-day notice period for this employee?`)) return;
+                  startNoticePeriodMutation.mutate({
+                    noticeDays,
+                    resignationDate: noticePeriodForm.resignationDate,
+                    resignationReason: noticePeriodForm.resignationReason.trim(),
+                    employeeRemarks: noticePeriodForm.employeeRemarks.trim(),
+                    hrRemarks: noticePeriodForm.hrRemarks.trim(),
+                  });
+                }}
+              >
+                Confirm &amp; start notice period
+              </Button>
+            </>
+          }
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="mb-1.5 block text-[13px] font-medium text-ink-soft">Employee</label>
+              <div className="rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm">{employee.firstName} {employee.lastName} · {employee.employeeCode}</div>
+            </div>
+            <div>
+              <label htmlFor="notice-period-days" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Notice period (days) <span className="text-danger-500">*</span></label>
+              <input id="notice-period-days" type="number" min="1" step="1" value={noticePeriodForm.noticeDays} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, noticeDays: e.target.value }))} aria-invalid={!!noticePeriodErrors.noticeDays} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
+              {noticePeriodErrors.noticeDays && <p className="mt-1 text-xs text-danger-600">{noticePeriodErrors.noticeDays}</p>}
+            </div>
+            <div>
+              <label htmlFor="resignation-date" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Resignation date <span className="text-danger-500">*</span></label>
+              <input id="resignation-date" type="date" value={noticePeriodForm.resignationDate} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, resignationDate: e.target.value }))} aria-invalid={!!noticePeriodErrors.resignationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
+              {noticePeriodErrors.resignationDate && <p className="mt-1 text-xs text-danger-600">{noticePeriodErrors.resignationDate}</p>}
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="resignation-reason" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Resignation reason <span className="text-danger-500">*</span></label>
+              <textarea id="resignation-reason" rows={2} value={noticePeriodForm.resignationReason} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, resignationReason: e.target.value }))} placeholder="Enter the reason for resignation" aria-invalid={!!noticePeriodErrors.resignationReason} className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+              {noticePeriodErrors.resignationReason && <p className="mt-1 text-xs text-danger-600">{noticePeriodErrors.resignationReason}</p>}
+            </div>
+            <div>
+              <label htmlFor="notice-employee-remarks" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Employee remarks <span className="text-xs font-normal text-ink-faint">(optional)</span></label>
+              <textarea id="notice-employee-remarks" rows={3} value={noticePeriodForm.employeeRemarks} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, employeeRemarks: e.target.value }))} placeholder="Enter employee remarks" className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <div>
+              <label htmlFor="notice-hr-remarks" className="mb-1.5 block text-[13px] font-medium text-ink-soft">HR remarks <span className="text-xs font-normal text-ink-faint">(optional)</span></label>
+              <textarea id="notice-hr-remarks" rows={3} value={noticePeriodForm.hrRemarks} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, hrRemarks: e.target.value }))} placeholder="Enter HR remarks" className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <p className="sm:col-span-2 text-xs text-ink-faint">Required fields are marked *. Verify all details before starting the notice period.</p>
+          </div>
+        </Modal>
+      )}
+      {isAdmin && (
+        <Modal
+          open={terminationOpen}
+          onClose={() => {
+            if (!terminateEmployeeMutation.isPending) setTerminationOpen(false);
+          }}
+          title="Terminate employee"
+          subtitle={`Review termination details for ${employee.firstName} ${employee.lastName}.`}
+          size="lg"
+          footer={
+            <>
+              <Button
+                variant="outline"
+                disabled={terminateEmployeeMutation.isPending}
+                onClick={() => setTerminationOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                isLoading={terminateEmployeeMutation.isPending}
+                onClick={() => {
+                  const errors: Record<string, string> = {};
+                  if (!terminationForm.terminationDate) errors.terminationDate = "Termination date is required.";
+                  if (!terminationForm.terminationReason.trim()) errors.terminationReason = "Termination reason is required.";
+                  setTerminationErrors(errors);
+                  if (Object.keys(errors).length) return;
+                  if (!window.confirm("Are you sure you want to terminate this employee?")) return;
+                  terminateEmployeeMutation.mutate({
+                    terminationDate: terminationForm.terminationDate,
+                    terminationReason: terminationForm.terminationReason.trim(),
+                    employeeRemarks: terminationForm.employeeRemarks.trim(),
+                    hrRemarks: terminationForm.hrRemarks.trim(),
+                  }, {
+                    onSuccess: () => setTerminationOpen(false),
+                  });
+                }}
+              >
+                Confirm termination
+              </Button>
+            </>
+          }
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-ink-soft">Employee</label>
+              <div className="rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm">{employee.firstName} {employee.lastName} · {employee.employeeCode}</div>
+            </div>
+            <div>
+              <label htmlFor="termination-date" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Termination date <span className="text-danger-500">*</span></label>
+              <input id="termination-date" type="date" value={terminationForm.terminationDate} onChange={(e) => setTerminationForm((f) => ({ ...f, terminationDate: e.target.value }))} aria-invalid={!!terminationErrors.terminationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
+              {terminationErrors.terminationDate && <p className="mt-1 text-xs text-danger-600">{terminationErrors.terminationDate}</p>}
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="termination-reason" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Termination reason <span className="text-danger-500">*</span></label>
+              <textarea id="termination-reason" rows={2} value={terminationForm.terminationReason} onChange={(e) => setTerminationForm((f) => ({ ...f, terminationReason: e.target.value }))} placeholder="Enter the reason for termination" aria-invalid={!!terminationErrors.terminationReason} className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+              {terminationErrors.terminationReason && <p className="mt-1 text-xs text-danger-600">{terminationErrors.terminationReason}</p>}
+            </div>
+            <div>
+              <label htmlFor="employee-termination-remarks" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Employee remarks <span className="text-xs font-normal text-ink-faint">(optional)</span></label>
+              <textarea id="employee-termination-remarks" rows={3} value={terminationForm.employeeRemarks} onChange={(e) => setTerminationForm((f) => ({ ...f, employeeRemarks: e.target.value }))} placeholder="Enter employee remarks" className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <div>
+              <label htmlFor="hr-termination-remarks" className="mb-1.5 block text-[13px] font-medium text-ink-soft">HR remarks <span className="text-xs font-normal text-ink-faint">(optional)</span></label>
+              <textarea id="hr-termination-remarks" rows={3} value={terminationForm.hrRemarks} onChange={(e) => setTerminationForm((f) => ({ ...f, hrRemarks: e.target.value }))} placeholder="Enter HR remarks" className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <p className="sm:col-span-2 text-xs text-ink-faint">Please verify the date and remarks before confirming. This action will update the employee's employment status.</p>
+          </div>
+        </Modal>
       )}
     </div>
   );
