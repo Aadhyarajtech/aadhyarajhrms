@@ -14,6 +14,9 @@ import {
   XCircle,
   Download,
   Coffee,
+  Upload,
+  X,
+  FileSpreadsheet,
 } from "lucide-react";
 import { AttendanceApi, EmployeesApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
@@ -474,6 +477,10 @@ function MyAttendance({
   const [lateCheckInOpen, setLateCheckInOpen] = useState(false);
   const [lateCheckInReason, setLateCheckInReason] = useState("");
   const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
+  const canManageAttendanceFiles =
+    user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+
+  const [attendanceFilesOpen, setAttendanceFilesOpen] = useState(false);
 
   const exportAttendance = async (format: "xlsx" | "pdf") => {
     try {
@@ -682,6 +689,18 @@ function MyAttendance({
           subtitle={localDateString()}
           action={
             <div className="flex gap-2">
+
+              {canManageAttendanceFiles && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  leftIcon={<Upload size={14} />}
+                  onClick={() => setAttendanceFilesOpen(true)}
+                >
+                  Upload Attendance
+                </Button>
+              )}
+
               <Button
                 size="sm"
                 variant="outline"
@@ -1036,10 +1055,17 @@ function MyAttendance({
         ) : (
           <AttendanceTable records={records} />
         )}
+
       </Card>
+
+      <AttendanceFilesDrawer
+        open={attendanceFilesOpen}
+        onClose={() => setAttendanceFilesOpen(false)}
+      />
     </div>
   );
 }
+
 
 function AttendanceTable({ records }: { records: AttendanceRecord[] }) {
   return (
@@ -1752,5 +1778,241 @@ function RegularizeModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function AttendanceFilesDrawer({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [inputKey, setInputKey] = useState(0);
+
+  const {
+    data: files = [],
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ["attendance", "files"],
+    queryFn: AttendanceApi.listFiles,
+    enabled: open,
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => AttendanceApi.uploadFile(file),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["attendance", "files"],
+      });
+      setSelectedFile(null);
+      setInputKey((key) => key + 1);
+      showToast("Attendance file uploaded successfully.");
+    },
+    onError: (error) => {
+      showToast(getErrorMessage(error), "error");
+    },
+  });
+
+  const handleUpload = () => {
+    if (!selectedFile) {
+      showToast("Please select a file first.", "error");
+      return;
+    }
+
+    const extension = selectedFile.name
+      .split(".")
+      .pop()
+      ?.toLowerCase();
+
+    if (!["xlsx", "xls", "csv"].includes(extension ?? "")) {
+      showToast("Only XLSX, XLS, and CSV files are allowed.", "error");
+      return;
+    }
+
+    if (selectedFile.size > 10 * 1024 * 1024) {
+      showToast("File size must not exceed 10 MB.", "error");
+      return;
+    }
+
+    uploadMutation.mutate(selectedFile);
+  };
+
+  const handleDownload = async (file: (typeof files)[number]) => {
+    try {
+      const blob = await AttendanceApi.downloadFile(file.id);
+      downloadBlob(blob, file.originalName);
+    } catch (error) {
+      showToast(getErrorMessage(error), "error");
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/40" />
+
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="attendance-files-title"
+        className="relative z-10 flex h-full w-full max-w-xl flex-col overflow-hidden border-l border-line bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between border-b border-line p-5">
+          <div>
+            <h2
+              id="attendance-files-title"
+              className="text-lg font-semibold text-ink"
+            >
+              Attendance Files
+            </h2>
+            <p className="mt-1 text-sm text-ink-faint">
+              Upload and download attendance spreadsheets.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close attendance files"
+            className="rounded-lg p-2 text-ink-faint hover:bg-surface"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-4 border-b border-line p-5">
+          <label
+            htmlFor="attendance-file-upload"
+            className="block text-sm font-medium text-ink"
+          >
+            Select attendance file
+          </label>
+
+          <input
+            key={inputKey}
+            id="attendance-file-upload"
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={(event) =>
+              setSelectedFile(event.target.files?.[0] ?? null)
+            }
+            className="block w-full rounded-lg border border-line p-3 text-sm"
+          />
+
+          <p className="text-xs text-ink-faint">
+            Accepted formats: XLSX, XLS, CSV. Maximum size: 10 MB.
+            Files are stored only; attendance records and payroll are not
+            imported or changed.
+          </p>
+
+          {selectedFile && (
+            <p className="break-all text-sm text-ink">
+              Selected: {selectedFile.name}
+            </p>
+          )}
+
+          <Button
+            size="sm"
+            leftIcon={<Upload size={14} />}
+            onClick={handleUpload}
+            disabled={!selectedFile || uploadMutation.isPending}
+          >
+            {uploadMutation.isPending ? "Uploading..." : "Upload File"}
+          </Button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <h3 className="mb-4 font-semibold text-ink">
+            Uploaded Files ({files.length})
+          </h3>
+
+          {isLoading && (
+            <p className="text-sm text-ink-faint">Loading files...</p>
+          )}
+
+          {isError && (
+            <p className="text-sm text-red-600">
+              Could not load attendance files. Please close and reopen this
+              drawer to try again.
+            </p>
+          )}
+
+          {!isLoading && !isError && files.length === 0 && (
+            <div className="rounded-xl border border-dashed border-line p-8 text-center">
+              <FileSpreadsheet
+                size={32}
+                className="mx-auto mb-3 text-ink-faint"
+              />
+              <p className="text-sm font-medium text-ink">
+                No attendance files uploaded yet
+              </p>
+              <p className="mt-1 text-xs text-ink-faint">
+                Your uploaded files will appear here.
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {files.map((file) => (
+              <div
+                key={file.id}
+                className="rounded-xl border border-line p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <FileSpreadsheet
+                    size={22}
+                    className="mt-1 shrink-0 text-ink-faint"
+                  />
+
+                  <div className="min-w-0 flex-1">
+                    <p className="break-all text-sm font-medium text-ink">
+                      {file.originalName}
+                    </p>
+
+                    <p className="mt-1 text-xs text-ink-faint">
+                      Uploaded by: {file.uploaderName}
+                    </p>
+
+                    <p className="mt-1 text-xs text-ink-faint">
+                      Date:{" "}
+                      {new Intl.DateTimeFormat("en-IN", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                        timeZone: "Asia/Kolkata",
+                      }).format(new Date(file.uploadedAt))}
+                    </p>
+
+                    <p className="mt-1 text-xs text-ink-faint">
+                      Type: {file.originalName.split(".").pop()?.toUpperCase()}
+                      {" · "}
+                      {(file.size / 1024).toFixed(1)} KB
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleDownload(file)}
+                      className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-brand hover:underline"
+                    >
+                      <Download size={14} />
+                      Download
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

@@ -1107,6 +1107,35 @@ export const AttendanceApi = {
       .then((r) => r.data as Blob),
 
 
+  listFiles: () =>
+    api
+      .get<{
+        files: {
+          id: string;
+          originalName: string;
+          uploaderName: string;
+          mimeType: string;
+          size: number;
+          uploadedAt: string;
+        }[];
+      }>("/attendance/files")
+      .then((r) => r.data.files),
+
+  uploadFile: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    return api
+      .post("/attendance/files", formData)
+      .then((r) => r.data);
+  },
+
+  downloadFile: (fileId: string) =>
+    api
+      .get(`/attendance/files/${encodeURIComponent(fileId)}/download`, {
+        responseType: "blob",
+      })
+      .then((r) => r.data as Blob),
 
   regularize: (
     date: string,
@@ -1435,13 +1464,13 @@ export const LeaveApi = {
       .then((r) => r.data.requests),
 
   apply: (payload: {
-  leaveTypeId: string;
-  startDate: string;
-  endDate: string;
-  halfDay?: boolean;
-  halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
-  reason: string;
-}) =>
+    leaveTypeId: string;
+    startDate: string;
+    endDate: string;
+    halfDay?: boolean;
+    halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
+    reason: string;
+  }) =>
     api
       .post<{
         request: LeaveRequest;
@@ -1610,7 +1639,7 @@ export interface InterviewCopilot {
   behavioralQuestions: string[];
 }
 
-export interface InterviewCopilotResponse extends InterviewCopilot {}
+export interface InterviewCopilotResponse extends InterviewCopilot { }
 
 export interface InterviewCopilotApiResponse {
   message?: string;
@@ -1628,7 +1657,7 @@ export interface InterviewEvaluation {
   suggestedNextStep: string;
 }
 
-export interface InterviewEvaluationResponse extends InterviewEvaluation {}
+export interface InterviewEvaluationResponse extends InterviewEvaluation { }
 
 export interface InterviewEvaluationApiResponse {
   message?: string;
@@ -2285,7 +2314,7 @@ export const PerformanceApi = {
   deactivateCycle: (id: string) =>
     api.patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/deactivate`).then((r) => r.data.cycle),
 
-   feedbackRequests: (cycleId?: string) =>
+  feedbackRequests: (cycleId?: string) =>
     api
       .get<{ requests: PerformanceFeedbackRequest[] }>(
         "/performance/feedback-requests",
@@ -2311,7 +2340,7 @@ export const PerformanceApi = {
       .post(`/performance/reviews/${id}/feedback`, payload)
       .then((r) => r.data.feedback),
 
-    feedbackSummary: (id: string) =>
+  feedbackSummary: (id: string) =>
     api
       .get<{
         summary: FeedbackSummary;

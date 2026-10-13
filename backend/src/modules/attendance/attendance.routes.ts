@@ -23,7 +23,13 @@ import {
 } from "./attendance.export";
 import { getEmployeeById } from "../employees/employees.repository";
 import * as shiftRepo from "./shift.repository";
-
+import fs from "node:fs/promises";
+import path from "node:path";
+import { AttendanceFile } from "./attendance-file.model";
+import {
+  attendanceFileUpload,
+  ATTENDANCE_FILES_DIR,
+} from "./attendance-file.upload";
 export const attendanceRouter = Router();
 const regularizationSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid attendance date."),
@@ -60,7 +66,111 @@ const regularizationDecisionSchema = z.object({
 });
 
 attendanceRouter.use(authenticate);
+function requireAttendanceFileAdmin(req: import("express").Request) {
+  const role = req.user?.role;
 
+  if (role !== "ADMIN" && role !== "SUPER_ADMIN") {
+    throw AppError.forbidden(
+      "Only Admin and Super Admin can manage attendance files.",
+    );
+  }
+}
+
+attendanceRouter.get("/files", async (req, res, next) => {
+  try {
+    requireAttendanceFileAdmin(req);
+
+    const files = await AttendanceFile.find()
+      .sort({ uploadedAt: -1 })
+      .select("originalName uploaderName mimeType size uploadedAt")
+      .lean();
+
+    res.json({
+      files: files.map((file) => ({
+        id: String(file._id),
+        originalName: file.originalName,
+        uploaderName: file.uploaderName,
+        mimeType: file.mimeType,
+        size: file.size,
+        uploadedAt: file.uploadedAt,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+attendanceRouter.post(
+  "/files",
+  (req, res, next) => {
+    try {
+      requireAttendanceFileAdmin(req);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  },
+  attendanceFileUpload.single("file"),
+  async (req, res, next) => {
+    try {
+      if (!req.file) {
+        throw AppError.badRequest("Please select an attendance file.");
+      }
+
+      try {
+        const record = await AttendanceFile.create({
+          originalName: path.basename(req.file.originalname).slice(0, 255),
+          storageName: req.file.filename,
+          uploadedBy: req.user!.userId,
+          uploaderName: req.user!.name,
+          mimeType: req.file.mimetype,
+          size: req.file.size,
+          uploadedAt: new Date(),
+        });
+
+        res.status(201).json({
+          message: "Attendance file uploaded successfully.",
+          file: {
+            id: String(record._id),
+            originalName: record.originalName,
+            uploaderName: record.uploaderName,
+            mimeType: record.mimeType,
+            size: record.size,
+            uploadedAt: record.uploadedAt,
+          },
+        });
+      } catch (error) {
+        await fs.unlink(req.file.path).catch(() => undefined);
+        throw error;
+      }
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+attendanceRouter.get("/files/:fileId/download", async (req, res, next) => {
+  try {
+    requireAttendanceFileAdmin(req);
+
+    const record: any = await AttendanceFile.findById(req.params.fileId).lean();
+
+    if (!record) {
+      throw AppError.notFound("Attendance file not found.");
+    }
+
+    const storageName = path.basename(record.storageName);
+    const filePath = path.join(ATTENDANCE_FILES_DIR, storageName);
+
+    res.download(filePath, record.originalName, (error) => {
+      if (error && !res.headersSent) {
+        next(error);
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 function parseExportFormat(value: unknown): "xlsx" | "pdf" {
   const format = typeof value === "string" ? value.toLowerCase() : "xlsx";
   if (format !== "xlsx" && format !== "pdf") {
@@ -1545,9 +1655,9 @@ attendanceRouter.post(
           },
           requestedEmployeeId
             ? {
-                actorId: req.user!.userId,
-                actorRole: req.user!.role,
-              }
+              actorId: req.user!.userId,
+              actorRole: req.user!.role,
+            }
             : undefined,
         ),
       });
@@ -1661,7 +1771,7 @@ attendanceRouter.post(
           userId: req.user!.userId,
           employeeId: req.user!.employeeId,
           role: req.user!.role,
-        isManager: req.user!.isManager,
+          isManager: req.user!.isManager,
         },
         requestedEmployeeId,
       );
