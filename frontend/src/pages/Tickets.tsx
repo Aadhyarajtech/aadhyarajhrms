@@ -273,6 +273,24 @@ export default function Tickets() {
     return true;
   });
 
+  const canChangePriority = ["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "IT_SUPPORT"].includes(String(user?.role ?? ""));
+  const PRIORITY_OPTIONS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
+
+  const updatePriority = useMutation({
+    mutationFn: async ({ id, priority }: { id: string; priority: (typeof PRIORITY_OPTIONS)[number] }) => {
+      const res = await api.patch(`/tickets/${id}`, { priority });
+      return res.data.ticket;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["my-tickets"] });
+      showToast("Ticket priority updated successfully.");
+    },
+    onError: (err) => {
+      showToast(getErrorMessage(err), "error");
+    },
+  });
+
   const updateStatus = useMutation({
     mutationFn: async ({
       id,
@@ -618,21 +636,46 @@ export default function Tickets() {
                         )}
                       </td>
 
-                      {/* Priority */}
+                      {/* Priority: editable only for authorized administrative / IT roles */}
                       <td className="py-2.5 px-2 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold ${ticket.priority === "CRITICAL"
-                            ? "bg-rose-100 text-rose-800 border border-rose-300 font-bold animate-pulse shadow-2xs"
-                            : ticket.priority === "HIGH"
-                              ? "bg-red-50 text-red-700 border border-red-200"
-                              : ticket.priority === "MEDIUM"
-                                ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                : "bg-slate-50 text-slate-700 border border-slate-200"
+                        {canChangePriority ? (
+                          <select
+                            aria-label={`Change priority for ${ticket.ticketId || ticket.subject}`}
+                            value={ticket.priority || "MEDIUM"}
+                            disabled={updatePriority.isPending}
+                            onChange={(e) => {
+                              const nextPriority = e.target.value as (typeof PRIORITY_OPTIONS)[number];
+                              if (!PRIORITY_OPTIONS.includes(nextPriority)) return;
+                              updatePriority.mutate({ id: ticket._id, priority: nextPriority });
+                            }}
+                            className={`rounded border px-2 py-1 text-[11px] font-semibold focus:border-brand-500 focus:outline-none ${ticket.priority === "CRITICAL"
+                              ? "bg-rose-100 text-rose-800 border-rose-300"
+                              : ticket.priority === "HIGH"
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : ticket.priority === "MEDIUM"
+                                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                                  : "bg-slate-50 text-slate-700 border-slate-200"
                             }`}
-                        >
-                          {ticket.priority === "CRITICAL" && <span>🚨</span>}
-                          {ticket.priority}
-                        </span>
+                          >
+                            {PRIORITY_OPTIONS.map((priority) => (
+                              <option key={priority} value={priority}>{priority}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold ${ticket.priority === "CRITICAL"
+                              ? "bg-rose-100 text-rose-800 border border-rose-300 font-bold animate-pulse shadow-2xs"
+                              : ticket.priority === "HIGH"
+                                ? "bg-red-50 text-red-700 border border-red-200"
+                                : ticket.priority === "MEDIUM"
+                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                  : "bg-slate-50 text-slate-700 border border-slate-200"
+                            }`}
+                          >
+                            {ticket.priority === "CRITICAL" && <span>🚨</span>}
+                            {ticket.priority}
+                          </span>
+                        )}
                       </td>
 
                       {/* Subject */}

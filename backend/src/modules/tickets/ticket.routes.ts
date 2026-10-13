@@ -48,7 +48,7 @@ ticketRouter.use(requirePermission("tickets.view"));
 // STRICT TICKET AUTHORIZATION
 // =========================================================
 // SUPER_ADMIN -> all tickets
-// ADMIN    -> assignedTo === ADMIN
+// ADMIN       -> all tickets
 // RECRUITER   -> assignedTo === RECRUITER
 // FINANCE     -> assignedTo === FINANCE
 // IT_SUPPORT  -> assignedTo === IT_SUPPORT
@@ -63,7 +63,7 @@ async function canAccessTicket(
 
   const role = String(user.role || "").trim();
 
-  if (role === "SUPER_ADMIN") return true;
+  if (role === "SUPER_ADMIN" || role === "ADMIN") return true;
 
   if (
     user.employeeId &&
@@ -72,7 +72,6 @@ async function canAccessTicket(
     return true;
   }
 
-  if (role === "ADMIN" && ticket.assignedTo === "ADMIN") return true;
   if (role === "RECRUITER" && ticket.assignedTo === "RECRUITER") return true;
   if (role === "FINANCE" && ticket.assignedTo === "FINANCE") return true;
   if (role === "IT_SUPPORT" && ticket.assignedTo === "IT_SUPPORT") return true;
@@ -506,10 +505,8 @@ function getDepartmentFilterForRole(role: string) {
   }
 
   if (role === "ADMIN") {
-    return {
-      assignedTo: ["ADMIN"],
-      categories: [],
-    };
+    // Admin analytics should cover tickets across every department.
+    return undefined;
   }
 
   if (role === "RECRUITER") {
@@ -1011,7 +1008,10 @@ const updateSchema = z.object({
     "WAITING_FOR_EMPLOYEE",
     "RESOLVED",
     "CLOSED",
-  ]),
+  ]).optional(),
+  priority: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
+}).refine((data) => data.status !== undefined || data.priority !== undefined, {
+  message: "At least one of status or priority must be provided.",
 });
 
 const escalateSchema = z.object({
@@ -1054,6 +1054,17 @@ ticketRouter.patch(
         });
       }
 
+      // Priority changes are restricted to administrative and IT Support roles.
+      // Keep the existing ticket-level access check as an additional safeguard.
+      if (
+        req.body.priority !== undefined &&
+        !["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "IT_SUPPORT"].includes(String(req.user.role))
+      ) {
+        return res.status(403).json({
+          error: { message: "You are not authorized to change ticket priority" },
+        });
+      }
+
       const authorized =
         await canAccessTicket(
           existingTicket,
@@ -1069,11 +1080,15 @@ ticketRouter.patch(
         });
       }
 
-      const ticket =
-        await repo.updateTicketStatus(
-          req.params.id,
-          req.body.status,
-        );
+      // Apply only fields supplied by the caller. This preserves the existing
+      // status-only API behavior while allowing a priority-only PATCH request.
+      let ticket: any = existingTicket;
+      if (req.body.status !== undefined) {
+        ticket = await repo.updateTicketStatus(req.params.id, req.body.status);
+      }
+      if (ticket && req.body.priority !== undefined) {
+        ticket = await repo.updateTicketPriority(req.params.id, req.body.priority);
+      }
 
       if (!ticket) {
         return res.status(404).json({

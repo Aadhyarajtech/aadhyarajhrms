@@ -406,6 +406,41 @@ export async function updateTicketStatus(
 }
 
 // =========================================================
+// UPDATE TICKET PRIORITY
+// =========================================================
+
+const TICKET_PRIORITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
+
+export async function updateTicketPriority(
+  id: string,
+  priority: string,
+) {
+  if (!(TICKET_PRIORITIES as readonly string[]).includes(priority)) {
+    throw new Error("Invalid ticket priority.");
+  }
+
+  const existingTicket = await Ticket.findById(id).lean();
+  if (!existingTicket) return null;
+
+  // Keep the original SLA start point and recalculate the deadline for the
+  // selected priority, rather than restarting the SLA from the edit time.
+  const createdAt = String(existingTicket.createdAt ?? "");
+  const slaDueAt = createdAt ? calculateSlaDueAt(createdAt, priority) : null;
+
+  return Ticket.findByIdAndUpdate(
+    id,
+    {
+      $set: {
+        priority,
+        ...(slaDueAt ? { slaDueAt } : {}),
+        updatedAt: new Date().toISOString(),
+      },
+    },
+    { new: true, runValidators: true },
+  ).lean();
+}
+
+// =========================================================
 // GET EMPLOYEE'S TICKETS
 // =========================================================
 
@@ -659,7 +694,8 @@ export async function getTicketsForDepartment(
 ) {
   const normalizedRole = String(role || "").trim();
 
-  if (normalizedRole === "SUPER_ADMIN") {
+  if (normalizedRole === "SUPER_ADMIN" || normalizedRole === "ADMIN") {
+    // Super Admin and Admin can review every ticket across all departments.
     const tickets = await Ticket.find({}).sort({ createdAt: -1 }).lean();
     return enrichTicketsWithRaisedBy(tickets);
   }
@@ -722,10 +758,10 @@ export function isUserAuthorizedForTicket(
   const role = String(user.role || "").trim();
 
   // =======================================================
-  // SUPER ADMIN
+  // SUPER ADMIN AND ADMIN: global ticket visibility/access
   // =======================================================
 
-  if (role === "SUPER_ADMIN") {
+  if (role === "SUPER_ADMIN" || role === "ADMIN") {
     return true;
   }
 
@@ -743,14 +779,6 @@ export function isUserAuthorizedForTicket(
     String(ticket.employeeId) === String(user.employeeId)
   ) {
     return true;
-  }
-
-  // =======================================================
-  // HR ADMIN
-  // =======================================================
-
-  if (role === "ADMIN") {
-    return ticket.assignedTo === "ADMIN";
   }
 
   // =======================================================
