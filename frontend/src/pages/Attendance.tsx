@@ -94,10 +94,10 @@ export default function Attendance() {
     { key: "mine", label: "My Attendance" },
     ...(isManager
       ? [
-          { key: "team", label: "Team View" },
-          { key: "regularization", label: "Attendance Regularization" },
-          { key: "exceptions", label: "Attendance Exceptions" },
-        ]
+        { key: "team", label: "Team View" },
+        { key: "regularization", label: "Attendance Regularization" },
+        { key: "exceptions", label: "Attendance Exceptions" },
+      ]
       : []),
   ];
 
@@ -508,39 +508,14 @@ function MyAttendance({
     enabled: !!user,
   });
 
-  const getCurrentLocation = () =>
-    new Promise<{ latitude: number; longitude: number; accuracy?: number }>(
-      (resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error("Geolocation is not supported by this browser."));
-          return;
-        }
-        navigator.geolocation.getCurrentPosition(
-          ({ coords }) =>
-            resolve({
-              latitude: coords.latitude,
-              longitude: coords.longitude,
-              accuracy: Number.isFinite(coords.accuracy)
-                ? coords.accuracy
-                : undefined,
-            }),
-          () =>
-            reject(
-              new Error(
-                "Unable to get your location. Please allow location access and try again.",
-              ),
-            ),
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
-        );
-      },
-    );
+
 
   const checkInMutation = useMutation({
     mutationFn: async (reason?: string) => {
-      const location = await getCurrentLocation();
       return AttendanceApi.checkInWithLocation({
-        ...location,
-        ...(reason?.trim() ? { lateCheckInReason: reason.trim() } : {}),
+        ...(reason?.trim()
+          ? { lateCheckInReason: reason.trim() }
+          : {}),
       });
     },
     onSuccess: () => {
@@ -565,10 +540,10 @@ function MyAttendance({
 
   const checkOutMutation = useMutation({
     mutationFn: async (reason?: string) => {
-      const location = await getCurrentLocation();
       return AttendanceApi.checkOutWithOptions({
-        ...location,
-        ...(reason?.trim() ? { earlyDepartureReason: reason.trim() } : {}),
+        ...(reason?.trim()
+          ? { earlyDepartureReason: reason.trim() }
+          : {}),
       });
     },
     onSuccess: () => {
@@ -834,7 +809,7 @@ function MyAttendance({
           }
         }}
         title="Late check-in reason"
-        subtitle="You checked in later than the office start time. Please provide a reason to complete attendance." 
+        subtitle="You checked in later than the office start time. Please provide a reason to complete attendance."
         footer={
           <>
             <Button
@@ -1241,121 +1216,121 @@ function TeamAttendance() {
         />
       </div>
       <Card>
-      <CardHeader
-        title="Team Attendance"
-        subtitle="View attendance for your direct reports on any date"
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              leftIcon={<Download size={14} />}
-              onClick={() => exportTeamAttendance("xlsx")}
-              disabled={!!exporting}
-            >
-              {exporting === "xlsx" ? "Exporting..." : "Daily Excel"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              leftIcon={<Download size={14} />}
-              onClick={() => exportTeamAttendance("pdf")}
-              disabled={!!exporting}
-            >
-              {exporting === "pdf" ? "Exporting..." : "Daily PDF"}
-            </Button>
-            <input
-              type="month"
-              value={`${year}-${String(month).padStart(2, "0")}`}
-              onChange={(e) => {
-                const [nextYear, nextMonth] = e.target.value
-                  .split("-")
-                  .map(Number);
-                if (nextYear && nextMonth) {
-                  setYear(nextYear);
-                  setMonth(nextMonth);
-                }
-              }}
-              className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              leftIcon={<Download size={14} />}
-              onClick={() => exportTeamMonthlyAttendance("xlsx")}
-              disabled={!!exporting}
-            >
-              {exporting === "monthly-xlsx" ? "Exporting..." : "Monthly Excel"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              leftIcon={<Download size={14} />}
-              onClick={() => exportTeamMonthlyAttendance("pdf")}
-              disabled={!!exporting}
-            >
-              {exporting === "monthly-pdf" ? "Exporting..." : "Monthly PDF"}
-            </Button>
-          </div>
-        }
-      />
-      {isLoading ? (
-        <Skeleton className="h-64 rounded-2xl" />
-      ) : isError ? (
-        <EmptyState
-          icon={AlertTriangle}
-          title="Unable to load team attendance"
-          description="Please try again."
+        <CardHeader
+          title="Team Attendance"
+          subtitle="View attendance for your direct reports on any date"
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Download size={14} />}
+                onClick={() => exportTeamAttendance("xlsx")}
+                disabled={!!exporting}
+              >
+                {exporting === "xlsx" ? "Exporting..." : "Daily Excel"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Download size={14} />}
+                onClick={() => exportTeamAttendance("pdf")}
+                disabled={!!exporting}
+              >
+                {exporting === "pdf" ? "Exporting..." : "Daily PDF"}
+              </Button>
+              <input
+                type="month"
+                value={`${year}-${String(month).padStart(2, "0")}`}
+                onChange={(e) => {
+                  const [nextYear, nextMonth] = e.target.value
+                    .split("-")
+                    .map(Number);
+                  if (nextYear && nextMonth) {
+                    setYear(nextYear);
+                    setMonth(nextMonth);
+                  }
+                }}
+                className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Download size={14} />}
+                onClick={() => exportTeamMonthlyAttendance("xlsx")}
+                disabled={!!exporting}
+              >
+                {exporting === "monthly-xlsx" ? "Exporting..." : "Monthly Excel"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Download size={14} />}
+                onClick={() => exportTeamMonthlyAttendance("pdf")}
+                disabled={!!exporting}
+              >
+                {exporting === "monthly-pdf" ? "Exporting..." : "Monthly PDF"}
+              </Button>
+            </div>
+          }
         />
-      ) : !data?.length ? (
-        <EmptyState
-          icon={XCircle}
-          title="No team attendance recorded for this date"
-          description="This may be a weekend, holiday, or a date with no attendance logged by your direct reports."
-        />
-      ) : (
-        <div className="space-y-2">
-          <p className="text-[12px] text-ink-faint">
-            {data.length} direct report{data.length === 1 ? "" : "s"} shown
-          </p>
-          {(data as TeamAttendanceRecord[]).map((record) => (
-            <div
-              key={record.id}
-              className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-2.5"
-            >
-              <div className="flex items-center gap-3">
-                <Avatar
-                  firstName={record.firstName ?? ""}
-                  lastName={record.lastName ?? ""}
-                  size="sm"
-                />
-                <div>
-                  <p className="text-[13px] font-medium text-ink">
-                    {record.firstName} {record.lastName}
-                  </p>
-                  <p className="text-[12px] text-ink-faint">
-                    {record.departmentName} · {record.employeeCode}
-                  </p>
+        {isLoading ? (
+          <Skeleton className="h-64 rounded-2xl" />
+        ) : isError ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title="Unable to load team attendance"
+            description="Please try again."
+          />
+        ) : !data?.length ? (
+          <EmptyState
+            icon={XCircle}
+            title="No team attendance recorded for this date"
+            description="This may be a weekend, holiday, or a date with no attendance logged by your direct reports."
+          />
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[12px] text-ink-faint">
+              {data.length} direct report{data.length === 1 ? "" : "s"} shown
+            </p>
+            {(data as TeamAttendanceRecord[]).map((record) => (
+              <div
+                key={record.id}
+                className="flex items-center justify-between rounded-2xl border border-line/60 px-4 py-2.5"
+              >
+                <div className="flex items-center gap-3">
+                  <Avatar
+                    firstName={record.firstName ?? ""}
+                    lastName={record.lastName ?? ""}
+                    size="sm"
+                  />
+                  <div>
+                    <p className="text-[13px] font-medium text-ink">
+                      {record.firstName} {record.lastName}
+                    </p>
+                    <p className="text-[12px] text-ink-faint">
+                      {record.departmentName} · {record.employeeCode}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[12px] text-ink-faint">
+                    {record.checkIn ? formatTime(record.checkIn) : "—"}
+                    {record.checkOut ? ` – ${formatTime(record.checkOut)}` : ""}
+                  </span>
+                  <StatusBadge status={getDisplayAttendanceStatus(record)} />
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-[12px] text-ink-faint">
-                  {record.checkIn ? formatTime(record.checkIn) : "—"}
-                  {record.checkOut ? ` – ${formatTime(record.checkOut)}` : ""}
-                </span>
-                <StatusBadge status={getDisplayAttendanceStatus(record)} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -1366,8 +1341,8 @@ function TeamRegularizationRequests() {
   const [status, setStatus] = useState("PENDING");
   const [decisionRequest, setDecisionRequest] = useState<
     | (Awaited<
-        ReturnType<typeof AttendanceApi.teamRegularizationRequests>
-      >[number] & { action: "approve" | "reject" })
+      ReturnType<typeof AttendanceApi.teamRegularizationRequests>
+    >[number] & { action: "approve" | "reject" })
     | null
   >(null);
   const [decisionNote, setDecisionNote] = useState("");

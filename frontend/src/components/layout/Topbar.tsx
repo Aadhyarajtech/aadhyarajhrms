@@ -50,43 +50,7 @@ export function Topbar({
   const [lateCheckInReason, setLateCheckInReason] = useState("");
   const [earlyDepartureReason, setEarlyDepartureReason] =
     useState("");
-  const getCurrentLocation = () =>
-    new Promise<{
-      latitude: number;
-      longitude: number;
-      accuracy?: number;
-    }>((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(
-          new Error(
-            "Geolocation is not supported by this browser.",
-          ),
-        );
-        return;
-      }
 
-      navigator.geolocation.getCurrentPosition(
-        ({ coords }) =>
-          resolve({
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            accuracy: Number.isFinite(coords.accuracy)
-              ? coords.accuracy
-              : undefined,
-          }),
-        () =>
-          reject(
-            new Error(
-              "Unable to get your location. Please allow location access and try again.",
-            ),
-          ),
-        {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 30000,
-        },
-      );
-    });
 
   /*
    * Notification read state is user-specific and role-neutral.
@@ -213,12 +177,13 @@ export function Topbar({
   /* =========================================================
      CHECK IN
   ========================================================= */
+
   const checkInMutation = useMutation({
     mutationFn: async (reason?: string) => {
-      const location = await getCurrentLocation();
       return AttendanceApi.checkInWithLocation({
-        ...location,
-        ...(reason?.trim() ? { lateCheckInReason: reason.trim() } : {}),
+        ...(reason?.trim()
+          ? { lateCheckInReason: reason.trim() }
+          : {}),
       });
     },
 
@@ -255,10 +220,7 @@ export function Topbar({
 
   const checkOutMutation = useMutation({
     mutationFn: async (reason?: string) => {
-      const location = await getCurrentLocation();
-
       return AttendanceApi.checkOutWithOptions({
-        ...location,
         ...(reason?.trim()
           ? { earlyDepartureReason: reason.trim() }
           : {}),

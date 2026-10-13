@@ -248,15 +248,19 @@ function distanceInMeters(
   return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+
 function assertWithinShiftGeofence(
   location: { latitude?: number; longitude?: number } | undefined,
   shift: any,
 ) {
+  // Allow attendance without browser location permission.
+  if (location?.latitude === undefined || location?.longitude === undefined) {
+    return;
+  }
+
   const geofence = shift?.geofence;
   if (!geofence) return;
-  if (location?.latitude === undefined || location?.longitude === undefined) {
-    throw new Error("Location is required for this shift.");
-  }
+
   const geofenceLatitude = Number(geofence.latitude);
   const geofenceLongitude = Number(geofence.longitude);
   const radiusMeters = Number(geofence.radiusMeters);
@@ -280,10 +284,12 @@ function assertWithinShiftGeofence(
     geofenceLatitude,
     geofenceLongitude,
   );
+
   if (distance > radiusMeters) {
     throw new Error("You are outside the allowed attendance location.");
   }
 }
+
 
 function getBreakMinutes(
   breaks: Array<{
@@ -594,8 +600,8 @@ export async function checkOut(
     0,
     Number(
       options?.breakMinutes ??
-        existing.breakMinutes ??
-        getBreakMinutes(existing.breaks ?? []),
+      existing.breakMinutes ??
+      getBreakMinutes(existing.breaks ?? []),
     ),
   );
   const metrics = calculateAttendanceMetrics(
@@ -891,7 +897,7 @@ export async function getLateArrivalAnalytics(employeeId?: string, months = 6) {
   );
   const currentMonth = Number(
     nowParts.find((p) => p.type === "month")?.value ??
-      new Date().getMonth() + 1,
+    new Date().getMonth() + 1,
   );
 
   const buckets = new Map<
@@ -1143,11 +1149,11 @@ export async function requestRegularization(
     requestedCheckIn: string | null;
     requestedCheckOut: string | null;
     requestedStatus:
-      | "PRESENT"
-      | "ABSENT"
-      | "HALF_DAY"
-      | "WORK_FROM_HOME"
-      | "ON_LEAVE";
+    | "PRESENT"
+    | "ABSENT"
+    | "HALF_DAY"
+    | "WORK_FROM_HOME"
+    | "ON_LEAVE";
   }> = {},
   requestedBy?: { actorId: string; actorRole: string },
 ) {
@@ -1191,14 +1197,14 @@ export async function requestRegularization(
       : attendance?.checkOut ?? null;
   const requestedStatus =
     details.requestedStatus &&
-    ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"].includes(
-      details.requestedStatus,
-    )
+      ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"].includes(
+        details.requestedStatus,
+      )
       ? details.requestedStatus
       : attendance?.status &&
-          ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"].includes(
-            attendance.status,
-          )
+        ["PRESENT", "ABSENT", "HALF_DAY", "WORK_FROM_HOME", "ON_LEAVE"].includes(
+          attendance.status,
+        )
         ? attendance.status
         : "PRESENT";
 
@@ -1335,8 +1341,8 @@ export async function approveRegularization(
   const requestedStatus = request.requestedStatus;
   const approvedStatus =
     requestedStatus === "ABSENT" ||
-    requestedStatus === "WORK_FROM_HOME" ||
-    requestedStatus === "ON_LEAVE"
+      requestedStatus === "WORK_FROM_HOME" ||
+      requestedStatus === "ON_LEAVE"
       ? requestedStatus
       : requestedStatus === "HALF_DAY"
         ? "HALF_DAY"
@@ -1673,11 +1679,11 @@ export async function getMonthlyAttendanceTrend(
   }).formatToParts(new Date());
   const currentYear = Number(
     nowParts.find((part) => part.type === "year")?.value ??
-      new Date().getFullYear(),
+    new Date().getFullYear(),
   );
   const currentMonth = Number(
     nowParts.find((part) => part.type === "month")?.value ??
-      new Date().getMonth() + 1,
+    new Date().getMonth() + 1,
   );
 
   for (let i = months - 1; i >= 0; i--) {
@@ -1721,11 +1727,11 @@ function buildEmptyTrend(months: number) {
   }).formatToParts(new Date());
   const currentYear = Number(
     nowParts.find((part) => part.type === "year")?.value ??
-      new Date().getFullYear(),
+    new Date().getFullYear(),
   );
   const currentMonth = Number(
     nowParts.find((part) => part.type === "month")?.value ??
-      new Date().getMonth() + 1,
+    new Date().getMonth() + 1,
   );
 
   for (let i = months - 1; i >= 0; i--) {
@@ -2566,7 +2572,7 @@ export async function getAiAttendanceInsightsForEmployees(
     const selectedDayCount =
       Math.floor(
         (new Date(`${endDate}T00:00:00.000Z`).getTime() - new Date(`${startDate}T00:00:00.000Z`).getTime()) /
-          (1000 * 60 * 60 * 24),
+        (1000 * 60 * 60 * 24),
       ) + 1;
 
     const previousEnd = new Date(`${startDate}T00:00:00.000Z`);
