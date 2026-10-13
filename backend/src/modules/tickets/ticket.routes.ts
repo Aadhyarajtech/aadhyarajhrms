@@ -63,7 +63,7 @@ async function canAccessTicket(
 
   const role = String(user.role || "").trim();
 
-  if (role === "SUPER_ADMIN" || role === "ADMIN") return true;
+  if (["SUPER_ADMIN", "ADMIN", "HR_ADMIN"].includes(role)) return true;
 
   if (
     user.employeeId &&
@@ -94,6 +94,52 @@ async function canAccessTicket(
     return !!teamTicket;
   }
 
+  return false;
+}
+
+// Priority changes are permitted to administrative users and to users who
+// belong to the ticket's assigned queue. Manager access is additive and can
+// be based on explicit manager assignment or the existing direct-report
+// Complaint fallback used by the Tickets module.
+async function canChangeTicketPriority(
+  ticket: any,
+  user: AuthUser,
+): Promise<boolean> {
+  if (!ticket || !user) return false;
+
+  const role = String(user.role || "").trim().toUpperCase();
+  const employeeId = String(user.employeeId || "").trim();
+
+  if (["SUPER_ADMIN", "ADMIN", "HR_ADMIN"].includes(role)) {
+    return true;
+  }
+
+  const assignedQueueByRole: Record<string, string> = {
+    RECRUITER: "RECRUITER",
+    FINANCE: "FINANCE",
+    IT_SUPPORT: "IT_SUPPORT",
+  };
+
+  const assignedQueue = assignedQueueByRole[role];
+  if (assignedQueue && String(ticket.assignedTo || "") === assignedQueue) {
+    return true;
+  }
+
+  if ((role === "MANAGER" || user.isManager) && employeeId) {
+    if (String(ticket.assignedManagerId || "") === employeeId) {
+      return true;
+    }
+
+    // Preserve access for legacy Complaint tickets raised by direct reports.
+    const teamTicket = await repo.getTeamGrievanceTicket(
+      String(ticket._id),
+      employeeId,
+    );
+    return Boolean(teamTicket);
+  }
+
+  // Ticket creators and unrelated users do not gain priority-edit access
+  // merely because they can view their own ticket.
   return false;
 }
 
@@ -1054,30 +1100,28 @@ ticketRouter.patch(
         });
       }
 
-      // Priority changes are restricted to administrative and IT Support roles.
-      // Keep the existing ticket-level access check as an additional safeguard.
-      if (
-        req.body.priority !== undefined &&
-        !["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "IT_SUPPORT"].includes(String(req.user.role))
-      ) {
-        return res.status(403).json({
-          error: { message: "You are not authorized to change ticket priority" },
-        });
+      // Check each requested action independently. Viewing or raising a ticket
+      // is not sufficient to change its priority; the user must be an admin,
+      // a member of the assigned queue, or the assigned manager.
+      if (req.body.status !== undefined) {
+        const canUpdateStatus = await canAccessTicket(existingTicket, req.user);
+        if (!canUpdateStatus) {
+          return res.status(403).json({
+            error: { message: "You are not authorized to update this ticket" },
+          });
+        }
       }
 
-      const authorized =
-        await canAccessTicket(
+      if (req.body.priority !== undefined) {
+        const canUpdatePriority = await canChangeTicketPriority(
           existingTicket,
           req.user,
         );
-
-      if (!authorized) {
-        return res.status(403).json({
-          error: {
-            message:
-              "You are not authorized to update this ticket",
-          },
-        });
+        if (!canUpdatePriority) {
+          return res.status(403).json({
+            error: { message: "You are not authorized to change ticket priority" },
+          });
+        }
       }
 
       // Apply only fields supplied by the caller. This preserves the existing

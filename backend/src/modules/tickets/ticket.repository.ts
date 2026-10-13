@@ -426,12 +426,17 @@ export async function updateTicketPriority(
   // selected priority, rather than restarting the SLA from the edit time.
   const createdAt = String(existingTicket.createdAt ?? "");
   const slaDueAt = createdAt ? calculateSlaDueAt(createdAt, priority) : null;
+  const slaStatus = calculateSlaStatus(
+    slaDueAt,
+    String(existingTicket.status ?? "OPEN"),
+  );
 
   return Ticket.findByIdAndUpdate(
     id,
     {
       $set: {
         priority,
+        slaStatus,
         ...(slaDueAt ? { slaDueAt } : {}),
         updatedAt: new Date().toISOString(),
       },

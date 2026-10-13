@@ -130,7 +130,7 @@ export default function Tickets() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { user } = useAuth();
-  const currentEmployeeId = user?.employee?.id;
+  const currentEmployeeId = String(user?.employee?.id ?? "");
   const categoryOptions = getCategoryOptions(user?.role, user?.isManager === true || user?.employee?.isManager === true);
   const [activeTab, setActiveTab] = useState<"management" | "analytics">("management");
   const [escalationTicket, setEscalationTicket] = useState<any | null>(null);
@@ -273,7 +273,45 @@ export default function Tickets() {
     return true;
   });
 
-  const canChangePriority = ["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "IT_SUPPORT"].includes(String(user?.role ?? ""));
+  const currentRole = String(user?.role ?? "").trim().toUpperCase();
+  const isManager = user?.isManager === true || user?.employee?.isManager === true || currentRole === "MANAGER";
+  const canChangePriorityForTicket = (ticket: any): boolean => {
+    if (["SUPER_ADMIN", "ADMIN", "HR_ADMIN"].includes(currentRole)) {
+      return true;
+    }
+
+    const assignedQueueByRole: Record<string, string> = {
+      RECRUITER: "RECRUITER",
+      FINANCE: "FINANCE",
+      IT_SUPPORT: "IT_SUPPORT",
+    };
+
+    if (
+      assignedQueueByRole[currentRole] &&
+      String(ticket.assignedTo ?? "") === assignedQueueByRole[currentRole]
+    ) {
+      return true;
+    }
+
+    if (
+      isManager &&
+      currentEmployeeId &&
+      String(ticket.assignedManagerId ?? "") === currentEmployeeId
+    ) {
+      return true;
+    }
+
+    // Legacy direct-report Complaint tickets are already scoped by the API.
+    if (
+      isManager &&
+      ticket.category === "Complaint" &&
+      String(ticket.employeeId ?? "") !== currentEmployeeId
+    ) {
+      return true;
+    }
+
+    return false;
+  };
   const PRIORITY_OPTIONS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
 
   const updatePriority = useMutation({
@@ -636,9 +674,9 @@ export default function Tickets() {
                         )}
                       </td>
 
-                      {/* Priority: editable only for authorized administrative / IT roles */}
+                      {/* Priority: editable for admins and users assigned to this ticket queue/manager scope */}
                       <td className="py-2.5 px-2 whitespace-nowrap">
-                        {canChangePriority ? (
+                        {canChangePriorityForTicket(ticket) ? (
                           <select
                             aria-label={`Change priority for ${ticket.ticketId || ticket.subject}`}
                             value={ticket.priority || "MEDIUM"}
