@@ -427,7 +427,15 @@ export default function Recruitment() {
       String(job.requisitionStatus ?? "").toUpperCase() === "PENDING_APPROVAL",
   ).length;
 
-  const totalOpenings = (jobs ?? []).reduce(
+  // Keep the definition of an open role consistent across dashboard,
+  // management metrics, and the employee-facing list.
+  const isOpenApprovedJob = (job: any) =>
+    String(job.status ?? "").trim().toUpperCase() === "OPEN" &&
+    String(job.requisitionStatus ?? "").trim().toUpperCase() === "APPROVED";
+
+  const openApprovedJobs = (jobs ?? []).filter(isOpenApprovedJob);
+
+  const totalOpenings = openApprovedJobs.reduce(
     (total, job: any) => total + Number(job.openings ?? job.headcount ?? 0),
     0,
   );
@@ -452,23 +460,9 @@ export default function Recruitment() {
   // Employees can browse available roles but must not see recruitment management tools.
   // Keep the existing recruiter/admin workspace unchanged below.
   if (isEmployeeView) {
-    const availableJobs = (jobs ?? []).filter((job: any) => {
-      const status = String(job.status ?? "").trim().toUpperCase();
-      const requisitionStatus = String(job.requisitionStatus ?? "").trim().toUpperCase();
-
-      // Do not expose drafts, closed roles, or requisitions that still need approval.
-      const unavailableStatuses = [
-        "CLOSED", "CANCELLED", "CANCELED", "INACTIVE", "DRAFT", "REJECTED",
-      ];
-      const unavailableRequisitionStatuses = [
-        "PENDING_APPROVAL", "REJECTED", "CANCELLED", "CANCELED", "DRAFT",
-      ];
-
-      return (
-        !unavailableStatuses.includes(status) &&
-        !unavailableRequisitionStatuses.includes(requisitionStatus)
-      );
-    });
+    // Only show roles that are both open and approved. The backend uses the
+    // same predicate, and includes these fields in the public job response.
+    const availableJobs = openApprovedJobs;
 
     const isReferralRole = (job: any) => {
       const channels = Array.isArray(job.postingChannels)
@@ -729,7 +723,7 @@ export default function Recruitment() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Open roles</p>
-              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{jobs?.length ?? 0}</p>
+              <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{openApprovedJobs.length}</p>
             </div>
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
               <Briefcase size={17} />
@@ -2069,5 +2063,3 @@ function PostJobModal({
     </Modal>
   );
 }
-
-

@@ -1214,7 +1214,7 @@ export async function listPublicJobPostings() {
     status: "OPEN",
   })
     .select(
-      "title departmentId designationId location employmentType experienceMin experienceMax description openings headcount postedAt postingChannels screeningQuestions hiringMode skills",
+      "title departmentId designationId location employmentType experienceMin experienceMax description openings headcount postedAt postingChannels screeningQuestions hiringMode skills status requisitionStatus",
     )
     .sort({ postedAt: -1, requestedAt: -1 })
     .lean()) as AnyDoc[];
@@ -1262,6 +1262,10 @@ export async function listPublicJobPostings() {
     description: row.description,
     openings: row.openings ?? row.headcount ?? 0,
     postedAt: row.postedAt,
+    // Return these fields so the frontend can apply the same open/approved
+    // predicate without treating missing values as valid open roles.
+    status: row.status,
+    requisitionStatus: row.requisitionStatus,
     postingChannels: row.postingChannels ?? [],
     screeningQuestions: row.screeningQuestions ?? [],
     hiringMode: row.hiringMode,
@@ -3596,4 +3600,3 @@ export async function getVolumeHiringAnalytics() {
     campus: normalize(campus as AnyDoc[], "Campus"),
   };
 }
-

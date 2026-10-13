@@ -1750,6 +1750,9 @@ const jobPostingSchema = new Schema<JobPostingDoc>(
       required: true,
     },
 
+    // Job status is an explicit recruitment workflow state. It is not
+    // automatically derived from hired headcount; hiring limits are enforced
+    // by the recruitment repository, while status changes remain explicit.
     status: {
       type: String,
       enum: ["OPEN", "ON_HOLD", "CLOSED"],
@@ -5030,3 +5033,4 @@ export const CalendarEvent = model<CalendarEventDoc>(
   "CalendarEvent",
   calendarEventSchema,
 );
+

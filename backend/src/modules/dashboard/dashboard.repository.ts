@@ -60,8 +60,10 @@ export async function getKpis() {
       status: "PENDING",
     }),
 
+    // Count only published jobs with approved requisitions as open roles.
     JobPosting.countDocuments({
       status: "OPEN",
+      requisitionStatus: "APPROVED",
     }),
   ]);
 
@@ -503,3 +505,4 @@ export async function getPendingLeavesForDashboard(params: {
     };
   });
 }
+

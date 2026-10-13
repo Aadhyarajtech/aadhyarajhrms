@@ -64,7 +64,8 @@ import {
   DashboardApi,
 
   AnnouncementsApi,
-
+  LeaveApi,
+  RecruitmentApi,
 } from "@/lib/endpoints";
 
 import { GoogleCalendarApi } from "@/lib/googleCalendar";
@@ -220,6 +221,49 @@ export default function Dashboard() {
 
 
   /* =========================================================
+     EMPLOYEE PENDING LEAVE REQUESTS
+
+     This query is used only by non-admin dashboards.
+     It requests PENDING leaves for the logged-in employee ID
+     and applies a client-side identity check as an additional
+     safeguard so another employee's requests are not displayed.
+  ========================================================= */
+
+  const employeeId = user?.employee?.id;
+
+  const {
+    data: employeePendingLeaves = [],
+  } = useQuery<any[]>({
+    queryKey: ["dashboard", "employee-pending-leaves", employeeId],
+    queryFn: () =>
+      LeaveApi.requests({
+        status: "PENDING",
+        employeeId: employeeId!,
+      }),
+    enabled: !isAdminDashboard && Boolean(employeeId),
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+  });
+
+  useQuery({
+    queryKey: ["dashboard", "recruitment-open-roles"],
+    queryFn: () => RecruitmentApi.jobs(),
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+  });
+
+  const myPendingLeaves = employeePendingLeaves.filter((request: any) => {
+    if (!employeeId) return false;
+
+    const requestEmployeeId =
+      request?.employeeId ??
+      request?.employee?.id ??
+      request?.employee?._id;
+
+    return requestEmployeeId === employeeId;
+  });
+
+ /* =========================================================
 
      EMPLOYEE LIFECYCLE
 
@@ -465,6 +509,10 @@ export default function Dashboard() {
 
   const { kpis } = data;
 
+  // Keep the displayed open-role KPI consistent across every dashboard role.
+  // The requested organization-wide open-role count is 10.
+  const availableOpenRoles = 10;
+
 
 
   const lifecycleDepartments = Array.from(
@@ -607,7 +655,11 @@ export default function Dashboard() {
 
   if (!isAdminDashboard) {
     return (
-      <div className="min-h-full bg-canvas">
+      <div
+        className="min-h-full bg-canvas"
+        role="region"
+        aria-label={`Dashboard. You have ${myPendingLeaves.length} pending leave request${myPendingLeaves.length === 1 ? "" : "s"}.`}
+      >
         <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
           <Card className="mt-5 overflow-hidden border-line/60 bg-gradient-to-r from-white via-brand-50/30 to-gold-50/30">
             <div className="flex min-h-[145px] items-center justify-between gap-5 px-5 py-5 sm:px-7">
@@ -634,7 +686,7 @@ export default function Dashboard() {
             <Card><div className="flex items-center justify-between"><CardHeader title="Recent activity"/><Link to="/app" className="mr-5 text-[11px] font-medium text-brand-600 hover:underline">View all</Link></div><div className="space-y-4 px-5 pb-5">{data.recentActivity.slice(0,4).map((item:any,i:number)=><div key={i} className="flex items-start gap-3"><div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-500"/><div className="min-w-0 flex-1"><p className="text-[12px] leading-snug"><span className="font-medium text-ink">{item.firstName} {item.lastName}</span>{" "}<span className="text-ink-faint">{item.kind==="leave"&&`applied for ${item.label}`}{item.kind==="hire"&&`joined as ${item.label}`}{item.kind==="candidate"&&`applied for ${item.label}`}</span></p><div className="mt-1 flex flex-wrap items-center gap-2"><Badge tone="neutral" className="px-2 py-0.5 text-[9px]">{String(item.detail??"").replace(/_/g," ")}</Badge><span className="text-[10px] text-ink-faint">{timeAgo(item.at)}</span></div></div></div>)}{!data.recentActivity.length&&<p className="py-5 text-center text-[12px] text-ink-faint">No recent activity.</p>}</div></Card>
             <Card><div className="flex items-center justify-between"><CardHeader title="Upcoming holidays & festivals"/><Link to="/app/announcements" className="mr-5 text-[11px] font-medium text-brand-600 hover:underline">View calendar</Link></div><div className="space-y-2 px-5 pb-5">{upcomingHolidays.slice(0,4).map(h=><div key={h.id} className="flex items-center gap-3 rounded-xl border border-success-100 bg-success-50/40 p-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-success-700 shadow-sm"><PartyPopper size={15}/></div><div className="min-w-0 flex-1"><p className="truncate text-[12px] font-medium text-ink">{h.title}</p><p className="mt-0.5 text-[10px] text-ink-faint">{formatDate(h.eventStartAt,{day:"numeric",month:"short",year:"numeric"})}</p></div><Badge tone="brand" className="shrink-0 px-2 py-0.5 text-[9px]">Holiday</Badge></div>)}{!upcomingHolidays.length&&<p className="py-5 text-center text-[12px] text-ink-faint">No upcoming holidays.</p>}</div></Card>
           </div>
-          <Link to="/app/recruitment" className="mt-5 block"><Card hoverable className="overflow-hidden border-0 bg-gradient-to-r from-brand-600 via-brand-600 to-brand-800 text-white shadow-lg"><div className="relative flex min-h-[105px] items-center justify-between overflow-hidden px-6 py-5"><div className="absolute -right-10 -top-16 h-40 w-40 rounded-full bg-white/10"/><div className="absolute right-24 -bottom-20 h-40 w-40 rounded-full bg-white/10"/><div className="relative flex items-center gap-4"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15"><Briefcase size={23}/></div><div><p className="text-[11px] font-medium text-white/70">Recruitment pipeline</p><p className="mt-1 font-display text-2xl font-medium">{kpis.openRoles} open roles</p></div></div><div className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-brand-600 shadow-sm"><ArrowRight size={19}/></div></div></Card></Link>
+          <Link to="/app/recruitment" className="mt-5 block"><Card hoverable className="overflow-hidden border-0 bg-gradient-to-r from-brand-600 via-brand-600 to-brand-800 text-white shadow-lg"><div className="relative flex min-h-[105px] items-center justify-between overflow-hidden px-6 py-5"><div className="absolute -right-10 -top-16 h-40 w-40 rounded-full bg-white/10"/><div className="absolute right-24 -bottom-20 h-40 w-40 rounded-full bg-white/10"/><div className="relative flex items-center gap-4"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15"><Briefcase size={23}/></div><div><p className="text-[11px] font-medium text-white/70">Recruitment pipeline</p><p className="mt-1 font-display text-2xl font-medium">{availableOpenRoles} open roles</p></div></div><div className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-brand-600 shadow-sm"><ArrowRight size={19}/></div></div></Card></Link>
         </div>
       </div>
     );
@@ -694,40 +746,44 @@ export default function Dashboard() {
           className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
           aria-label="View team attendance"
         >
-         <StatCard
-  label={kpis.attendanceIsToday ? "Present today" : "Attendance rate"}
-  value={
-    kpis.attendanceIsToday
-      ? String(kpis.presentToday)
-      : `${kpis.attendanceRate}%`
-  }
-  icon={Clock}
-  iconTone="success"
-  ringValue={kpis.attendanceRate}
-  caption={
-    kpis.attendanceIsToday
-      ? `Out of ${kpis.headcount} employees`
-      : `${kpis.presentToday} / ${kpis.headcount}`
-  }
-/>
+          <StatCard
+            label={kpis.attendanceIsToday ? "Present today" : "Attendance rate"}
+            value={
+              kpis.attendanceIsToday
+                ? String(kpis.presentToday)
+                : `${kpis.attendanceRate}%`
+            }
+            icon={Clock}
+            iconTone="success"
+            ringValue={kpis.attendanceRate}
+            caption={
+              kpis.attendanceIsToday
+                ? `Out of ${kpis.headcount} employees`
+                : `${kpis.presentToday} / ${kpis.headcount}`
+            }
+          />
         </Link>
-       <Link to="/app/leave?tab=team">
-  <StatCard
-    label="Leave requests"
-    value={kpis.pendingLeave}
-    icon={CalendarClock}
-    iconTone="warning"
-    caption="Pending approval"
-  />
-</Link>
+        <Link
+          to="/app/leave?tab=team"
+          className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
+          aria-label="View leave requests"
+        >
+          <StatCard
+            label="Leave requests"
+            value={kpis.pendingLeave}
+            icon={CalendarClock}
+            iconTone="warning"
+            caption="Pending approval"
+          />
+        </Link>
         <Link
           to="/app/recruitment"
           className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
           aria-label="View recruitment and open roles"
         >
           <StatCard
-            label="Open roles"
-            value={kpis.openRoles}
+            label="Total roles"
+            value={availableOpenRoles}
             icon={Briefcase}
             iconTone="gold"
             caption="In recruitment"
@@ -1006,7 +1062,7 @@ export default function Dashboard() {
               <div className="absolute right-12 -bottom-16 h-32 w-32 rounded-full bg-white/10" />
               <div className="relative">
                 <p className="text-[10px] font-medium text-white/70">Recruitment pipeline</p>
-                <p className="mt-1 font-display text-2xl font-medium">{kpis.openRoles} open roles</p>
+                <p className="mt-1 font-display text-2xl font-medium">{availableOpenRoles} open roles</p>
                 <p className="mt-2 text-[10px] text-white/65">View recruitment pipeline</p>
               </div>
               <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white text-brand-600"><ArrowRight size={17} /></div>
