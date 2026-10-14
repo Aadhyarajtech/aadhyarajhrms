@@ -40,8 +40,8 @@ interface Ticket {
   assignedTo?: string;
   assignedEmployeeId?: string | null;
   assignedEmployeeName?: string | null;
-  
- 
+  assignedEmployeeCode?: string | null;
+  assignedEmployee?: { id?: string; name?: string; employeeCode?: string } | null;
   employeeId?: string;
   attachment?: string;
   createdAt?: string;
@@ -539,16 +539,17 @@ export default function TicketConversation() {
             {ticket.priority === "HIGH" && (
               <span className="text-amber-700 font-medium">(4-Hour Response SLA)</span>
             )}
-            
-{ticket.assignedTo && (
-  <span>
-    · Assigned to{" "}
-    {ticket.assignedEmployeeName
-      ? `${ticket.assignedEmployeeName} (${ticket.assignedTo})`
-      : `Not individually assigned (${ticket.assignedTo})`}
-  </span>
-)}
-
+            {ticket.assignedTo && (
+              <span className="inline-flex flex-wrap items-center gap-x-1">
+                · Assigned to {ticket.assignedEmployee?.name || ticket.assignedEmployeeName || "Not individually assigned"}
+                {(ticket.assignedEmployee?.employeeCode || ticket.assignedEmployeeCode) ? (
+                  <span className="text-slate-500">
+                    ({ticket.assignedEmployee?.employeeCode || ticket.assignedEmployeeCode})
+                  </span>
+                ) : null}
+                <span className="text-slate-500">· Queue: {ticket.assignedTo}</span>
+              </span>
+            )}
             {ticket.category === "Harassment Complaint" && (
               <span className="inline-flex items-center gap-1 rounded bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 font-medium">
                 🔒 POSH Confidential Case

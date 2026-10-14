@@ -268,16 +268,8 @@ export async function getEligibleTicketAssignees(
     })
     .sort(
   (
-    a: {
-      id: string;
-      name: string;
-      openTicketCount: number;
-    },
-    b: {
-      id: string;
-      name: string;
-      openTicketCount: number;
-    },
+    a: { id: string; name: string; openTicketCount: number },
+    b: { id: string; name: string; openTicketCount: number },
   ) =>
     a.openTicketCount - b.openTicketCount ||
     a.name.localeCompare(b.name) ||
@@ -532,7 +524,29 @@ export async function getTicket(id: string) {
     return ticket;
   }
 
-  return refreshTicketSla(ticket);
+  // Enrich the single-ticket response too, so the conversation header shows
+  // the same assigned employee as the Ticket Management table.
+  let enrichedTicket: any = { ...ticket };
+  const assignedEmployeeId = String((ticket as any).assignedEmployeeId || "").trim();
+
+  if (assignedEmployeeId) {
+    const employee = await Employee.findById(assignedEmployeeId)
+      .select("_id firstName lastName employeeCode")
+      .lean();
+
+    if (employee) {
+      const name = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+      enrichedTicket.assignedEmployee = {
+        id: String(employee._id),
+        name: name || employee.employeeCode || "Employee",
+        employeeCode: String(employee.employeeCode || ""),
+      };
+      enrichedTicket.assignedEmployeeName = enrichedTicket.assignedEmployee.name;
+      enrichedTicket.assignedEmployeeCode = enrichedTicket.assignedEmployee.employeeCode;
+    }
+  }
+
+  return refreshTicketSla(enrichedTicket);
 }
 
 // =========================================================
