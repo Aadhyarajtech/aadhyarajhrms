@@ -4578,6 +4578,8 @@ export interface TicketDoc {
   attachment: string | null;
 
   assignedTo: string;
+  // Individual support employee assigned to this ticket; null for legacy/unassigned tickets.
+  assignedEmployeeId: string | null;
   assignedManagerId: string | null;
 
   status:
@@ -4680,6 +4682,12 @@ const ticketSchema = new Schema<TicketDoc>(
     assignedTo: {
       type: String,
       required: true,
+    },
+
+    // Additive individual assignment; keeps assignedTo as the role/queue.
+    assignedEmployeeId: {
+      type: String,
+      default: null,
     },
 
     assignedManagerId: {
@@ -4824,6 +4832,12 @@ ticketSchema.index({
 
 ticketSchema.index({
   assignedTo: 1,
+});
+
+// Supports least-loaded assignment counts without changing role-level queues.
+ticketSchema.index({
+  assignedEmployeeId: 1,
+  status: 1,
 });
 
 ticketSchema.index({

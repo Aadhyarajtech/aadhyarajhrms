@@ -433,6 +433,151 @@ ticketRouter.post(
 
 
 /* =========================================================
+   INDIVIDUAL TICKET ASSIGNMENT
+   Admins can view eligible employees and assign one employee.
+   Existing department/manager ticket routes remain unchanged.
+========================================================= */
+
+const ticketAssignmentSchema = z.object({
+  employeeId: z.string().trim().min(1, "Employee ID is required"),
+});
+
+ticketRouter.get(
+  "/assignment/eligible",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: { message: "Unauthorized" } });
+      }
+
+      const role = String(req.user.role || "").trim();
+      if (!["ADMIN", "SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+        return res.status(403).json({
+          error: { message: "Only administrators can view eligible assignees" },
+        });
+      }
+
+      const category = String(req.query.category || "").trim();
+      if (!category) {
+        return res.status(400).json({
+          error: { message: "Ticket category is required" },
+        });
+      }
+
+      const eligibleEmployees = await repo.getEligibleTicketAssignees(category);
+      return res.json({
+        success: true,
+        assignedRole: repo.assignDepartment(category),
+        eligibleEmployees,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+ticketRouter.patch(
+  "/:ticketId/assign",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: { message: "Unauthorized" } });
+      }
+
+      const role = String(req.user.role || "").trim();
+      if (!["ADMIN", "SUPER_ADMIN", "HR_ADMIN"].includes(role)) {
+        return res.status(403).json({
+          error: { message: "Only administrators can assign ticket owners" },
+        });
+      }
+
+      const parsed = ticketAssignmentSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: {
+            message: "Invalid ticket assignment",
+            details: parsed.error.flatten(),
+          },
+        });
+      }
+
+      const ticket = await Ticket.findById(req.params.ticketId).lean();
+      if (!ticket) {
+        return res.status(404).json({
+          error: { message: "Ticket not found" },
+        });
+      }
+
+      const previousAssigneeId = ticket.assignedEmployeeId
+        ? String(ticket.assignedEmployeeId)
+        : null;
+
+      const updatedTicket = await repo.assignTicketToEmployee(
+        String(ticket._id),
+        parsed.data.employeeId,
+      );
+
+      if (!updatedTicket) {
+        return res.status(404).json({
+          error: { message: "Ticket not found" },
+        });
+      }
+
+      // Notify the selected employee. Notification failures do not undo assignment.
+      try {
+        const selectedEmployee = await Employee.findById(
+          parsed.data.employeeId,
+        )
+          .select("_id userId firstName lastName")
+          .lean();
+
+        if (selectedEmployee?.userId) {
+          await notify({
+            userId: String(selectedEmployee.userId),
+            type: "TICKET_MESSAGE",
+            title: `Ticket assigned to you: ${updatedTicket.ticketId}`,
+            message: updatedTicket.subject,
+            link: `/app/tickets/${updatedTicket._id}`,
+          });
+        }
+      } catch (notificationError) {
+        console.error("Failed to notify ticket assignee", notificationError);
+      }
+
+      // Audit trail is additive and isolated from the assignment result.
+      try {
+        await AuditLog.create({
+          userId: req.user.userId,
+          action: "TICKET_ASSIGNEE_CHANGED",
+          entity: "Ticket",
+          entityId: String(updatedTicket._id),
+          metadata: JSON.stringify({
+            previousAssigneeId,
+            assignedEmployeeId: parsed.data.employeeId,
+            assignedTo: updatedTicket.assignedTo,
+          }),
+          ipAddress: req.ip || null,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (auditError) {
+        console.error("Failed to write ticket assignment audit log", auditError);
+      }
+
+      return res.json({
+        success: true,
+        ticket: updatedTicket,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Assignment failed";
+      if (message.includes("not an active eligible assignee")) {
+        return res.status(400).json({ error: { message } });
+      }
+      next(err);
+    }
+  },
+);
+
+/* =========================================================
    GET MANAGERS FOR TICKET ASSIGNMENT
 ========================================================= */
 

@@ -19,7 +19,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import BroadcastClusterModal from "@/components/tickets/BroadcastClusterModal";
 
-const STAFF_ROLES = ["ADMIN", "FINANCE", "IT_SUPPORT", "SUPER_ADMIN", "MANAGER", "RECRUITER"];
+const STAFF_ROLES = ["HR_ADMIN", "FINANCE", "IT_SUPPORT", "SUPER_ADMIN", "MANAGER", "RECRUITER"];
 
 type ReplyTone = "empathetic" | "formal" | "concise";
 
@@ -38,6 +38,10 @@ interface Ticket {
   description?: string;
   status: string;
   assignedTo?: string;
+  assignedEmployeeId?: string | null;
+  assignedEmployeeName?: string | null;
+  
+ 
   employeeId?: string;
   attachment?: string;
   createdAt?: string;
@@ -535,7 +539,16 @@ export default function TicketConversation() {
             {ticket.priority === "HIGH" && (
               <span className="text-amber-700 font-medium">(4-Hour Response SLA)</span>
             )}
-            {ticket.assignedTo && <span>· Assigned to {ticket.assignedTo}</span>}
+            
+{ticket.assignedTo && (
+  <span>
+    · Assigned to{" "}
+    {ticket.assignedEmployeeName
+      ? `${ticket.assignedEmployeeName} (${ticket.assignedTo})`
+      : `Not individually assigned (${ticket.assignedTo})`}
+  </span>
+)}
+
             {ticket.category === "Harassment Complaint" && (
               <span className="inline-flex items-center gap-1 rounded bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 font-medium">
                 🔒 POSH Confidential Case

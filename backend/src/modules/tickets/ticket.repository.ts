@@ -177,6 +177,156 @@ export function assignDepartment(category: string) {
 }
 
 // =========================================================
+// INDIVIDUAL TICKET ASSIGNMENT (ADDITIVE)
+// =========================================================
+
+const OPEN_ASSIGNMENT_STATUSES = [
+  "OPEN",
+  "IN_PROGRESS",
+  "WAITING_FOR_EMPLOYEE",
+] as const;
+
+export interface EligibleTicketAssignee {
+  id: string;
+  userId: string;
+  name: string;
+  employeeCode: string;
+  role: string;
+  openTicketCount: number;
+}
+
+/**
+ * Return active employees whose login user has the ticket's assigned role.
+ * Workload counts only tickets that are still open/in progress/waiting.
+ */
+export async function getEligibleTicketAssignees(
+  category: string,
+): Promise<EligibleTicketAssignee[]> {
+  const role = assignDepartment(category);
+
+  const activeUsers = await User.find({
+    role,
+    isActive: true,
+  })
+    .select("_id role")
+    .lean();
+
+  if (!activeUsers.length) return [];
+
+  const userIds = activeUsers.map((user: any) => String(user._id));
+
+  const activeEmployees = await Employee.find({
+    userId: { $in: userIds },
+    status: { $in: ["ACTIVE", "ON_PROBATION"] },
+  })
+    .select("_id userId firstName lastName employeeCode status")
+    .lean();
+
+  if (!activeEmployees.length) return [];
+
+  const employeeIds = activeEmployees.map((employee: any) =>
+    String(employee._id),
+  );
+
+  const workload = await Ticket.aggregate([
+    {
+      $match: {
+        assignedEmployeeId: { $in: employeeIds },
+        status: { $in: [...OPEN_ASSIGNMENT_STATUSES] },
+      },
+    },
+    {
+      $group: {
+        _id: "$assignedEmployeeId",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const workloadByEmployee = new Map<string, number>(
+    workload.map((item: any) => [String(item._id), Number(item.count) || 0]),
+  );
+
+  return activeEmployees
+    .map((employee: any) => {
+      const id = String(employee._id);
+      const user = activeUsers.find(
+        (candidate: any) => String(candidate._id) === String(employee.userId),
+      );
+
+      return {
+        id,
+        userId: String(employee.userId),
+        name:
+          `${employee.firstName || ""} ${employee.lastName || ""}`.trim() ||
+          employee.employeeCode ||
+          "Employee",
+        employeeCode: String(employee.employeeCode || ""),
+        role: String(user?.role || role),
+        openTicketCount: workloadByEmployee.get(id) ?? 0,
+      };
+    })
+    .sort(
+  (
+    a: {
+      id: string;
+      name: string;
+      openTicketCount: number;
+    },
+    b: {
+      id: string;
+      name: string;
+      openTicketCount: number;
+    },
+  ) =>
+    a.openTicketCount - b.openTicketCount ||
+    a.name.localeCompare(b.name) ||
+    a.id.localeCompare(b.id),
+)
+}
+
+/**
+ * Automatically choose the eligible employee with the lowest open workload.
+ * Returns null when no active employee is configured for the assigned role.
+ */
+export async function selectLeastLoadedTicketAssignee(category: string) {
+  const eligible = await getEligibleTicketAssignees(category);
+  return eligible[0] ?? null;
+}
+
+/**
+ * Explicit reassignment used by the admin UI. The employee must be eligible
+ * for the ticket's existing assigned role; this never changes role routing.
+ */
+export async function assignTicketToEmployee(
+  ticketId: string,
+  employeeId: string,
+) {
+  const ticket = await Ticket.findById(ticketId).lean();
+  if (!ticket) return null;
+
+  const eligible = await getEligibleTicketAssignees(String(ticket.category || ""));
+  const selected = eligible.find((employee) => employee.id === employeeId);
+
+  if (!selected) {
+    throw new Error(
+      "Selected employee is not an active eligible assignee for this ticket role.",
+    );
+  }
+
+  return Ticket.findByIdAndUpdate(
+    ticketId,
+    {
+      $set: {
+        assignedEmployeeId: selected.id,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+    { new: true, runValidators: true },
+  ).lean();
+}
+
+// =========================================================
 // CREATE TICKET
 // =========================================================
 
@@ -224,6 +374,9 @@ export async function createTicket(data: {
     }
   }
 
+  const assignedTo = assignDepartment(data.category);
+  const selectedAssignee = await selectLeastLoadedTicketAssignee(data.category);
+
   const ticket = await Ticket.create({
     ticketId: generateTicketId(data.category),
 
@@ -239,7 +392,10 @@ export async function createTicket(data: {
 
     attachment: data.attachment || "",
 
-    assignedTo: assignDepartment(data.category),
+    assignedTo,
+
+    // Individual assignment is additive; manager ownership remains separate.
+    assignedEmployeeId: selectedAssignee?.id ?? null,
 
     assignedManagerId,
 
@@ -655,39 +811,67 @@ async function enrichTicketsWithRaisedBy(tickets: any[]) {
     ),
   ];
 
-  if (!employeeIds.length) {
-    return tickets;
-  }
+  const assignedEmployeeIds = [
+    ...new Set(
+      tickets
+        .map((ticket: any) => String(ticket.assignedEmployeeId || "").trim())
+        .filter(Boolean),
+    ),
+  ];
 
-  const employees = await Employee.find({
-    _id: { $in: employeeIds },
-  })
-    .select("_id firstName lastName employeeCode")
-    .lean();
+  const [raisedByEmployees, assignedEmployees] = await Promise.all([
+    employeeIds.length
+      ? Employee.find({ _id: { $in: employeeIds } })
+          .select("_id firstName lastName employeeCode")
+          .lean()
+      : Promise.resolve([]),
+    assignedEmployeeIds.length
+      ? Employee.find({ _id: { $in: assignedEmployeeIds } })
+          .select("_id firstName lastName employeeCode userId")
+          .lean()
+      : Promise.resolve([]),
+  ]);
 
-  const employeeMap = new Map<
-    string,
-    {
-      name: string;
-      employeeCode: string;
-    }
-  >(
-    employees.map((employee: any) => [
+  const raisedByMap = new Map<string, { name: string; employeeCode: string }>(
+    (raisedByEmployees as any[]).map((employee: any) => [
       String(employee._id),
       {
         name: `${employee.firstName || ""} ${employee.lastName || ""}`.trim(),
-        employeeCode: employee.employeeCode || "",
+        employeeCode: String(employee.employeeCode || ""),
+      },
+    ]),
+  );
+
+  const assignedMap = new Map<string, { name: string; employeeCode: string }>(
+    (assignedEmployees as any[]).map((employee: any) => [
+      String(employee._id),
+      {
+        name:
+          `${employee.firstName || ""} ${employee.lastName || ""}`.trim() ||
+          String(employee.employeeCode || "Employee"),
+        employeeCode: String(employee.employeeCode || ""),
       },
     ]),
   );
 
   return tickets.map((ticket: any) => {
-    const employee = employeeMap.get(String(ticket.employeeId));
+    const raisedBy = raisedByMap.get(String(ticket.employeeId || ""));
+    const assignedEmployee = assignedMap.get(
+      String(ticket.assignedEmployeeId || ""),
+    );
 
     return {
       ...ticket,
-      raisedBy: employee?.name || "Employee unavailable",
-      raisedByEmployeeCode: employee?.employeeCode || "",
+      raisedBy: raisedBy?.name || "Employee unavailable",
+      raisedByEmployeeCode: raisedBy?.employeeCode || "",
+      assignedEmployee: assignedEmployee
+        ? {
+            id: String(ticket.assignedEmployeeId),
+            name: assignedEmployee.name,
+            employeeCode: assignedEmployee.employeeCode,
+          }
+        : null,
+      assignedEmployeeName: assignedEmployee?.name || null,
     };
   });
 }
