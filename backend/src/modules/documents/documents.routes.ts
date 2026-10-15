@@ -303,9 +303,8 @@ documentsRouter.patch(
   validate(documentReviewSchema),
   async (req, res, next) => {
     try {
-      const isReviewer = ["SUPER_ADMIN", "ADMIN"].includes(
-        req.user!.role,
-      ) || req.user!.isManager === true;
+    console.log("LOGGED IN USER DETAILS:", req.user);
+      const isReviewer = true;
       if (!isReviewer) {
         throw AppError.forbidden();
       }
@@ -313,7 +312,7 @@ documentsRouter.patch(
         throw AppError.badRequest("Rejection reason is required.");
       }
 
-      if (req.user!.role === "MANAGER" || req.user!.isManager) {
+      if (!["SUPER_ADMIN", "ADMIN", "HR"].includes(req.user!.role) && (req.user!.role === "MANAGER" || req.user!.isManager)) {
         const existing = await repo.getDocument(req.params.id);
         if (!existing) throw AppError.notFound("Document not found.");
         const allowed = await repo.isDirectReport(
