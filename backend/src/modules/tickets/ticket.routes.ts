@@ -229,12 +229,27 @@ ticketRouter.post(
         });
       }
 
-      // AI classification (non-blocking — if it fails, we proceed without it)
-      const aiResult = await classifyTicket(
-        parsed.data.subject,
-        parsed.data.description,
-        parsed.data.category,
-      );
+      // AI enrichment must never prevent ticket creation. Bound its wait time;
+      // if the provider is slow/unavailable, use the employee-selected category
+      // and priority and create the ticket without AI metadata.
+      let aiTimeout: ReturnType<typeof setTimeout> | undefined;
+      const aiResult = await Promise.race([
+        classifyTicket(
+          parsed.data.subject,
+          parsed.data.description,
+          parsed.data.category,
+        ).catch((error) => {
+          console.error("[Tickets] AI classification failed; continuing without AI.", error);
+          return null;
+        }),
+        new Promise<null>((resolve) => {
+          aiTimeout = setTimeout(() => {
+            console.warn("[Tickets] AI classification timed out; continuing without AI.");
+            resolve(null);
+          }, 5000);
+        }),
+      ]);
+      if (aiTimeout) clearTimeout(aiTimeout);
 
       // Auto-elevate priority to CRITICAL for harassment or high distress; else HIGH if urgent
       let effectivePriority = parsed.data.priority;
@@ -268,68 +283,71 @@ ticketRouter.post(
         aiSentiment: aiResult?.sentiment ?? null,
       });
 
-      // Notify the exact manager for manager-scoped tickets. Other tickets use
-      // their assigned role/team notification path.
-      try {
-        if (ticket.assignedManagerId) {
-          const manager = await Employee.findById(ticket.assignedManagerId)
-            .select("_id userId firstName lastName")
-            .lean();
+      // Notifications and email are secondary effects. Do not hold the ticket
+      // creation HTTP response open while SMTP or notification delivery runs.
+      // The ticket has already been persisted, so return success independently.
+      void (async () => {
+        try {
+          // Notify the exact manager for manager-scoped tickets. Other tickets use
+          // their assigned role/team notification path.
+          if (ticket.assignedManagerId) {
+            const manager = await Employee.findById(ticket.assignedManagerId)
+              .select("_id userId firstName lastName")
+              .lean();
 
-          if (manager?.userId && manager.userId !== req.user.userId) {
-            await notify({
-              userId: manager.userId,
-              type: "TICKET_MESSAGE",
-              title: `${req.user.name || "Employee"} raised a ${ticket.category} ticket`,
-              message: `${ticket.ticketId} — ${ticket.subject}`,
-              link: `/app/tickets/${ticket._id}`,
-            });
+            if (manager?.userId && String(manager.userId) !== String(req.user!.userId)) {
+              await notify({
+                userId: manager.userId,
+                type: "TICKET_MESSAGE",
+                title: `${req.user!.name || "Employee"} raised a ${ticket.category} ticket`,
+                message: `${ticket.ticketId} — ${ticket.subject}`,
+                link: `/app/tickets/${ticket._id}`,
+              });
+            }
+          } else {
+            const recipients = await User.find({
+              role: ticket.assignedTo,
+              isActive: true,
+            }).lean();
+
+            for (const recipient of recipients) {
+              if (String(recipient._id) === String(req.user!.userId)) continue;
+
+              await notify({
+                userId: recipient._id,
+                type: "TICKET_MESSAGE",
+                title: `${req.user!.name || "Employee"} raised a new ${ticket.category} ticket`,
+                message: `${ticket.ticketId} — ${ticket.subject}`,
+                link: `/app/tickets/${ticket._id}`,
+              });
+            }
           }
-        } else {
-          const recipients = await User.find({
-            role: ticket.assignedTo,
-            isActive: true,
-          }).lean();
-
-          for (const r of recipients) {
-            if (r._id === req.user.userId) continue;
-
-            await notify({
-              userId: r._id,
-              type: "TICKET_MESSAGE",
-              title: `${req.user.name || "Employee"} raised a new ${ticket.category} ticket`,
-              message: `${ticket.ticketId} — ${ticket.subject}`,
-              link: `/app/tickets/${ticket._id}`,
-            });
-          }
+        } catch (notificationError) {
+          console.error("[Tickets] Ticket was created, but notification delivery failed.", notificationError);
         }
-      } catch (err) {
-        console.error("Failed to send ticket notifications", err);
-      }
 
-      // Email the employee who raised the ticket. Email failures are isolated
-      // so they never prevent successful ticket creation.
-      try {
-        const owner = await Employee.findById(ticket.employeeId).lean();
-        if (owner?.userId) {
-          const ownerUser = await User.findById(owner.userId).select("email").lean();
-          if (ownerUser?.email) {
-            await sendTicketEmail({
-              to: ownerUser.email,
-              event: "CREATED",
-              ticketId: ticket.ticketId,
-              subject: ticket.subject,
-              category: ticket.category,
-              priority: ticket.priority,
-              status: ticket.status,
-              description: ticket.description,
-              attachment: ticket.attachment,
-            });
+        try {
+          const owner = await Employee.findById(ticket.employeeId).lean();
+          if (owner?.userId) {
+            const ownerUser = await User.findById(owner.userId).select("email").lean();
+            if (ownerUser?.email) {
+              await sendTicketEmail({
+                to: ownerUser.email,
+                event: "CREATED",
+                ticketId: ticket.ticketId,
+                subject: ticket.subject,
+                category: ticket.category,
+                priority: ticket.priority,
+                status: ticket.status,
+                description: ticket.description,
+                attachment: ticket.attachment,
+              });
+            }
           }
+        } catch (emailError) {
+          console.error("[Tickets] Ticket was created, but confirmation email failed.", emailError);
         }
-      } catch (emailError) {
-        console.error("Failed to send ticket creation email", emailError);
-      }
+      })();
 
       const risk = calculatePredictiveSlaRisk(ticket);
 

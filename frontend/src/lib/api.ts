@@ -2,13 +2,11 @@
 
 import axios from "axios";
 
-// In local development, always go through Vite's proxy so the UI talks to
-// the backend running on localhost:4000. Only use the explicit public URL in
-// production builds.
-const API_BASE_URL = import.meta.env.DEV
-  ? "/api"
-  : import.meta.env.VITE_API_URL ||
-    "https://aadhyarajhrms-1.onrender.com/api";
+// Keep API calls same-origin in both development and production.
+// Vite proxies /api locally; Vercel rewrites /api to the production Render
+// service. This prevents a build-time VITE_API_URL from silently overriding
+// the single routing configuration in vercel.json.
+const API_BASE_URL = "/api";
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -93,11 +91,8 @@ export function resolveAssetUrl(
     return value;
   }
 
-  const rawBase = import.meta.env.VITE_API_URL || "/api";
-
-  const baseOrigin = rawBase.startsWith("http")
-    ? new URL(rawBase).origin
-    : window.location.origin;
+  // Keep uploads on the same origin so Vercel's /uploads rewrite is used.
+  const baseOrigin = window.location.origin;
 
   return new URL(
     value.startsWith("/") ? value : `/${value}`,
