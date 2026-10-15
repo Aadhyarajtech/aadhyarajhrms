@@ -310,28 +310,40 @@ export default function Documents() {
     queryClient.invalidateQueries({ queryKey: ["document-requests"] });
     queryClient.invalidateQueries({ queryKey: ["company-document-requests"] });
   };
+  const targetEmployee = employeesData?.employees?.find(
+    (emp: any) => emp.id === documentEmployeeId
+  );
+
   const companyUploadedDocs = useMemo(() => {
     return documents.filter((doc: any) => {
-      // If doc has no explicit uploader or uploader is an admin/company user
-      const isSelfUploaded =
-        doc.uploadedBy === documentEmployeeId ||
-        doc.uploadedBy === user?.id ||
-        doc.uploadedBy === user?.employee?.id;
+      const targetUserId =
+        targetEmployee?.userId ||
+        (targetEmployee as any)?.user?.id ||
+        user?.id;
 
-      return !isSelfUploaded;
+      const isEmployeeUploaded =
+        doc.uploadedBy === documentEmployeeId ||
+        (targetUserId && doc.uploadedBy === targetUserId);
+
+      return !isEmployeeUploaded;
     });
-  }, [documents, documentEmployeeId, user]);
+  }, [documents, documentEmployeeId, targetEmployee, user]);
 
   const employeeUploadedDocs = useMemo(() => {
     return documents.filter((doc: any) => {
-      const isSelfUploaded =
-        doc.uploadedBy === documentEmployeeId ||
-        doc.uploadedBy === user?.id ||
-        doc.uploadedBy === user?.employee?.id;
+      const targetUserId =
+        targetEmployee?.userId ||
+        (targetEmployee as any)?.user?.id ||
+        user?.id;
 
-      return isSelfUploaded;
+      const isEmployeeUploaded =
+        doc.uploadedBy === documentEmployeeId ||
+        (targetUserId && doc.uploadedBy === targetUserId);
+
+      return isEmployeeUploaded;
     });
-  }, [documents, documentEmployeeId, user]);
+  }, [documents, documentEmployeeId, targetEmployee, user]);
+
   const renderCompanySection = () => (
     <Card>
       <CardHeader
