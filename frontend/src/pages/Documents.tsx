@@ -310,7 +310,121 @@ export default function Documents() {
     queryClient.invalidateQueries({ queryKey: ["document-requests"] });
     queryClient.invalidateQueries({ queryKey: ["company-document-requests"] });
   };
+  const companyUploadedDocs = useMemo(() => {
+    return documents.filter((doc: any) => {
+      // If doc has no explicit uploader or uploader is an admin/company user
+      const isSelfUploaded =
+        doc.uploadedBy === documentEmployeeId ||
+        doc.uploadedBy === user?.id ||
+        doc.uploadedBy === user?.employee?.id;
 
+      return !isSelfUploaded;
+    });
+  }, [documents, documentEmployeeId, user]);
+
+  const employeeUploadedDocs = useMemo(() => {
+    return documents.filter((doc: any) => {
+      const isSelfUploaded =
+        doc.uploadedBy === documentEmployeeId ||
+        doc.uploadedBy === user?.id ||
+        doc.uploadedBy === user?.employee?.id;
+
+      return isSelfUploaded;
+    });
+  }, [documents, documentEmployeeId, user]);
+  const renderCompanySection = () => (
+    <Card>
+      <CardHeader
+        title="Company Uploaded Documents"
+        subtitle="Company-issued documents for this employee."
+        action={
+          canManageDocuments && (
+            <select
+              value={selectedEmployeeId}
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+              className="h-9 rounded-lg border border-line bg-white px-3 text-sm"
+            >
+              {employeesData?.employees
+                ?.filter((employee: any) => String(employee.status || "").toUpperCase() === "ACTIVE")
+                ?.map((employee: any) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.firstName} {employee.lastName}
+                  </option>
+                ))}
+            </select>
+          )
+        }
+      />
+
+      <div className="p-6">
+        {companyUploadedDocs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line py-12 px-4 text-center">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50/80 text-brand-600">
+              <FileText className="h-7 w-7 text-brand-600" />
+            </div>
+            <h4 className="font-serif text-xl font-medium text-ink">
+              No company documents uploaded
+            </h4>
+            <p className="mt-2 max-w-md text-sm text-ink-muted leading-normal text-center">
+              Company-issued offer letters, policies, and contracts will appear here.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {companyUploadedDocs.map((doc: any) => (
+              <DocumentRow key={doc.id} doc={doc} isCompanyDoc={true} />
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+
+  const renderEmployeeSection = () => (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <CardHeader
+          title={canManageDocuments ? "Employee Uploaded Documents" : "My Documents"}
+          subtitle={
+            canManageDocuments
+              ? "Documents uploaded directly by the employee."
+              : "Your personal uploaded identity proofs, certificates, and documents."
+          }
+        />
+        {canManageDocuments && (
+          <select
+            value={selectedEmployeeId}
+            onChange={(e) => setSelectedEmployeeId(e.target.value)}
+            className="h-9 rounded-lg border border-line bg-white px-3 text-sm text-ink outline-none focus:border-brand-400"
+          >
+            {employeesData?.employees
+              ?.filter((employee: any) => String(employee.status || "").toUpperCase() === "ACTIVE")
+              ?.map((employee: any) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.firstName} {employee.lastName}
+                </option>
+              ))}
+          </select>
+        )}
+      </div>
+
+      {docsLoading ? (
+        <Skeleton className="h-40 rounded-2xl" />
+      ) : !employeeUploadedDocs.length ? (
+        <EmptyState
+          icon={FileBadge2}
+          title="No documents uploaded"
+          description="Offer letters, identity proof, and employee records will appear here."
+        />
+      ) : (
+        <div id="documents-list" className="space-y-2">
+          {employeeUploadedDocs.map((doc: any) => (
+            <DocumentRow key={doc.id} doc={doc} />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
   return (
     <div className="space-y-6">
       <PageHeader
@@ -362,7 +476,6 @@ export default function Documents() {
                 ✨ {showInsights ? "Hide insights" : "Show insights"}
               </Button>
             </div>
-
             {showInsights && (
               <div className="space-y-4">
                 {canManageDocuments && (
@@ -376,11 +489,13 @@ export default function Documents() {
                       onChange={(e) => setSelectedEmployeeId(e.target.value)}
                       className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none focus:border-brand-400"
                     >
-                      {employeesData?.employees?.map((employee: any) => (
-                        <option key={employee.id} value={employee.id}>
-                          {employee.firstName} {employee.lastName}
-                        </option>
-                      ))}
+                      {employeesData?.employees
+  ?.filter((employee: any) => String(employee.status || "").toUpperCase() === "ACTIVE")
+  ?.map((employee: any) => (
+    <option key={employee.id} value={employee.id}>
+      {employee.firstName} {employee.lastName}
+    </option>
+  ))}
                     </select>
                   </div>
                 )}
@@ -451,43 +566,17 @@ export default function Documents() {
       )}
 
       <div className="grid gap-6">
-        <Card>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardHeader
-              title="My Documents"
-              subtitle="All documents visible to the employee and HR admins."
-            />
-            {canManageDocuments && (
-              <select
-                value={selectedEmployeeId}
-                onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                className="h-9 rounded-lg border border-line bg-white px-3 text-sm text-ink outline-none focus:border-brand-400"
-              >
-                {employeesData?.employees?.map((employee: any) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.firstName} {employee.lastName}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {docsLoading ? (
-            <Skeleton className="h-40 rounded-2xl" />
-          ) : !documents.length ? (
-            <EmptyState
-              icon={FileBadge2}
-              title="No documents uploaded"
-              description="Offer letters, identity proof, and employee records will appear here."
-            />
-          ) : (
-            <div id="documents-list" className="space-y-2">
-              {documents.map((doc: any) => (
-                <DocumentRow key={doc.id} doc={doc} />
-              ))}
-            </div>
-          )}
-        </Card>
+        {canManageDocuments ? (
+          <>
+            {renderCompanySection()}
+            {renderEmployeeSection()}
+          </>
+        ) : (
+          <>
+            {renderEmployeeSection()}
+            {renderCompanySection()}
+          </>
+        )}
 
         <Card>
           <CardHeader
@@ -518,7 +607,7 @@ export default function Documents() {
           <Card>
             <CardHeader
               title="Documents Requested From Me"
-              subtitle="Document requests raised by HR, admins, or your manager."
+              subtitle="Document requests raised by company."
             />
 
             {requestsLoading ? (
@@ -546,7 +635,7 @@ export default function Documents() {
             <div className="flex items-center justify-between gap-3">
               <CardHeader
                 title="Documents I Requested"
-                subtitle="Company-issued documents you've requested from HR."
+                subtitle="Company-issued documents."
               />
 
               <Button
@@ -652,7 +741,7 @@ export default function Documents() {
   );
 }
 
-function DocumentRow({ doc }: { doc: any }): JSX.Element {
+function DocumentRow({ doc, isCompanyDoc = false }: { doc: any; isCompanyDoc?: boolean }): JSX.Element {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { user, hasPermission } = useAuth();
@@ -660,6 +749,7 @@ function DocumentRow({ doc }: { doc: any }): JSX.Element {
   const canDelete = ["SUPER_ADMIN", "ADMIN"].includes((user as any)?.role);
 
   const canReview =
+    !isCompanyDoc &&
     hasPermission("documents.manage") &&
     String(doc.status).trim().toUpperCase() === "PENDING";
 
@@ -1081,7 +1171,6 @@ function UploadDocumentModal({
   onClose,
   selfEmployeeId,
   role,
-  isManager,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1096,9 +1185,6 @@ function UploadDocumentModal({
     useState<(typeof DOC_TYPES)[number]["value"]>("OFFER_LETTER");
   const [targetEmployeeId, setTargetEmployeeId] = useState(selfEmployeeId);
   const [expiryDate, setExpiryDate] = useState("");
-
-  const isManagerCapability = isManager || role === "MANAGER";
-
   // Sync target employee ID when modal opens or selfEmployeeId becomes available
   useEffect(() => {
     if (open) {
@@ -1110,17 +1196,13 @@ function UploadDocumentModal({
   }, [open, selfEmployeeId]);
 
   const { data: employeesData } = useQuery({
-    queryKey: ["employees", "for-document-upload", isManagerCapability, selfEmployeeId],
-    queryFn: () =>
-      EmployeesApi.list(
-        isManagerCapability
-          ? { managerId: selfEmployeeId, pageSize: 100 }
-          : { pageSize: 100 },
-      ),
-    enabled: open,
-  });
-  const employees = employeesData?.employees ?? [];
-
+  queryKey: ["employees", "for-document-upload", selfEmployeeId, role],
+  queryFn: () => EmployeesApi.list({ pageSize: 100 }),
+  enabled: open,
+});
+  const employees = (employeesData?.employees ?? []).filter(
+  (emp: any) => String(emp.status || "").toUpperCase() === "ACTIVE"
+);
   const mutation = useMutation({
     mutationFn: async () => {
       if (!file || !targetEmployeeId) {
@@ -1189,15 +1271,13 @@ function UploadDocumentModal({
             className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink outline-none focus:border-brand-400"
           >
             <option value={selfEmployeeId}>Myself</option>
-            {role &&
-              ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(role) &&
-              employees
-                .filter((emp: any) => emp.id !== selfEmployeeId)
-                .map((emp: any) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.firstName} {emp.lastName}
-                  </option>
-                ))}
+            {employees
+  .filter((emp: any) => emp.id !== selfEmployeeId)
+  .map((emp: any) => (
+    <option key={emp.id} value={emp.id}>
+      {emp.firstName} {emp.lastName}
+    </option>
+  ))}
           </select>
         </div>
         <div>
@@ -1392,18 +1472,22 @@ function RequestDocumentModal({
     ],
     queryFn: () =>
       EmployeesApi.list(
-        isManagerCapability
-          ? {
-              managerId: selfEmployeeId,
-              pageSize: 100,
-              search: employeeSearch.trim() || undefined,
-            }
-          : { search: employeeSearch.trim() || undefined, pageSize: 100 },
+        role && ["SUPER_ADMIN", "ADMIN"].includes(role)
+            ? { pageSize: 100, search: employeeSearch.trim() || undefined }
+            : isManagerCapability
+            ? {
+                managerId: selfEmployeeId,
+                pageSize: 100,
+                search: employeeSearch.trim() || undefined,
+              }
+            : { pageSize: 100, search: employeeSearch.trim() || undefined },
       ),
     enabled: open,
   });
   const employees = useMemo(() => {
-    return [...(employeesData?.employees ?? [])].sort((a: any, b: any) => {
+    return [...(employeesData?.employees ?? [])]
+  .filter((emp: any) => String(emp.status || "").toUpperCase() === "ACTIVE")
+  .sort((a: any, b: any) => {
       const nameA = `${a.firstName ?? ""} ${a.lastName ?? ""}`.trim();
       const nameB = `${b.firstName ?? ""} ${b.lastName ?? ""}`.trim();
       return nameA.localeCompare(nameB, undefined, {
