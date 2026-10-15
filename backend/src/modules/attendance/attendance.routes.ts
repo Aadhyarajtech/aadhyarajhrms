@@ -31,6 +31,15 @@ import {
   ATTENDANCE_FILES_DIR,
 } from "./attendance-file.upload";
 export const attendanceRouter = Router();
+
+const breakStartSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(3, "Please enter a break reason.")
+    .max(1000, "Break reason must not exceed 1000 characters."),
+});
+
 const regularizationSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid attendance date."),
   note: z
@@ -400,18 +409,32 @@ attendanceRouter.post("/check-out", async (req, res, next) => {
   }
 },
 );
-attendanceRouter.post("/break/start", async (req, res, next) => {
-  try {
-    if (!req.user!.employeeId)
-      throw AppError.forbidden("Only employees can start a break.");
 
-    res.json({
-      record: await repo.startBreak(req.user!.employeeId),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+attendanceRouter.post(
+  "/break/start",
+  validate(breakStartSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user!.employeeId) {
+        throw AppError.forbidden("Employee profile not found.");
+      }
+
+      const { reason } = req.body as z.infer<
+        typeof breakStartSchema
+      >;
+
+      res.json({
+        record: await repo.startBreak(
+          req.user!.employeeId,
+          reason,
+          req.user!.role,
+        ),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 attendanceRouter.post("/break/end", async (req, res, next) => {
   try {
@@ -419,7 +442,10 @@ attendanceRouter.post("/break/end", async (req, res, next) => {
       throw AppError.forbidden("Only employees can end a break.");
 
     res.json({
-      record: await repo.endBreak(req.user!.employeeId),
+      record: await repo.endBreak(
+        req.user!.employeeId,
+        req.user!.role,
+      ),
     });
   } catch (err) {
     next(err);

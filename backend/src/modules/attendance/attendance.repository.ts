@@ -6,6 +6,7 @@ import {
   Department,
   Shift,
   User,
+  EmployeeBreakSlot,
 } from "@/db/models";
 import { env } from "@/config/env";
 import { nowIso } from "@/db/connection";
@@ -17,6 +18,81 @@ import {
 } from "@/modules/attendance/attendance.policy";
 import { notify } from "@/modules/notifications/notifications.repository";
 import { sendRegularizationDecisionEmail } from "@/services/email.service";
+
+async function ensureEmployeeBreakSlots() {
+  const now = nowIso();
+
+  await EmployeeBreakSlot.updateOne(
+    { _id: 1 },
+    {
+      $setOnInsert: {
+        employeeId: null,
+        attendanceId: null,
+        breakStart: null,
+        updatedAt: now,
+      },
+    },
+    { upsert: true },
+  );
+
+  await EmployeeBreakSlot.updateOne(
+    { _id: 2 },
+    {
+      $setOnInsert: {
+        employeeId: null,
+        attendanceId: null,
+        breakStart: null,
+        updatedAt: now,
+      },
+    },
+    { upsert: true },
+  );
+}
+
+async function reserveEmployeeBreakSlot(
+  employeeId: string,
+  attendanceId: string,
+  breakStart: string,
+) {
+  await ensureEmployeeBreakSlots();
+
+  const existingSlot = await EmployeeBreakSlot.findOne({
+    employeeId,
+  }).lean();
+
+  if (existingSlot) {
+    return existingSlot;
+  }
+
+  const now = nowIso();
+
+  for (const slotId of [1, 2]) {
+    const result = await EmployeeBreakSlot.updateOne(
+      {
+        _id: slotId,
+        employeeId: null,
+      },
+      {
+        $set: {
+          employeeId,
+          attendanceId,
+          breakStart,
+          updatedAt: now,
+        },
+      },
+    );
+
+    if (result.modifiedCount === 1) {
+      return EmployeeBreakSlot.findById(slotId).lean();
+    }
+  }
+
+  throw AppError.badRequest(
+    "Both company break slots are occupied. Please try again when an employee ends their break.",
+  );
+}
+
+
 
 type AttendanceApiRecord = Record<string, any> & { id: string };
 
@@ -416,7 +492,7 @@ async function findOrCreateToday(employeeId: string) {
         shiftId: shift?._id ?? null,
         checkIn: null,
         checkOut: null,
-        status: "PRESENT",
+        status: "ABSENT",
         workHours: null,
         effectiveWorkHours: null,
         breakMinutes: 0,
@@ -691,71 +767,181 @@ export async function checkOut(
   return getTodayRecord(employeeId);
 }
 
-export async function startBreak(employeeId: string) {
+
+export async function startBreak(
+  employeeId: string,
+  reason: string,
+  actorRole: string,
+) {
   await assertAttendancePeriodUnlocked(todayDateString(), employeeId);
+
   const attendance = await Attendance.findOne({
     employeeId,
     date: todayDateString(),
   }).lean();
 
   if (!attendance?.checkIn) {
-    throw new Error("Check-in is required before starting a break.");
-  }
-  if (attendance.checkOut) {
-    throw new Error("Today's attendance has already been checked out.");
-  }
-  if ((attendance.breaks ?? []).some((item) => !item.end)) {
-    throw new Error("A break is already in progress.");
-  }
-
-  const now = nowIso();
-  const updateResult = await Attendance.updateOne(
-    {
-      _id: attendance._id,
-      checkIn: { $ne: null },
-      checkOut: null,
-      breaks: { $not: { $elemMatch: { end: null } } },
-    },
-    {
-      $push: {
-        breaks: { start: now, end: null, durationMinutes: 0 },
-        auditTrail: {
-          action: "BREAK_RECORDED",
-          actorId: employeeId,
-          actorRole: "EMPLOYEE",
-          at: now,
-          note: "Break started.",
-        },
-      },
-      $set: { updatedAt: now },
-    },
-  );
-
-  if (updateResult.matchedCount === 0) {
-    throw new Error(
-      "A break was started or attendance was updated by another request.",
+    throw AppError.badRequest(
+      "Check-in is required before starting a break.",
     );
   }
 
-  return getTodayRecord(employeeId);
+  if (attendance.checkOut) {
+    throw AppError.badRequest(
+      "Today's attendance has already been checked out.",
+    );
+  }
+
+  const normalizedReason = reason.trim();
+
+  if (normalizedReason.length < 3) {
+    throw AppError.badRequest("Please enter a break reason.");
+  }
+
+  if (normalizedReason.length > 1000) {
+    throw AppError.badRequest(
+      "Break reason must not exceed 1000 characters.",
+    );
+  }
+
+  const isEmployee = actorRole === "EMPLOYEE";
+  const activeBreakCount = (attendance.breaks ?? []).filter(
+    (item) => !item.end,
+  ).length;
+
+  if (isEmployee && activeBreakCount > 0) {
+    throw AppError.badRequest(
+      "You already have an active break. End it before starting another.",
+    );
+  }
+
+  const now = nowIso();
+  let reservedSlotId: number | null = null;
+
+  if (isEmployee) {
+    const slot = await reserveEmployeeBreakSlot(
+      employeeId,
+      String(attendance._id),
+      now,
+    );
+
+    if (!slot) {
+      throw AppError.badRequest(
+        "Both company break slots are occupied. Please try again when an employee ends their break.",
+      );
+    }
+
+    reservedSlotId = slot._id;
+  }
+
+  try {
+    const updateResult = await Attendance.updateOne(
+      {
+        _id: attendance._id,
+        checkIn: { $ne: null },
+        checkOut: null,
+        breaks: {
+          $not: {
+            $elemMatch: { end: null },
+          },
+        },
+      },
+      {
+        $push: {
+          breaks: {
+            start: now,
+            end: null,
+            durationMinutes: 0,
+            reason: normalizedReason,
+          },
+          auditTrail: {
+            action: "BREAK_RECORDED",
+            actorId: employeeId,
+            actorRole,
+            at: now,
+            note: `Break started: ${normalizedReason}`,
+          },
+        },
+        $set: { updatedAt: now },
+      },
+    );
+
+    if (updateResult.modifiedCount === 0) {
+      throw AppError.badRequest(
+        "The break could not be started because attendance changed. Refresh and try again.",
+      );
+    }
+
+    if (reservedSlotId !== null) {
+      await EmployeeBreakSlot.updateOne(
+        {
+          _id: reservedSlotId,
+          employeeId,
+          attendanceId: String(attendance._id),
+          breakStart: now,
+        },
+        {
+          $set: { updatedAt: nowIso() },
+        },
+      );
+    }
+
+    return getTodayRecord(employeeId);
+  } catch (error) {
+    if (reservedSlotId !== null) {
+      await EmployeeBreakSlot.updateOne(
+        {
+          _id: reservedSlotId,
+          employeeId,
+          attendanceId: String(attendance._id),
+          breakStart: now,
+        },
+        {
+          $set: {
+            employeeId: null,
+            attendanceId: null,
+            breakStart: null,
+            updatedAt: nowIso(),
+          },
+        },
+      );
+    }
+
+    throw error;
+  }
 }
 
-export async function endBreak(employeeId: string) {
+
+export async function endBreak(
+  employeeId: string,
+  actorRole: string,
+) {
   await assertAttendancePeriodUnlocked(todayDateString(), employeeId);
+
   const attendance = await Attendance.findOne({
     employeeId,
     date: todayDateString(),
   }).lean();
 
   if (!attendance?.checkIn) {
-    throw new Error("Check-in is required before ending a break.");
-  }
-  if (attendance.checkOut) {
-    throw new Error("Today's attendance has already been checked out.");
+    throw AppError.badRequest(
+      "Check-in is required before ending a break.",
+    );
   }
 
-  const openIndex = (attendance.breaks ?? []).findIndex((item) => !item.end);
-  if (openIndex < 0) throw new Error("No active break was found.");
+  if (attendance.checkOut) {
+    throw AppError.badRequest(
+      "Today's attendance has already been checked out.",
+    );
+  }
+
+  const openIndex = (attendance.breaks ?? []).findIndex(
+    (item) => !item.end,
+  );
+
+  if (openIndex < 0) {
+    throw AppError.badRequest("No active break was found.");
+  }
 
   const openBreak = attendance.breaks[openIndex];
   const now = nowIso();
@@ -763,20 +949,11 @@ export async function endBreak(employeeId: string) {
   const endMs = new Date(now).getTime();
 
   if (!Number.isFinite(startMs) || endMs <= startMs) {
-    throw new Error("Invalid break timing.");
+    throw AppError.badRequest("Invalid break timing.");
   }
 
-  const durationMinutes = Math.round((endMs - startMs) / 60_000);
-  const breaks = (attendance.breaks ?? []).map((item, index) =>
-    index === openIndex ? { ...item, end: now, durationMinutes } : item,
-  );
-  const breakMinutes = getBreakMinutes(breaks);
-  const shift = await getEmployeeShift(employeeId);
-  const metrics = calculateAttendanceMetrics(
-    attendance.checkIn,
-    attendance.checkOut,
-    shift,
-    breakMinutes,
+  const durationMinutes = Math.round(
+    (endMs - startMs) / 60_000,
   );
 
   const updateResult = await Attendance.updateOne(
@@ -784,11 +961,85 @@ export async function endBreak(employeeId: string) {
       _id: attendance._id,
       checkIn: { $ne: null },
       checkOut: null,
-      breaks: { $elemMatch: { end: null } },
+      breaks: {
+        $elemMatch: {
+          start: openBreak.start,
+          end: null,
+        },
+      },
     },
     {
       $set: {
-        breaks,
+        [`breaks.${openIndex}.end`]: now,
+        [`breaks.${openIndex}.durationMinutes`]: durationMinutes,
+        updatedAt: now,
+      },
+      $push: {
+        auditTrail: {
+          action: "BREAK_RECORDED",
+          actorId: employeeId,
+          actorRole,
+          at: now,
+          note: `Break ended. Reason: ${openBreak.reason ?? "Not specified"}. Duration: ${durationMinutes} minute(s).`,
+        },
+      },
+    },
+  );
+
+  if (updateResult.modifiedCount === 0) {
+    throw AppError.badRequest(
+      "The active break was already ended or attendance was updated. Refresh and try again.",
+    );
+  }
+
+  // Release only the slot reserved for this employee and this break.
+  if (actorRole === "EMPLOYEE") {
+    await EmployeeBreakSlot.updateOne(
+      {
+        employeeId,
+        attendanceId: String(attendance._id),
+        breakStart: openBreak.start,
+      },
+      {
+        $set: {
+          employeeId: null,
+          attendanceId: null,
+          breakStart: null,
+          updatedAt: nowIso(),
+        },
+      },
+    );
+  }
+
+  const updatedAttendance = await Attendance.findById(
+    attendance._id,
+  ).lean();
+
+  if (!updatedAttendance) {
+    throw AppError.badRequest(
+      "Attendance record could not be retrieved. Refresh and try again.",
+    );
+  }
+
+  const breaks = updatedAttendance.breaks ?? [];
+  const breakMinutes = getBreakMinutes(breaks);
+  const shift = await getEmployeeShift(employeeId);
+
+  const metrics = calculateAttendanceMetrics(
+    updatedAttendance.checkIn!,
+    updatedAttendance.checkOut,
+    shift,
+    breakMinutes,
+  );
+
+  await Attendance.updateOne(
+    {
+      _id: updatedAttendance._id,
+      checkIn: { $ne: null },
+      checkOut: null,
+    },
+    {
+      $set: {
         breakMinutes,
         workHours: metrics.workHours,
         effectiveWorkHours: metrics.effectiveWorkHours,
@@ -796,25 +1047,10 @@ export async function endBreak(employeeId: string) {
         lateMinutes: metrics.lateMinutes,
         earlyDepartureMinutes: metrics.earlyDepartureMinutes,
         status: metrics.status,
-        updatedAt: now,
-      },
-      $push: {
-        auditTrail: {
-          action: "BREAK_RECORDED",
-          actorId: employeeId,
-          actorRole: "EMPLOYEE",
-          at: now,
-          note: `Break ended. Duration: ${durationMinutes} minute(s).`,
-        },
+        updatedAt: nowIso(),
       },
     },
   );
-
-  if (updateResult.matchedCount === 0) {
-    throw new Error(
-      "The active break was already ended or attendance was updated.",
-    );
-  }
 
   return getTodayRecord(employeeId);
 }

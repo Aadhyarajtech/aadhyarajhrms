@@ -74,15 +74,15 @@ export interface Employee {
   managerLastName: string | null;
   employmentType: "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
   status:
-    | "ONBOARDING"
-    | "ON_PROBATION"
-    | "ACTIVE"
-    | "ON_LEAVE"
-    | "NOTICE_PERIOD"
-    | "TERMINATED"
-    | "RESIGNED"
-    | "INACTIVE"
-    | "ON_HOLD";
+  | "ONBOARDING"
+  | "ON_PROBATION"
+  | "ACTIVE"
+  | "ON_LEAVE"
+  | "NOTICE_PERIOD"
+  | "TERMINATED"
+  | "RESIGNED"
+  | "INACTIVE"
+  | "ON_HOLD";
 
   dateOfJoining: string;
   dateOfExit: string | null;
@@ -246,11 +246,14 @@ export type AttendanceStatus =
   | "LATE"
   | "EARLY_DEPARTURE";
 
+
 export interface AttendanceBreak {
   start: string;
   end: string | null;
   durationMinutes: number;
+  reason?: string;
 }
+
 
 export type AttendanceAuditAction =
   | "CHECK_IN"

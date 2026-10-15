@@ -476,6 +476,9 @@ function MyAttendance({
   const [earlyDepartureReason, setEarlyDepartureReason] = useState("");
   const [lateCheckInOpen, setLateCheckInOpen] = useState(false);
   const [lateCheckInReason, setLateCheckInReason] = useState("");
+  const [breakReasonOpen, setBreakReasonOpen] = useState(false);
+  const [breakHistoryOpen, setBreakHistoryOpen] = useState(false);
+  const [breakReason, setBreakReason] = useState("");
   const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
   const canManageAttendanceFiles =
     user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
@@ -575,13 +578,23 @@ function MyAttendance({
   });
 
   const breakMutation = useMutation({
-    mutationFn: async (action: "start" | "end") =>
-      action === "start"
-        ? AttendanceApi.startBreak()
+    mutationFn: async (variables: {
+      action: "start" | "end";
+      reason?: string;
+    }) =>
+      variables.action === "start"
+        ? AttendanceApi.startBreak(variables.reason ?? "")
         : AttendanceApi.endBreak(),
-    onSuccess: (_record, action) => {
+    onSuccess: (_record, variables) => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
-      showToast(action === "start" ? "Break started." : "Break ended.");
+
+      if (variables.action === "start") {
+        setBreakReasonOpen(false);
+        setBreakReason("");
+        showToast("Break started.");
+      } else {
+        showToast("Break ended.");
+      }
     },
     onError: (error) => showToast(getErrorMessage(error), "error"),
   });
@@ -652,13 +665,18 @@ function MyAttendance({
     !todayRecord.checkOut &&
     !checkOutMutation.isPending &&
     !todayLoading;
-  const breakInProgress = !!todayRecord?.breaks?.some((item) => !item.end);
+
+  const activeBreakCount =
+    todayRecord?.breaks?.filter((item) => !item.end).length ?? 0;
+
+  const breakInProgress = activeBreakCount > 0;
   const canStartBreak =
     !!todayRecord?.checkIn &&
     !todayRecord.checkOut &&
-    !breakInProgress &&
+    (user?.role !== "EMPLOYEE" || activeBreakCount < 2) &&
     !breakMutation.isPending &&
     !todayLoading;
+
   const canEndBreak =
     !!todayRecord?.checkIn &&
     !todayRecord.checkOut &&
@@ -771,52 +789,80 @@ function MyAttendance({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-line/60 pt-4">
-            <Button
-              size="sm"
-              className="w-[120px] shrink-0"
-              leftIcon={<LogIn size={14} />}
-              onClick={() => checkInMutation.mutate(undefined)}
-              disabled={!canCheckIn}
-              isLoading={checkInMutation.isPending}
-            >
-              Check in
-            </Button>
+
+          <div className="flex flex-wrap items-center justify-between gap-4 border-t border-line/60 pt-5 pb-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                className="w-[120px] shrink-0"
+                leftIcon={<LogIn size={14} />}
+                onClick={() => checkInMutation.mutate(undefined)}
+                disabled={!canCheckIn}
+                isLoading={checkInMutation.isPending}
+              >
+                Check in
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-[120px] shrink-0"
+                leftIcon={<Coffee size={14} />}
+                onClick={() => {
+                  setBreakReason("");
+                  setBreakReasonOpen(true);
+                }}
+                disabled={!canStartBreak}
+                isLoading={breakMutation.isPending && !breakInProgress}
+              >
+                Take break
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-[120px] shrink-0"
+                leftIcon={<Coffee size={14} />}
+                onClick={() => breakMutation.mutate({ action: "end" })}
+                disabled={!canEndBreak}
+                isLoading={breakMutation.isPending && breakInProgress}
+              >
+                End break
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-[120px] shrink-0"
+                leftIcon={<LogOut size={14} />}
+                onClick={() => checkOutMutation.mutate(undefined)}
+                disabled={!canCheckOut}
+                isLoading={checkOutMutation.isPending}
+              >
+                Check out
+              </Button>
+            </div>
+
             <Button
               size="sm"
               variant="outline"
-              className="w-[120px] shrink-0"
-              leftIcon={<Coffee size={14} />}
-              onClick={() => breakMutation.mutate("start")}
-              disabled={!canStartBreak}
-              isLoading={breakMutation.isPending && !breakInProgress}
+              onClick={() => setBreakHistoryOpen(true)}
+              className="shrink-0"
             >
-              Take break
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-[120px] shrink-0"
-              leftIcon={<Coffee size={14} />}
-              onClick={() => breakMutation.mutate("end")}
-              disabled={!canEndBreak}
-              isLoading={breakMutation.isPending && breakInProgress}
-            >
-              End break
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-[120px] shrink-0"
-              leftIcon={<LogOut size={14} />}
-              onClick={() => checkOutMutation.mutate(undefined)}
-              disabled={!canCheckOut}
-              isLoading={checkOutMutation.isPending}
-            >
-              Check out
+              <Coffee size={14} />
+              View Break History
+              {todayRecord?.breaks?.length
+                ? ` (${todayRecord.breaks.length})`
+                : ""}
             </Button>
           </div>
+
         </div>
+
+
+
+
+
       </Card>
 
       <Modal
@@ -868,6 +914,154 @@ function MyAttendance({
           value={lateCheckInReason}
           onChange={(e) => setLateCheckInReason(e.target.value)}
         />
+      </Modal>
+      <Modal
+        open={breakReasonOpen}
+        onClose={() => {
+          if (!breakMutation.isPending) {
+            setBreakReasonOpen(false);
+            setBreakReason("");
+          }
+        }}
+        title="Break reason"
+        subtitle="Please provide a reason before starting your break."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBreakReasonOpen(false);
+                setBreakReason("");
+              }}
+              disabled={breakMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const reason = breakReason.trim();
+
+                if (reason.length < 3) {
+                  showToast(
+                    "Please enter a break reason of at least 3 characters.",
+                    "error",
+                  );
+                  return;
+                }
+
+                breakMutation.mutate({ action: "start", reason });
+              }}
+              isLoading={breakMutation.isPending}
+              disabled={breakMutation.isPending}
+            >
+              Start Break
+            </Button>
+          </>
+        }
+      >
+        <TextareaField
+          label="Reason"
+          required
+          placeholder="E.g. Lunch, personal work, or a short rest."
+          maxLength={1000}
+          value={breakReason}
+          onChange={(e) => setBreakReason(e.target.value)}
+        />
+      </Modal>
+
+      <Modal
+        open={breakHistoryOpen}
+        onClose={() => setBreakHistoryOpen(false)}
+        title="Today's Break History"
+        subtitle="Review each break's reason, start time, end time, and duration."
+        footer={
+          <Button
+            variant="outline"
+            onClick={() => setBreakHistoryOpen(false)}
+          >
+            Close
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-line/60 p-3">
+            <p className="text-sm text-ink-faint">
+              Total break duration
+            </p>
+            <p className="mt-1 text-lg font-semibold text-ink">
+              {todayRecord?.breakMinutes ?? 0} minutes
+            </p>
+            <p className="mt-1 text-xs text-ink-faint">
+              {todayRecord?.breaks?.length ?? 0} break(s) recorded
+            </p>
+          </div>
+
+          {todayRecord?.breaks?.length ? (
+            <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+              {todayRecord.breaks.map((item, index) => (
+                <div
+                  key={`${item.start}-${index}`}
+                  className="rounded-lg border border-line/60 p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="text-sm font-semibold text-ink">
+                      Break {index + 1}
+                    </h4>
+                    <span className="text-xs text-ink-faint">
+                      {item.end
+                        ? `${item.durationMinutes} min`
+                        : "In progress"}
+                    </span>
+                  </div>
+
+                  <div className="mt-3">
+                    <p className="text-xs text-ink-faint">Reason</p>
+                    <p className="mt-1 break-words text-sm text-ink">
+                      {item.reason?.trim() || "Reason not available"}
+                    </p>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-ink-faint">Started</p>
+                      <p className="mt-1 text-sm font-medium text-ink">
+                        {formatTime(item.start)}
+                      </p>
+                      <p className="text-xs text-ink-faint">
+                        {new Date(item.start).toLocaleDateString()}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-ink-faint">Ended</p>
+                      <p className="mt-1 text-sm font-medium text-ink">
+                        {item.end ? formatTime(item.end) : "In progress"}
+                      </p>
+                      {item.end ? (
+                        <p className="text-xs text-ink-faint">
+                          {new Date(item.end).toLocaleDateString()}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 border-t border-line/60 pt-3">
+                    <p className="text-xs text-ink-faint">Duration</p>
+                    <p className="mt-1 text-sm font-medium text-ink">
+                      {item.end
+                        ? `${item.durationMinutes} minutes`
+                        : "Break currently active"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="py-6 text-center text-sm text-ink-faint">
+              No breaks recorded today.
+            </p>
+          )}
+        </div>
       </Modal>
 
       <Modal

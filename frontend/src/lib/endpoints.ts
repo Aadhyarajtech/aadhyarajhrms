@@ -912,12 +912,14 @@ export const AttendanceApi = {
       }>("/attendance/check-out", options)
       .then((r) => r.data.record),
 
-  startBreak: () =>
+
+  startBreak: (reason: string) =>
     api
-      .post<{
-        record: AttendanceRecord;
-      }>("/attendance/break/start")
+      .post<{ record: AttendanceRecord }>("/attendance/break/start", {
+        reason,
+      })
       .then((r) => r.data.record),
+
 
   endBreak: () =>
     api

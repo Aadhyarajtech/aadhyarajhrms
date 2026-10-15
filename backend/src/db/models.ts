@@ -752,14 +752,14 @@ export type AttendanceStatus =
   | "HOLIDAY"
   | "WEEKEND"
   | "LATE"
-  | "EARLY_DEPARTURE";
 
+  | "EARLY_DEPARTURE";
 export interface AttendanceBreakDoc {
   start: string;
   end: string | null;
   durationMinutes: number;
+  reason?: string;
 }
-
 export interface AttendanceAuditEntry {
   action:
   | "CHECK_IN"
@@ -819,6 +819,7 @@ const attendanceBreakSchema = new Schema<AttendanceBreakDoc>(
     start: { type: String, required: true },
     end: { type: String, default: null },
     durationMinutes: { type: Number, required: true, min: 0, default: 0 },
+    reason: { type: String, trim: true, maxlength: 1000 },
   },
   { _id: false },
 );
@@ -923,6 +924,37 @@ attendanceSchema.index({ employeeId: 1, status: 1, date: -1 });
 attendanceSchema.index({ shiftId: 1, date: -1 });
 
 export const Attendance = model<AttendanceDoc>("Attendance", attendanceSchema);
+export interface EmployeeBreakSlotDoc {
+  _id: number;
+  employeeId: string | null;
+  attendanceId: string | null;
+  breakStart: string | null;
+  updatedAt: string;
+}
+
+const employeeBreakSlotSchema = new Schema<EmployeeBreakSlotDoc>(
+  {
+    _id: { type: Number, required: true },
+    employeeId: { type: String, default: null },
+    attendanceId: { type: String, default: null },
+    breakStart: { type: String, default: null },
+    updatedAt: { type: String, required: true },
+  },
+  { versionKey: false },
+);
+employeeBreakSlotSchema.index(
+  { employeeId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      employeeId: { $type: "string" },
+    },
+  },
+);
+export const EmployeeBreakSlot = model<EmployeeBreakSlotDoc>(
+  "EmployeeBreakSlot",
+  employeeBreakSlotSchema,
+);
 
 export type AttendanceRegularizationStatus =
   | "PENDING"
@@ -4639,22 +4671,22 @@ const ticketSchema = new Schema<TicketDoc>(
     category: {
       type: String,
       enum: [
-  "Payroll Issue",
-  "Leave Issue",
-  "Manager Concern",
-  "Harassment Complaint",
-  "IT Support",
-  "Infrastructure",
-  "Policy Query",
-  "Other",
-  "HR",
-  "Payroll",
-  "Leave",
-  "Attendance",
-  "Recruitment",
-  "Employee Referral",
-  "Complaint",
-],
+        "Payroll Issue",
+        "Leave Issue",
+        "Manager Concern",
+        "Harassment Complaint",
+        "IT Support",
+        "Infrastructure",
+        "Policy Query",
+        "Other",
+        "HR",
+        "Payroll",
+        "Leave",
+        "Attendance",
+        "Recruitment",
+        "Employee Referral",
+        "Complaint",
+      ],
       required: true,
     },
 
