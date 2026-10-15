@@ -1378,6 +1378,9 @@ function LeaveCalendar() {
   const [cursor, setCursor] = useState(new Date());
   const [leaveTypeFilter, setLeaveTypeFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState("ALL");
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [expandedCalendarDay, setExpandedCalendarDay] = useState<string | null>(null);
 
   const month = cursor.getMonth() + 1;
   const year = cursor.getFullYear();
@@ -1416,6 +1419,40 @@ function LeaveCalendar() {
     staleTime: 30_000,
   });
 
+  // Build department options from employee records; calendar entries may only
+  // contain an employee ID rather than a department name.
+  const departments = Array.from(
+    new Set(
+      (employeeData?.employees ?? [])
+        .map((employee: any) => String(employee?.departmentName ?? employee?.department?.name ?? employee?.department ?? "").trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+
+  const getEntryEmployee = (entry: any) => {
+    const id = String(
+      entry?.employeeId ??
+      entry?.employee?.id ??
+      entry?.employee?._id ??
+      entry?.employee?.employeeId ??
+      "",
+    );
+    return (id && employeeMap.get(id)) || entry?.employee || undefined;
+  };
+
+  const getEntryDepartment = (entry: any) => {
+    const employee = getEntryEmployee(entry);
+    return String(
+      entry?.departmentName ||
+      entry?.department?.name ||
+      (typeof entry?.department === "string" ? entry.department : "") ||
+      employee?.departmentName ||
+      employee?.department?.name ||
+      (typeof employee?.department === "string" ? employee.department : "") ||
+      "",
+    ).trim();
+  };
+
   const leaveTypes = Array.from(
     new Set(
       entries
@@ -1424,14 +1461,38 @@ function LeaveCalendar() {
     ),
   ).sort((a, b) => String(a).localeCompare(String(b)));
 
-  const filteredEntries = entries.filter((entry: any) => {
+  // Calendar APIs can return the same event more than once. Prefer its stable
+  // ID when available, otherwise identify duplicates by employee, date range,
+  // leave type, and status so distinct requests are not accidentally merged.
+  const uniqueEntries = useMemo(() => {
+    const seen = new Set<string>();
+    return entries.filter((entry: any) => {
+      const key = [
+        String(entry.type ?? entry.category ?? "LEAVE").toUpperCase(),
+        String(entry.employeeId ?? entry.employee?.id ?? entry.employee?._id ?? entry.employeeName ?? entry.name ?? "").trim().toLowerCase(),
+        String(entry.date ?? "").slice(0, 10),
+        String(entry.startDate ?? "").slice(0, 10),
+        String(entry.endDate ?? "").slice(0, 10),
+        String(entry.leaveTypeId ?? entry.leaveTypeName ?? entry.leaveType ?? entry.name ?? "").toLowerCase(),
+        String(entry.status ?? "APPROVED").toUpperCase(),
+      ].join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [entries]);
+
+  const filteredEntries = uniqueEntries.filter((entry: any) => {
     const type = String(entry.type ?? "LEAVE").toUpperCase();
     const leaveType = entry.leaveTypeName ?? entry.leaveType ?? "";
     const status = String(entry.status ?? "APPROVED").toUpperCase();
 
-    if (type === "HOLIDAY") return true;
+    // Organization-wide holidays/festivals stay visible regardless of department.
+    if (type === "HOLIDAY" || type === "FESTIVAL") return true;
 
+    const department = getEntryDepartment(entry);
     return (
+      (departmentFilter === "ALL" || department === departmentFilter) &&
       (leaveTypeFilter === "ALL" || leaveType === leaveTypeFilter) &&
       (statusFilter === "ALL" || status === statusFilter)
     );
@@ -1460,6 +1521,10 @@ function LeaveCalendar() {
   }, [month, year]);
 
   function entriesForDay(date: Date) {
+    // Keep Saturday/Sunday cells clear: do not show leave names, leave counts,
+    // company holidays, or festivals on weekends.
+    if (date.getDay() === 0 || date.getDay() === 6) return [];
+
     const iso = getCalendarDateIso(date);
     return filteredEntries.filter((entry: any) => {
       if (String(entry.type).toUpperCase() === "HOLIDAY") {
@@ -1578,6 +1643,20 @@ function LeaveCalendar() {
       {/* Filters */}
       <div className="flex flex-col gap-3 rounded-2xl border border-line/60 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center">
         <select
+          aria-label="Filter calendar by department"
+          value={departmentFilter}
+          onChange={(event) => setDepartmentFilter(event.target.value)}
+          className="rounded-xl border border-line/60 bg-white px-3 py-2 text-[11px] font-medium text-ink outline-none focus:border-brand-300"
+        >
+          <option value="ALL">All Departments</option>
+          {departments.map((department) => (
+            <option key={department} value={department}>
+              {department}
+            </option>
+          ))}
+        </select>
+
+        <select
           value={leaveTypeFilter}
           onChange={(event) => setLeaveTypeFilter(event.target.value)}
           className="rounded-xl border border-line/60 bg-white px-3 py-2 text-[11px] font-medium text-ink outline-none focus:border-brand-300"
@@ -1624,15 +1703,38 @@ function LeaveCalendar() {
                   Approved leave and calendar events
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={goToday}
-                title="Go to current month"
-                aria-label="Go to current month"
-                className="rounded-lg p-1.5 text-brand-600 transition hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-100"
-              >
-                <CalendarDays size={18} />
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMonthPickerOpen((open) => !open)}
+                  title="Choose month"
+                  aria-label="Choose calendar month"
+                  aria-expanded={monthPickerOpen}
+                  className="rounded-lg p-1.5 text-brand-600 transition hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                >
+                  <CalendarDays size={18} />
+                </button>
+                {monthPickerOpen && (
+                  <div className="absolute right-0 top-full z-20 mt-2 rounded-xl border border-line bg-white p-3 shadow-lg">
+                    <label className="mb-1 block text-[11px] font-medium text-ink-faint" htmlFor="leave-calendar-month-picker">
+                      Choose month
+                    </label>
+                    <input
+                      id="leave-calendar-month-picker"
+                      type="month"
+                      value={`${year}-${String(month).padStart(2, "0")}`}
+                      onChange={(event) => {
+                        const [selectedYear, selectedMonth] = event.target.value.split("-").map(Number);
+                        if (selectedYear && selectedMonth) {
+                          setCursor(new Date(selectedYear, selectedMonth - 1, 1));
+                          setMonthPickerOpen(false);
+                        }
+                      }}
+                      className="rounded-lg border border-line px-2 py-1.5 text-[12px] text-ink outline-none focus:border-brand-300"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1697,7 +1799,7 @@ function LeaveCalendar() {
                     </div>
 
                     <div className="mt-2 space-y-1">
-                      {dayEntries.slice(0, 3).map((entry: any) => {
+                      {(expandedCalendarDay === iso ? dayEntries : dayEntries.slice(0, 3)).map((entry: any) => {
                         const employee = employeeMap.get(entry.employeeId);
                         const employeeName = getLeaveEmployeeName(entry, employee);
                         const type = String(
@@ -1729,9 +1831,20 @@ function LeaveCalendar() {
                         );
                       })}
                       {dayEntries.length > 3 && (
-                        <p className="px-1 text-[9px] font-medium text-brand-600">
-                          +{dayEntries.length - 3} more
-                        </p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedCalendarDay((current) =>
+                              current === iso ? null : iso,
+                            )
+                          }
+                          aria-expanded={expandedCalendarDay === iso}
+                          className="px-1 text-left text-[9px] font-medium text-brand-600 hover:underline"
+                        >
+                          {expandedCalendarDay === iso
+                            ? "Show less"
+                            : `+${dayEntries.length - 3} more`}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -3222,5 +3335,6 @@ function LeaveConflictCard({
     </div>
   );
 }
+
 
 
