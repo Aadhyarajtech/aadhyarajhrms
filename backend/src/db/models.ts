@@ -300,6 +300,27 @@ export interface EmployeeOnboarding {
   completedAt: string | null;
 }
 
+export interface EmployeeInternalJobHistoryEntry {
+  _id: string;
+  changedAt: string;
+  changedBy: string;
+  reason: string | null;
+  previous: {
+    departmentId: string | null;
+    designationId: string | null;
+    managerId: string | null;
+    grade: string | null;
+    workLocation: string | null;
+  };
+  next: {
+    departmentId: string | null;
+    designationId: string | null;
+    managerId: string | null;
+    grade: string | null;
+    workLocation: string | null;
+  };
+}
+
 export interface EmployeeSensitiveChangeRequest {
   _id: string;
   fields: string[];
@@ -311,6 +332,7 @@ export interface EmployeeSensitiveChangeRequest {
   reviewedByRole: string | null;
   reviewedAt: string | null;
   reviewComment: string | null;
+  reason?: string | null;
 }
 
 export interface EmployeeOffboardingItem {
@@ -419,6 +441,7 @@ export interface EmployeeDoc {
   education: EmployeeEducation[];
   certifications: EmployeeCertification[];
   workHistory: EmployeeWorkHistory[];
+  internalJobHistory: EmployeeInternalJobHistoryEntry[];
   skills: EmployeeSkill[];
 
   onboarding: EmployeeOnboarding;
@@ -550,6 +573,30 @@ const employeeOnboardingSchema = new Schema<EmployeeOnboarding>(
   { _id: false },
 );
 
+const employeeInternalJobHistoryEntrySchema = new Schema<EmployeeInternalJobHistoryEntry>(
+  {
+    _id: idField("ejh"),
+    changedAt: { type: String, required: true },
+    changedBy: { type: String, required: true },
+    reason: { type: String, default: null },
+    previous: {
+      departmentId: { type: String, default: null },
+      designationId: { type: String, default: null },
+      managerId: { type: String, default: null },
+      grade: { type: String, default: null },
+      workLocation: { type: String, default: null },
+    },
+    next: {
+      departmentId: { type: String, default: null },
+      designationId: { type: String, default: null },
+      managerId: { type: String, default: null },
+      grade: { type: String, default: null },
+      workLocation: { type: String, default: null },
+    },
+  },
+  { _id: false },
+);
+
 const employeeSensitiveChangeRequestSchema =
   new Schema<EmployeeSensitiveChangeRequest>(
     {
@@ -564,8 +611,10 @@ const employeeSensitiveChangeRequestSchema =
         default: "PENDING",
       },
       reviewedBy: { type: String, default: null },
+      reviewedByRole: { type: String, default: null },
       reviewedAt: { type: String, default: null },
       reviewComment: { type: String, default: null },
+      reason: { type: String, default: null, maxlength: 1000 },
     },
     { _id: false },
   );
@@ -700,6 +749,7 @@ const employeeSchema = new Schema<EmployeeDoc>(
     education: { type: [employeeEducationSchema], default: [] },
     certifications: { type: [employeeCertificationSchema], default: [] },
     workHistory: { type: [employeeWorkHistorySchema], default: [] },
+    internalJobHistory: { type: [employeeInternalJobHistoryEntrySchema], default: [] },
     skills: { type: [employeeSkillSchema], default: [] },
 
     onboarding: {
@@ -739,6 +789,42 @@ employeeSchema.index({ "sensitiveChangeRequests.status": 1 });
 
 export const Employee = model<EmployeeDoc>("Employee", employeeSchema);
 
+
+export interface EmployeeBreakSlotDoc {
+  _id: number;
+  employeeId: string | null;
+  attendanceId: string | null;
+  breakStart: string | null;
+  updatedAt: string;
+}
+
+const employeeBreakSlotSchema = new Schema<EmployeeBreakSlotDoc>(
+  {
+    _id: { type: Number, required: true },
+    employeeId: { type: String, default: null },
+    attendanceId: { type: String, default: null },
+    breakStart: { type: String, default: null },
+    updatedAt: { type: String, required: true },
+  },
+  { versionKey: false },
+);
+
+employeeBreakSlotSchema.index(
+  { employeeId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      employeeId: { $type: "string" },
+    },
+  },
+);
+
+export const EmployeeBreakSlot = model<EmployeeBreakSlotDoc>(
+  "EmployeeBreakSlot",
+  employeeBreakSlotSchema,
+);
+
+
 // ===========================================================================
 // ATTENDANCE & HOLIDAYS
 // ===========================================================================
@@ -752,14 +838,15 @@ export type AttendanceStatus =
   | "HOLIDAY"
   | "WEEKEND"
   | "LATE"
-
   | "EARLY_DEPARTURE";
+
 export interface AttendanceBreakDoc {
   start: string;
   end: string | null;
   durationMinutes: number;
-  reason?: string;
+  reason?: string | null;
 }
+
 export interface AttendanceAuditEntry {
   action:
   | "CHECK_IN"
@@ -818,8 +905,18 @@ const attendanceBreakSchema = new Schema<AttendanceBreakDoc>(
   {
     start: { type: String, required: true },
     end: { type: String, default: null },
-    durationMinutes: { type: Number, required: true, min: 0, default: 0 },
-    reason: { type: String, trim: true, maxlength: 1000 },
+    durationMinutes: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    reason: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 1000,
+    },
   },
   { _id: false },
 );
@@ -924,37 +1021,6 @@ attendanceSchema.index({ employeeId: 1, status: 1, date: -1 });
 attendanceSchema.index({ shiftId: 1, date: -1 });
 
 export const Attendance = model<AttendanceDoc>("Attendance", attendanceSchema);
-export interface EmployeeBreakSlotDoc {
-  _id: number;
-  employeeId: string | null;
-  attendanceId: string | null;
-  breakStart: string | null;
-  updatedAt: string;
-}
-
-const employeeBreakSlotSchema = new Schema<EmployeeBreakSlotDoc>(
-  {
-    _id: { type: Number, required: true },
-    employeeId: { type: String, default: null },
-    attendanceId: { type: String, default: null },
-    breakStart: { type: String, default: null },
-    updatedAt: { type: String, required: true },
-  },
-  { versionKey: false },
-);
-employeeBreakSlotSchema.index(
-  { employeeId: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      employeeId: { $type: "string" },
-    },
-  },
-);
-export const EmployeeBreakSlot = model<EmployeeBreakSlotDoc>(
-  "EmployeeBreakSlot",
-  employeeBreakSlotSchema,
-);
 
 export type AttendanceRegularizationStatus =
   | "PENDING"
@@ -4671,22 +4737,22 @@ const ticketSchema = new Schema<TicketDoc>(
     category: {
       type: String,
       enum: [
-        "Payroll Issue",
-        "Leave Issue",
-        "Manager Concern",
-        "Harassment Complaint",
-        "IT Support",
-        "Infrastructure",
-        "Policy Query",
-        "Other",
-        "HR",
-        "Payroll",
-        "Leave",
-        "Attendance",
-        "Recruitment",
-        "Employee Referral",
-        "Complaint",
-      ],
+  "Payroll Issue",
+  "Leave Issue",
+  "Manager Concern",
+  "Harassment Complaint",
+  "IT Support",
+  "Infrastructure",
+  "Policy Query",
+  "Other",
+  "HR",
+  "Payroll",
+  "Leave",
+  "Attendance",
+  "Recruitment",
+  "Employee Referral",
+  "Complaint",
+],
       required: true,
     },
 

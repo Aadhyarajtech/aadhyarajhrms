@@ -6,6 +6,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 
 
+
 const TemporaryPasswordChange = lazy(
   () => import("@/pages/TemporaryPasswordChange.tsx"),
 );
@@ -46,6 +47,12 @@ const EmployeeDirectory = lazy(
 );
 
 const EmployeeProfile = lazy(() => import("@/pages/employees/EmployeeProfile"));
+
+const EmployeeLifecycleFeatures = lazy(
+  () => import("@/pages/EmployeeLifecycleFeatures"),
+);
+
+
 
 const MyTeam = lazy(() => import("@/pages/MyTeam"));
 
@@ -218,6 +225,26 @@ export default function App() {
           />
 
           <Route path="employees/:id" element={<EmployeeProfile />} />
+
+          {/* =================================================
+              EMPLOYEE LIFECYCLE FEATURES
+              Job history, probation workflow and profile-change UI
+          ================================================= */}
+
+<Route
+  path="employee-lifecycle-management"
+  element={<EmployeeLifecycleFeatures />}
+/>
+
+<Route
+  path="employee-lifecycle-features"
+  element={
+    <Navigate
+      to="/app/employee-lifecycle-management"
+      replace
+    />
+  }
+/>
 
           {/* =================================================
               MY TEAM

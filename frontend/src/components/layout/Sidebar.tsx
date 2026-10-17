@@ -16,6 +16,7 @@ import {
   BarChart3,
   X,
   ChevronRight,
+  History,
 } from "lucide-react";
 
 import { BrandWordmark } from "./BrandMark";
@@ -31,6 +32,8 @@ interface NavItem {
   permission?: string;
   section?: "workspace" | "people" | "management" | "system";
 }
+
+
 
 /* =========================================================
    SIDEBAR NAVIGATION
@@ -165,6 +168,14 @@ const NAV_ITEMS: NavItem[] = [
     section: "people",
   },
 
+  {
+  to: "/app/employee-lifecycle-management",
+  label: "Employee Lifecycle",
+  icon: History,
+  roles: ["SUPER_ADMIN", "ADMIN", "MANAGER"],
+  section: "people",
+},
+
   /* =======================================================
      MANAGEMENT
   ======================================================= */
@@ -287,6 +298,7 @@ export function Sidebar({
     return !!role && item.roles.includes(role);
   });
 
+
   /* -------------------------------------------------------
      PROFILE PATH
   ------------------------------------------------------- */
@@ -294,6 +306,8 @@ export function Sidebar({
   const profilePath = user?.employee?.id
     ? `/app/employees/${user.employee.id}`
     : "/app/settings/account";
+
+    
 
   /* -------------------------------------------------------
      SETTINGS PATH

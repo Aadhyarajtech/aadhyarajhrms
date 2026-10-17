@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -655,6 +655,7 @@ export default function EmployeeProfile() {
         <OverviewTab
           employee={employee}
           isAdmin={isAdmin}
+          isSelf={isSelf}
           onUpdateOffboardingChecklist={(payload) =>
             updateOffboardingChecklistMutation.mutate(payload)
           }
@@ -1026,6 +1027,7 @@ function getNoticePeriodEndDate(employee: any): string | null {
 function OverviewTab({
   employee,
   isAdmin,
+  isSelf,
   onUpdateOffboardingChecklist,
   isUpdatingOffboardingChecklist,
   onCompleteOffboarding,
@@ -1040,6 +1042,7 @@ function OverviewTab({
 }: {
   employee: any;
   isAdmin: boolean;
+  isSelf: boolean;
   onUpdateOffboardingChecklist: (payload: {
     assetReturn?: boolean;
     accessRevoked?: boolean;
@@ -1065,6 +1068,83 @@ function OverviewTab({
     ? employee.workHistory
     : [];
   const skills = Array.isArray(employee.skills) ? employee.skills : [];
+
+  type SensitiveRequestHistoryItem = {
+    _id: string;
+    fields?: string[];
+    requestedAt?: string;
+    status?: string;
+    reason?: string | null;
+    reviewedAt?: string | null;
+    reviewComment?: string | null;
+    reviewedByRole?: string | null;
+  };
+  const [sensitiveField, setSensitiveField] = useState("bankAccountNumber");
+  const [sensitiveValue, setSensitiveValue] = useState("");
+  const [sensitiveReason, setSensitiveReason] = useState("");
+  const [sensitiveRequests, setSensitiveRequests] = useState<SensitiveRequestHistoryItem[]>([]);
+  const [sensitiveBusy, setSensitiveBusy] = useState(false);
+  const [sensitiveError, setSensitiveError] = useState("");
+  const [sensitiveNotice, setSensitiveNotice] = useState("");
+
+  const loadSensitiveRequests = useCallback(async () => {
+    if (!isSelf) return;
+    try {
+      const response = await api.get<{ requests?: SensitiveRequestHistoryItem[] }>(
+        "/employees/me/sensitive-change-requests",
+        { headers: { "Cache-Control": "no-cache" } },
+      );
+      const requests = Array.isArray(response.data.requests) ? response.data.requests : [];
+      setSensitiveRequests(
+        [...requests].sort(
+          (a, b) => new Date(b.requestedAt ?? 0).getTime() - new Date(a.requestedAt ?? 0).getTime(),
+        ),
+      );
+    } catch (error) {
+      setSensitiveError(getErrorMessage(error));
+    }
+  }, [isSelf]);
+
+  useEffect(() => {
+    if (isSelf) void loadSensitiveRequests();
+  }, [isSelf, loadSensitiveRequests]);
+
+  async function submitSensitiveProfileChange(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = sensitiveValue.trim();
+    const reason = sensitiveReason.trim();
+    if (!value || reason.length < 3 || reason.length > 1000) {
+      setSensitiveError("Enter a new value and a reason between 3 and 1000 characters.");
+      return;
+    }
+    setSensitiveBusy(true);
+    setSensitiveError("");
+    setSensitiveNotice("");
+    try {
+      await api.post("/employees/me/sensitive-change-requests", {
+        field: sensitiveField,
+        value,
+        reason,
+      });
+      setSensitiveValue("");
+      setSensitiveReason("");
+      setSensitiveNotice("Request submitted. Your existing details will remain unchanged until HR approves the request.");
+      await loadSensitiveRequests();
+    } catch (error) {
+      setSensitiveError(getErrorMessage(error));
+    } finally {
+      setSensitiveBusy(false);
+    }
+  }
+
+  const sensitiveFieldLabels: Record<string, string> = {
+    employeeAadhaar: "Aadhaar",
+    employeePan: "PAN",
+    employeeTan: "TAN",
+    bankAccountNumber: "Bank account number",
+    bankIfscCode: "Bank IFSC code",
+    bankBranch: "Bank branch",
+  };
 
   const offboardingCompleted =
     employee.offboardingChecklist?.assetReturn === true &&
@@ -1125,6 +1205,11 @@ function OverviewTab({
               }
             />
 
+            <Info
+  label="Work Location"
+  value={employee.workLocation?.trim() || "Not assigned"}
+/>
+
             <Info label="City" value={employee.city ?? "—"} />
             <Info label="State" value={employee.state ?? "—"} />
             <Info label="Country" value={employee.country ?? "—"} />
@@ -1150,9 +1235,71 @@ function OverviewTab({
               value={employee.emergencyContactEmail ?? "—"}
             />
 
-            <Info label="Aadhaar" value={employee.employeeAadhaar ?? "—"} />
-            <Info label="PAN" value={employee.employeePan ?? "—"} />
+            {isAdmin && (
+              <>
+                <Info label="Aadhaar" value={employee.employeeAadhaar ?? "—"} />
+                <Info label="PAN" value={employee.employeePan ?? "—"} />
+              </>
+            )}
           </dl>
+
+          {isSelf && (
+            <div className="mt-6 border-t border-line/60 pt-5">
+              <h3 className="text-sm font-semibold text-ink">Request a Sensitive Profile Change</h3>
+              <p className="mt-1 text-xs leading-5 text-ink-faint">
+                Update bank or identity information by requesting HR approval. Your current sensitive details are not displayed here, and new values are applied only after approval.
+              </p>
+              <form onSubmit={(event) => void submitSensitiveProfileChange(event)} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-field">Field to update</label>
+                  <select id="sensitive-profile-field" value={sensitiveField} onChange={(event) => setSensitiveField(event.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3 text-sm">
+                    <option value="bankAccountNumber">Bank account number</option>
+                    <option value="bankIfscCode">Bank IFSC code</option>
+                    <option value="bankBranch">Bank branch</option>
+                    <option value="employeePan">PAN</option>
+                    <option value="employeeAadhaar">Aadhaar</option>
+                    <option value="employeeTan">TAN</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-value">New value</label>
+                  <input id="sensitive-profile-value" type="password" autoComplete="off" value={sensitiveValue} onChange={(event) => setSensitiveValue(event.target.value)} required className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3 text-sm" placeholder="Enter new value" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-reason">Reason for change</label>
+                  <textarea id="sensitive-profile-reason" value={sensitiveReason} onChange={(event) => setSensitiveReason(event.target.value)} required minLength={3} maxLength={1000} rows={3} className="mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" placeholder="Explain why this information needs to change" />
+                </div>
+                {sensitiveError && <p role="alert" className="sm:col-span-2 text-sm text-danger-600">{sensitiveError}</p>}
+                {sensitiveNotice && <p role="status" className="sm:col-span-2 text-sm text-emerald-700">{sensitiveNotice}</p>}
+                <div className="sm:col-span-2">
+                  <Button type="submit" disabled={sensitiveBusy}>
+                    {sensitiveBusy ? "Submitting…" : "Submit for approval"}
+                  </Button>
+                </div>
+              </form>
+
+              <div className="mt-6">
+                <h4 className="text-sm font-semibold text-ink">My Sensitive Change Requests</h4>
+                {sensitiveRequests.length === 0 ? (
+                  <p className="mt-2 text-sm text-ink-faint">No requests submitted yet.</p>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {sensitiveRequests.map((request) => (
+                      <div key={request._id} className="rounded-xl border border-line/60 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-ink">{(request.fields ?? []).map((field) => sensitiveFieldLabels[field] ?? field).join(", ") || "Sensitive profile change"}</p>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${request.status === "APPROVED" ? "bg-emerald-100 text-emerald-800" : request.status === "REJECTED" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"}`}>{request.status ?? "PENDING"}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-ink-faint">Requested: {request.requestedAt ? formatDate(request.requestedAt) : "—"}{request.reviewedAt ? ` · Reviewed: ${formatDate(request.reviewedAt)}` : ""}</p>
+                        {request.reason && <p className="mt-2 text-sm text-ink-soft">Reason: {request.reason}</p>}
+                        {request.reviewComment && <p className="mt-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">HR comment: {request.reviewComment}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </Card>
 
         {isAdmin && (
@@ -2970,6 +3117,8 @@ type EmployeeForm = {
   departmentId: string;
   designationId: string;
   managerId: string;
+  workLocation: string;
+  jobChangeReason: string;
   isManager: boolean;
 
   gender: string;
@@ -3051,7 +3200,9 @@ function EditEmployeeModal({
 
         departmentId: employee.departmentId ?? "",
         designationId: employee.designationId ?? "",
-        managerId: employee.managerId ?? "",
+                managerId: employee.managerId ?? "",
+        workLocation: employee.workLocation ?? "",
+        jobChangeReason: "",
         isManager: employee.isManager === true,
         gender: employee.gender ?? "",
         maritalStatus: employee.maritalStatus ?? "",
@@ -3259,10 +3410,10 @@ function EditEmployeeModal({
           medicalConditions: payload.medicalConditions,
           bloodGroup: payload.bloodGroup,
           insurancePolicyNumber: payload.insurancePolicyNumber,
-          employeeAadhaar: commonPayload.employeeAadhaar,
-          employeePan: commonPayload.employeePan,
+          // Sensitive identity fields must only be submitted through the
+          // dedicated HR-approval request form. The edit form may show these
+          // inputs blank, so never send null/blank values through PATCH /me.
           avatarUrl,
-          signature: commonPayload.signature,
           education: payload.education,
           certifications: payload.certifications,
           workHistory: payload.workHistory,
@@ -3467,6 +3618,38 @@ function EditEmployeeModal({
                   </span>
                 </label>
               </div>
+              
+              {/* Work Location */}
+              <div>
+                <label className="text-[13px] font-medium text-ink-soft">
+                  Work Location
+                </label>
+                <input
+                  type="text"
+                  {...register("workLocation")}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                  placeholder="e.g. Hyderabad, Tamil Nadu"
+                  maxLength={150}
+                />
+                <p className="mt-1 text-[11px] text-ink-faint">
+                  Office or assigned work location; separate from residential city.
+                </p>
+              </div>
+
+              {/* Job Change Reason */}
+              <div>
+                <label className="text-[13px] font-medium text-ink-soft">
+                  Job Change Reason
+                </label>
+                <input
+                  type="text"
+                  {...register("jobChangeReason")}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm"
+                  placeholder="e.g. Transfer to another office"
+                  maxLength={500}
+                />
+              </div>
+
 
               {/* Reporting Manager */}
               <div className="sm:col-span-2">

@@ -59,6 +59,7 @@ export interface Employee {
   personalEmail: string | null;
   phone: string | null;
   address: string | null;
+  workLocation: string | null;
   city: string | null;
   state: string | null;
   country: string;

@@ -16,6 +16,7 @@ import * as attendanceRepo from "@/modules/attendance/attendance.repository";
 import * as leaveRepo from "@/modules/leave/leave.repository";
 import * as performanceRepo from "@/modules/performance/performance.repository";
 import { sendEmployeeWelcomeCredentialsEmail } from "@/services/email.service";
+import { Employee, User } from "@/db/models";
 export const employeesRouter = Router();
 employeesRouter.use(authenticate);
 
@@ -83,7 +84,26 @@ employeesRouter.get(
       // This only changes visibility; manager-specific write/approval
       // permissions remain enforced by their respective endpoints.
 
-      res.json(await repo.listEmployees(filters));
+      const result = await repo.listEmployees(filters) as any;
+      const canViewSensitiveDetails = ["ADMIN", "SUPER_ADMIN"].includes(
+        String(requester.role).toUpperCase(),
+      );
+      if (!canViewSensitiveDetails && Array.isArray(result?.employees)) {
+        result.employees = result.employees.map((item: any) => {
+          const safeItem = { ...item };
+          delete safeItem.employeeAadhaar;
+          delete safeItem.employeePan;
+          delete safeItem.employeeTan;
+          delete safeItem.bankAccountNumber;
+          delete safeItem.bankIfscCode;
+          delete safeItem.bankBranch;
+          delete safeItem.investmentDeclarations;
+          delete safeItem.signature;
+          return safeItem;
+        });
+      }
+      res.set("Cache-Control", "no-store");
+      res.json(result);
     } catch (err) {
       next(err);
     }
@@ -202,6 +222,7 @@ employeesRouter.get(
  * the AI summary does not change month unexpectedly around UTC midnight.
  */
 function getPreviousMonths(months: number) {
+
   const now = new Date();
 
   const currentYear = Number(
@@ -513,7 +534,26 @@ employeesRouter.get(
     try {
       const employee = await repo.getEmployeeById(req.params.id);
       if (!employee) throw AppError.notFound("Employee not found.");
-      res.json({ employee });
+
+      // Sensitive identity and financial fields are returned only to Admins.
+      // Hiding fields in React alone is not a security boundary.
+      const responseEmployee: Record<string, any> = { ...(employee as any) };
+      const canViewSensitiveDetails = ["ADMIN", "SUPER_ADMIN"].includes(
+        String(req.user!.role).toUpperCase(),
+      );
+      if (!canViewSensitiveDetails) {
+        delete responseEmployee.employeeAadhaar;
+        delete responseEmployee.employeePan;
+        delete responseEmployee.employeeTan;
+        delete responseEmployee.bankAccountNumber;
+        delete responseEmployee.bankIfscCode;
+        delete responseEmployee.bankBranch;
+        delete responseEmployee.investmentDeclarations;
+        delete responseEmployee.signature;
+      }
+
+      res.set("Cache-Control", "no-store");
+      res.json({ employee: responseEmployee });
     } catch (err) {
       next(err);
     }
@@ -667,6 +707,8 @@ employeesRouter.post(
 );
 
 const updateEmployeeSchema = z.object({
+
+  reason: z.string().trim().min(3).max(1000).optional(),
   // Employee code is editable only through the privileged /:id update route.
   // Keep it normalized and unique (for example: EMP0011).
   employeeCode: z
@@ -695,6 +737,7 @@ const updateEmployeeSchema = z.object({
 
   probationStartDate: z.string().nullable().optional(),
   probationEndDate: z.string().nullable().optional(),
+  jobChangeReason: z.string().max(500).optional(),
 
   noticeStartDate: z.string().nullable().optional(),
   lastWorkingDate: z.string().nullable().optional(),
@@ -885,9 +928,8 @@ employeesRouter.patch(
         bloodGroup: req.body.bloodGroup,
         insurancePolicyNumber: req.body.insurancePolicyNumber,
 
-        employeeAadhaar: req.body.employeeAadhaar,
-        employeePan: req.body.employeePan,
-        signature: req.body.signature,
+        // Sensitive identity/financial fields are intentionally excluded here.
+        // They are submitted through the approval request below.
         avatarUrl: req.body.avatarUrl,
 
         education: req.body.education,
@@ -896,8 +938,59 @@ employeesRouter.patch(
         skills: req.body.skills,
       };
 
+      const sensitiveFields = [
+        "employeeAadhaar", "employeePan", "employeeTan",
+        "bankAccountNumber", "bankIfscCode", "bankBranch", "investmentDeclarations", "signature",
+      ];
+      const changes: Record<string, unknown> = {};
+      for (const field of sensitiveFields) {
+        if (!Object.prototype.hasOwnProperty.call(req.body, field)) continue;
+
+        const submittedValue = req.body[field];
+        // Older versions of the profile edit form sent empty/null sensitive
+        // fields even when the employee was only updating ordinary profile
+        // information. Ignore those blanks; only a real non-empty value can
+        // become a sensitive-change request. Sensitive values are never
+        // applied directly by PATCH /me.
+        if (submittedValue === null || submittedValue === undefined) continue;
+        if (typeof submittedValue === "string" && !submittedValue.trim()) continue;
+        changes[field] = submittedValue;
+      }
+      let changeRequestId: string | null = null;
+      if (Object.keys(changes).length) {
+        const current = await Employee.findById(employee.id).lean<any>();
+        const requests = current?.sensitiveChangeRequests ?? [];
+        const pending = requests.some((item: any) => item.status === "PENDING");
+        if (pending) throw AppError.badRequest("You already have a sensitive profile change request awaiting review.");
+        const reason = typeof req.body.reason === "string" ? req.body.reason.trim() : "";
+        if (reason.length < 3 || reason.length > 1000) {
+          throw AppError.badRequest("Reason must contain between 3 and 1000 characters.");
+        }
+        const request = {
+          _id: `ecr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          fields: Object.keys(changes),
+          changes,
+          reason,
+          requestedBy: req.user!.userId,
+          requestedAt: new Date().toISOString(),
+          status: "PENDING",
+          reviewedBy: null,
+          reviewedByRole: null,
+          reviewedAt: null,
+          reviewComment: null,
+        };
+        await Employee.updateOne({ _id: employee.id }, { $push: { sensitiveChangeRequests: request } });
+        changeRequestId = request._id;
+        const admins = await User.find({ role: { $in: ["ADMIN", "SUPER_ADMIN"] }, isActive: true }).select("_id").lean<any[]>();
+        await Promise.all(admins.map((admin) => notify({
+          userId: admin._id, type: "SYSTEM", title: "Sensitive profile change requires review",
+          message: `${employee.firstName} ${employee.lastName} submitted a sensitive profile change request.`,
+          link: `/app/employees/${employee.id}`,
+          dedupeKey: `sensitive-change:${employee.id}:${request._id}`,
+        })));
+      }
       const updated = await repo.updateEmployee(employee.id, body);
-      res.json({ employee: updated });
+      res.json({ employee: updated, sensitiveChangeRequestId: changeRequestId, sensitiveChangesRequireApproval: Boolean(changeRequestId) });
     } catch (err) {
       next(err);
     }
@@ -955,9 +1048,79 @@ employeesRouter.patch(
       }
 
       const employee = await repo.updateEmployee(
-  req.params.id,
-  updateBody,
-);
+        req.params.id,
+        updateBody,
+      );
+
+      const jobFields = [
+        "departmentId",
+        "designationId",
+        "managerId",
+        "grade",
+        "workLocation",
+      ] as const;
+
+      const getJobValue = (value: unknown): string | null => {
+        if (value === undefined || value === null || value === "") {
+          return null;
+        }
+
+        return String(value).trim();
+      };
+
+      const previousJob = {
+        departmentId: getJobValue(target.departmentId),
+        designationId: getJobValue(target.designationId),
+        managerId: getJobValue(target.managerId),
+        grade: getJobValue(target.grade),
+        workLocation: getJobValue(target.workLocation),
+      };
+
+      const nextJob = {
+        departmentId: getJobValue((employee as any)?.departmentId ?? target.departmentId),
+        designationId: getJobValue((employee as any)?.designationId ?? target.designationId),
+        managerId: getJobValue((employee as any)?.managerId ?? target.managerId),
+        grade: getJobValue((employee as any)?.grade ?? target.grade),
+        workLocation: getJobValue((employee as any)?.workLocation ?? target.workLocation),
+      };
+
+      const changedJobFields = jobFields.some(
+        (field) => previousJob[field] !== nextJob[field],
+      );
+
+      
+      if (changedJobFields) {
+        const historyEntry = {
+          _id: `ejh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          changedAt: new Date().toISOString(),
+          changedBy: req.user!.userId,
+          reason:
+            typeof req.body.jobChangeReason === "string"
+              ? req.body.jobChangeReason.trim().slice(0, 500) || null
+              : null,
+          previous: previousJob,
+          next: nextJob,
+        };
+
+        const historyResult = await Employee.updateOne(
+          { _id: req.params.id },
+          { $push: { internalJobHistory: historyEntry } },
+        );
+
+        if (historyResult.matchedCount !== 1) {
+          throw AppError.notFound(
+            "Employee was updated, but the job-history record could not be saved because the employee record was not found.",
+          );
+        }
+
+        if (historyResult.modifiedCount !== 1) {
+          throw AppError.badRequest(
+            "Employee was updated, but the job-history record was not saved.",
+          );
+        }
+      }
+
+
 
       if (
         req.body.status &&
@@ -1172,6 +1335,349 @@ employeesRouter.post(
   },
 );
 
+
+
+// Internal job history is visible to HR/admin roles only.
+employeesRouter.get("/:id/internal-job-history", isAdmin, async (req, res, next) => {
+  try {
+    const employee = await Employee.findById(req.params.id).select("internalJobHistory").lean<any>();
+    if (!employee) throw AppError.notFound("Employee not found.");
+    res.json({ history: [...(employee.internalJobHistory ?? [])].sort((a: any, b: any) => String(b.changedAt).localeCompare(String(a.changedAt))) });
+  } catch (err) { next(err); }
+});
+
+
+
+
+/**
+ * Admin-only audit history for all sensitive profile-change requests.
+ * Never return submitted PAN, Aadhaar, bank values, or request.changes.
+ */
+employeesRouter.get(
+  "/sensitive-change-requests/history",
+  isAdmin,
+  async (_req, res, next) => {
+    try {
+      const employees = await Employee.find({
+        "sensitiveChangeRequests.0": { $exists: true },
+      })
+        .select("employeeCode firstName lastName sensitiveChangeRequests")
+        .lean<any[]>();
+
+      const requests = employees.flatMap((employee) =>
+        (employee.sensitiveChangeRequests ?? []).map((request: any) => ({
+          employeeId: String(employee._id),
+          employeeCode: employee.employeeCode ?? null,
+          employeeName:
+            `${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim(),
+          request: {
+            _id: String(request._id),
+            fields: request.fields ?? [],
+            reason: request.reason ?? null,
+            requestedAt: request.requestedAt ?? null,
+            status: request.status ?? "PENDING",
+            reviewedAt: request.reviewedAt ?? null,
+            reviewedByRole: request.reviewedByRole ?? null,
+            reviewComment: request.reviewComment ?? null,
+          },
+        })),
+      );
+
+      requests.sort(
+        (a, b) =>
+          new Date(b.request.reviewedAt ?? b.request.requestedAt ?? 0).getTime() -
+          new Date(a.request.reviewedAt ?? a.request.requestedAt ?? 0).getTime(),
+      );
+
+      res.set("Cache-Control", "no-store");
+      res.json({ requests });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * HR/Admin queue for pending sensitive employee profile changes.
+ * Never return actual PAN, Aadhaar, bank or other submitted values.
+ */
+employeesRouter.get(
+  "/sensitive-change-requests/pending",
+  isAdmin,
+  async (_req, res, next) => {
+    try {
+      const employees = await Employee.find({
+        "sensitiveChangeRequests.status": "PENDING",
+      })
+        .select(
+          "employeeCode firstName lastName sensitiveChangeRequests",
+        )
+        .lean<any[]>();
+
+      const requests = employees.flatMap((employee) =>
+        (employee.sensitiveChangeRequests ?? [])
+          .filter((request: any) => request.status === "PENDING")
+          .map((request: any) => ({
+            employeeId: String(employee._id),
+            employeeCode: employee.employeeCode,
+            employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
+            request: {
+              _id: request._id,
+              fields: request.fields ?? [],
+              reason: request.reason ?? null,
+              requestedAt: request.requestedAt ?? null,
+              status: request.status,
+            },
+          })),
+      );
+
+      res.json({ requests });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+
+const sensitiveRequestBodySchema = z.object({
+  field: z.enum([
+    "employeeAadhaar",
+    "employeePan",
+    "employeeTan",
+    "bankAccountNumber",
+    "bankIfscCode",
+    "bankBranch",
+  ]),
+  value: z.string().trim().min(1),
+  reason: z.string().trim().min(3).max(1000),
+});
+
+employeesRouter.post(
+  "/me/sensitive-change-requests",
+  validate(sensitiveRequestBodySchema),
+  async (req, res, next) => {
+    try {
+      const employee = await repo.getEmployeeByUserId(req.user!.userId);
+      if (!employee) {
+        throw AppError.notFound("Employee profile not found.");
+      }
+
+      const { field, value, reason } = req.body;
+
+      // Validate the value using the existing field-specific rules.
+      const fieldValidation = updateEmployeeSchema.safeParse({
+        [field]: value,
+      });
+
+      if (!fieldValidation.success) {
+        throw AppError.badRequest(
+          fieldValidation.error.issues[0]?.message ??
+            "Invalid sensitive field value.",
+        );
+      }
+
+      // Atomically prevent multiple pending requests for this employee.
+      const requestId = `ecr_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+
+      const request = {
+        _id: requestId,
+        fields: [field],
+        changes: {
+  [field]: (fieldValidation.data as Record<string, unknown>)[field],
+},
+        reason,
+        requestedBy: req.user!.userId,
+        requestedAt: new Date().toISOString(),
+        status: "PENDING",
+        reviewedBy: null,
+        reviewedByRole: null,
+        reviewedAt: null,
+        reviewComment: null,
+      };
+
+      const result = await Employee.updateOne(
+        {
+          _id: employee.id,
+          sensitiveChangeRequests: { $not: { $elemMatch: { status: "PENDING" } } },
+        },
+        { $push: { sensitiveChangeRequests: request } },
+      );
+
+      if (result.modifiedCount !== 1) {
+        throw AppError.badRequest(
+          "You already have a sensitive profile change request awaiting review.",
+        );
+      }
+
+      const admins = await User.find({
+        role: { $in: ["ADMIN", "SUPER_ADMIN"] },
+        isActive: true,
+      })
+        .select("_id")
+        .lean<any[]>();
+
+      await Promise.all(
+        admins.map((admin) =>
+          notify({
+            userId: admin._id,
+            type: "SYSTEM",
+            title: "Sensitive profile change requires review",
+            message: `${employee.firstName} ${employee.lastName} submitted a sensitive profile change request.`,
+            link: `/app/employees/${employee.id}`,
+            dedupeKey: `sensitive-change:${employee.id}:${requestId}`,
+          }),
+        ),
+      );
+
+      res.status(201).json({
+        success: true,
+        requestId,
+        status: "PENDING",
+        message: "Sensitive profile change submitted for HR approval.",
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+
+
+
+/**
+ * Approve or reject one pending sensitive profile change.
+ * The status check and update are performed atomically.
+ */
+employeesRouter.post(
+  "/:id/sensitive-change-requests/:requestId/review",
+  isAdmin,
+  async (req, res, next) => {
+    try {
+      const decision = req.body?.decision;
+
+      if (decision !== "APPROVE" && decision !== "REJECT") {
+        throw AppError.badRequest(
+          "Decision must be APPROVE or REJECT.",
+        );
+      }
+
+      const employee = await Employee.findById(req.params.id).lean<any>();
+
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
+      }
+
+      const request = (employee.sensitiveChangeRequests ?? []).find(
+        (item: any) => String(item._id) === req.params.requestId,
+      );
+
+      if (!request) {
+        throw AppError.notFound("Sensitive change request not found.");
+      }
+
+      if (request.status !== "PENDING") {
+        throw AppError.badRequest(
+          "This request has already been reviewed.",
+        );
+      }
+
+      const updates: Record<string, unknown> = {
+        "sensitiveChangeRequests.$.status":
+          decision === "APPROVE" ? "APPROVED" : "REJECTED",
+        "sensitiveChangeRequests.$.reviewedBy": req.user!.userId,
+        "sensitiveChangeRequests.$.reviewedByRole": req.user!.role,
+        "sensitiveChangeRequests.$.reviewedAt": new Date().toISOString(),
+        "sensitiveChangeRequests.$.reviewComment":
+          typeof req.body.comment === "string"
+            ? req.body.comment.trim().slice(0, 1000) || null
+            : null,
+      };
+
+      if (decision === "APPROVE") {
+        const allowedFields = new Set([
+          "employeeAadhaar",
+          "employeePan",
+          "employeeTan",
+          "bankAccountNumber",
+          "bankIfscCode",
+          "bankBranch",
+          "investmentDeclarations",
+          "signature",
+        ]);
+
+        const changes = request.changes ?? {};
+        const safeChanges: Record<string, unknown> = {};
+
+        for (const [field, value] of Object.entries(changes)) {
+          if (!allowedFields.has(field)) {
+            throw AppError.badRequest(
+              `Unsupported sensitive field: ${field}`,
+            );
+          }
+
+          safeChanges[field] = value;
+        }
+
+        if (
+          Object.keys(safeChanges).length !==
+          (request.fields ?? []).length
+        ) {
+          throw AppError.badRequest(
+            "Request contains invalid or unsupported sensitive fields.",
+          );
+        }
+
+        Object.assign(updates, safeChanges);
+      }
+
+      // The PENDING condition prevents two reviewers from applying
+      // the same request concurrently.
+      const result = await Employee.updateOne(
+        {
+          _id: req.params.id,
+          sensitiveChangeRequests: {
+            $elemMatch: {
+              _id: req.params.requestId,
+              status: "PENDING",
+            },
+          },
+        },
+        { $set: updates },
+      );
+
+      if (result.modifiedCount !== 1) {
+        throw AppError.badRequest(
+          "This request has already been reviewed or has changed. Refresh and try again.",
+        );
+      }
+
+      await notify({
+        userId: employee.userId,
+        type: "SYSTEM",
+        title:
+          decision === "APPROVE"
+            ? "Sensitive profile change approved"
+            : "Sensitive profile change rejected",
+        message:
+          decision === "APPROVE"
+            ? "Your sensitive profile changes have been approved and applied."
+            : "Your sensitive profile change request was rejected. Contact HR if you need more information.",
+        link: `/app/employees/${req.params.id}`,
+      });
+
+      res.json({
+        success: true,
+        status: decision === "APPROVE" ? "APPROVED" : "REJECTED",
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+
 employeesRouter.post(
   "/:id/confirm-probation",
   isAdmin,
@@ -1245,13 +1751,24 @@ employeesRouter.post(
         );
       }
 
-      const currentEndDate = employee.probationEndDate
-        ? new Date(employee.probationEndDate)
-        : new Date();
+     const now = new Date();
 
-      currentEndDate.setDate(
-        currentEndDate.getDate() + extensionDays,
-      );
+const existingEndDate = employee.probationEndDate
+  ? new Date(employee.probationEndDate)
+  : null;
+
+const baseDate =
+  existingEndDate &&
+  !Number.isNaN(existingEndDate.getTime()) &&
+  existingEndDate > now
+    ? existingEndDate
+    : now;
+
+const currentEndDate = new Date(baseDate);
+
+currentEndDate.setDate(
+  currentEndDate.getDate() + extensionDays,
+);
 
       const updatedEmployee = await repo.updateEmployee(req.params.id, {
         status: "ON_PROBATION",
@@ -1515,6 +2032,52 @@ employeesRouter.post(
       });
     } catch (err) {
       next(err);
+    }
+  },
+);
+
+// Returns the authenticated user's own sensitive-change history.
+employeesRouter.get(
+  "/me/sensitive-change-requests",
+  async (req, res, next) => {
+    try {
+      const employee = await repo.getEmployeeByUserId(
+        req.user!.userId,
+      );
+
+      if (!employee) {
+        throw AppError.notFound("Employee profile not found.");
+      }
+
+      const current = await Employee.findById(employee.id)
+        .select("sensitiveChangeRequests")
+        .lean<any>();
+
+      if (!current) {
+        throw AppError.notFound("Employee profile not found.");
+      }
+
+      const requests = (current.sensitiveChangeRequests ?? [])
+        .map((request: any) => ({
+          _id: String(request._id),
+          fields: request.fields ?? [],
+          reason: request.reason ?? null,
+          requestedAt: request.requestedAt ?? null,
+          status: request.status ?? "PENDING",
+          reviewedAt: request.reviewedAt ?? null,
+          reviewComment: request.reviewComment ?? null,
+          reviewedByRole: request.reviewedByRole ?? null,
+        }))
+        .sort(
+          (a: any, b: any) =>
+            new Date(b.requestedAt ?? 0).getTime() -
+            new Date(a.requestedAt ?? 0).getTime(),
+        );
+
+      res.set("Cache-Control", "no-store");
+      res.json({ requests });
+    } catch (error) {
+      next(error);
     }
   },
 );

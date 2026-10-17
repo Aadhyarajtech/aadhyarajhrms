@@ -34,6 +34,7 @@ import { notificationsRouter } from "@/modules/notifications/notifications.route
 import { documentsRouter } from "@/modules/documents/documents.routes";
 import { dashboardRouter } from "@/modules/dashboard/dashboard.routes";
 import { reportsRouter } from "@/modules/reports/reports.routes";
+import { startProbationReminderScheduler } from "@/modules/employees/probation-reminder.scheduler";
 
 // =========================================================
 // TICKET ROUTES
@@ -47,6 +48,7 @@ import { ticketMessageRouter } from "@/modules/tickets/ticketMessage.routes";
 // =========================================================
 
 export function createApp() {
+  startProbationReminderScheduler();
   const app = express();
 
   // =======================================================

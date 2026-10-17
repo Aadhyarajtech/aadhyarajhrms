@@ -1,0 +1,1112 @@
+
+import { useCallback, useEffect, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+import { api } from "@/lib/api";
+import { EmployeesApi } from "@/lib/endpoints";
+import { useAuth } from "@/context/AuthContext";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  History,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  Users,
+  XCircle,
+} from "lucide-react";
+
+type Employee = {
+  id: string;
+  employeeCode?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string | null;
+  departmentName?: string | null;
+  designationTitle?: string | null;
+  status?: string;
+  dateOfJoining?: string | null;
+  probationStartDate?: string | null;
+  probationEndDate?: string | null;
+};
+
+type JobHistoryEntry = {
+  _id?: string;
+  changedAt?: string;
+  changedBy?: string;
+  reason?: string | null;
+  previous?: Record<string, unknown>;
+  next?: Record<string, unknown>;
+};
+
+type SensitiveRequest = {
+  _id: string;
+  fields?: string[];
+  requestedAt?: string;
+  status?: string;
+  reason?: string | null;
+  reviewedAt?: string | null;
+  reviewComment?: string | null;
+  reviewedByRole?: string | null;
+};
+
+type PendingRequest = {
+  employeeId: string;
+  employeeCode?: string;
+  employeeName: string;
+  request: SensitiveRequest;
+};
+
+type AdminHistoryRequest = {
+  employeeId: string;
+  employeeCode?: string | null;
+  employeeName: string;
+  request: SensitiveRequest;
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  employeeAadhaar: "Aadhaar",
+  employeePan: "PAN",
+  employeeTan: "TAN",
+  bankAccountNumber: "Bank Account Number",
+  bankIfscCode: "Bank IFSC Code",
+  bankBranch: "Bank Branch",
+  investmentDeclarations: "Investment Declarations",
+  signature: "Signature",
+};
+
+function sensitiveFieldLabel(field: string) {
+  return FIELD_LABELS[field] ?? field;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+}
+
+function getError(error: unknown): string {
+  const e = error as {
+    response?: {
+      data?: { message?: unknown; error?: unknown };
+    };
+    message?: unknown;
+  };
+
+  const data = e?.response?.data;
+  const message =
+    typeof data?.message === "string"
+      ? data.message
+      : typeof data?.error === "string"
+        ? data.error
+        : typeof e?.message === "string"
+          ? e.message
+          : "Something went wrong. Please try again.";
+
+  return message;
+}
+
+function Panel({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
+        {icon}
+        <h2 className="font-bold text-slate-900">{title}</h2>
+      </div>
+      <div className="p-5">{children}</div>
+    </section>
+  );
+}
+
+function Status({ value }: { value?: string }) {
+  const status = (value || "UNKNOWN").toUpperCase();
+
+  const styles: Record<string, string> = {
+    ACTIVE: "bg-emerald-100 text-emerald-800",
+    ON_PROBATION: "bg-amber-100 text-amber-800",
+    PENDING: "bg-amber-100 text-amber-800",
+    APPROVED: "bg-emerald-100 text-emerald-800",
+    REJECTED: "bg-rose-100 text-rose-800",
+    TERMINATED: "bg-rose-100 text-rose-800",
+    RESIGNED: "bg-slate-100 text-slate-700",
+  };
+
+  const labels: Record<string, string> = {
+    PENDING: "Pending HR Approval",
+    APPROVED: "Approved",
+    REJECTED: "Rejected",
+    ON_PROBATION: "On Probation",
+  };
+
+  return (
+    <span
+  className={`inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold ${
+    styles[status] || "bg-slate-100 text-slate-700"
+  }`}
+>
+  {labels[status] || status.replaceAll("_", " ")}
+</span>
+  );
+}
+
+export default function EmployeeLifecycleFeatures() {
+  const { user } = useAuth();
+  const role = String(user?.role ?? "").toUpperCase();
+  const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
+  const canManageLifecycle = isAdmin || role === "MANAGER";
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [history, setHistory] = useState<JobHistoryEntry[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [adminHistory, setAdminHistory] = useState<AdminHistoryRequest[]>([]);
+  const [myRequests, setMyRequests] = useState<SensitiveRequest[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const [sensitiveField, setSensitiveField] =
+    useState("bankAccountNumber");
+  const [sensitiveValue, setSensitiveValue] = useState("");
+  const [sensitiveReason, setSensitiveReason] = useState("");
+
+  const [extendDays, setExtendDays] = useState<Record<string, number>>({});
+  const [extendRemarks, setExtendRemarks] = useState<Record<string, string>>(
+    {},
+  );
+
+  const loadEmployees = useCallback(async () => {
+    try {
+      const result = await EmployeesApi.list({
+        page: 1,
+        pageSize: 100,
+      });
+
+      const rows = Array.isArray(result.employees)
+        ? (result.employees as Employee[])
+        : [];
+
+      setEmployees(rows);
+      setSelectedEmployeeId((current) => {
+        if (current && rows.some((employee) => String(employee.id) === current)) {
+          return current;
+        }
+        return rows[0]?.id ? String(rows[0].id) : "";
+      });
+    } catch (e) {
+      setError(getError(e));
+    }
+  }, []);
+
+  const loadPendingRequests = useCallback(async () => {
+    try {
+      const response = await api.get<{ requests?: PendingRequest[] }>(
+        "/employees/sensitive-change-requests/pending",
+      );
+
+      setPendingRequests(
+        Array.isArray(response.data.requests)
+          ? response.data.requests
+          : [],
+      );
+    } catch (e) {
+      setPendingRequests([]);
+      setError(`Unable to load the HR approval queue: ${getError(e)}`);
+    }
+  }, []);
+
+  const loadAdminHistory = useCallback(async () => {
+    if (!isAdmin) {
+      setAdminHistory([]);
+      return;
+    }
+
+    try {
+      const response = await api.get<{ requests?: AdminHistoryRequest[] }>(
+        "/employees/sensitive-change-requests/history",
+        { headers: { "Cache-Control": "no-cache" } },
+      );
+
+      setAdminHistory(
+        Array.isArray(response.data.requests) ? response.data.requests : [],
+      );
+    } catch (e) {
+      setAdminHistory([]);
+      setError(`Unable to load HR review history: ${getError(e)}`);
+    }
+  }, [isAdmin]);
+
+  const loadMyRequests = useCallback(async () => {
+    try {
+      const response = await api.get<{ requests?: SensitiveRequest[] }>(
+        "/employees/me/sensitive-change-requests",
+        { headers: { "Cache-Control": "no-cache" } },
+      );
+
+      const requests = Array.isArray(response.data.requests)
+        ? response.data.requests
+        : [];
+
+      setMyRequests(
+        [...requests].sort(
+          (a, b) =>
+            new Date(b.requestedAt ?? 0).getTime() -
+            new Date(a.requestedAt ?? 0).getTime(),
+        ),
+      );
+    } catch (e) {
+      setMyRequests([]);
+      setError(`Unable to load your sensitive-change history: ${getError(e)}`);
+    }
+  }, []);
+
+  const loadHistory = useCallback(async (employeeId: string) => {
+    if (!employeeId) {
+      setHistory([]);
+      return;
+    }
+
+    setHistoryLoading(true);
+    try {
+      const response = await api.get<{ history?: JobHistoryEntry[] }>(
+        `/employees/${encodeURIComponent(employeeId)}/internal-job-history`,
+      );
+      setHistory(
+        Array.isArray(response.data.history) ? response.data.history : [],
+      );
+    } catch (e) {
+      setHistory([]);
+      setError(getError(e));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const tasks: Promise<unknown>[] = [];
+    if (!isAdmin) tasks.push(loadMyRequests());
+    if (canManageLifecycle) tasks.push(loadEmployees());
+    if (isAdmin) {
+      tasks.push(loadPendingRequests());
+      tasks.push(loadAdminHistory());
+    }
+    await Promise.all(tasks);
+    setLoading(false);
+  }, [
+    canManageLifecycle,
+    isAdmin,
+    loadEmployees,
+    loadPendingRequests,
+    loadAdminHistory,
+    loadMyRequests,
+  ]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (canManageLifecycle) void loadHistory(selectedEmployeeId);
+    else setHistory([]);
+  }, [selectedEmployeeId, canManageLifecycle, loadHistory]);
+
+  const probationEmployees = employees.filter(
+    (employee) => employee.status === "ON_PROBATION",
+  );
+
+  const selectedEmployee = employees.find(
+    (employee) => String(employee.id) === selectedEmployeeId,
+  );
+
+  async function confirmProbation(employee: Employee) {
+    const id = String(employee.id);
+
+    if (
+      !window.confirm(
+        `Confirm probation for ${employee.firstName ?? ""} ${employee.lastName ?? ""}?`,
+      )
+    ) {
+      return;
+    }
+
+    setBusy(`confirm-${id}`);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await api.post(
+        `/employees/${encodeURIComponent(id)}/confirm-probation`,
+      );
+
+      setNotice(
+        response.data?.message || "Probation confirmed successfully.",
+      );
+      await loadEmployees();
+    } catch (e) {
+      setError(getError(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function extendProbation(employee: Employee) {
+    const id = String(employee.id);
+    const extensionDays = Number(extendDays[id] ?? 30);
+    const remarks = (extendRemarks[id] ?? "").trim();
+
+    if (
+      !Number.isInteger(extensionDays) ||
+      extensionDays < 1 ||
+      extensionDays > 365
+    ) {
+      setError("Enter a probation extension between 1 and 365 days.");
+      return;
+    }
+
+    if (!remarks) {
+      setError("Please enter a reason for extending probation.");
+      return;
+    }
+
+    setBusy(`extend-${id}`);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await api.post(
+        `/employees/${encodeURIComponent(id)}/extend-probation`,
+        { extensionDays, remarks },
+      );
+
+      setNotice(
+        response.data?.message || "Probation extended successfully.",
+      );
+      await loadEmployees();
+    } catch (e) {
+      setError(getError(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function submitSensitiveRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const value = sensitiveValue.trim();
+    const reason = sensitiveReason.trim();
+
+    if (!value || !reason) {
+      setError("Enter the new value and the reason for the change.");
+      return;
+    }
+
+    if (reason.length < 3 || reason.length > 1000) {
+      setError("The reason must contain between 3 and 1000 characters.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "Submit this sensitive profile change for HR approval?",
+      )
+    ) {
+      return;
+    }
+
+    setBusy("submit-sensitive");
+    setError("");
+    setNotice("");
+
+    try {
+      await api.post("/employees/me/sensitive-change-requests", {
+  field: sensitiveField,
+  value,
+  reason,
+});
+
+setNotice(
+  "Sensitive change request submitted. HR approval is pending. Refresh your history to verify its status.",
+);
+
+      setSensitiveValue("");
+      setSensitiveReason("");
+
+      const refreshTasks: Promise<unknown>[] = [loadMyRequests()];
+      if (canManageLifecycle) refreshTasks.push(loadEmployees());
+      if (isAdmin) {
+        refreshTasks.push(loadPendingRequests());
+        refreshTasks.push(loadAdminHistory());
+      }
+      await Promise.all(refreshTasks);
+    } catch (e) {
+      setError(getError(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function reviewRequest(
+    item: PendingRequest,
+    decision: "APPROVE" | "REJECT",
+  ) {
+    const comment = window.prompt(
+      decision === "APPROVE"
+        ? "Optional approval comment:"
+        : "Reason for rejection:",
+      "",
+    );
+
+    if (comment === null) return;
+
+    if (decision === "REJECT" && !comment.trim()) {
+      setError("Please provide a rejection reason.");
+      return;
+    }
+
+    const requestId = item.request?._id;
+
+    if (!requestId) {
+      setError("This request has no valid request ID.");
+      return;
+    }
+
+    const key = `review-${requestId}`;
+    setBusy(key);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await api.post(
+        `/employees/${encodeURIComponent(item.employeeId)}/sensitive-change-requests/${encodeURIComponent(requestId)}/review`,
+        { decision, comment: comment.trim() },
+      );
+
+      if (response.data?.status === "APPROVED") {
+        setNotice("Sensitive changes approved and applied.");
+      } else if (response.data?.status === "REJECTED") {
+        setNotice("Sensitive change request rejected.");
+      } else {
+        setNotice("Review response received. Refresh to verify its status.");
+      }
+
+      await Promise.all([
+        loadPendingRequests(),
+        loadAdminHistory(),
+      ]);
+    } catch (e) {
+      setError(getError(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-50 px-3 py-6 text-slate-800 sm:px-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center">
+          <div>
+            <h1 className="text-2xl font-extrabold text-slate-950">
+              {canManageLifecycle ? "Employee Lifecycle Management" : "My Profile Change Requests"}
+            </h1>
+            <p className="mt-1 text-sm text-slate-600">
+              {canManageLifecycle
+                ? "Job history, probation management, and sensitive profile-change approvals."
+                : "Request a change to your bank or identity details and track HR approval."}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Refresh
+          </button>
+        </header>
+
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+            <button
+              type="button"
+              className="ml-auto"
+              onClick={() => setError("")}
+              aria-label="Dismiss error"
+            >
+              <XCircle className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {notice && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"
+          >
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{notice}</span>
+            <button
+              type="button"
+              className="ml-auto"
+              onClick={() => setNotice("")}
+              aria-label="Dismiss message"
+            >
+              <XCircle className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {canManageLifecycle && (
+          <>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-sm text-slate-500">Employees loaded</p>
+            <p className="mt-1 text-2xl font-bold">{employees.length}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-sm text-slate-500">Currently on probation</p>
+            <p className="mt-1 text-2xl font-bold">
+              {probationEmployees.length}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-sm text-slate-500">
+              Sensitive changes awaiting HR
+            </p>
+            <p className="mt-1 text-2xl font-bold">
+              {pendingRequests.length}
+            </p>
+          </div>
+        </div>
+
+        <Panel
+          title="Internal Job History"
+          icon={<History className="h-5 w-5 text-indigo-600" />}
+        >
+          <label
+            htmlFor="employee-history-select"
+            className="mb-1 block text-sm font-semibold text-slate-700"
+          >
+            Select employee
+          </label>
+          <select
+            id="employee-history-select"
+            value={selectedEmployeeId}
+            onChange={(event) => setSelectedEmployeeId(event.target.value)}
+            className="mb-4 w-full max-w-xl rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">Select an employee</option>
+            {employees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.employeeCode ? `${employee.employeeCode} — ` : ""}
+                {employee.firstName} {employee.lastName}
+              </option>
+            ))}
+          </select>
+
+          {selectedEmployee && (
+            <div className="mb-4 rounded-lg bg-slate-50 p-3 text-sm">
+              <p className="font-semibold">
+                {selectedEmployee.firstName} {selectedEmployee.lastName}
+              </p>
+              <p className="text-slate-600">
+                {selectedEmployee.designationTitle || "No designation"} ·{" "}
+                {selectedEmployee.departmentName || "No department"}
+              </p>
+            </div>
+          )}
+
+          {historyLoading ? (
+            <p className="py-4 text-sm text-slate-500">
+              Loading job history…
+            </p>
+          ) : history.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+              No internal job-history records found for this employee.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {history.map((entry, index) => (
+                <article
+                  key={entry._id || `${entry.changedAt}-${index}`}
+                  className="rounded-xl border border-slate-200 p-4"
+                >
+                  <div className="flex flex-col justify-between gap-2 sm:flex-row">
+                    <div>
+                      <p className="font-semibold">
+                        {formatDate(entry.changedAt)}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {entry.reason || "No reason provided"}
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      Updated by: {entry.changedBy || "—"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg bg-rose-50 p-3">
+                      <p className="mb-2 text-xs font-bold uppercase text-rose-700">
+                        Previous values
+                      </p>
+                      <pre className="whitespace-pre-wrap break-words text-xs">
+                        {JSON.stringify(entry.previous ?? {}, null, 2)}
+                      </pre>
+                    </div>
+                    <div className="rounded-lg bg-emerald-50 p-3">
+                      <p className="mb-2 text-xs font-bold uppercase text-emerald-700">
+                        New values
+                      </p>
+                      <pre className="whitespace-pre-wrap break-words text-xs">
+                        {JSON.stringify(entry.next ?? {}, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <Panel
+          title="Probation Management"
+          icon={<Clock className="h-5 w-5 text-amber-600" />}
+        >
+          <p className="mb-4 text-sm text-slate-600">
+            Confirm or extend employees who are currently on probation.
+          </p>
+
+          {probationEmployees.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+              No employees are currently marked ON_PROBATION.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {probationEmployees.map((employee) => {
+                const id = String(employee.id);
+
+                return (
+                  <article
+                    key={id}
+                    className="rounded-xl border border-slate-200 p-4"
+                  >
+                    <div className="flex flex-col justify-between gap-3 md:flex-row">
+                      <div>
+                        <p className="font-bold">
+                          {employee.firstName} {employee.lastName}
+                        </p>
+                        <p className="text-sm text-slate-500">
+                          {employee.employeeCode || id} ·{" "}
+                          {employee.designationTitle || "No designation"}
+                        </p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          Joining: {formatDate(employee.dateOfJoining)} ·
+                          Probation end: {formatDate(employee.probationEndDate)}
+                        </p>
+                        <div className="mt-2">
+                          <Status value={employee.status} />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => void confirmProbation(employee)}
+                        className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                      >
+                        {busy === `confirm-${id}` ? "Confirming…" : "Confirm probation"}
+                      </button>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-[150px_1fr_auto]">
+                      <label className="text-sm">
+                        <span className="mb-1 block font-semibold">
+                          Extend by (days)
+                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={365}
+                          value={extendDays[id] ?? 30}
+                          onChange={(event) =>
+                            setExtendDays((current) => ({
+                              ...current,
+                              [id]: Number(event.target.value),
+                            }))
+                          }
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                        />
+                      </label>
+
+                      <label className="text-sm">
+                        <span className="mb-1 block font-semibold">
+                          Extension reason
+                        </span>
+                        <input
+                          value={extendRemarks[id] ?? ""}
+                          onChange={(event) =>
+                            setExtendRemarks((current) => ({
+                              ...current,
+                              [id]: event.target.value,
+                            }))
+                          }
+                          placeholder="Enter a reason"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                        />
+                      </label>
+
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          disabled={Boolean(busy)}
+                          onClick={() => void extendProbation(employee)}
+                          className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50 sm:w-auto"
+                        >
+                          {busy === `extend-${id}` ? "Extending…" : "Extend probation"}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+
+          </>
+        )}
+
+        {!isAdmin && (
+        <Panel
+          title="Request a Sensitive Profile Change"
+          icon={<ShieldCheck className="h-5 w-5 text-indigo-600" />}
+        >
+          <p className="mb-4 text-sm text-slate-600">
+            Submit a change to sensitive identity or bank information. It
+            remains pending until an authorized administrator reviews it.
+          </p>
+
+          <form
+            onSubmit={submitSensitiveRequest}
+            className="grid gap-4 md:grid-cols-2"
+          >
+            <label className="text-sm">
+              <span className="mb-1 block font-semibold">Field to update</span>
+              <select
+                value={sensitiveField}
+                onChange={(event) => setSensitiveField(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+              >
+                <option value="bankAccountNumber">Bank account number</option>
+                <option value="bankIfscCode">Bank IFSC code</option>
+                <option value="bankBranch">Bank branch</option>
+                <option value="employeePan">PAN</option>
+                <option value="employeeAadhaar">Aadhaar</option>
+                <option value="employeeTan">TAN</option>
+              </select>
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1 block font-semibold">New value</span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={sensitiveValue}
+                onChange={(event) => setSensitiveValue(event.target.value)}
+                placeholder="Enter new value"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </label>
+
+            <label className="text-sm md:col-span-2">
+              <span className="mb-1 block font-semibold">
+                Reason for change
+              </span>
+              <textarea
+                rows={3}
+                value={sensitiveReason}
+                onChange={(event) => setSensitiveReason(event.target.value)}
+                placeholder="Explain why the information needs to change"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </label>
+
+            <div className="md:col-span-2">
+              <button
+                type="submit"
+                disabled={Boolean(busy)}
+                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {busy === "submit-sensitive" && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Submit for approval
+              </button>
+              <p className="mt-2 text-xs text-slate-500">
+                Your reason is saved with the request. Sensitive values should
+                be applied only after approval.
+              </p>
+            </div>
+          </form>
+        </Panel>
+        )}
+
+        {isAdmin && (
+          <>
+        <Panel
+          title="HR Approval Queue"
+          icon={<Users className="h-5 w-5 text-indigo-600" />}
+        >
+          <p className="mb-4 text-sm text-slate-600">
+            Pending sensitive profile-change requests available to your account.
+          </p>
+
+          {pendingRequests.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+              No pending requests returned by the API, or your account does not
+              have permission to view the queue.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {pendingRequests.map((item) => {
+                const requestId = item.request?._id;
+                const isBusy = busy === `review-${requestId}`;
+
+                return (
+                  <article
+                    key={`${item.employeeId}-${requestId}`}
+                    className="rounded-xl border border-slate-200 p-4"
+                  >
+                    <div className="flex flex-col justify-between gap-3 sm:flex-row">
+                      <div>
+                        <p className="font-bold">{item.employeeName}</p>
+                        <p className="text-xs text-slate-500">
+                          {item.employeeCode || item.employeeId} · Requested{" "}
+                          {formatDate(item.request.requestedAt)}
+                        </p>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(item.request.fields ?? []).map((field) => (
+                            <span
+                              key={field}
+                              className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold"
+                            >
+                              {sensitiveFieldLabel(field)}
+                            </span>
+                          ))}
+                        </div>
+
+                        {item.request.reason && (
+                          <p className="mt-2 text-sm text-slate-700">
+                            <span className="font-semibold">Reason:</span>{" "}
+                            {item.request.reason}
+                          </p>
+                        )}
+
+                        <p className="mt-2 text-xs text-slate-500">
+                          Submitted values are hidden for security.
+                        </p>
+                        <div className="mt-2">
+                          <Status value={item.request.status || "PENDING"} />
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2">
+                        <button
+                          type="button"
+                          disabled={Boolean(busy) || !requestId}
+                          onClick={() => void reviewRequest(item, "APPROVE")}
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(busy) || !requestId}
+                          onClick={() => void reviewRequest(item, "REJECT")}
+                          className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                        >
+                          <XCircle className="h-4 w-4" />
+                          Reject
+                        </button>
+                        {isBusy && (
+                          <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+
+        <Panel
+          title="HR Sensitive Change Review History"
+          icon={<History className="h-5 w-5 text-indigo-600" />}
+        >
+          <p className="mb-4 text-sm text-slate-600">
+            All employees' sensitive profile-change requests, including pending,
+            approved, and rejected requests. Submitted values are hidden.
+          </p>
+
+          {adminHistory.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+              No sensitive profile-change history found.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {adminHistory.map((item) => {
+                const request = item.request;
+                return (
+                  <article
+                    key={`${item.employeeId}-${request._id}`}
+                    className="rounded-xl border border-slate-200 p-4"
+                  >
+                    <div className="flex flex-col justify-between gap-3 sm:flex-row">
+                      <div>
+                        <p className="font-semibold text-slate-900">
+                          {item.employeeName || "Unknown employee"}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.employeeCode || item.employeeId}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(request.fields ?? []).map((field) => (
+                            <span
+                              key={field}
+                              className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold"
+                            >
+                              {sensitiveFieldLabel(field)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <Status value={request.status || "PENDING"} />
+                    </div>
+
+                    <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2">
+                      <p className="text-sm text-slate-600">
+                        <span className="font-semibold">Requested:</span>{" "}
+                        {formatDate(request.requestedAt)}
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        <span className="font-semibold">Reviewed:</span>{" "}
+                        {formatDate(request.reviewedAt)}
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        <span className="font-semibold">Reviewed by role:</span>{" "}
+                        {request.reviewedByRole || "—"}
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        <span className="font-semibold">Reason:</span>{" "}
+                        {request.reason || "—"}
+                      </p>
+                    </div>
+
+                    {request.reviewComment && (
+                      <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+                        <span className="font-semibold">HR comment:</span>{" "}
+                        {request.reviewComment}
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+
+          </>
+        )}
+
+        {!isAdmin && (
+        <Panel
+          title="My Sensitive Change Requests"
+          icon={<ShieldCheck className="h-5 w-5 text-slate-600" />}
+        >
+          {myRequests.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              You have not submitted any sensitive profile-change requests yet. Submit a request above; its reason and approval status will appear here.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {myRequests.map((request, index) => (
+                <article
+                  key={request._id || index}
+                  className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 p-4 sm:flex-row sm:items-start"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">
+                      {(request.fields ?? [])
+                        .map(sensitiveFieldLabel)
+                        .join(", ") || "Profile change"}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Requested {formatDate(request.requestedAt)}
+                    </p>
+
+                    {request.reason && (
+                      <p className="mt-2 text-sm text-slate-600">
+                        <span className="font-semibold">Reason:</span>{" "}
+                        {request.reason}
+                      </p>
+                    )}
+
+                    {request.reviewedAt && (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Reviewed: {formatDate(request.reviewedAt)}
+                      </p>
+                    )}
+
+                    {request.reviewComment && (
+                      <p className="mt-2 text-sm text-slate-600">
+                        <span className="font-semibold">HR comment:</span>{" "}
+                        {request.reviewComment}
+                      </p>
+                    )}
+                  </div>
+
+                  <Status value={request.status} />
+                </article>
+              ))}
+            </div>
+          )}
+        </Panel>
+        )}
+
+        <p className="text-center text-xs text-slate-500">
+          Employee data and request permissions are controlled by the backend.
+        </p>
+      </div>
+    </main>
+  );
+}
