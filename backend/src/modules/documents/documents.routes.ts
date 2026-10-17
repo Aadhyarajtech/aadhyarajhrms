@@ -344,7 +344,12 @@ documentsRouter.post(
     try {
       const role = req.user!.role;
       const wantsToRequestFromEmployee = !!req.body.employeeId;
-      const isPrivilegedRequester = REQUESTER_ROLES.includes(role) || req.user!.isManager === true;
+      const isPrivilegedRequester =
+        REQUESTER_ROLES.includes(role) ||
+        role === "ADMIN" ||
+        role === "SUPER_ADMIN" ||
+        req.user!.isManager === true;
+
       const isEmployeeRequester = !!req.user!.employeeId;
 
       let direction: "COMPANY_TO_EMPLOYEE" | "EMPLOYEE_TO_COMPANY";
@@ -353,12 +358,7 @@ documentsRouter.post(
       if (wantsToRequestFromEmployee) {
         if (!isPrivilegedRequester) throw AppError.forbidden();
         direction = "COMPANY_TO_EMPLOYEE";
-        if (!EMPLOYEE_PROVIDED_TYPES.includes(req.body.type)) {
-          throw AppError.badRequest(
-            "This document type cannot be requested from an employee.",
-          );
-        }
-        if (role === "MANAGER" || req.user!.isManager) {
+        if (role === "MANAGER" && !["ADMIN", "SUPER_ADMIN"].includes(role)) {
           const allowed = await repo.isDirectReport(
             req.user!.employeeId as string,
             req.body.employeeId,
