@@ -16,7 +16,85 @@ import * as attendanceRepo from "@/modules/attendance/attendance.repository";
 import * as leaveRepo from "@/modules/leave/leave.repository";
 import * as performanceRepo from "@/modules/performance/performance.repository";
 import { sendEmployeeWelcomeCredentialsEmail } from "@/services/email.service";
-import { Employee, User } from "@/db/models";
+
+import { AuditLog, Employee, User } from "@/db/models";
+
+const EMPLOYEE_IDENTITY_FIELDS = [
+  "employeeAadhaar",
+  "employeePan",
+] as const;
+
+// Always restricted for non-admin users, including on their own profile.
+const EMPLOYEE_RESTRICTED_FIELDS = [
+  "employeeTan",
+  "signature",
+  "bankAccountNumber",
+  "bankIfscCode",
+  "bankBranch",
+  "investmentDeclarations",
+] as const;
+
+// Allowed on an employee's own profile, but hidden from other employees
+// and managers.
+const EMPLOYEE_SELF_PROFILE_FIELDS = [
+  "medicalConditions",
+  "bloodGroup",
+  "insurancePolicyNumber",
+  "emergencyContactName",
+  "emergencyContactPhone",
+  "emergencyContactRelationship",
+  "emergencyContactEmail",
+  "emergencyContacts",
+] as const;
+
+function filterEmployeeSensitiveFields<T extends Record<string, any>>(
+  employee: T,
+  role: string,
+  isSelf = false,
+): T {
+  if (role === "SUPER_ADMIN" || role === "ADMIN") {
+    return employee;
+  }
+
+  const filtered = { ...employee };
+
+  // HR-only remarks must not be exposed in non-admin employee responses.
+  const resignationDetails = (filtered as Record<string, any>).resignationDetails;
+  if (resignationDetails) {
+    (filtered as Record<string, any>).resignationDetails = {
+      ...resignationDetails,
+      hrRemarks: null,
+    };
+  }
+
+  const terminationDetails = (filtered as Record<string, any>).terminationDetails;
+  if (terminationDetails) {
+    (filtered as Record<string, any>).terminationDetails = {
+      ...terminationDetails,
+      hrRemarks: null,
+    };
+  }
+
+
+  for (const field of EMPLOYEE_RESTRICTED_FIELDS) {
+    delete filtered[field];
+  }
+
+  if (!isSelf) {
+    for (const field of EMPLOYEE_IDENTITY_FIELDS) {
+      delete filtered[field];
+    }
+
+    for (const field of EMPLOYEE_SELF_PROFILE_FIELDS) {
+      delete filtered[field];
+    }
+  }
+
+  return filtered;
+}
+
+
+
 export const employeesRouter = Router();
 employeesRouter.use(authenticate);
 
@@ -55,7 +133,11 @@ employeesRouter.post(
 
       res.json({
         avatarUrl,
-        employee: updated,
+        employee: filterEmployeeSensitiveFields(
+          updated as Record<string, any>,
+          requester.role,
+          isSelf,
+        ),
       });
     } catch (error) {
       next(error);
@@ -85,23 +167,13 @@ employeesRouter.get(
       // permissions remain enforced by their respective endpoints.
 
       const result = await repo.listEmployees(filters) as any;
-      const canViewSensitiveDetails = ["ADMIN", "SUPER_ADMIN"].includes(
-        String(requester.role).toUpperCase(),
-      );
-      if (!canViewSensitiveDetails && Array.isArray(result?.employees)) {
-        result.employees = result.employees.map((item: any) => {
-          const safeItem = { ...item };
-          delete safeItem.employeeAadhaar;
-          delete safeItem.employeePan;
-          delete safeItem.employeeTan;
-          delete safeItem.bankAccountNumber;
-          delete safeItem.bankIfscCode;
-          delete safeItem.bankBranch;
-          delete safeItem.investmentDeclarations;
-          delete safeItem.signature;
-          return safeItem;
-        });
+
+      if (Array.isArray(result?.employees)) {
+        result.employees = result.employees.map((employee: any) =>
+          filterEmployeeSensitiveFields(employee, requester.role),
+        );
       }
+
       res.set("Cache-Control", "no-store");
       res.json(result);
     } catch (err) {
@@ -184,6 +256,14 @@ employeesRouter.get(
   requirePermission("employees.view"),
   async (req, res, next) => {
     try {
+
+      if (
+        req.user?.role === "EMPLOYEE" &&
+        req.user.employeeId !== req.params.id
+      ) {
+        throw AppError.forbidden();
+      }
+
       const employeeId = req.params.id;
 
       const employee = await repo.getEmployeeAiContext(employeeId);
@@ -532,28 +612,54 @@ employeesRouter.get(
   },
   async (req, res, next) => {
     try {
+
       const employee = await repo.getEmployeeById(req.params.id);
       if (!employee) throw AppError.notFound("Employee not found.");
+      const requester = req.user!;
+      const linkedEmployee = await repo.getEmployeeByUserId(requester.userId);
 
-      // Sensitive identity and financial fields are returned only to Admins.
-      // Hiding fields in React alone is not a security boundary.
-      const responseEmployee: Record<string, any> = { ...(employee as any) };
-      const canViewSensitiveDetails = ["ADMIN", "SUPER_ADMIN"].includes(
-        String(req.user!.role).toUpperCase(),
+      const linkedEmployeeId = String(
+        (linkedEmployee as any)?.id ?? (linkedEmployee as any)?._id ?? "",
       );
-      if (!canViewSensitiveDetails) {
-        delete responseEmployee.employeeAadhaar;
-        delete responseEmployee.employeePan;
-        delete responseEmployee.employeeTan;
-        delete responseEmployee.bankAccountNumber;
-        delete responseEmployee.bankIfscCode;
-        delete responseEmployee.bankBranch;
-        delete responseEmployee.investmentDeclarations;
-        delete responseEmployee.signature;
+      const requestedId = String(req.params.id ?? "");
+      const isSelf = linkedEmployeeId === requestedId;
+
+      // Audit successful profile access without recording sensitive values.
+      try {
+        await AuditLog.create({
+          userId: requester.userId,
+          action: "EMPLOYEE_PROFILE_VIEWED",
+          entity: "Employee",
+          entityId: requestedId,
+          metadata: JSON.stringify({
+            requesterRole: requester.role,
+            accessType: isSelf ? "SELF" : "OTHER",
+            sensitiveFieldsPermitted:
+              requester.role === "SUPER_ADMIN" || requester.role === "ADMIN"
+                ? [
+                  ...EMPLOYEE_IDENTITY_FIELDS,
+                  ...EMPLOYEE_RESTRICTED_FIELDS,
+                  ...EMPLOYEE_SELF_PROFILE_FIELDS,
+                ]
+                : isSelf
+                  ? [...EMPLOYEE_IDENTITY_FIELDS, ...EMPLOYEE_SELF_PROFILE_FIELDS]
+                  : [],
+          }),
+          ipAddress: req.ip || null,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (auditError) {
+        console.error("Failed to write employee profile audit log", auditError);
       }
 
       res.set("Cache-Control", "no-store");
-      res.json({ employee: responseEmployee });
+      res.json({
+        employee: filterEmployeeSensitiveFields(
+          employee as Record<string, any>,
+          requester.role,
+          isSelf,
+        ),
+      });
     } catch (err) {
       next(err);
     }
@@ -611,7 +717,12 @@ employeesRouter.get(
       );
 
       return res.json({
-        employees: uniqueEmployees,
+        employees: uniqueEmployees.map((employee: any) =>
+          filterEmployeeSensitiveFields(
+            employee,
+            requester.role,
+          ),
+        ),
       });
     } catch (err) {
       return next(err);
@@ -745,15 +856,15 @@ const updateEmployeeSchema = z.object({
 
   status: z
     .enum([
-    "ONBOARDING",
-    "ACTIVE",
-    "ON_PROBATION",
-    "ON_LEAVE",
-    "NOTICE_PERIOD",
-    "TERMINATED",
-    "RESIGNED",
-    "INACTIVE",
-    "ON_HOLD",
+      "ONBOARDING",
+      "ACTIVE",
+      "ON_PROBATION",
+      "ON_LEAVE",
+      "NOTICE_PERIOD",
+      "TERMINATED",
+      "RESIGNED",
+      "INACTIVE",
+      "ON_HOLD",
     ])
     .optional(),
   phone: z.string().optional(),
@@ -928,10 +1039,11 @@ employeesRouter.patch(
         bloodGroup: req.body.bloodGroup,
         insurancePolicyNumber: req.body.insurancePolicyNumber,
 
+
         // Sensitive identity/financial fields are intentionally excluded here.
         // They are submitted through the approval request below.
-        avatarUrl: req.body.avatarUrl,
 
+        avatarUrl: req.body.avatarUrl,
         education: req.body.education,
         certifications: req.body.certifications,
         workHistory: req.body.workHistory,
@@ -990,7 +1102,16 @@ employeesRouter.patch(
         })));
       }
       const updated = await repo.updateEmployee(employee.id, body);
-      res.json({ employee: updated, sensitiveChangeRequestId: changeRequestId, sensitiveChangesRequireApproval: Boolean(changeRequestId) });
+      res.set("Cache-Control", "no-store");
+      res.json({
+        employee: filterEmployeeSensitiveFields(
+          updated as Record<string, any>,
+          req.user!.role,
+          true,
+        ),
+        sensitiveChangeRequestId: changeRequestId,
+        sensitiveChangesRequireApproval: Boolean(changeRequestId),
+      });
     } catch (err) {
       next(err);
     }
@@ -1034,8 +1155,8 @@ employeesRouter.patch(
         if (!req.body.probationEndDate) {
           const probationMonths = Number(
             req.body.probationPeriodMonths ??
-              target.probationPeriodMonths ??
-              3,
+            target.probationPeriodMonths ??
+            3,
           );
 
           const probationEndDate = new Date(probationStartDate);
@@ -1051,6 +1172,7 @@ employeesRouter.patch(
         req.params.id,
         updateBody,
       );
+
 
       const jobFields = [
         "departmentId",
@@ -1088,7 +1210,7 @@ employeesRouter.patch(
         (field) => previousJob[field] !== nextJob[field],
       );
 
-      
+
       if (changedJobFields) {
         const historyEntry = {
           _id: `ejh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -1122,6 +1244,8 @@ employeesRouter.patch(
 
 
 
+
+
       if (
         req.body.status &&
         req.body.status !== target.status
@@ -1145,7 +1269,12 @@ employeesRouter.patch(
         });
       }
 
-      res.json({ employee });
+      res.json({
+        employee: filterEmployeeSensitiveFields(
+          employee as Record<string, any>,
+          req.user!.role,
+        ),
+      });
     } catch (err) {
       next(err);
     }
@@ -1187,7 +1316,10 @@ employeesRouter.post("/:id/onboarding/start", isAdmin, async (req, res, next) =>
     res.json({
       success: true,
       message: "Employee onboarding is ready to continue.",
-      employee,
+      employee: filterEmployeeSensitiveFields(
+        employee as Record<string, any>,
+        req.user!.role,
+      ),
       onboarding,
     });
   } catch (err) {
@@ -1241,7 +1373,10 @@ employeesRouter.patch(
       });
 
       res.json({
-        employee: updated,
+        employee: filterEmployeeSensitiveFields(
+          updated as Record<string, any>,
+          req.user!.role,
+        ),
         offboardingChecklist: checklist,
       });
     } catch (err) {
@@ -1272,7 +1407,10 @@ employeesRouter.patch(
       res.json({
         success: true,
         message: `Onboarding stage ${stage} completed successfully.`,
-        employee,
+        employee: filterEmployeeSensitiveFields(
+          employee as Record<string, any>,
+          req.user!.role,
+        ),
       });
     } catch (err) {
       if (err instanceof Error && !("statusCode" in err)) {
@@ -1323,7 +1461,10 @@ employeesRouter.post(
       res.json({
         success: true,
         message: "Employee onboarding completed successfully.",
-        employee: updatedEmployee,
+        employee: filterEmployeeSensitiveFields(
+          updatedEmployee as Record<string, any>,
+          req.user!.role,
+        ),
         onboarding: updatedEmployee.onboarding ?? null,
       });
     } catch (err) {
@@ -1472,7 +1613,7 @@ employeesRouter.post(
       if (!fieldValidation.success) {
         throw AppError.badRequest(
           fieldValidation.error.issues[0]?.message ??
-            "Invalid sensitive field value.",
+          "Invalid sensitive field value.",
         );
       }
 
@@ -1485,8 +1626,8 @@ employeesRouter.post(
         _id: requestId,
         fields: [field],
         changes: {
-  [field]: (fieldValidation.data as Record<string, unknown>)[field],
-},
+          [field]: (fieldValidation.data as Record<string, unknown>)[field],
+        },
         reason,
         requestedBy: req.user!.userId,
         requestedAt: new Date().toISOString(),
@@ -1715,7 +1856,10 @@ employeesRouter.post(
       res.json({
         success: true,
         message: "Employee probation confirmed successfully.",
-        employee: updatedEmployee,
+        employee: filterEmployeeSensitiveFields(
+          updatedEmployee as Record<string, any>,
+          req.user!.role,
+        ),
       });
     } catch (err) {
       next(err);
@@ -1751,24 +1895,24 @@ employeesRouter.post(
         );
       }
 
-     const now = new Date();
+      const now = new Date();
 
-const existingEndDate = employee.probationEndDate
-  ? new Date(employee.probationEndDate)
-  : null;
+      const existingEndDate = employee.probationEndDate
+        ? new Date(employee.probationEndDate)
+        : null;
 
-const baseDate =
-  existingEndDate &&
-  !Number.isNaN(existingEndDate.getTime()) &&
-  existingEndDate > now
-    ? existingEndDate
-    : now;
+      const baseDate =
+        existingEndDate &&
+          !Number.isNaN(existingEndDate.getTime()) &&
+          existingEndDate > now
+          ? existingEndDate
+          : now;
 
-const currentEndDate = new Date(baseDate);
+      const currentEndDate = new Date(baseDate);
 
-currentEndDate.setDate(
-  currentEndDate.getDate() + extensionDays,
-);
+      currentEndDate.setDate(
+        currentEndDate.getDate() + extensionDays,
+      );
 
       const updatedEmployee = await repo.updateEmployee(req.params.id, {
         status: "ON_PROBATION",
@@ -1796,7 +1940,10 @@ currentEndDate.setDate(
       res.json({
         success: true,
         message: "Employee probation extended successfully.",
-        employee: updatedEmployee,
+        employee: filterEmployeeSensitiveFields(
+          updatedEmployee as Record<string, any>,
+          req.user!.role,
+        ),
       });
     } catch (err) {
       next(err);
@@ -1826,15 +1973,15 @@ employeesRouter.post(
 
       const noticeStartDate = new Date().toISOString();
 
-     const {
-  noticeDays: noticeDaysInput = 30,
-  resignationDate,
-  resignationReason,
-  employeeRemarks,
-  hrRemarks,
-} = req.body;
+      const {
+        noticeDays: noticeDaysInput = 30,
+        resignationDate,
+        resignationReason,
+        employeeRemarks,
+        hrRemarks,
+      } = req.body;
 
-const noticeDays = Number(noticeDaysInput);
+      const noticeDays = Number(noticeDaysInput);
 
       if (!Number.isInteger(noticeDays) || noticeDays < 1) {
         throw AppError.badRequest(
@@ -1842,41 +1989,41 @@ const noticeDays = Number(noticeDaysInput);
         );
       }
 
-     if (!resignationDate) {
-  throw AppError.badRequest("Resignation date is required.");
-}
+      if (!resignationDate) {
+        throw AppError.badRequest("Resignation date is required.");
+      }
 
-if (
-  typeof resignationReason !== "string" ||
-  !resignationReason.trim()
-) {
-  throw AppError.badRequest("Resignation reason is required.");
-}
+      if (
+        typeof resignationReason !== "string" ||
+        !resignationReason.trim()
+      ) {
+        throw AppError.badRequest("Resignation reason is required.");
+      }
 
       const lastWorkingDate = new Date(noticeStartDate);
       lastWorkingDate.setDate(
         lastWorkingDate.getDate() + noticeDays,
       );
 
-   const updatedEmployee = await repo.updateEmployee(req.params.id, {
-  status: "NOTICE_PERIOD",
-  noticeStartDate,
-  lastWorkingDate: lastWorkingDate.toISOString(),
-  noticeDays,
+      const updatedEmployee = await repo.updateEmployee(req.params.id, {
+        status: "NOTICE_PERIOD",
+        noticeStartDate,
+        lastWorkingDate: lastWorkingDate.toISOString(),
+        noticeDays,
 
-  resignationDetails: {
-    resignationDate,
-    resignationReason: resignationReason.trim(),
-    employeeRemarks:
-      typeof employeeRemarks === "string" && employeeRemarks.trim()
-        ? employeeRemarks.trim()
-        : null,
-    hrRemarks:
-      typeof hrRemarks === "string" && hrRemarks.trim()
-        ? hrRemarks.trim()
-        : null,
-  },
-});    
+        resignationDetails: {
+          resignationDate,
+          resignationReason: resignationReason.trim(),
+          employeeRemarks:
+            typeof employeeRemarks === "string" && employeeRemarks.trim()
+              ? employeeRemarks.trim()
+              : null,
+          hrRemarks:
+            typeof hrRemarks === "string" && hrRemarks.trim()
+              ? hrRemarks.trim()
+              : null,
+        },
+      });
 
       await notify({
         userId: employee.userId,
@@ -1889,7 +2036,10 @@ if (
       res.json({
         success: true,
         message: "Notice period started successfully.",
-        employee: updatedEmployee,
+        employee: filterEmployeeSensitiveFields(
+          updatedEmployee as Record<string, any>,
+          req.user!.role,
+        ),
       });
     } catch (err) {
       next(err);
@@ -1950,7 +2100,10 @@ employeesRouter.post(
       res.json({
         success: true,
         message: "Employee offboarding completed successfully.",
-        employee: updatedEmployee,
+        employee: filterEmployeeSensitiveFields(
+          updatedEmployee as Record<string, any>,
+          req.user!.role,
+        ),
       });
     } catch (err) {
       next(err);
@@ -2028,7 +2181,10 @@ employeesRouter.post(
       res.json({
         success: true,
         message: "Employee terminated successfully.",
-        employee: updatedEmployee,
+        employee: filterEmployeeSensitiveFields(
+          updatedEmployee as Record<string, any>,
+          req.user!.role,
+        ),
       });
     } catch (err) {
       next(err);

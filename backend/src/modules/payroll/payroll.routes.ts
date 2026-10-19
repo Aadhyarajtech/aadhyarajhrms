@@ -9,7 +9,7 @@ import * as repo from "./payroll.repository";
 import { explainPayslip, askPayslipQuestion } from "../../services/payslipExplainer.service";
 import { validatePayrollReadiness } from "../../services/payrollValidation.service";
 import { detectPayrollAnomalies } from "../../services/payrollAnomaly.service";
-
+import { hasPermission } from "@/modules/governance/governance.repository";
 export const payrollRouter = Router();
 payrollRouter.use(authenticate);
 
@@ -344,31 +344,59 @@ async function checkPayslipAccess(
   payslip: any,
   user: { userId: string; role: string; employeeId?: string | null },
 ) {
-  const isPrivileged = ["SUPER_ADMIN", "ADMIN", "FINANCE"].includes(
-    user.role,
-  );
-  if (isPrivileged) return;
+  if (user.role === "SUPER_ADMIN") return;
 
-  let userEmployeeId = user.employeeId ? String(user.employeeId) : null;
+  let userEmployeeId = user.employeeId
+    ? String(user.employeeId)
+    : null;
+
   if (!userEmployeeId && user.userId) {
     const employee = await Employee.findOne({ userId: user.userId })
       .select("_id")
       .lean();
+
     if (employee) userEmployeeId = String(employee._id);
   }
 
   const isOwner = Boolean(
     userEmployeeId &&
-      payslip.employeeId &&
-      String(payslip.employeeId) === userEmployeeId,
+    payslip.employeeId &&
+    String(payslip.employeeId) === userEmployeeId,
   );
 
-  if (isOwner && payslip.runStatus !== "PAID") {
-    throw AppError.forbidden("Payslip is not yet released for viewing.");
+  // Employees can view only their own released payslips.
+  if (user.role === "EMPLOYEE") {
+    if (!isOwner) {
+      throw AppError.forbidden(
+        "You do not have permission to view this payslip.",
+      );
+    }
+
+    if (payslip.runStatus !== "PAID") {
+      throw AppError.forbidden(
+        "Payslip is not yet released for viewing.",
+      );
+    }
+
+    return;
   }
-  if (!isOwner) {
-    throw AppError.forbidden("You do not have permission to view this payslip.");
+
+  // Other roles need configured payroll.view or payroll.manage access
+  // to view another employee's payslip.
+  if (await hasPermission(user.role, "payroll.view")) return;
+
+  // Preserve access to one's own already-released payslip.
+  if (isOwner && payslip.runStatus === "PAID") return;
+
+  if (isOwner) {
+    throw AppError.forbidden(
+      "Payslip is not yet released for viewing.",
+    );
   }
+
+  throw AppError.forbidden(
+    "You do not have permission to view this payslip.",
+  );
 }
 
 payrollRouter.get("/payslips/:id", async (req, res, next) => {
