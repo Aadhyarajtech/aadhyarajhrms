@@ -3464,9 +3464,11 @@ function EditEmployeeModal({
         });
       }
 
-      const adminPayload = {
-        ...commonPayload,
-        departmentId: departmentId || null,
+     const adminPayload = {
+  ...commonPayload,
+  workLocation: payload.workLocation?.trim() || null,
+ jobChangeReason: payload.jobChangeReason?.trim() || "",
+  departmentId: departmentId || null,
         designationId: designationId || null,
         managerId: payload.managerId || null,
         employeeTan: payload.employeeTan || null,

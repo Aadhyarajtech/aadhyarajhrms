@@ -1168,12 +1168,8 @@ employeesRouter.patch(
         }
       }
 
-      const employee = await repo.updateEmployee(
-        req.params.id,
-        updateBody,
-      );
-
-
+      
+      // Capture the current job details before updating the employee.
       const jobFields = [
         "departmentId",
         "designationId",
@@ -1182,12 +1178,25 @@ employeesRouter.patch(
         "workLocation",
       ] as const;
 
+      const hasOwn = (obj: object, key: string) =>
+        Object.prototype.hasOwnProperty.call(obj, key);
+
       const getJobValue = (value: unknown): string | null => {
-        if (value === undefined || value === null || value === "") {
+        if (value === undefined || value === null) {
           return null;
         }
 
-        return String(value).trim();
+        // Support both raw MongoDB IDs and populated reference objects.
+        if (typeof value === "object") {
+          const ref = value as { _id?: unknown; id?: unknown };
+          const id = ref._id ?? ref.id;
+
+          if (id !== undefined && id !== null) {
+            return String(id).trim() || null;
+          }
+        }
+
+        return String(value).trim() || null;
       };
 
       const previousJob = {
@@ -1198,53 +1207,89 @@ employeesRouter.patch(
         workLocation: getJobValue(target.workLocation),
       };
 
-      const nextJob = {
-        departmentId: getJobValue((employee as any)?.departmentId ?? target.departmentId),
-        designationId: getJobValue((employee as any)?.designationId ?? target.designationId),
-        managerId: getJobValue((employee as any)?.managerId ?? target.managerId),
-        grade: getJobValue((employee as any)?.grade ?? target.grade),
-        workLocation: getJobValue((employee as any)?.workLocation ?? target.workLocation),
+      // Determine whether the request changes any job-related field.
+      // Omitted fields retain their existing values; explicit null/blank
+      // values are treated as intentional clearing of the field.
+      const requestedJob = {
+        departmentId: hasOwn(req.body, "departmentId")
+          ? getJobValue(req.body.departmentId)
+          : previousJob.departmentId,
+        designationId: hasOwn(req.body, "designationId")
+          ? getJobValue(req.body.designationId)
+          : previousJob.designationId,
+        managerId: hasOwn(req.body, "managerId")
+          ? getJobValue(req.body.managerId)
+          : previousJob.managerId,
+        grade: hasOwn(req.body, "grade")
+          ? getJobValue(req.body.grade)
+          : previousJob.grade,
+        workLocation: hasOwn(req.body, "workLocation")
+          ? getJobValue(req.body.workLocation)
+          : previousJob.workLocation,
       };
 
-      const changedJobFields = jobFields.some(
-        (field) => previousJob[field] !== nextJob[field],
+      const requestedJobChanged = jobFields.some(
+        (field) => previousJob[field] !== requestedJob[field],
       );
 
+      // Update the employee using the existing repository method.
+      const employee = await repo.updateEmployee(
+        req.params.id,
+        updateBody,
+      );
 
-      if (changedJobFields) {
-        const historyEntry = {
-          _id: `ejh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          changedAt: new Date().toISOString(),
-          changedBy: req.user!.userId,
-          reason:
-            typeof req.body.jobChangeReason === "string"
-              ? req.body.jobChangeReason.trim().slice(0, 500) || null
-              : null,
-          previous: previousJob,
-          next: nextJob,
-        };
-
-        const historyResult = await Employee.updateOne(
-          { _id: req.params.id },
-          { $push: { internalJobHistory: historyEntry } },
-        );
-
-        if (historyResult.matchedCount !== 1) {
-          throw AppError.notFound(
-            "Employee was updated, but the job-history record could not be saved because the employee record was not found.",
-          );
-        }
-
-        if (historyResult.modifiedCount !== 1) {
-          throw AppError.badRequest(
-            "Employee was updated, but the job-history record was not saved.",
-          );
-        }
+      if (!employee) {
+        throw AppError.notFound("Employee not found.");
       }
 
+      if (requestedJobChanged) {
+        // Use the persisted result when the property exists, including null.
+        // Do not use ?? here: it would turn a real null into the old value.
+        const persistedValue = (field: (typeof jobFields)[number]) =>
+          hasOwn(employee as object, field)
+            ? (employee as any)[field]
+            : requestedJob[field];
 
+        const nextJob = {
+          departmentId: getJobValue(persistedValue("departmentId")),
+          designationId: getJobValue(persistedValue("designationId")),
+          managerId: getJobValue(persistedValue("managerId")),
+          grade: getJobValue(persistedValue("grade")),
+          workLocation: getJobValue(persistedValue("workLocation")),
+        };
 
+        const changedJobFields = jobFields.some(
+          (field) => previousJob[field] !== nextJob[field],
+        );
 
+        if (changedJobFields) {
+          const historyEntry = {
+            _id: `ejh_${Date.now()}_${Math.random()
+              .toString(36)
+              .slice(2, 8)}`,
+            changedAt: new Date().toISOString(),
+            changedBy: req.user!.userId,
+            reason:
+              typeof req.body.jobChangeReason === "string"
+                ? req.body.jobChangeReason.trim().slice(0, 500) || null
+                : null,
+            previous: previousJob,
+            next: nextJob,
+          };
+
+          const historyResult = await Employee.updateOne(
+            { _id: req.params.id },
+            { $push: { internalJobHistory: historyEntry } },
+          );
+
+          if (historyResult.matchedCount !== 1 ||
+              historyResult.modifiedCount !== 1) {
+            throw AppError.badRequest(
+              "Employee details were updated, but the internal job history could not be saved. Please contact HR before retrying.",
+            );
+          }
+        }
+      }
 
       if (
         req.body.status &&

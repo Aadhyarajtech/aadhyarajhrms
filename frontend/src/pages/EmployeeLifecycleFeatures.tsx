@@ -9,6 +9,9 @@ import {
   CheckCircle2,
   Clock,
   History,
+  CalendarDays,
+  FileText,
+  UserRound,
   Loader2,
   RefreshCw,
   ShieldCheck,
@@ -18,6 +21,7 @@ import {
 
 type Employee = {
   id: string;
+  userId?: string | null;
   employeeCode?: string;
   firstName?: string;
   lastName?: string;
@@ -38,6 +42,101 @@ type JobHistoryEntry = {
   previous?: Record<string, unknown>;
   next?: Record<string, unknown>;
 };
+
+
+const JOB_HISTORY_LABELS: Record<string, string> = {
+  departmentId: "Department",
+  designationId: "Designation",
+  managerId: "Reporting Manager",
+  grade: "Grade",
+  workLocation: "Work Location",
+};
+
+type JobHistoryEmployeeLookup = Employee & {
+  departmentId?: unknown;
+  designationId?: unknown;
+  managerId?: unknown;
+  grade?: unknown;
+};
+
+function normaliseHistoryId(value: unknown): string {
+  if (value && typeof value === "object") {
+    const item = value as Record<string, unknown>;
+    value = item._id ?? item.id ?? item.value;
+  }
+  return value === null || value === undefined ? "" : String(value).trim();
+}
+
+function buildJobHistoryNameLookup(
+  employees: Employee[],
+  organizationNames: Map<string, string> = new Map(),
+) {
+  const lookup = new Map<string, string>(organizationNames);
+  for (const rawEmployee of employees as JobHistoryEmployeeLookup[]) {
+    const employeeName = `${rawEmployee.firstName ?? ""} ${rawEmployee.lastName ?? ""}`.trim();
+    const pairs: Array<[unknown, unknown]> = [
+      [rawEmployee.departmentId, rawEmployee.departmentName],
+      [rawEmployee.designationId, rawEmployee.designationTitle],
+      [rawEmployee.managerId, employeeName],
+      [rawEmployee.id, employeeName],
+    ];
+    for (const [idValue, labelValue] of pairs) {
+      const id = normaliseHistoryId(idValue);
+      const label = typeof labelValue === "string" ? labelValue.trim() : "";
+      if (id && label && !lookup.has(id)) lookup.set(id, label);
+    }
+  }
+  return lookup;
+}
+
+function formatJobHistoryValue(
+  value: unknown,
+  field: string,
+  nameLookup: Map<string, string>,
+): string {
+  if (value === null || value === undefined || value === "") {
+    return "Not assigned";
+  }
+
+  if (typeof value === "object") {
+    const item = value as Record<string, unknown>;
+    const name = item.name ?? item.title ?? item.label ?? item.displayName ?? item.fullName;
+    if (name !== undefined && name !== null && String(name).trim()) return String(name);
+    value = item._id ?? item.id ?? item.value;
+    if (value === null || value === undefined || value === "") return "Unavailable";
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return "Not assigned";
+  if (["departmentId", "designationId", "managerId"].includes(field)) {
+    return nameLookup.get(raw) ?? raw;
+  }
+  return raw;
+}
+
+function getJobHistoryChanges(
+  entry: JobHistoryEntry,
+  employees: Employee[],
+  organizationNames: Map<string, string> = new Map(),
+) {
+  const previous = entry.previous ?? {};
+  const next = entry.next ?? {};
+  const nameLookup = buildJobHistoryNameLookup(employees, organizationNames);
+
+  return Object.keys(JOB_HISTORY_LABELS)
+    .filter((field) => {
+      const oldValue = formatJobHistoryValue(previous[field], field, nameLookup);
+      const newValue = formatJobHistoryValue(next[field], field, nameLookup);
+      return oldValue !== newValue;
+    })
+    .map((field) => ({
+      field,
+      label: JOB_HISTORY_LABELS[field],
+      previous: formatJobHistoryValue(previous[field], field, nameLookup),
+      next: formatJobHistoryValue(next[field], field, nameLookup),
+    }));
+}
+
 
 type SensitiveRequest = {
   _id: string;
@@ -89,6 +188,42 @@ function formatDate(value?: string | null) {
         month: "short",
         year: "numeric",
       });
+}
+
+function formatTime(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+}
+
+function formatChangedBy(
+  changedBy: string | undefined,
+  currentUser: unknown,
+  employees: Employee[],
+) {
+  if (!changedBy) return "—";
+  const authUser = (currentUser ?? {}) as Record<string, unknown>;
+  const currentId = String(authUser.id ?? authUser.userId ?? "");
+  if (currentId && currentId === changedBy) {
+    const fullName = [authUser.firstName, authUser.lastName]
+      .filter(Boolean)
+      .join(" ");
+    const currentName = authUser.name ?? authUser.fullName ?? fullName;
+    if (currentName && String(currentName).trim()) return String(currentName);
+  }
+  const employee = employees.find((item) => String(item.userId ?? "") === changedBy);
+  if (employee) {
+    const name = `${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim();
+    if (name) return name;
+  }
+  // Never expose internal user IDs in the UI when the actor is not in the employee list.
+  return "HR/Admin user";
 }
 
 function getError(error: unknown): string {
@@ -169,6 +304,7 @@ export default function EmployeeLifecycleFeatures() {
   const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
   const canManageLifecycle = isAdmin || role === "MANAGER";
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [organizationNames, setOrganizationNames] = useState<Map<string, string>>(new Map());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [history, setHistory] = useState<JobHistoryEntry[]>([]);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
@@ -186,7 +322,9 @@ export default function EmployeeLifecycleFeatures() {
   const [sensitiveValue, setSensitiveValue] = useState("");
   const [sensitiveReason, setSensitiveReason] = useState("");
 
-  const [extendDays, setExtendDays] = useState<Record<string, number>>({});
+  const [extendDays, setExtendDays] = useState<
+  Record<string, number | "">
+>({});
   const [extendRemarks, setExtendRemarks] = useState<Record<string, string>>(
     {},
   );
@@ -203,6 +341,28 @@ export default function EmployeeLifecycleFeatures() {
         : [];
 
       setEmployees(rows);
+      // Load authoritative organization names so historical IDs resolve even if no current employee uses them.
+      try {
+        const [departmentsResponse, designationsResponse] = await Promise.all([
+          api.get<{ departments?: Array<Record<string, unknown>> }>("/organization/departments"),
+          api.get<{ designations?: Array<Record<string, unknown>> }>("/organization/designations"),
+        ]);
+        const names = new Map<string, string>();
+        for (const department of departmentsResponse.data.departments ?? []) {
+          const id = normaliseHistoryId(department.id ?? department._id);
+          const name = String(department.name ?? "").trim();
+          if (id && name) names.set(id, name);
+        }
+        for (const designation of designationsResponse.data.designations ?? []) {
+          const id = normaliseHistoryId(designation.id ?? designation._id);
+          const name = String(designation.title ?? designation.name ?? "").trim();
+          if (id && name) names.set(id, name);
+        }
+        setOrganizationNames(names);
+      } catch {
+        // Keep employee-derived name resolution as a fallback if organization lookups are unavailable.
+        setOrganizationNames(new Map());
+      }
       setSelectedEmployeeId((current) => {
         if (current && rows.some((employee) => String(employee.id) === current)) {
           return current;
@@ -297,6 +457,8 @@ export default function EmployeeLifecycleFeatures() {
       setHistoryLoading(false);
     }
   }, []);
+
+  
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -616,6 +778,8 @@ setNotice(
           >
             Select employee
           </label>
+
+          
           <select
             id="employee-history-select"
             value={selectedEmployeeId}
@@ -656,39 +820,81 @@ setNotice(
               {history.map((entry, index) => (
                 <article
                   key={entry._id || `${entry.changedAt}-${index}`}
-                  className="rounded-xl border border-slate-200 p-4"
+                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
                 >
-                  <div className="flex flex-col justify-between gap-2 sm:flex-row">
-                    <div>
-                      <p className="font-semibold">
-                        {formatDate(entry.changedAt)}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-600">
-                        {entry.reason || "No reason provided"}
-                      </p>
+                  <div className="grid gap-4 border-b border-slate-100 pb-3 md:grid-cols-3">
+                    <div className="flex items-start gap-2.5">
+                      <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">
+                          {formatDate(entry.changedAt)}
+                        </p>
+                        {formatTime(entry.changedAt) && (
+                          <p className="text-xs text-slate-500">
+                            {formatTime(entry.changedAt)}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-xs text-slate-500">
-                      Updated by: {entry.changedBy || "—"}
-                    </span>
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-600">Reason</p>
+                        <p className="break-words text-sm text-slate-600">
+                          {entry.reason?.trim() || "No reason provided"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-600">Changed by</p>
+                        <p className="break-all text-sm text-slate-700">
+                          {formatChangedBy(entry.changedBy, user, employees)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg bg-rose-50 p-3">
-                      <p className="mb-2 text-xs font-bold uppercase text-rose-700">
-                        Previous values
-                      </p>
-                      <pre className="whitespace-pre-wrap break-words text-xs">
-                        {JSON.stringify(entry.previous ?? {}, null, 2)}
-                      </pre>
-                    </div>
-                    <div className="rounded-lg bg-emerald-50 p-3">
-                      <p className="mb-2 text-xs font-bold uppercase text-emerald-700">
-                        New values
-                      </p>
-                      <pre className="whitespace-pre-wrap break-words text-xs">
-                        {JSON.stringify(entry.next ?? {}, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
+                  {(() => {
+                    const changes = getJobHistoryChanges(entry, employees, organizationNames);
+
+                    return (
+                      <div className="mt-3">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">
+                          Changes made
+                        </p>
+                        {changes.length === 0 ? (
+                          <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">
+                            No field-level changes are available for this record.
+                          </p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {changes.map((change) => (
+                              <div
+                                key={change.field}
+                                className="grid gap-2 rounded-lg border border-slate-200 px-3 py-2 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center"
+                              >
+                                <p className="text-sm font-medium text-slate-700">
+                                  {change.label}
+                                </p>
+                                <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+                                  <span className="max-w-full break-words rounded-md bg-rose-50 px-3 py-1.5 text-rose-700">
+                                    {change.previous}
+                                  </span>
+                                  <span aria-label="changed to" className="text-slate-400">
+                                    →
+                                  </span>
+                                  <span className="max-w-full break-words rounded-md bg-emerald-50 px-3 py-1.5 text-emerald-700">
+                                    {change.next}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </article>
               ))}
             </div>
@@ -750,19 +956,33 @@ setNotice(
                         <span className="mb-1 block font-semibold">
                           Extend by (days)
                         </span>
+
+
                         <input
-                          type="number"
-                          min={1}
-                          max={365}
-                          value={extendDays[id] ?? 30}
-                          onChange={(event) =>
-                            setExtendDays((current) => ({
-                              ...current,
-                              [id]: Number(event.target.value),
-                            }))
-                          }
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                        />
+  type="number"
+  min={1}
+  max={365}
+  step={1}
+  value={extendDays[id] ?? 30}
+  onChange={(event) => {
+    const value = event.target.value;
+
+    setExtendDays((current) => ({
+      ...current,
+      [id]: value === "" ? "" : Number(value),
+    }));
+  }}
+  onBlur={() => {
+    setExtendDays((current) => ({
+      ...current,
+      [id]: current[id] === "" || current[id] === undefined
+        ? 30
+        : current[id],
+    }));
+  }}
+  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+/>
+
                       </label>
 
                       <label className="text-sm">
