@@ -190,6 +190,8 @@ export interface LeaveType {
   defaultDaysPerYear: number;
   isPaid: boolean;
   requiresApproval: boolean;
+  /** False for retired leave types retained for historical records. */
+  isActive?: boolean;
 }
 
 export interface LeaveBalance {

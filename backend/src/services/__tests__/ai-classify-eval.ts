@@ -121,7 +121,7 @@ export const EVALUATION_DATASET: TestCase[] = [
     description: "Requesting details on eligible duration and medical document requirements for maternity leave.",
     employeeCategory: "HR",
     expectedCategory: "Leave",
-    expectedIntent: "Maternity/Paternity Leave",
+    expectedIntent: "Parental Leave",
     difficulty: "standard",
   },
   {
@@ -139,7 +139,7 @@ export const EVALUATION_DATASET: TestCase[] = [
     description: "Need guidance on how to submit paternity leave and how many weeks are sanctioned.",
     employeeCategory: "Leave",
     expectedCategory: "Leave",
-    expectedIntent: "Maternity/Paternity Leave",
+    expectedIntent: "Parental Leave",
     difficulty: "standard",
   },
   {

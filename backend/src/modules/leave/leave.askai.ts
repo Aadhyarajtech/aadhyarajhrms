@@ -304,7 +304,7 @@ export async function buildLeaveAssistantContext(params: {
   // Fetch employee details
   const [employee, leaveTypes, balances, userRequests, holidays] = await Promise.all([
     Employee.findById(effectiveEmployeeId).lean(),
-    LeaveType.find().lean(),
+    LeaveType.find({ isActive: { $ne: false } }).lean(),
     LeaveBalance.find({ employeeId: effectiveEmployeeId, year: currentYear }).lean(),
     LeaveRequest.find({ employeeId: effectiveEmployeeId })
       .sort({ startDate: -1 })
@@ -325,7 +325,9 @@ export async function buildLeaveAssistantContext(params: {
     pendingMap.set(pr.leaveTypeId, cur + (pr.totalDays || 1));
   }
 
-  const balanceSummaries: LeaveBalanceSummary[] = balances.map((b) => {
+  const balanceSummaries: LeaveBalanceSummary[] = balances
+    .filter((b) => leaveTypeMap.has(b.leaveTypeId))
+    .map((b) => {
     const t = leaveTypeMap.get(b.leaveTypeId);
     const pendingDays = pendingMap.get(b.leaveTypeId) || 0;
     const available = Math.max(0, b.allotted + (b.carriedOver || 0) - b.used - pendingDays);
@@ -549,7 +551,7 @@ export async function askLeaveAI(params: {
       q.includes("carry forward")
     ) {
       return {
-        answer: `### 📋 Aadhyaraj HRMS Leave Policy & Entitlements\n\nOur company provides structured paid and statutory leaves to maintain employee well-being, work-life balance, and operational continuity:\n\n| Leave Type | Annual Allotment | Carry Forward | Purpose & Key Rules |\n|---|---|---|---|\n| **Privilege Leave (PL)** | **18 Days** | Up to 10 Days | Planned vacations and personal rest. Apply at least 3 business days in advance. |\n| **Sick Leave (SL)** | **12 Days** | No (Lapses Dec 31) | Medical conditions and doctor-advised recovery. Medical certificate required if > 2 consecutive days. |\n| **Casual Leave (CL)** | **8 Days** | No (Lapses Dec 31) | Urgent or unforeseen personal obligations. Can be taken as half-day. |\n| **Maternity Leave** | **182 Days (26 Weeks)** | Statutory | Fully paid leave for eligible female employees as per statutory norms. |\n| **Paternity Leave** | **15 Days** | N/A | Fully paid leave for new fathers, applicable within 6 months of childbirth/adoption. |\n| **Loss of Pay (LOP)** | Discretionary | N/A | Applied when all paid leave quotas are exhausted. Requires HR and manager approval. |\n\n#### 📌 Key Policy Highlights:\n1. **5-Day Work Week:** Working days are **Monday to Friday**. Saturdays and Sundays are regular weekly offs and are **never** deducted from your leave balances.\n2. **Public Holidays:** Any official company holiday falling within your approved leave dates is excluded from the leave count.\n3. **Half-Day Option:** Supported for both **First Half** (morning) and **Second Half** (afternoon) for Casual and Sick leave.\n4. **Approval Flow:** All leave requests must be submitted through this portal and approved by your reporting manager.\n\nWould you like me to check your available balances or draft a formal leave application for you?`,
+        answer: `### 📋 Aadhyaraj HRMS Leave Policy & Entitlements\n\nOur company provides structured paid and statutory leaves to maintain employee well-being, work-life balance, and operational continuity:\n\n| Leave Type | Annual Allotment | Carry Forward | Purpose & Key Rules |\n|---|---|---|---|\n| **Privilege Leave (PL)** | **18 Days** | Up to 10 Days | Planned vacations and personal rest. Apply at least 3 business days in advance. |\n| **Sick Leave (SL)** | **12 Days** | No (Lapses Dec 31) | Medical conditions and doctor-advised recovery. Medical certificate required if > 2 consecutive days. |\n| **Casual Leave (CL)** | **8 Days** | No (Lapses Dec 31) | Urgent or unforeseen personal obligations. Can be taken as half-day. |\n| **Parental Leave** | **Assigned by HR according to applicable law and approved company policy** | Subject to policy | Available to eligible parents, including adoptive parents, through the existing approval workflow. Under the applicable Indian maternity-benefit rules, eligible women are generally entitled to 26 weeks when the woman has fewer than two surviving children, and 12 weeks when she has two or more surviving children; the statutory entitlement must be administered in accordance with law and the approved HR policy. |\n| **Loss of Pay (LOP)** | Discretionary | N/A | Applied when all paid leave quotas are exhausted. Requires HR and manager approval. |\n\n#### 📌 Key Policy Highlights:\n1. **5-Day Work Week:** Working days are **Monday to Friday**. Saturdays and Sundays are regular weekly offs and are **never** deducted from your leave balances.\n2. **Public Holidays:** Any official company holiday falling within your approved leave dates is excluded from the leave count.\n3. **Half-Day Option:** Supported for both **First Half** (morning) and **Second Half** (afternoon) for Casual and Sick leave.\n4. **Approval Flow:** All leave requests must be submitted through this portal and approved by your reporting manager.\n\nWould you like me to check your available balances or draft a formal leave application for you?`,
         quickActions: [
           "What is my remaining leave balance?",
           "Find upcoming holiday bridge opportunities",
@@ -931,7 +933,7 @@ INSTRUCTIONS:
    - If asking for long weekends or bridge vacations, suggest exact dates from Discovered Holiday Bridges.
    - LEAVE POLICY & RULES:
      * When asked about company leave policy, rules, guidelines, or leave types (e.g. "Review Leave Policy"):
-     * Provide a clear, beautifully structured overview: Privilege Leave (18 days/year, up to 10 days carry-forward), Sick Leave (12 days/year), Casual Leave (8 days/year), Maternity Leave (182 days / 26 weeks), Paternity Leave (15 days), Loss of Pay (unpaid).
+     * Provide a clear, beautifully structured overview: Privilege Leave (18 days/year, up to 10 days carry-forward), Sick Leave (12 days/year), Casual Leave (8 days/year), Parental Leave (HR-assigned entitlement under applicable law and approved company policy; eligible women may qualify for statutory maternity benefit), Loss of Pay (unpaid).
      * Clarify that weekends (Sat/Sun) and public holidays are not deducted from leaves. Mention that applications require manager approval and half-day leaves are supported.
    - SAME-DAY LEAVE & CONFLICT ALERTS (CRUCIAL):
      * When a user (HR or Employee) asks about taking leave on a specific day/date (or asks "Is anyone on leave on the same day?", "Who is on leave on [date]?", "Can I take leave on [date]?"):

@@ -387,8 +387,9 @@ function MyLeave() {
 
                 <ProgressRing
                   value={
-                    ((b.allotted - b.used) / b.allotted) *
-                    100
+                    Number(b.allotted) > 0
+                      ? Math.max(0, Math.min(100, ((Number(b.allotted) - Number(b.used)) / Number(b.allotted)) * 100))
+                      : 0
                   }
                   size={48}
                   strokeWidth={5}
@@ -3335,6 +3336,3 @@ function LeaveConflictCard({
     </div>
   );
 }
-
-
-

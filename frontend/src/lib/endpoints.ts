@@ -1444,7 +1444,18 @@ export const LeaveApi = {
       .get<{
         leaveTypes: LeaveType[];
       }>("/leave/types")
-      .then((r) => r.data.leaveTypes),
+      .then((r) =>
+        (r.data.leaveTypes ?? []).filter((type) => {
+          const name = String(type.name ?? "").trim().toLowerCase();
+          // Retired types remain in historical request records, but are never
+          // offered in standard or bulk leave-application dropdowns. Parental Leave remains available.
+          return (
+            type.isActive !== false &&
+            name !== "maternity leave" &&
+            name !== "paternity leave"
+          );
+        }),
+      ),
 
   balances: (employeeId?: string, year?: number) =>
     api

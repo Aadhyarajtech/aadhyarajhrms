@@ -10,7 +10,8 @@
     "seed": "tsx src/db/seed.ts",
     "test:anomaly": "tsx src/scripts/testPayrollAnomaly.ts",
     "test:anomaly:seed": "tsx src/scripts/testPayrollAnomaly.ts --seed-ui",
-    "migrate:recruitment-leads": "tsx src/scripts/migrateRecruitmentLeadAccess.ts"
+    "migrate:recruitment-leads": "tsx src/scripts/migrateRecruitmentLeadAccess.ts",
+    "migrate:parental-leave": "tsx src/scripts/migrateParentalLeave.ts"
   },
   "dependencies": {
     "bcryptjs": "2.4.3",

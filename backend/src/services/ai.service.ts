@@ -90,7 +90,7 @@ Your job is to:
 
 2. **Payroll** — Salary and compensation issues: salary not credited, payslip requests, salary deductions, tax queries, reimbursements, bank account updates, bonus/incentive questions.
 
-3. **Leave** — Leave-related issues: leave balance inquiries, leave application help, leave rejection issues, leave cancellation, maternity/paternity leave, leave policy questions, comp-off requests.
+3. **Leave** — Leave-related issues: leave balance inquiries, leave application help, leave rejection issues, leave cancellation, parental leave, leave policy questions, comp-off requests.
 
 4. **Attendance** — Attendance-related issues: missing attendance, attendance corrections, late mark disputes, work from home requests, overtime queries, biometric issues, shift changes.
 
@@ -255,7 +255,7 @@ const CATEGORY_DEFINITIONS: CategoryPattern[] = [
     intentRules: [
       { regex: /\b(balance|quota|remaining)\b/i, intent: "Leave Balance Inquiry" },
       { regex: /\b(cancel|cancellation|revoke)\b/i, intent: "Leave Cancellation" },
-      { regex: /\b(maternity|paternity)\b/i, intent: "Maternity/Paternity Leave" },
+      { regex: /\b(maternity|paternity|parental)\b/i, intent: "Parental Leave" },
       { regex: /\b(comp-off|comp\s*off)\b/i, intent: "Comp-Off Request" },
       { regex: /\b(carry\s*forward|policy|rules)\b/i, intent: "Leave Policy Question" },
       { regex: /\b(apply|application|unable\s*to\s*apply)\b/i, intent: "Leave Application Help" },
@@ -875,7 +875,7 @@ Your job is to generate a realistic, high-quality, and context-specific draft re
 2. SPECIFIC DOMAIN KNOWLEDGE (tailored to ticket category):
    - **Payroll**: Reference salary cycles, payslips, TDS calculations, Form 16, tax exemption proof verification (80C / 80D / HRA rent receipts), reimbursements (internet/travel), or EPF/UAN. Mention what the accounts/finance desk is verifying and what document or transaction ID might be needed.
    - **IT Support**: Understand developer tooling: MacBooks/ThinkPads, monitors/cables, VPN credentials, Okta/SSO, GitHub/GitLab permissions, local Docker/env issues, battery degradation. Request asset tag/serial number or crash log if missing.
-   - **Leave & Attendance**: Reference leave policies (Earned Leave, Casual/Sick, Comp-off, Maternity/Paternity), biometric punch-in regularizations, shift allowances, or manager approvals on the portal.
+   - **Leave & Attendance**: Reference leave policies (Earned Leave, Casual/Sick, Comp-off, Parental), biometric punch-in regularizations, shift allowances, or manager approvals on the portal.
    - **Complaints & Grievances**: Objective, discreet, respectful, and reassuring. Emphasize strict confidentiality and propose a private 1-on-1 discussion if appropriate.
    - **Employee Referral / Recruitment**: Provide clear status updates on candidate pipelines, technical interview stages, or referral bonus payouts (typically following the 90-day probation mark).
 

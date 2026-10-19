@@ -37,8 +37,36 @@ function toApiDoc(doc: any) {
   return { id: _id, ...rest };
 }
 
+const PARENTAL_LEAVE_DEFAULT_DAYS = 182; // 26 weeks; set an employee's balance to 84 for applicable 12-week cases.
+
+async function ensureParentalLeaveType() {
+  let type = await LeaveType.findOne({ name: /^Parental Leave$/i });
+  if (!type) {
+    type = await LeaveType.create({
+      _id: undefined,
+      name: "Parental Leave",
+      colorHex: "#0E7490",
+      defaultDaysPerYear: PARENTAL_LEAVE_DEFAULT_DAYS,
+      isPaid: true,
+      requiresApproval: true,
+      isActive: true,
+    });
+  } else {
+    const update: Record<string, unknown> = { isActive: true, colorHex: "#0E7490", isPaid: true, requiresApproval: true };
+    // Repair the previous zero-day placeholder without lowering an existing configured value.
+    if (Number(type.defaultDaysPerYear ?? 0) <= 0) update.defaultDaysPerYear = PARENTAL_LEAVE_DEFAULT_DAYS;
+    await LeaveType.updateOne({ _id: type._id }, { $set: update });
+  }
+}
+
 export async function listLeaveTypes() {
-  const rows = await LeaveType.find({}).sort({ name: 1 }).lean();
+  // Ensure the unified type exists even when the seed script is not run in production.
+  await ensureParentalLeaveType();
+  // Legacy names are excluded from new applications; existing requests retain their history.
+  const rows = await LeaveType.find({
+    isActive: { $ne: false },
+    name: { $not: /^(maternity|paternity) leave$/i },
+  }).sort({ name: 1 }).lean();
   return rows.map(toApiDoc);
 }
 
@@ -57,6 +85,27 @@ export async function getOrCreateBalance(
     leaveTypeId,
     year,
   }).lean();
+
+  if (row) {
+    // Repair legacy zero-day Parental Leave balances when they are read.
+    // Do not overwrite valid custom entitlements (for example, 84 days),
+    // and do not reset used or carriedOver values.
+    const existingType = (await getLeaveType(leaveTypeId)) as any;
+    const isParentalLeave = String(existingType?.name ?? "").trim().toLowerCase() === "parental leave";
+    if (isParentalLeave && Number(row.allotted ?? 0) <= 0) {
+      await ensureParentalLeaveType();
+      const refreshedType = (await getLeaveType(leaveTypeId)) as any;
+      const defaultDays = Number(refreshedType?.defaultDaysPerYear ?? PARENTAL_LEAVE_DEFAULT_DAYS);
+      const repairedAllotment = Number.isFinite(defaultDays) && defaultDays > 0
+        ? defaultDays
+        : PARENTAL_LEAVE_DEFAULT_DAYS;
+      await LeaveBalance.updateOne(
+        { employeeId, leaveTypeId, year, allotted: { $lte: 0 } },
+        { $set: { allotted: repairedAllotment } },
+      );
+      row = await LeaveBalance.findOne({ employeeId, leaveTypeId, year }).lean();
+    }
+  }
 
   if (!row) {
     const leaveType = (await getLeaveType(leaveTypeId)) as any;
@@ -489,15 +538,26 @@ if (Number.isNaN(start.getTime())) {
 
   const leaveType = (await getLeaveType(input.leaveTypeId)) as any;
 
-  if (!leaveType) {
-    throw new Error("Leave type not found.");
+  if (!leaveType || (leaveType as any).isActive === false) {
+    throw AppError.badRequest("This leave type is no longer available for new applications.");
   }
 
   const normalizedLeaveTypeName = String(
-  leaveType.name ?? "",
-)
-  .trim()
-  .toLowerCase();
+    leaveType.name ?? "",
+  )
+    .trim()
+    .toLowerCase();
+
+  // Retired types cannot be submitted directly to the API, even if their
+  // database records have not yet been deactivated by the migration.
+  if (
+    normalizedLeaveTypeName === "maternity leave" ||
+    normalizedLeaveTypeName === "paternity leave"
+  ) {
+    throw AppError.badRequest(
+      "This leave type is no longer available. Please select Parental Leave.",
+    );
+  }
 
   const employeeForEligibility =
   await Employee.findById(
@@ -574,30 +634,6 @@ if (isHalfDay) {
   );
 }
 
-  const isPaternityLeave =
-  normalizedLeaveTypeName === "paternity leave" ||
-  normalizedLeaveTypeName.includes("paternity");
-
-if (isPaternityLeave) {
-  const employee = await Employee.findById(input.employeeId)
-    .select("gender")
-    .lean();
-
-  if (!employee) {
-    throw AppError.notFound("Employee not found.");
-  }
-
-  const gender = String(employee.gender ?? "")
-    .trim()
-    .toUpperCase();
-
-  if (gender !== "MALE") {
-    throw AppError.badRequest(
-      "Paternity Leave is available only to male employees.",
-    );
-  }
-}
-
 const isBereavementLeave =
   normalizedLeaveTypeName === "bereavement leave" ||
   normalizedLeaveTypeName.includes("bereavement");
@@ -616,39 +652,8 @@ if (isBereavementLeave || isElectionLeave) {
   }
 }
 
-const isMaternityLeave =
-  normalizedLeaveTypeName === "maternity leave" ||
-  normalizedLeaveTypeName.includes("maternity");
-
-if (isMaternityLeave) {
-  const employee = await Employee.findById(input.employeeId)
-    .select("gender")
-    .lean();
-
-  if (!employee) {
-    throw AppError.notFound("Employee not found.");
-  }
-
-  const gender = String(employee.gender ?? "")
-    .trim()
-    .toUpperCase();
-
-  if (gender !== "FEMALE") {
-    throw AppError.badRequest(
-      "Maternity Leave is available only to female employees.",
-    );
-  }
-}
-
-if (isMaternityLeave) {
-  const maxMaternityDays = 182;
-
-  if (totalDays > maxMaternityDays) {
-    throw AppError.badRequest(
-      `Maternity Leave cannot exceed ${maxMaternityDays} days.`,
-    );
-  }
-}
+// Parental Leave is intentionally gender-neutral. The existing balance and
+// approval workflow remains the source of application eligibility.
 
   const year = start.getUTCFullYear();
 
@@ -1411,5 +1416,3 @@ export async function onLeaveToday() {
     endDate: { $gte: today },
   });
 }
-
-

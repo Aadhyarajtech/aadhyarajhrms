@@ -1329,6 +1329,7 @@ export interface LeaveTypeDoc {
   defaultDaysPerYear: number;
   isPaid: boolean;
   requiresApproval: boolean;
+  isActive?: boolean;
 }
 
 const leaveTypeSchema = new Schema<LeaveTypeDoc>(
@@ -1357,6 +1358,10 @@ const leaveTypeSchema = new Schema<LeaveTypeDoc>(
     },
 
     requiresApproval: {
+      type: Boolean,
+      default: true,
+    },
+    isActive: {
       type: Boolean,
       default: true,
     },
@@ -5145,4 +5150,3 @@ export const CalendarEvent = model<CalendarEventDoc>(
   "CalendarEvent",
   calendarEventSchema,
 );
-
