@@ -70,14 +70,17 @@ function getDisplayAttendanceStatus(
 
 export default function Attendance() {
   const { user, hasPermission } = useAuth();
-  const isManager = hasPermission("attendance.manage") || user?.isManager === true;
+  const isOrganizationAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const isManager =
+    isOrganizationAdmin ||
+    hasPermission("attendance.manage") ||
+    user?.isManager === true;
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const initialTab: string =
     isManager &&
-      ["team", "regularization", "exceptions"].includes(
-        requestedTab ?? "",
-      )
+      (["team", "regularization", "exceptions"].includes(requestedTab ?? "") ||
+        (isOrganizationAdmin && requestedTab === "overall"))
       ? (requestedTab ?? "mine")
       : "mine";
   const [tab, setTab] = useState<string>(initialTab);
@@ -100,6 +103,9 @@ export default function Attendance() {
         { key: "team", label: "Team View" },
         { key: "regularization", label: "Attendance Regularization" },
         { key: "exceptions", label: "Attendance Exceptions" },
+        ...(isOrganizationAdmin
+          ? [{ key: "overall", label: "Overall Attendance" }]
+          : []),
       ]
       : []),
   ];
@@ -135,8 +141,13 @@ export default function Attendance() {
           onEmployeeChange={setSelectedEmployeeId}
         />
       )}
-      {tab === "team" && isManager && <TeamAttendance />}
+      {tab === "team" && isManager && (
+        <TeamAttendance view="team" />
+      )}
       {tab === "regularization" && isManager && <TeamRegularizationRequests />}
+      {tab === "overall" && isOrganizationAdmin && (
+        <TeamAttendance view="overall" />
+      )}
       {tab === "exceptions" && isManager && (
         <AttendanceExceptionReview
           employeeId={selectedEmployeeId}
@@ -176,16 +187,56 @@ function AttendanceExceptionReview({
   onEmployeeChange: (id?: string) => void;
   onOpenRegularization: (employeeId?: string) => void;
 }) {
-  const { user, hasPermission } = useAuth();
-  const canSelectEmployee = hasPermission("attendance.manage");
+  const { user } = useAuth();
+  const isOrganizationAdmin =
+    user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const isTeamManager =
+    user?.isManager === true || user?.role === "MANAGER";
+  // Only organization admins may choose from the organization-wide list.
+  // Team managers use the existing direct-reports endpoint to keep their
+  // employee selector scoped to their own team.
+  const canSelectEmployee = isOrganizationAdmin || isTeamManager;
+  const managerEmployeeId = user?.employee?.id;
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
 
   const { data: employeeData, isLoading: employeesLoading } = useQuery({
-    queryKey: ["attendance", "exceptions", "employees", user?.role],
-    queryFn: () => EmployeesApi.list({ page: 1, pageSize: 100 }),
-    enabled: !!user && canSelectEmployee,
+    queryKey: [
+      "attendance",
+      "exceptions",
+      "employees",
+      user?.role,
+      managerEmployeeId,
+    ],
+    queryFn: async () => {
+      if (isOrganizationAdmin) {
+        // Load every employee page, rather than silently limiting the selector
+        // to the first 100 employees in larger organizations.
+        const pageSize = 100;
+        const firstPage = await EmployeesApi.list({ page: 1, pageSize });
+        const allEmployees = [...firstPage.employees];
+        const totalPages = Math.ceil((firstPage.total ?? allEmployees.length) / pageSize);
+
+        for (let page = 2; page <= totalPages; page += 1) {
+          const nextPage = await EmployeesApi.list({ page, pageSize });
+          allEmployees.push(...nextPage.employees);
+        }
+
+        return { ...firstPage, employees: allEmployees, total: allEmployees.length };
+      }
+
+      if (!managerEmployeeId) {
+        throw new Error("Manager employee profile not found.");
+      }
+
+      const reports = await EmployeesApi.directReports(managerEmployeeId);
+      return { employees: reports, total: reports.length, page: 1, pageSize: reports.length };
+    },
+    enabled:
+      !!user &&
+      canSelectEmployee &&
+      (isOrganizationAdmin || !!managerEmployeeId),
   });
 
   const { data, isLoading, isError } = useQuery({
@@ -264,13 +315,13 @@ function AttendanceExceptionReview({
         <div className="space-y-5 px-6 pb-5 pt-4">
           <div className="max-w-md">
             <label className="mb-1.5 block text-[12px] font-medium text-ink">
-              Employee
+              {isOrganizationAdmin ? "Employee" : "Team Member"}
             </label>
             <EmployeeSearchSelect
               employees={employees}
               value={employeeId ?? ""}
               onChange={(id) => onEmployeeChange(id || undefined)}
-              allLabel="All Employees"
+              allLabel={isOrganizationAdmin ? "All Employees" : "Entire Team"}
               disabled={employeesLoading}
             />
           </div>
@@ -1341,7 +1392,12 @@ function SummaryCard({
   );
 }
 
-function TeamAttendance() {
+function TeamAttendance({
+  view = "team",
+}: {
+  view?: "team" | "overall";
+}) {
+  const isOverallView = view === "overall";
   const [date, setDate] = useState(localDateString());
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth() + 1);
@@ -1354,8 +1410,11 @@ function TeamAttendance() {
   const exportTeamAttendance = async (format: "xlsx" | "pdf") => {
     try {
       setExporting(format);
-      const blob = await AttendanceApi.exportTeam(date, format);
-      downloadBlob(blob, `team-attendance-${date}.${format}`);
+      const blob = await AttendanceApi.exportTeam(date, format, isOverallView ? "overall" : "team");
+      downloadBlob(
+        blob,
+        `${isOverallView ? "overall-attendance" : "team-attendance"}-${date}.${format}`,
+      );
     } catch (error) {
       showToast(getErrorMessage(error), "error");
     } finally {
@@ -1367,10 +1426,10 @@ function TeamAttendance() {
     try {
       const key = `monthly-${format}` as "monthly-xlsx" | "monthly-pdf";
       setExporting(key);
-      const blob = await AttendanceApi.exportTeamMonthly(month, year, format);
+      const blob = await AttendanceApi.exportTeamMonthly(month, year, format, isOverallView ? "overall" : "team");
       downloadBlob(
         blob,
-        `team-attendance-${year}-${String(month).padStart(2, "0")}.${format}`,
+        `${isOverallView ? "overall-attendance" : "team-attendance"}-${year}-${String(month).padStart(2, "0")}.${format}`,
       );
     } catch (error) {
       showToast(getErrorMessage(error), "error");
@@ -1379,12 +1438,12 @@ function TeamAttendance() {
     }
   };
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["attendance", "by-date", date],
-    queryFn: () => AttendanceApi.byDate(date),
+    queryKey: ["attendance", "by-date", date, isOverallView ? "overall" : "team"],
+    queryFn: () => AttendanceApi.byDate(date, isOverallView ? "overall" : "team"),
   });
   const { data: todaySummary, isLoading: summaryLoading } = useQuery({
-    queryKey: ["attendance", "summary", "today"],
-    queryFn: () => AttendanceApi.summaryToday(),
+    queryKey: ["attendance", "summary", "today", isOverallView ? "overall" : "team"],
+    queryFn: () => AttendanceApi.summaryToday(isOverallView ? "overall" : "team"),
     refetchInterval: 30_000,
   });
 
@@ -1419,7 +1478,7 @@ function TeamAttendance() {
         <SummaryCard
           icon={Clock}
           tone="brand"
-          label="Team present"
+          label={isOverallView ? "Employees present" : "Team present"}
           value={presentCount}
         />
         <SummaryCard
@@ -1437,8 +1496,12 @@ function TeamAttendance() {
       </div>
       <Card>
         <CardHeader
-          title="Team Attendance"
-          subtitle="View attendance for your direct reports on any date"
+          title={isOverallView ? "Overall Attendance" : "Team Attendance"}
+          subtitle={
+            isOverallView
+              ? "View recorded attendance for all employees across the organization on any date"
+              : "View attendance for your direct reports on any date"
+          }
           action={
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -1505,19 +1568,24 @@ function TeamAttendance() {
         ) : isError ? (
           <EmptyState
             icon={AlertTriangle}
-            title="Unable to load team attendance"
+            title={isOverallView ? "Unable to load overall attendance" : "Unable to load team attendance"}
             description="Please try again."
           />
         ) : !data?.length ? (
           <EmptyState
             icon={XCircle}
-            title="No team attendance recorded for this date"
-            description="This may be a weekend, holiday, or a date with no attendance logged by your direct reports."
+            title={isOverallView ? "No overall attendance recorded for this date" : "No team attendance recorded for this date"}
+            description={
+              isOverallView
+                ? "This may be a weekend, holiday, or a date with no attendance records."
+                : "This may be a weekend, holiday, or a date with no attendance logged by your team."
+            }
           />
         ) : (
           <div className="space-y-2">
             <p className="text-[12px] text-ink-faint">
-              {data.length} direct report{data.length === 1 ? "" : "s"} shown
+              {data.length} {isOverallView ? "employee attendance record" : "team attendance record"}
+              {data.length === 1 ? "" : "s"} shown
             </p>
             {(data as TeamAttendanceRecord[]).map((record) => (
               <div

@@ -75,6 +75,16 @@ const regularizationDecisionSchema = z.object({
 });
 
 attendanceRouter.use(authenticate);
+
+/**
+ * Admins must always retain organization-wide attendance visibility, even if
+ * their account also has the isManager flag. Only non-admin manager accounts
+ * are restricted to their direct reports.
+ */
+function shouldScopeToManager(role: string, isManager?: boolean): boolean {
+  if (role === "ADMIN" || role === "SUPER_ADMIN") return false;
+  return role === "MANAGER" || Boolean(isManager);
+}
 function requireAttendanceFileAdmin(req: import("express").Request) {
   const role = req.user?.role;
 
@@ -524,15 +534,21 @@ attendanceRouter.get(
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
+      const requestedScope = req.query.scope;
+      if (requestedScope !== undefined && requestedScope !== "team" && requestedScope !== "overall") {
+        throw AppError.badRequest("Invalid attendance scope.");
+      }
+      if (requestedScope === "overall" && role !== "ADMIN" && role !== "SUPER_ADMIN") {
+        throw AppError.forbidden("Only Admin and Super Admin can view overall attendance.");
+      }
 
-      // Managers may only receive records for their own direct reports.
-      // The manager ID always comes from the authenticated user; it is never
-      // accepted from query/body input.
+      // Team View always uses the authenticated user's direct reports, including
+      // when an Admin/Super Admin opens Team View. Overall Attendance is a separate
+      // explicitly authorized scope and never inferred from the user's role.
       let managerId: string | undefined;
-
-      if (role === "MANAGER" || req.user!.isManager) {
+      if (requestedScope === "team" || (!requestedScope && shouldScopeToManager(role, req.user!.isManager))) {
         if (!employeeId) {
-          throw AppError.forbidden("Manager employee profile not found.");
+          throw AppError.forbidden("Manager employee profile not found for Team View.");
         }
         managerId = employeeId;
       }
@@ -609,15 +625,15 @@ attendanceRouter.get(
     try {
       const { role, employeeId } = req.user!;
       const date = typeof req.query.date === "string" ? req.query.date : "";
+      const requestedScope = req.query.scope;
+      if (requestedScope !== undefined && requestedScope !== "team" && requestedScope !== "overall") throw AppError.badRequest("Invalid attendance scope.");
+      if (requestedScope === "overall" && role !== "ADMIN" && role !== "SUPER_ADMIN") throw AppError.forbidden("Only Admin and Super Admin can export overall attendance.");
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
         throw AppError.badRequest("Invalid attendance date.");
-      if (role === "MANAGER" && !employeeId)
-        throw AppError.forbidden("Manager employee profile not found.");
       const format = parseExportFormat(req.query.format);
-      const records = await repo.listForDate(
-        date,
-        (role === "MANAGER" || req.user!.isManager) ? (employeeId ?? undefined) : undefined,
-      );
+      const scopedManagerId = requestedScope === "team" || (!requestedScope && shouldScopeToManager(role, req.user!.isManager));
+      if (scopedManagerId && !employeeId) throw AppError.forbidden("Manager employee profile not found for Team View.");
+      const records = await repo.listForDate(date, scopedManagerId ? employeeId! : undefined);
       await sendAttendanceExport(
         res,
         records,
@@ -636,6 +652,9 @@ attendanceRouter.get(
   async (req, res, next) => {
     try {
       const { role, employeeId } = req.user!;
+      const requestedScope = req.query.scope;
+      if (requestedScope !== undefined && requestedScope !== "team" && requestedScope !== "overall") throw AppError.badRequest("Invalid attendance scope.");
+      if (requestedScope === "overall" && role !== "ADMIN" && role !== "SUPER_ADMIN") throw AppError.forbidden("Only Admin and Super Admin can export overall attendance.");
       const month = req.query.month ? Number(req.query.month) : NaN;
       const year = req.query.year ? Number(req.query.year) : NaN;
       if (!Number.isInteger(month) || month < 1 || month > 12) {
@@ -644,14 +663,13 @@ attendanceRouter.get(
       if (!Number.isInteger(year) || year < 2000 || year > 2100) {
         throw AppError.badRequest("Invalid attendance year.");
       }
-      if (role === "MANAGER" && !employeeId) {
-        throw AppError.forbidden("Manager employee profile not found.");
-      }
       const format = parseExportFormat(req.query.format);
+      const scopedManagerId = requestedScope === "team" || (!requestedScope && shouldScopeToManager(role, req.user!.isManager));
+      if (scopedManagerId && !employeeId) throw AppError.forbidden("Manager employee profile not found for Team View.");
       const records = await repo.listForMonth(
         month,
         year,
-        (role === "MANAGER" || req.user!.isManager) ? (employeeId ?? undefined) : undefined,
+        scopedManagerId ? employeeId! : undefined,
       );
       await sendAttendanceExport(
         res,
@@ -668,9 +686,21 @@ attendanceRouter.get(
 attendanceRouter.get(
   "/summary/today",
   requirePermission("attendance.manage"),
-  async (_req, res, next) => {
+  async (req, res, next) => {
     try {
-      res.json(await repo.getTodaySummary());
+      const { role, employeeId } = req.user!;
+      const requestedScope = req.query.scope;
+      if (requestedScope !== undefined && requestedScope !== "team" && requestedScope !== "overall") {
+        throw AppError.badRequest("Invalid attendance scope.");
+      }
+      if (requestedScope === "overall" && role !== "ADMIN" && role !== "SUPER_ADMIN") {
+        throw AppError.forbidden("Only Admin and Super Admin can view overall attendance.");
+      }
+      const scopedManagerId = requestedScope === "team" || (!requestedScope && shouldScopeToManager(role, req.user!.isManager));
+      if (scopedManagerId && !employeeId) {
+        throw AppError.forbidden("Manager employee profile not found for Team View.");
+      }
+      res.json(await repo.getTodaySummary(scopedManagerId ? employeeId! : undefined));
     } catch (err) {
       next(err);
     }
@@ -693,7 +723,7 @@ attendanceRouter.get(
       const { role, employeeId } = req.user!;
 
       const managerId =
-        (role === "MANAGER" || req.user!.isManager) && employeeId
+        (shouldScopeToManager(role, req.user!.isManager)) && employeeId
           ? employeeId
           : undefined;
 
@@ -1497,7 +1527,7 @@ attendanceRouter.get(
       // accepted from query/body input.
       let managerId: string | undefined;
 
-      if (role === "MANAGER" || req.user!.isManager) {
+      if (shouldScopeToManager(role, req.user!.isManager)) {
         if (!employeeId) {
           throw AppError.forbidden("Manager employee profile not found.");
         }
@@ -1530,9 +1560,15 @@ attendanceRouter.get(
 // TODAY SUMMARY
 // ===========================================================================
 
-attendanceRouter.get("/summary/today", async (_req, res, next) => {
+attendanceRouter.get("/summary/today", async (req, res, next) => {
   try {
-    res.json(await repo.getTodaySummary());
+    const { role, employeeId } = req.user!;
+    const requestedScope = req.query.scope;
+    if (requestedScope !== undefined && requestedScope !== "team" && requestedScope !== "overall") throw AppError.badRequest("Invalid attendance scope.");
+    if (requestedScope === "overall" && role !== "ADMIN" && role !== "SUPER_ADMIN") throw AppError.forbidden("Only Admin and Super Admin can view overall attendance.");
+    const scopedManagerId = requestedScope === "team" || (!requestedScope && shouldScopeToManager(role, req.user!.isManager));
+    if (scopedManagerId && !employeeId) throw AppError.forbidden("Manager employee profile not found for Team View.");
+    res.json(await repo.getTodaySummary(scopedManagerId ? employeeId! : undefined));
   } catch (err) {
     next(err);
   }
@@ -1558,7 +1594,7 @@ attendanceRouter.get(
       const { role, employeeId } = req.user!;
 
       const managerId =
-        (role === "MANAGER" || req.user!.isManager) && employeeId
+        (shouldScopeToManager(role, req.user!.isManager)) && employeeId
           ? employeeId
           : undefined;
 

@@ -268,7 +268,7 @@ export default function Leave() {
                 leftIcon={<Users size={16} />}
                 onClick={() => setBulkApplyOpen(true)}
               >
-                Apply for all employees
+                Apply for employee
               </Button>
             )}
           </div>

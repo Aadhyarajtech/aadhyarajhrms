@@ -1355,25 +1355,27 @@ export async function listForMonth(
   });
 }
 
-export async function getTodaySummary() {
+export async function getTodaySummary(managerId?: string) {
   const today = todayDateString();
-
+  let employeeIds: string[] | undefined;
+  if (managerId) {
+    const employees = await Employee.find({ managerId, status: "ACTIVE" }).select("_id").lean();
+    employeeIds = employees.map((employee) => employee._id);
+    if (employeeIds.length === 0) return { present: 0, total: 0, date: today, isToday: true };
+  }
+  const attendanceQuery: Record<string, any> = {
+    date: today,
+    status: { $in: ["PRESENT", "WORK_FROM_HOME", "HALF_DAY", "LATE", "EARLY_DEPARTURE"] },
+  };
+  const employeeQuery: Record<string, any> = { status: "ACTIVE" };
+  if (employeeIds) {
+    attendanceQuery.employeeId = { $in: employeeIds };
+    employeeQuery._id = { $in: employeeIds };
+  }
   const [present, total] = await Promise.all([
-    Attendance.countDocuments({
-      date: today,
-      status: {
-        $in: [
-          "PRESENT",
-          "WORK_FROM_HOME",
-          "HALF_DAY",
-          "LATE",
-          "EARLY_DEPARTURE",
-        ],
-      },
-    }),
-    Employee.countDocuments({ status: "ACTIVE" }),
+    Attendance.countDocuments(attendanceQuery),
+    Employee.countDocuments(employeeQuery),
   ]);
-
   return { present, total, date: today, isToday: true };
 }
 

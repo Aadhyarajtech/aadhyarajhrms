@@ -988,21 +988,21 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.records),
 
-  byDate: (date: string) =>
+  byDate: (date: string, scope: "team" | "overall" = "team") =>
     api
       .get<{
         records: AttendanceApiRecord[];
-      }>(`/attendance/by-date/${date}`)
+      }>(`/attendance/by-date/${date}`, { params: { scope } })
       .then((r) => r.data.records),
 
-  summaryToday: () =>
+  summaryToday: (scope: "team" | "overall" = "overall") =>
     api
       .get<{
         present: number;
         total: number;
         date: string;
         isToday: boolean;
-      }>("/attendance/summary/today")
+      }>("/attendance/summary/today", { params: { scope } })
       .then((r) => r.data),
 
   aiInsights: (startDate: string, endDate: string, employeeId?: string) =>
@@ -1081,12 +1081,14 @@ export const AttendanceApi = {
   exportTeam: (
     date: string,
     format: "xlsx" | "pdf",
+    scope: "team" | "overall" = "team",
   ) =>
     api
       .get(`/attendance/export/team`, {
         params: {
           date,
           format,
+          scope,
         },
         responseType: "blob",
       })
@@ -1096,6 +1098,7 @@ export const AttendanceApi = {
     month: number,
     year: number,
     format: "xlsx" | "pdf",
+    scope: "team" | "overall" = "team",
   ) =>
     api
       .get(`/attendance/export/team/monthly`, {
@@ -1103,6 +1106,7 @@ export const AttendanceApi = {
           month,
           year,
           format,
+          scope,
         },
         responseType: "blob",
       })
