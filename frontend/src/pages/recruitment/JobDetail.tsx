@@ -4494,7 +4494,7 @@ function OfferLetterModal({
                 label="Joining date"
                 type="date"
                 value={joiningDate}
-                onChange={(e) => setJoiningDate(e.target.value)}
+                onChange={(e) = max="9999-12-31"> setJoiningDate(e.target.value)}
               />
 
               <div className="sm:col-span-2 flex items-center justify-between gap-3">

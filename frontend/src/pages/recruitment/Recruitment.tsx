@@ -1802,7 +1802,7 @@ function PostJobModal({
               type="date"
               required
               {...register("walkInDriveDate")}
-            />
+             max="9999-12-31" />
 
             <TextField
               label="Expected candidates"
@@ -1852,7 +1852,7 @@ function PostJobModal({
               label="Registration deadline"
               type="date"
               {...register("walkInRegistrationDeadline")}
-            />
+             max="9999-12-31" />
           </div>
         )}
         <div className="sm:col-span-2 mt-2 rounded-2xl border border-line bg-surface p-4">
@@ -1945,7 +1945,7 @@ function PostJobModal({
               type="date"
               required
               {...register("campusDriveDate")}
-            />
+             max="9999-12-31" />
 
             <TextField
               label="Start time"

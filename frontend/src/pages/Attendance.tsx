@@ -1507,7 +1507,7 @@ function TeamAttendance({
               <input
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) = max="9999-12-31"> setDate(e.target.value)}
                 className="h-9 rounded-xl border border-line bg-white px-3 text-sm"
               />
               <Button
@@ -1531,7 +1531,7 @@ function TeamAttendance({
               <input
                 type="month"
                 value={`${year}-${String(month).padStart(2, "0")}`}
-                onChange={(e) => {
+                onChange={(e) = max="9999-12"> {
                   const [nextYear, nextMonth] = e.target.value
                     .split("-")
                     .map(Number);
@@ -1962,7 +1962,7 @@ function RegularizeModal({
       }
     >
       <div className="space-y-4">
-        <TextField label="Date" type="date" required {...register("date")} />
+        <TextField label="Date" type="date" required {...register("date")}  max="9999-12-31" />
 
         <div className="space-y-2">
           <label className="block text-[12px] font-medium text-ink">

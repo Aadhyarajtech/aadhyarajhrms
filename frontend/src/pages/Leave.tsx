@@ -814,14 +814,14 @@ function LeaveAnalytics() {
             label="Start date"
             type="date"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            max="9999-12-31" onChange={(e) => setStartDate(e.target.value)}
           />
 
           <TextField
             label="End date"
             type="date"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            max="9999-12-31" onChange={(e) => setEndDate(e.target.value)}
           />
 
           <div>
@@ -1188,14 +1188,14 @@ function LeavePatternDetection() {
             label="Start date"
             type="date"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            max="9999-12-31" onChange={(e) => setStartDate(e.target.value)}
           />
 
           <TextField
             label="End date"
             type="date"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            max="9999-12-31" onChange={(e) => setEndDate(e.target.value)}
           />
 
           <div>
@@ -1724,7 +1724,7 @@ function LeaveCalendar() {
                       id="leave-calendar-month-picker"
                       type="month"
                       value={`${year}-${String(month).padStart(2, "0")}`}
-                      onChange={(event) => {
+                      max="9999-12" onChange={(event) => {
                         const [selectedYear, selectedMonth] = event.target.value.split("-").map(Number);
                         if (selectedYear && selectedMonth) {
                           setCursor(new Date(selectedYear, selectedMonth - 1, 1));
@@ -1752,27 +1752,44 @@ function LeaveCalendar() {
                 </div>
               ))}
 
-              {days.map((date) => {
+              {days.map((date, dayIndex) => {
                 const iso = getCalendarDateIso(date);
+                // Keep the popover inside the calendar at row edges: first-column
+                // cells open to the right, last-column cells open to the left.
+                const calendarColumn = dayIndex % 7;
+                const popoverAlignment = calendarColumn === 0
+                  ? "left-0"
+                  : calendarColumn === 6
+                    ? "right-0"
+                    : "left-1/2 -translate-x-1/2";
                 const dayEntries = entriesForDay(date);
                 const currentMonth = isCurrentMonth(date);
                 const isToday = iso === todayIso;
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
+                const leaveDayEntries = dayEntries.filter((entry: any) => {
+                  const type = String(
+                    entry.category ?? entry.type ?? entry.leaveTypeName ?? "LEAVE",
+                  ).toUpperCase();
+                  return !type.includes("HOLIDAY") && !type.includes("FESTIVAL");
+                });
+                const isDayExpanded = expandedCalendarDay === iso;
+
                 return (
                   <div
                     key={iso}
                     className={cx(
-                      "min-h-[112px] border-b border-r border-line/50 p-2 text-left transition",
+                      "group relative min-h-[112px] border-b border-r border-line/50 p-2 text-left transition hover:z-20 focus-within:z-20",
                       !currentMonth && "bg-slate-50/70",
                       isWeekend && currentMonth && "bg-slate-50/80",
                       isToday && "bg-brand-50/60",
+                      isDayExpanded && "z-30",
                     )}
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1">
                       <span
                         className={cx(
-                          "flex h-6 w-6 items-center justify-center rounded-full text-[11px]",
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px]",
                           isToday
                             ? "bg-brand-600 font-semibold text-white"
                             : currentMonth
@@ -1785,9 +1802,33 @@ function LeaveCalendar() {
                         {date.getDate()}
                       </span>
                       {dayEntries.length > 0 ? (
-                        <span className="text-[9px] font-medium text-slate-500">
-                          {dayEntries.length} leave{dayEntries.length > 1 ? "s" : ""}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedCalendarDay((current) => current === iso ? null : iso)
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") setExpandedCalendarDay(null);
+                          }}
+                          aria-label={
+                            leaveDayEntries.length > 0
+                              ? `${leaveDayEntries.length} employee leave${leaveDayEntries.length === 1 ? "" : "s"} on ${iso}`
+                              : `Calendar events on ${iso}`
+                          }
+                          aria-expanded={isDayExpanded}
+                          className={cx(
+                            "shrink-0 rounded-md px-1.5 py-1 text-[9px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-200",
+                            leaveDayEntries.length > 0
+                              ? "bg-brand-50 text-brand-700 hover:bg-brand-100"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                          )}
+                        >
+                          {leaveDayEntries.length > 0
+                            ? `${leaveDayEntries.length} leave${leaveDayEntries.length === 1 ? "" : "s"}`
+                            : dayEntries.some((entry: any) => String(entry.category ?? entry.type ?? "").toUpperCase().includes("FESTIVAL"))
+                              ? "Festival"
+                              : "Holiday"}
+                        </button>
                       ) : isWeekend && currentMonth ? (
                         <span className="text-[8px] font-medium uppercase tracking-wide text-slate-400">
                           Weekend
@@ -1799,55 +1840,50 @@ function LeaveCalendar() {
                       ) : null}
                     </div>
 
-                    <div className="mt-2 space-y-1">
-                      {(expandedCalendarDay === iso ? dayEntries : dayEntries.slice(0, 3)).map((entry: any) => {
-                        const employee = employeeMap.get(entry.employeeId);
-                        const employeeName = getLeaveEmployeeName(entry, employee);
-                        const type = String(
-                          entry.category ?? entry.type ?? entry.leaveTypeName ?? "LEAVE",
-                        ).toUpperCase();
-                        const isHoliday = type.includes("HOLIDAY");
-                        const isFestival = type.includes("FESTIVAL");
-                        const isMine = employeeId && entry.employeeId === employeeId;
+                    {dayEntries.length > 0 && (
+                      <div
+                        className={cx(
+                          "absolute top-10 z-40 hidden max-h-48 w-52 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-white p-2 shadow-xl group-hover:block group-focus-within:block",
+                          popoverAlignment,
+                          isDayExpanded && "!block",
+                        )}
+                        role="list"
+                        aria-label={`Calendar entries for ${iso}`}
+                      >
+                        {dayEntries.map((entry: any, index: number) => {
+                          const employee = getEntryEmployee(entry);
+                          const employeeName = getLeaveEmployeeName(entry, employee);
+                          const type = String(
+                            entry.category ?? entry.type ?? entry.leaveTypeName ?? "LEAVE",
+                          ).toUpperCase();
+                          const isHoliday = type.includes("HOLIDAY");
+                          const isFestival = type.includes("FESTIVAL");
+                          const isMine = employeeId && String(entry.employeeId ?? entry.employee?.id ?? "") === String(employeeId);
+                          const label = isHoliday || isFestival
+                            ? String(entry.name ?? (isFestival ? "Festival" : "Holiday"))
+                            : `${isMine ? "You" : employeeName} · ${entry.leaveTypeName ?? entry.leaveType ?? "Leave"}`;
 
-                        return (
-                          <div
-                            key={entry.id}
-                            title={`${employeeName} · ${entry.leaveTypeName ?? entry.type ?? "Leave"}`}
-                            className={cx(
-                              "truncate rounded-lg px-2 py-1 text-[9px] font-medium",
-                              isHoliday
-                                ? "bg-red-50 text-red-700"
-                                : isFestival
-                                  ? "bg-gold-50 text-gold-700"
-                                  : isMine
-                                    ? "bg-brand-50 text-brand-700"
-                                    : "bg-success-50 text-success-700",
-                            )}
-                          >
-                            {isHoliday || isFestival
-                              ? entry.name ?? "Holiday"
-                              : `${isMine ? "You" : employeeName} · ${entry.leaveTypeName ?? "Leave"}`}
-                          </div>
-                        );
-                      })}
-                      {dayEntries.length > 3 && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedCalendarDay((current) =>
-                              current === iso ? null : iso,
-                            )
-                          }
-                          aria-expanded={expandedCalendarDay === iso}
-                          className="px-1 text-left text-[9px] font-medium text-brand-600 hover:underline"
-                        >
-                          {expandedCalendarDay === iso
-                            ? "Show less"
-                            : `+${dayEntries.length - 3} more`}
-                        </button>
-                      )}
-                    </div>
+                          return (
+                            <div
+                              key={entry.id ?? `${iso}-${index}-${label}`}
+                              role="listitem"
+                              className={cx(
+                                "mb-1 last:mb-0 rounded-lg px-2 py-1.5 text-[10px] font-medium leading-snug last:mb-0",
+                                isHoliday
+                                  ? "bg-red-50 text-red-700"
+                                  : isFestival
+                                    ? "bg-gold-50 text-gold-700"
+                                    : isMine
+                                      ? "bg-brand-50 text-brand-700"
+                                      : "bg-success-50 text-success-700",
+                              )}
+                            >
+                              {label}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -2313,7 +2349,7 @@ function BulkApplyLeaveModal({
             required
             type="date"
             value={startDate}
-            onChange={(event) => setStartDate(event.target.value)}
+            max="9999-12-31" onChange={(event) => setStartDate(event.target.value)}
             min={getTodayIso()}
           />
           <TextField
@@ -2321,7 +2357,7 @@ function BulkApplyLeaveModal({
             required
             type="date"
             value={endDate}
-            onChange={(event) => setEndDate(event.target.value)}
+            max="9999-12-31" onChange={(event) => setEndDate(event.target.value)}
             min={startDate || getTodayIso()}
           />
         </div>
@@ -2592,7 +2628,7 @@ function ApplyModal({
               errors.startDate?.message
             }
             {...register("startDate")}
-          />
+           max="9999-12-31" />
 
           <TextField
             label="End date"
@@ -2603,7 +2639,7 @@ function ApplyModal({
               errors.endDate?.message
             }
             {...register("endDate")}
-          />
+           max="9999-12-31" />
         </div>
 
         <p className="text-[11px] font-medium text-slate-500">

@@ -1319,7 +1319,7 @@ function UploadDocumentModal({
             <input
               type="date"
               value={expiryDate}
-              onChange={(e) => setExpiryDate(e.target.value)}
+              onChange={(e) = max="9999-12-31"> setExpiryDate(e.target.value)}
               className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-brand-400 focus:ring-0"
             />
             <p className="mt-1 text-[11px] text-ink-faint">

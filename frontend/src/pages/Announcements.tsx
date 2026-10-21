@@ -1733,14 +1733,14 @@ function CreateModal({
                 type="date"
                 min={todayLocalDate()}
                 {...register("eventStartAt")}
-              />
+               max="9999-12-31" />
 
               <TextField
                 label="Event End Date"
                 type="date"
                 min={watch("eventStartAt") || todayLocalDate()}
                 {...register("eventEndAt")}
-              />
+               max="9999-12-31" />
             </div>
 
             <TextField
@@ -1841,7 +1841,7 @@ function CreateModal({
               type="date"
               min={todayLocalDate()}
               {...register("scheduledDate")}
-            />
+             max="9999-12-31" />
 
             <TextField
               label="Publish Time"
@@ -2449,13 +2449,13 @@ function EditModal({
                 type="date"
                 min={todayLocalDate()}
                 {...register("eventStartAt")}
-              />
+               max="9999-12-31" />
               <TextField
                 label="Event End Date"
                 type="date"
                 min={watch("eventStartAt") || todayLocalDate()}
                 {...register("eventEndAt")}
-              />
+               max="9999-12-31" />
             </div>
             <TextField
               label="Event Location"
@@ -2505,7 +2505,7 @@ function EditModal({
               type="date"
               min={todayLocalDate()}
               {...register("scheduledDate")}
-            />
+             max="9999-12-31" />
             <TextField
               label="Publish Time"
               type="time"

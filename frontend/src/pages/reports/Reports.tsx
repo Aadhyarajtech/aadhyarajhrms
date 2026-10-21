@@ -357,7 +357,7 @@ export default function Reports() {
             <input
               type="date"
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              max="9999-12-31" onChange={(e) => setFrom(e.target.value)}
               className="mt-1 block w-full rounded-xl border border-line bg-white px-3 py-2 text-[13px]"
             />
           </label>
@@ -366,7 +366,7 @@ export default function Reports() {
             <input
               type="date"
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              max="9999-12-31" onChange={(e) => setTo(e.target.value)}
               className="mt-1 block w-full rounded-xl border border-line bg-white px-3 py-2 text-[13px]"
             />
           </label>
