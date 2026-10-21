@@ -81,6 +81,8 @@ function serializeProfile(
           departmentId: p.departmentId,
           departmentName: p.departmentName,
           designationTitle: p.designationTitle,
+          gender: p.gender,
+          maritalStatus: p.maritalStatus,
           isManager: p.isManager,
         }
       : null,

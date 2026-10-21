@@ -31,6 +31,8 @@ export interface AuthProfileRow extends UserRow {
   departmentId: string | null;
   departmentName: string | null;
   designationTitle: string | null;
+  gender: string | null;
+  maritalStatus: string | null;
   isManager: boolean;
 }
 
@@ -113,6 +115,8 @@ export async function findAuthProfile(
     departmentId: employee?.departmentId ?? null,
     departmentName,
     designationTitle,
+    gender: employee?.gender ?? null,
+    maritalStatus: employee?.maritalStatus ?? null,
     isManager:
       !!employee &&
       (user.role === "MANAGER" || employee.isManager === true || hasDirectReports),

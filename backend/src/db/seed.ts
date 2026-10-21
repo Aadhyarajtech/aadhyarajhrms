@@ -459,8 +459,10 @@ export async function runSeed() {
     { name: "Privilege Leave", colorHex: "#5B4FE5", days: 18, isPaid: true },
     { name: "Sick Leave", colorHex: "#D14343", days: 12, isPaid: true },
     { name: "Casual Leave", colorHex: "#1A9E72", days: 8, isPaid: true },
-    // Default entitlement: 26 weeks (182 calendar days). HR should set 84 days for applicable 12-week cases.
-    { name: "Parental Leave", colorHex: "#0E7490", days: 182, isPaid: true },
+    // Maternity is 26 calendar weeks for fewer than two surviving children; eligible third-child-onward cases are capped at 12 weeks in request validation.
+    { name: "Maternity Leave", colorHex: "#DB2777", days: 182, isPaid: true },
+    { name: "Paternity Leave", colorHex: "#2563EB", days: 15, isPaid: true },
+    { name: "Parental Leave", colorHex: "#0E7490", days: 15, isPaid: true },
     { name: "Loss of Pay", colorHex: "#94A3B8", days: 0, isPaid: false },
   ];
   const leaveTypeIds: Record<string, string> = {};
@@ -472,7 +474,7 @@ export async function runSeed() {
     });
   }
 
-  const standardLeaveTypeNames = ["Privilege Leave", "Sick Leave", "Casual Leave", "Parental Leave"];
+  const standardLeaveTypeNames = ["Privilege Leave", "Sick Leave", "Casual Leave", "Maternity Leave", "Paternity Leave", "Parental Leave"];
   const balanceDocs: any[] = [];
   for (const emp of allEmployees) {
     for (const name of standardLeaveTypeNames) {

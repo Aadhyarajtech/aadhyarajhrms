@@ -1,5 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
+import path from "node:path";
+import { PRIVATE_DOCUMENT_DIR_ABSOLUTE, privateDocumentUpload } from "@/middleware/upload";
 
 import { authenticate } from "@/middleware/auth";
 import { requirePermission } from "@/middleware/permissions";
@@ -17,6 +19,7 @@ import {
 import { askLeaveAI } from "./leave.askai";
 import { getEmployeeById } from "@/modules/employees/employees.repository";
 import { notify } from "@/modules/notifications/notifications.repository";
+import { LeaveRequest, Employee, LeaveType } from "@/db/models";
 
 export const leaveRouter = Router();
 
@@ -633,6 +636,27 @@ leaveRouter.post(
   },
 );
 
+/** Download a family-leave birth certificate for the employee or authorized HR/manager reviewers. */
+leaveRouter.get("/requests/:requestId/birth-certificate", async (req, res, next) => {
+  try {
+    const request: any = await LeaveRequest.findById(req.params.requestId).select("employeeId +birthCertificateStorageKey").lean();
+    if (!request || !request.birthCertificateStorageKey) throw AppError.notFound("Birth certificate not found.");
+    const requester = req.user!;
+    const isOwner = String(request.employeeId) === String(requester.employeeId ?? "");
+    const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(requester.role);
+    let isManager = false;
+    if (!isOwner && !isAdmin && requester.employeeId && (requester.role === "MANAGER" || requester.isManager)) {
+      isManager = !!(await Employee.exists({ _id: request.employeeId, managerId: requester.employeeId }));
+    }
+    if (!isOwner && !isAdmin && !isManager) throw AppError.forbidden();
+    const filename = path.basename(String(request.birthCertificateStorageKey));
+    res.setHeader("Cache-Control", "private, no-store");
+    res.sendFile(path.join(PRIVATE_DOCUMENT_DIR_ABSOLUTE, filename), (error) => {
+      if (error && !res.headersSent) next(AppError.notFound("Birth certificate file is unavailable."));
+    });
+  } catch (err) { next(err); }
+});
+
 /**
  * ============================================================
  * CREATE LEAVE REQUEST
@@ -651,6 +675,7 @@ const createRequestSchema = z
       .optional()
       .default(null),
     reason: z.string().min(3, "Please add a short reason for this leave."),
+    survivingChildrenBeforeBirth: z.coerce.number().int().min(0).max(20).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.halfDay && !value.halfDayType) {
@@ -672,6 +697,7 @@ const createRequestSchema = z
 
 leaveRouter.post(
   "/requests",
+  privateDocumentUpload.single("birthCertificate"),
   validate(createRequestSchema),
   async (req, res, next) => {
     try {
@@ -681,9 +707,18 @@ leaveRouter.post(
 
       const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
 
+      const leaveTypeId = String(req.body.leaveTypeId ?? "");
+      const submittedType = await LeaveType.findById(leaveTypeId).select("name").lean();
+      const isFamilyLeave = /^(maternity|paternity|parental) leave$/i.test(String(submittedType?.name ?? ""));
+      if (isFamilyLeave && !req.file) {
+        throw AppError.badRequest("Upload the child's birth certificate to apply for maternity, paternity, or parental leave.");
+      }
       let request = await repo.createRequest({
         employeeId: req.user!.employeeId,
         ...req.body,
+        birthCertificateStorageKey: req.file?.filename ?? null,
+        survivingChildrenBeforeBirth: req.body.survivingChildrenBeforeBirth === undefined || req.body.survivingChildrenBeforeBirth === ""
+          ? null : Number(req.body.survivingChildrenBeforeBirth),
       });
 
       // Super Admin leave is effective immediately and does not require
@@ -757,6 +792,7 @@ const bulkCreateRequestSchema = z
       .optional()
       .default(null),
     reason: z.string().min(3, "Please add a short reason for this leave."),
+    survivingChildrenBeforeBirth: z.coerce.number().int().min(0).max(20).optional(),
     applyToAll: z.boolean().optional().default(false),
     employeeIds: z.array(z.string().min(1)).optional().default([]),
   })

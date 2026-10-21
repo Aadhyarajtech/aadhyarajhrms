@@ -17,6 +17,8 @@ export interface AuthEmployee {
   departmentId: string;
   departmentName: string;
   designationTitle: string;
+  gender?: string | null;
+  maritalStatus?: string | null;
   isManager: boolean;
 }
 
@@ -55,6 +57,7 @@ export interface Employee {
   lastName: string;
   avatarUrl: string | null;
   gender: string | null;
+  maritalStatus?: string | null;
   dateOfBirth: string | null;
   personalEmail: string | null;
   phone: string | null;
@@ -220,6 +223,7 @@ export interface LeaveRequest {
   endDate: string;
   totalDays: number;
   reason: string;
+  hasBirthCertificate?: boolean;
   status:
   | "PENDING"
   | "APPROVED"
