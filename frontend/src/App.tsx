@@ -24,9 +24,12 @@ const CandidateOffer = lazy(() => import("@/pages/recruitment/CandidateOffer"));
 // MAIN PAGES
 // =========================================================
 
+
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const BreakGlass = lazy(() => import("@/pages/BreakGlass"));
 
 const MyTickets = lazy(() => import("@/pages/MyTickets"));
+
 
 const Tickets = lazy(() => import("@/pages/Tickets"));
 
@@ -158,6 +161,20 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
 
           {/* =================================================
+    BREAK-GLASS EMERGENCY ACCESS
+================================================= */}
+
+          <Route
+            path="break-glass"
+            element={
+              <ProtectedRoute>
+                <BreakGlass />
+              </ProtectedRoute>
+            }
+          />
+
+
+          {/* =================================================
               MY TICKETS
           ================================================= */}
 
@@ -231,20 +248,20 @@ export default function App() {
               Job history, probation workflow and profile-change UI
           ================================================= */}
 
-<Route
-  path="employee-lifecycle-management"
-  element={<EmployeeLifecycleFeatures />}
-/>
+          <Route
+            path="employee-lifecycle-management"
+            element={<EmployeeLifecycleFeatures />}
+          />
 
-<Route
-  path="employee-lifecycle-features"
-  element={
-    <Navigate
-      to="/app/employee-lifecycle-management"
-      replace
-    />
-  }
-/>
+          <Route
+            path="employee-lifecycle-features"
+            element={
+              <Navigate
+                to="/app/employee-lifecycle-management"
+                replace
+              />
+            }
+          />
 
           {/* =================================================
               MY TEAM
@@ -466,13 +483,13 @@ export default function App() {
         </Route>
 
         <Route
-  path="/change-temporary-password"
-  element={
-    <Suspense fallback={<div>Loading...</div>}>
-      <TemporaryPasswordChange />
-    </Suspense>
-  }
-/>
+          path="/change-temporary-password"
+          element={
+            <Suspense fallback={<div>Loading...</div>}>
+              <TemporaryPasswordChange />
+            </Suspense>
+          }
+        />
 
         {/* =====================================================
             UNKNOWN PUBLIC ROUTE

@@ -12,7 +12,7 @@ import { notFoundHandler, errorHandler } from "@/middleware/errorHandler";
 import { UPLOAD_DIR_ABSOLUTE } from "@/middleware/upload";
 import { hrCopilotRouter } from "@/modules/ai/hr-copilot/hr-copilot.routes";
 import { requirePasswordResetComplete } from "@/middleware/passwordResetGate";
-
+import { breakGlassRouter } from "@/modules/break-glass/break-glass.routes";
 // =========================================================
 // ROUTES
 // =========================================================
@@ -168,6 +168,7 @@ app.use("/api", requirePasswordResetComplete);
 
   app.use("/api/organization", organizationRouter);
   app.use("/api/governance", governanceRouter);
+  app.use("/api/break-glass", breakGlassRouter);
 
   // =======================================================
   // ATTENDANCE

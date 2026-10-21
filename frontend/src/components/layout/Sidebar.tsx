@@ -17,6 +17,7 @@ import {
   X,
   ChevronRight,
   History,
+  ShieldAlert,
 } from "lucide-react";
 
 import { BrandWordmark } from "./BrandMark";
@@ -104,29 +105,29 @@ const NAV_ITEMS: NavItem[] = [
     section: "workspace",
   },
 
- {
-  to: "/app/performance",
-  label: "Performance",
-  icon: Target,
-  permission: "performance.view",
-  section: "workspace",
-},
+  {
+    to: "/app/performance",
+    label: "Performance",
+    icon: Target,
+    permission: "performance.view",
+    section: "workspace",
+  },
 
   {
-  to: "/app/payroll",
-  label: "Payroll",
-  icon: Wallet,
-  permission: "payroll.view",
-  section: "workspace",
-},
+    to: "/app/payroll",
+    label: "Payroll",
+    icon: Wallet,
+    permission: "payroll.view",
+    section: "workspace",
+  },
 
   {
-  to: "/app/documents",
-  label: "Documents",
-  icon: Briefcase,
-  permission: "documents.view",
-  section: "workspace",
-},
+    to: "/app/documents",
+    label: "Documents",
+    icon: Briefcase,
+    permission: "documents.view",
+    section: "workspace",
+  },
 
   {
     to: "/app/employees/",
@@ -134,7 +135,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: UserCircle2,
     section: "workspace",
   },
-
+  {
+    to: "/app/break-glass",
+    label: "Break-Glass Access",
+    icon: ShieldAlert,
+    section: "workspace",
+  },
   /* =======================================================
      PEOPLE
   ======================================================= */
@@ -169,12 +175,12 @@ const NAV_ITEMS: NavItem[] = [
   },
 
   {
-  to: "/app/employee-lifecycle-management",
-  label: "Employee Lifecycle",
-  icon: History,
-  roles: ["SUPER_ADMIN", "ADMIN", "MANAGER"],
-  section: "people",
-},
+    to: "/app/employee-lifecycle-management",
+    label: "Employee Lifecycle",
+    icon: History,
+    roles: ["SUPER_ADMIN", "ADMIN", "MANAGER"],
+    section: "people",
+  },
 
   /* =======================================================
      MANAGEMENT
@@ -204,39 +210,39 @@ const NAV_ITEMS: NavItem[] = [
     section: "management",
   },
 
- {
-  to: "/app/announcements",
-  label: "Announcements",
-  icon: Megaphone,
-  roles: [
-    "SUPER_ADMIN",
-    "ADMIN",
-    "RECRUITER",
-    "FINANCE",
-    "IT_SUPPORT",
-    "EMPLOYEE",
-  ],
-  section: "management",
-},
+  {
+    to: "/app/announcements",
+    label: "Announcements",
+    icon: Megaphone,
+    roles: [
+      "SUPER_ADMIN",
+      "ADMIN",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+      "EMPLOYEE",
+    ],
+    section: "management",
+  },
 
   /* =======================================================
      SYSTEM
   ======================================================= */
 
- {
-  to: "/app/settings",
-  label: "Settings",
-  icon: Settings,
-  roles: [
-    "SUPER_ADMIN",
-    "ADMIN",
-    "RECRUITER",
-    "FINANCE",
-    "IT_SUPPORT",
-    "EMPLOYEE",
-  ],
-  section: "system",
-},
+  {
+    to: "/app/settings",
+    label: "Settings",
+    icon: Settings,
+    roles: [
+      "SUPER_ADMIN",
+      "ADMIN",
+      "RECRUITER",
+      "FINANCE",
+      "IT_SUPPORT",
+      "EMPLOYEE",
+    ],
+    section: "system",
+  },
 ];
 
 /* =========================================================
@@ -307,7 +313,7 @@ export function Sidebar({
     ? `/app/employees/${user.employee.id}`
     : "/app/settings/account";
 
-    
+
 
   /* -------------------------------------------------------
      SETTINGS PATH
@@ -421,15 +427,15 @@ export function Sidebar({
 
                           isActive
                             ? [
-                                "bg-gradient-to-r from-[#F0EDFF] via-[#F5F3FF] to-[#FAF9FF]",
-                                "text-brand-700",
-                                "shadow-[0_5px_15px_rgba(91,79,229,0.07)]",
-                              ].join(" ")
+                              "bg-gradient-to-r from-[#F0EDFF] via-[#F5F3FF] to-[#FAF9FF]",
+                              "text-brand-700",
+                              "shadow-[0_5px_15px_rgba(91,79,229,0.07)]",
+                            ].join(" ")
                             : [
-                                "text-slate-600",
-                                "hover:bg-slate-50",
-                                "hover:text-slate-900",
-                              ].join(" "),
+                              "text-slate-600",
+                              "hover:bg-slate-50",
+                              "hover:text-slate-900",
+                            ].join(" "),
                         )
                       }
                     >
