@@ -369,7 +369,7 @@ export default function AiAttendanceInsights({
                     type="date"
                     value={endDate}
                     min={startDate}
-                    onChange={(e) = max="9999-12-31"> {
+                    onChange={(e) => {
                       setEndDate(e.target.value);
                       setDateError("");
                     }}

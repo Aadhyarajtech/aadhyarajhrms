@@ -4493,8 +4493,9 @@ function OfferLetterModal({
               <TextField
                 label="Joining date"
                 type="date"
+                max="9999-12-31"
                 value={joiningDate}
-                onChange={(e) = max="9999-12-31"> setJoiningDate(e.target.value)}
+                onChange={(e) => setJoiningDate(e.target.value)}
               />
 
               <div className="sm:col-span-2 flex items-center justify-between gap-3">

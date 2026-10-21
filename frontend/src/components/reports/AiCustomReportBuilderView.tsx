@@ -422,9 +422,9 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
               {/* Date Range */}
               <div className="flex items-center gap-1 bg-white px-2 py-1.5 rounded-lg border border-slate-200 text-xs">
                 <Calendar size={11} className="text-teal-600" />
-                <input type="date" value={dateFrom} onChange={(e) = max="9999-12-31"> setDateFrom(e.target.value)} className="bg-transparent text-ink text-[11px] focus:outline-none w-[90px]" />
+                <input type="date" max="9999-12-31" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="bg-transparent text-ink text-[11px] focus:outline-none w-[90px]" />
                 <span className="text-ink-faint">→</span>
-                <input type="date" value={dateTo} onChange={(e) = max="9999-12-31"> setDateTo(e.target.value)} className="bg-transparent text-ink text-[11px] focus:outline-none w-[90px]" />
+                <input type="date" max="9999-12-31" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="bg-transparent text-ink text-[11px] focus:outline-none w-[90px]" />
               </div>
 
               {/* Department */}

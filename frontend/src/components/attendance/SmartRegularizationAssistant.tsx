@@ -169,7 +169,7 @@ export default function SmartRegularizationAssistant({
               <input
                 type="date"
                 value={date}
-                onChange={(event) = max="9999-12-31"> {
+                onChange={(event) => {
                   setDate(event.target.value);
                   setAnalysis(null);
                   setReason("");

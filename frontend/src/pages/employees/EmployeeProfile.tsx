@@ -904,7 +904,7 @@ export default function EmployeeProfile() {
             </div>
             <div>
               <label htmlFor="resignation-date" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Resignation date <span className="text-danger-500">*</span></label>
-              <input id="resignation-date" type="date" value={noticePeriodForm.resignationDate} onChange={(e) = max="9999-12-31"> setNoticePeriodForm((f) => ({ ...f, resignationDate: e.target.value }))} aria-invalid={!!noticePeriodErrors.resignationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
+              <input id="resignation-date" type="date" max="9999-12-31" value={noticePeriodForm.resignationDate} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, resignationDate: e.target.value }))} aria-invalid={!!noticePeriodErrors.resignationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
               {noticePeriodErrors.resignationDate && <p className="mt-1 text-xs text-danger-600">{noticePeriodErrors.resignationDate}</p>}
             </div>
             <div className="sm:col-span-2">
@@ -974,7 +974,7 @@ export default function EmployeeProfile() {
             </div>
             <div>
               <label htmlFor="termination-date" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Termination date <span className="text-danger-500">*</span></label>
-              <input id="termination-date" type="date" value={terminationForm.terminationDate} onChange={(e) = max="9999-12-31"> setTerminationForm((f) => ({ ...f, terminationDate: e.target.value }))} aria-invalid={!!terminationErrors.terminationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
+              <input id="termination-date" type="date" max="9999-12-31" value={terminationForm.terminationDate} onChange={(e) => setTerminationForm((f) => ({ ...f, terminationDate: e.target.value }))} aria-invalid={!!terminationErrors.terminationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
               {terminationErrors.terminationDate && <p className="mt-1 text-xs text-danger-600">{terminationErrors.terminationDate}</p>}
             </div>
             <div className="sm:col-span-2">
@@ -3727,7 +3727,7 @@ function EditEmployeeModal({
           label="Date of birth"
           type="date"
           {...register("dateOfBirth")}
-         max="9999-12-31" />
+        />
         <TextField label="Phone" {...register("phone")} />
         <TextField
           label="Personal email"
@@ -3924,34 +3924,22 @@ function EditEmployeeModal({
                   />
                   <TextField
                     label="Start year"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={4}
-                    pattern="[0-9]{4}"
-                    placeholder="YYYY"
+                    type="number"
                     {...register(`education.${index}.startYear`, {
-                      setValueAs: (value) =>
-                        value === "" ? null : Number(value),
-                      validate: (value) =>
-                        value === null || value === undefined || value === "" ||
-                        (/^\d{4}$/.test(String(value)) && Number(value) >= 1000) ||
-                        "Enter a valid four-digit year",
+                      setValueAs: (value: unknown) =>
+                        value === "" || value === null || value === undefined
+                          ? null
+                          : Number(value),
                     })}
                   />
                   <TextField
                     label="End year"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={4}
-                    pattern="[0-9]{4}"
-                    placeholder="YYYY"
+                    type="number"
                     {...register(`education.${index}.endYear`, {
-                      setValueAs: (value) =>
-                        value === "" ? null : Number(value),
-                      validate: (value) =>
-                        value === null || value === undefined || value === "" ||
-                        (/^\d{4}$/.test(String(value)) && Number(value) >= 1000) ||
-                        "Enter a valid four-digit year",
+                      setValueAs: (value: unknown) =>
+                        value === "" || value === null || value === undefined
+                          ? null
+                          : Number(value),
                     })}
                   />
                 </div>
@@ -4014,12 +4002,12 @@ function EditEmployeeModal({
                     label="Issue date"
                     type="date"
                     {...register(`certifications.${index}.issueDate`)}
-                   max="9999-12-31" />
+                  />
                   <TextField
                     label="Expiry date"
                     type="date"
                     {...register(`certifications.${index}.expiryDate`)}
-                   max="9999-12-31" />
+                  />
                   <TextField
                     label="Credential ID"
                     {...register(`certifications.${index}.credentialId`)}
@@ -4084,12 +4072,12 @@ function EditEmployeeModal({
                     label="Start date"
                     type="date"
                     {...register(`workHistory.${index}.startDate`)}
-                   max="9999-12-31" />
+                  />
                   <TextField
                     label="End date"
                     type="date"
                     {...register(`workHistory.${index}.endDate`)}
-                   max="9999-12-31" />
+                  />
                   <TextField
                     label="Responsibilities"
                     className="sm:col-span-2"
@@ -4572,14 +4560,9 @@ function SalaryModal({
         </label>
         <TextField
           label="Tax year (FY start)"
-          type="text"
-          inputMode="numeric"
-          maxLength={4}
-          pattern="[0-9]{4}"
+          type="number"
           defaultValue={existing?.taxYear ?? 2026}
-          {...register("taxYear", {
-            validate: (value) => /^\d{4}$/.test(String(value)) || "Enter a four-digit tax year",
-          })}
+          {...register("taxYear")}
         />
         <TextField
           label="Other taxable income — annual"
