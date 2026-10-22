@@ -463,8 +463,8 @@ export async function listJobPostings(
   return rows.map((row: AnyDoc) => ({
     id: row._id,
     ...row,
-    departmentName: deptMap.get(String(row.departmentId))?.name ?? null,
-    designationTitle: designationMap.get(String(row.designationId))?.title ?? null,
+    departmentName: deptMap.get(String(row.departmentId))?.name ?? deptMap.get(String(row.departmentId))?.title ?? null,
+    designationTitle: designationMap.get(String(row.designationId))?.title ?? designationMap.get(String(row.designationId))?.name ?? null,
     candidateCount: countMap.get(String(row._id)) ?? 0,
   }));
 }
@@ -482,7 +482,7 @@ export async function getJobPosting(id: string) {
   ]);
 
   return {
-    id: row._id,
+    id: String(row._id),
     ...row,
     departmentName: department?.name ?? null,
     designationTitle: designation?.title ?? null,
@@ -551,12 +551,14 @@ export async function generateJobRequisitionDraft(input: {
     Designation.find().select("_id title departmentId").lean(),
   ]);
 
+  // Mongo ObjectIds and incoming string IDs are different runtime types.
+  // Compare normalized strings so the AI draft receives the actual selections.
   const selectedDepartment = departments.find(
-    (department) => department._id === input.departmentId,
+    (department) => String(department._id) === String(input.departmentId ?? ""),
   );
 
   const selectedDesignation = designations.find(
-    (designation) => designation._id === input.designationId,
+    (designation) => String(designation._id) === String(input.designationId ?? ""),
   );
 
   const result = await generateJobRequisitionAI({
@@ -581,13 +583,16 @@ export async function generateJobRequisitionDraft(input: {
   });
 
   const generatedDepartment = departments.find(
-    (department) => department.name === result.departmentName,
+    (department) =>
+      String(department.name ?? "").trim().toLowerCase() ===
+      String(result.departmentName ?? "").trim().toLowerCase(),
   );
 
   const generatedDesignation = designations.find(
     (designation) =>
-      designation.title === result.designationTitle &&
-      designation.departmentId === generatedDepartment?._id,
+      String(designation.title ?? "").trim().toLowerCase() ===
+        String(result.designationTitle ?? "").trim().toLowerCase() &&
+      String(designation.departmentId ?? "") === String(generatedDepartment?._id ?? ""),
   );
 
   return {
@@ -613,7 +618,7 @@ export async function createJobPosting(input: CreateJobInput) {
 
   if (
     designation.departmentId &&
-    designation.departmentId !== input.departmentId
+    String(designation.departmentId) !== String(input.departmentId)
   ) {
     throw new Error(
       "The selected designation does not belong to the selected department.",
@@ -873,7 +878,7 @@ export async function createJobPosting(input: CreateJobInput) {
   await notifyRecruitmentTeam({
     title: "New recruitment requisition",
     message: `Requisition "${input.title.trim()}" has been submitted for approval.`,
-    link: `/recruitment/jobs/${doc._id}`,
+    link: `/recruitment/${doc._id}`,
   });
   return createdJob;
 }
@@ -919,7 +924,7 @@ export async function approveJob(
     await notifyRecruitmentTeam({
       title: "Requisition approved",
       message: `The requisition "${job.title}" is approved and open for recruitment.`,
-      link: `/recruitment/jobs/${id}`,
+      link: `/recruitment/${id}`,
     });
     return getJobPosting(id);
   }
@@ -953,7 +958,7 @@ export async function approveJob(
       await notifyRecruitmentTeam({
         title: "Requisition approved",
         message: `The requisition "${job.title}" is approved and open for recruitment.`,
-        link: `/recruitment/jobs/${id}`,
+        link: `/recruitment/${id}`,
       });
     }
 
@@ -991,7 +996,7 @@ export async function approveJob(
     await notifyRecruitmentTeam({
       title: "Requisition approved",
       message: `The requisition "${job.title}" is approved and open for recruitment.`,
-      link: `/recruitment/jobs/${id}`,
+      link: `/recruitment/${id}`,
     });
   }
 
@@ -1200,7 +1205,7 @@ export async function updateJobStatus(
   await notifyRecruitmentTeam({
     title: `Job ${status.replace("_", " ").toLowerCase()}`,
     message: `Job "${job.title}" status changed to ${status.replace("_", " ")}.`,
-    link: `/recruitment/jobs/${id}`,
+    link: `/recruitment/${id}`,
   });
   return getJobPosting(id);
 }
@@ -1295,9 +1300,15 @@ export async function getPublicJobPosting(id: string) {
     id: job._id,
     title: job.title,
     departmentId: job.departmentId,
-    departmentName: (department as AnyDoc | null)?.title ?? "",
+    departmentName:
+      (department as AnyDoc | null)?.name ??
+      (department as AnyDoc | null)?.title ??
+      "",
     designationId: job.designationId,
-    designationTitle: (designation as AnyDoc | null)?.title ?? "",
+    designationTitle:
+      (designation as AnyDoc | null)?.title ??
+      (designation as AnyDoc | null)?.name ??
+      "",
     location: job.location,
     employmentType: job.employmentType,
     experienceMin: job.experienceMin,
@@ -1535,7 +1546,7 @@ export async function createCandidate(input: CreateCandidateInput) {
   await notifyRecruitmentTeam({
     title: "New candidate application",
     message: `${firstName} ${lastName} applied for ${job.title}.`,
-    link: `/recruitment/candidates/${doc._id}`,
+    link: `/recruitment/${doc.jobPostingId}/candidates/${doc._id}`,
   });
   await notifyCandidateEmail(
     createdCandidate,
@@ -2372,7 +2383,7 @@ export async function generateOffer(
   const job = await JobPosting.findById(candidate.jobPostingId).lean();
   if (!job) throw new Error("Job posting not found.");
 
-  if (candidate.finalResult !== "SELECTED") {
+  if (candidate.finalResult !== "SELECTED" && candidate.stage !== "OFFER") {
     throw new Error("Select the candidate before generating an offer.");
   }
 
@@ -2521,6 +2532,7 @@ export async function generateOffer(
           accessTokenHash: tokenHash,
           accessTokenExpiresAt: tokenExpiresAt,
           viewedAt: null,
+          signature: null,
         },
       },
     },
@@ -2552,6 +2564,13 @@ export async function generateOffer(
 export async function respondToOffer(
   id: string,
   status: "ACCEPTED" | "DECLINED",
+  signature?: {
+    mode: "TYPED" | "DRAWN";
+    name: string;
+    dataUrl: string;
+    fontFamily?: string;
+    consent: true;
+  },
 ) {
   const candidate = await Candidate.findById(id);
 
@@ -2567,8 +2586,20 @@ export async function respondToOffer(
     throw new Error("Only a sent offer can receive a response.");
   }
 
-  candidate.offer.status = status;
+  if (status === "ACCEPTED") {
+    if (!signature || signature.consent !== true || !signature.dataUrl.startsWith("data:image/png;base64,")) {
+      throw new Error("A valid, confirmed electronic signature is required to accept this offer.");
+    }
+    (candidate.offer as any).signature = {
+      mode: signature.mode,
+      name: signature.name.trim(),
+      dataUrl: signature.dataUrl,
+      fontFamily: signature.fontFamily ?? null,
+      consentedAt: nowIso(),
+    } as any;
+  }
 
+  candidate.offer.status = status;
   candidate.offer.respondedAt = nowIso();
 
   if (status === "ACCEPTED") {

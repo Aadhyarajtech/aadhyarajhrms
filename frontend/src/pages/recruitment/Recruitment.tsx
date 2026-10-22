@@ -244,6 +244,7 @@ const STAGE_ORDER = [
 
 export default function Recruitment() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const { user, hasPermission } = useAuth();
   // Keep recruitment management limited to the existing authorized roles or
   // users explicitly granted the recruitment.manage permission.
@@ -1079,7 +1080,13 @@ export default function Recruitment() {
                   key={job.id}
                   hoverable
                   className="group cursor-pointer border-slate-200/70 bg-gradient-to-br from-white via-white to-[#FBFAFF] shadow-[0_8px_24px_rgba(15,23,42,0.045)] hover:border-indigo-200/80 hover:shadow-[0_16px_34px_rgba(79,70,229,0.10)]"
-                  onClick={() => navigate(`/app/recruitment/${job.id}`)}
+                  onClick={() => {
+                    if (!job.id) {
+                      showToast("This requisition is missing its ID. Refresh the page and try again.", "error");
+                      return;
+                    }
+                    navigate(`/app/recruitment/${job.id}`);
+                  }}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1215,15 +1222,34 @@ function PostJobModal({
 
   const useTemplate = watch("useTemplate");
 
-  const selectedDepartmentId = watch("departmentId");
+  // The Department field is a text input, so its value is a department name,
+  // not necessarily the database ID. Resolve the selected name before filtering.
+  const selectedDepartmentValue = String(watch("departmentId") ?? "").trim();
+  const selectedDepartment = departments?.find((department: any) => {
+    const departmentId = String(department.id ?? department._id ?? "");
+    const departmentName = String(department.name ?? department.title ?? "").trim();
+    return (
+      (departmentId && departmentId === selectedDepartmentValue) ||
+      (departmentName && departmentName.toLowerCase() === selectedDepartmentValue.toLowerCase())
+    );
+  });
+  const selectedDepartmentId = selectedDepartment
+    ? String(selectedDepartment.id ?? "")
+    : "";
 
-  const filteredDesignations =
-    designations?.filter(
-      (designation: any) =>
-        !selectedDepartmentId ||
-        !designation.departmentId ||
-        designation.departmentId === selectedDepartmentId,
-    ) ?? [];
+  // Never show unmapped/global designations for a selected department. If the
+  // department is new or not yet resolved, offer no existing designations.
+  const filteredDesignations = selectedDepartmentId
+    ? (designations ?? []).filter((designation: any) => {
+        const designationDepartmentId = String(
+          designation.departmentId?.id ??
+            designation.departmentId?._id ??
+            designation.departmentId ??
+            "",
+        );
+        return designationDepartmentId === selectedDepartmentId;
+      })
+    : [];
 
   const mutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
@@ -1412,7 +1438,7 @@ function PostJobModal({
     });
   };
 
-  const submitJob = (values: JobForm) => {
+  const submitJob = async (values: JobForm) => {
     const screeningQuestions = values.screeningQuestionsText
       ? values.screeningQuestionsText
         .split("\n")
@@ -1435,10 +1461,59 @@ function PostJobModal({
         .filter(Boolean)
       : [];
 
+    // Resolve the typed department to an existing record or create it first.
+    // The requisition must store IDs, never the display text entered by a user.
+    let resolvedDepartment: any;
+    let resolvedDesignation: any;
+    try {
+      const departmentName = values.departmentId.trim();
+      const departmentOptions = await OrganizationApi.departments();
+      const existingDepartment = departmentOptions.find(
+        (item: any) => String(item.name ?? item.title ?? "").trim().toLowerCase() === departmentName.toLowerCase(),
+      );
+      if (existingDepartment) {
+        resolvedDepartment = existingDepartment;
+      } else {
+        const codeBase = departmentName.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "DEPT";
+        resolvedDepartment = await OrganizationApi.createDepartment({
+          name: departmentName,
+          code: `${codeBase}${Math.floor(Math.random() * 100).toString().padStart(2, "0")}`.slice(0, 10),
+        });
+      }
+      queryClient.setQueryData<any[]>(["departments"], (current) => {
+        const items = current ?? [];
+        return items.some((item: any) => String(item.id) === String(resolvedDepartment.id))
+          ? items
+          : [...items, resolvedDepartment];
+      });
+
+      const designationTitle = values.designationId.trim();
+      const departmentDesignations = await OrganizationApi.designations(resolvedDepartment.id);
+      const existingDesignation = departmentDesignations.find(
+        (item: any) =>
+          String(item.title ?? item.name ?? "").trim().toLowerCase() === designationTitle.toLowerCase() &&
+          (!item.departmentId || String(item.departmentId) === String(resolvedDepartment.id)),
+      );
+      resolvedDesignation = existingDesignation ?? await OrganizationApi.createDesignation({
+        title: designationTitle,
+        level: 1,
+        departmentId: resolvedDepartment.id,
+      });
+      queryClient.setQueryData<any[]>(["designations"], (current) => {
+        const items = current ?? [];
+        return items.some((item: any) => String(item.id) === String(resolvedDesignation.id))
+          ? items
+          : [...items, resolvedDesignation];
+      });
+    } catch (error) {
+      showToast(getErrorMessage(error), "error");
+      return;
+    }
+
     const payload = {
       title: values.title.trim(),
-      departmentId: values.departmentId,
-      designationId: values.designationId,
+      departmentId: resolvedDepartment.id,
+      designationId: resolvedDesignation.id,
       roleCategory: values.roleCategory || undefined,
       useTemplate: values.useTemplate,
       location: values.location?.trim() || "Bengaluru, India",
@@ -1608,41 +1683,49 @@ function PostJobModal({
           <span className="font-medium text-brand-600">Generate with AI</span> to automatically fill the job details.
         </p>
 
-        <SelectField
-          label="Department"
-          required
-          error={errors.departmentId?.message}
-          {...register("departmentId", {
-            onChange: () => {
-              setValue("designationId", "", {
-                shouldDirty: true,
-              });
-            },
-          })}
-        >
-          <option value="">Select department</option>
+        <div>
+          <TextField
+            label="Department"
+            required
+            placeholder="Type or select a department"
+            error={errors.departmentId?.message}
+            list="requisition-department-options"
+            {...register("departmentId", {
+              onChange: () => {
+                setValue("designationId", "", {
+                  shouldDirty: true,
+                });
+              },
+            })}
+          />
+          <datalist id="requisition-department-options">
+            {departments?.map((department: any) => (
+              <option key={department.id} value={department.name ?? department.title ?? ""} />
+            ))}
+          </datalist>
+          <p className="mt-1 text-xs text-ink-faint">
+            Existing departments are suggested. A new department is created when needed.
+          </p>
+        </div>
 
-          {departments?.map((department) => (
-            <option key={department.id} value={department.id}>
-              {department.name}
-            </option>
-          ))}
-        </SelectField>
-
-        <SelectField
-          label="Designation"
-          required
-          error={errors.designationId?.message}
-          {...register("designationId")}
-        >
-          <option value="">Select designation</option>
-
-          {filteredDesignations.map((designation: any) => (
-            <option key={designation.id} value={designation.id}>
-              {designation.title}
-            </option>
-          ))}
-        </SelectField>
+        <div>
+          <TextField
+            label="Designation"
+            required
+            placeholder="Type or select a designation"
+            error={errors.designationId?.message}
+            list="requisition-designation-options"
+            {...register("designationId")}
+          />
+          <datalist id="requisition-designation-options">
+            {filteredDesignations.map((designation: any) => (
+              <option key={designation.id} value={designation.title ?? designation.name ?? ""} />
+            ))}
+          </datalist>
+          <p className="mt-1 text-xs text-ink-faint">
+            Existing designations are suggested. A new designation is created and linked to the selected department when needed.
+          </p>
+        </div>
 
         <SelectField
           label="Role category"

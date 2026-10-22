@@ -73,6 +73,10 @@ const Recruitment = lazy(() => import("@/pages/recruitment/Recruitment"));
 
 const JobDetail = lazy(() => import("@/pages/recruitment/JobDetail"));
 
+const CandidateDetail = lazy(
+  () => import("@/pages/recruitment/CandidateDetail"),
+);
+
 const Performance = lazy(() => import("@/pages/Performance"));
 
 const Payroll = lazy(() => import("@/pages/Payroll"));
@@ -335,6 +339,23 @@ export default function App() {
                 ]}
               >
                 <Recruitment />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* =================================================
+              RECRUITMENT CANDIDATE DETAIL
+              Candidate notifications open this route using the
+              existing unique MongoDB candidate ID.
+          ================================================= */}
+
+          <Route
+            path="recruitment/candidates/:candidateId"
+            element={
+              <ProtectedRoute
+                roles={["SUPER_ADMIN", "ADMIN", "RECRUITER"]}
+              >
+                <CandidateDetail />
               </ProtectedRoute>
             }
           />

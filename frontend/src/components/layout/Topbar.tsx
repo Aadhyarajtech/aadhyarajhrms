@@ -469,6 +469,14 @@ export function Topbar({
       "/app/",
     );
 
+    // Older job notifications used /recruitment/jobs/:jobId.
+    // Keep the canonical job detail route /app/recruitment/:jobId,
+    // while candidate notifications remain /app/recruitment/candidates/:candidateId.
+    normalized = normalized.replace(
+      /^\/app\/recruitment\/jobs\/([^/?#]+)(.*)$/i,
+      "/app/recruitment/$1$2",
+    );
+
     console.log(
       "[Notification] Navigating to:",
       normalized,
