@@ -617,23 +617,31 @@ if (
     "Privilege/EL leave is available only to confirmed active employees.",
   );
 }
-let totalDays = await calculateLeaveDays(input.startDate, input.endDate);
+const startDateForPolicy = new Date(`${input.startDate}T00:00:00.000Z`);
+if (!Number.isFinite(startDateForPolicy.getTime())) {
+  throw AppError.badRequest("Select a valid leave start date.");
+}
 
-// Family leave duration is measured in calendar days, not working days.
-if (isFamilyLeave) {
-  const startDate = new Date(`${input.startDate}T00:00:00.000Z`);
-  const endDate = new Date(`${input.endDate}T00:00:00.000Z`);
-  if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) {
-    throw AppError.badRequest("Select a valid family-leave date range.");
-  }
-  totalDays = Math.floor((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
-  const maxDays = isMaternityLeave
-    ? (Number(input.survivingChildrenBeforeBirth) >= 2 ? 84 : 182)
-    : isPaternityLeave ? PATERNITY_DEFAULT_DAYS : PARENTAL_DEFAULT_DAYS;
-  if (totalDays > maxDays) {
-    const durationLabel = isMaternityLeave ? (maxDays === 182 ? "26 weeks (182 calendar days)" : "12 weeks (84 calendar days)") : `${maxDays} calendar days`;
-    throw AppError.badRequest(`${leaveType.name} is limited to ${durationLabel} for the selected eligibility. Adjust the end date.`);
-  }
+const familyLeaveDays = isMaternityLeave
+  ? (Number(input.survivingChildrenBeforeBirth) >= 2 ? 84 : 182)
+  : isPaternityLeave ? PATERNITY_DEFAULT_DAYS : PARENTAL_DEFAULT_DAYS;
+
+// Family leave duration is fixed by policy and calculated server-side.
+// Ignore any client-supplied end date for these leave types.
+const effectiveEndDate = isFamilyLeave
+  ? (() => {
+      const end = new Date(startDateForPolicy);
+      end.setUTCDate(end.getUTCDate() + familyLeaveDays - 1);
+      return end.toISOString().slice(0, 10);
+    })()
+  : input.endDate;
+
+let totalDays = isFamilyLeave
+  ? familyLeaveDays
+  : await calculateLeaveDays(input.startDate, effectiveEndDate);
+
+if (isFamilyLeave && !effectiveEndDate) {
+  throw AppError.badRequest(`Unable to calculate ${leaveType.name} duration.`);
 }
 
 const isHalfDay = input.halfDay === true;
@@ -646,7 +654,7 @@ if (isHalfDay) {
     );
   }
 
-  if (input.startDate !== input.endDate) {
+  if (input.startDate !== effectiveEndDate) {
     throw AppError.badRequest(
       "Half-day leave can only be applied for one day.",
     );

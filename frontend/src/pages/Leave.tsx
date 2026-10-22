@@ -351,22 +351,10 @@ function MyLeave() {
     enabled: !!employeeId,
   });
 
-  // Normalize profile values because imported/legacy employee records may use
-  // different casing or common display labels. Do not expose gender-specific
-  // leave balances until the authoritative employee record has loaded.
-  const eligibilityGender = String(myEmployee?.gender ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[._-]/g, " ");
-  const eligibilityMaritalStatus = String(myEmployee?.maritalStatus ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[._-]/g, " ");
-  const isMarried = ["married", "married (yes)", "yes"].includes(eligibilityMaritalStatus);
-  const isFemale = ["female", "f", "woman", "women"].includes(eligibilityGender);
-  const isMale = ["male", "m", "man", "men"].includes(eligibilityGender);
-  const isEligibleForMaternity = !!myEmployee && isFemale && isMarried;
-  const isEligibleForPaternity = !!myEmployee && isMale && isMarried;
+  const eligibilityGender = String(myEmployee?.gender ?? "").trim().toLowerCase();
+  const eligibilityMaritalStatus = String(myEmployee?.maritalStatus ?? "").trim().toUpperCase();
+  const isEligibleForMaternity = ["female", "f", "woman", "women"].includes(eligibilityGender) && eligibilityMaritalStatus === "MARRIED";
+  const isEligibleForPaternity = ["male", "m", "man", "men"].includes(eligibilityGender) && eligibilityMaritalStatus === "MARRIED";
   const visibleBalances = (balances ?? []).filter((balance) => {
     const name = String(balance.name ?? "").trim().toLowerCase();
     if (name === "maternity leave") return isEligibleForMaternity;
@@ -2705,16 +2693,30 @@ function ApplyModal({
             {...register("startDate")}
           />
 
-          <TextField
-            label="End date"
-            type="date"
-            required
-            min={startDate || todayIso}
-            error={
-              errors.endDate?.message
-            }
-            {...register("endDate")}
-          />
+          {isFamilyLeave ? (
+            <div className="flex flex-col justify-center rounded-xl border border-line/60 bg-canvas/30 px-3 py-2">
+              <span className="text-xs font-medium text-slate-500">Calculated end date</span>
+              <span className="mt-1 text-sm font-semibold text-slate-900">
+                {endDate
+                  ? new Date(`${endDate}T00:00:00`).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })
+                  : "Select a start date"}
+              </span>
+              <span className="mt-1 text-[11px] text-slate-500">Set automatically by the leave policy</span>
+            </div>
+          ) : (
+            <TextField
+              label="End date"
+              type="date"
+              required
+              min={startDate || todayIso}
+              error={errors.endDate?.message}
+              {...register("endDate")}
+            />
+          )}
         </div>
 
         {isFamilyLeave && (
