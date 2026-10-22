@@ -141,6 +141,7 @@ const applySchema = z
     halfDay: z.boolean().optional().default(false),
     halfDayType: z.enum(["FIRST_HALF", "SECOND_HALF"]).nullable().optional(),
     reason: z.string().min(3, "Add a short reason"),
+    familyLeave: z.boolean().optional().default(false),
   })
   .superRefine((value, ctx) => {
     const today = getTodayIso();
@@ -169,7 +170,7 @@ const applySchema = z
       });
     }
 
-    if (value.startDate <= value.endDate) {
+    if (!value.familyLeave && value.startDate <= value.endDate) {
       const weekendDates = getDateRange(value.startDate, value.endDate).filter(
         isWeekendIso,
       );
@@ -186,6 +187,10 @@ const applySchema = z
           message: "Select a working day (Monday-Friday)",
         });
       }
+    }
+
+    if (value.familyLeave && value.halfDay) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["halfDay"], message: "Family leave must be applied as a full calendar-day period." });
     }
 
     if (value.halfDay) {
@@ -318,6 +323,15 @@ export default function Leave() {
 function MyLeave() {
   const { user } = useAuth();
   const employeeId = user?.employee?.id;
+  // Do not rely on the auth snapshot for profile fields: it can be stale and
+  // may not include marital status after an employee profile update.
+  const { data: myEmployee } = useQuery({
+    queryKey: ["employees", "leave-eligibility", employeeId],
+    queryFn: () => EmployeesApi.get(employeeId as string),
+    enabled: !!employeeId,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
 
   const {
     data: balances,
@@ -335,6 +349,29 @@ function MyLeave() {
     queryKey: ["leave", "requests", "mine"],
     queryFn: () => LeaveApi.requests({ employeeId }),
     enabled: !!employeeId,
+  });
+
+  // Normalize profile values because imported/legacy employee records may use
+  // different casing or common display labels. Do not expose gender-specific
+  // leave balances until the authoritative employee record has loaded.
+  const eligibilityGender = String(myEmployee?.gender ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[._-]/g, " ");
+  const eligibilityMaritalStatus = String(myEmployee?.maritalStatus ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[._-]/g, " ");
+  const isMarried = ["married", "married (yes)", "yes"].includes(eligibilityMaritalStatus);
+  const isFemale = ["female", "f", "woman", "women"].includes(eligibilityGender);
+  const isMale = ["male", "m", "man", "men"].includes(eligibilityGender);
+  const isEligibleForMaternity = !!myEmployee && isFemale && isMarried;
+  const isEligibleForPaternity = !!myEmployee && isMale && isMarried;
+  const visibleBalances = (balances ?? []).filter((balance) => {
+    const name = String(balance.name ?? "").trim().toLowerCase();
+    if (name === "maternity leave") return isEligibleForMaternity;
+    if (name === "paternity leave") return isEligibleForPaternity;
+    return true;
   });
 
   // Expired leave requests are retained in the database for history, but are
@@ -369,7 +406,7 @@ function MyLeave() {
                 className="h-28 rounded-3xl"
               />
             ))
-          : balances?.map((b) => (
+          : visibleBalances.map((b) => (
               <Card
                 key={b.id}
                 className="flex items-center justify-between bg-gradient-to-br from-white via-white to-[#F8F7FF]"
@@ -630,6 +667,25 @@ function TeamApprovals() {
                           "{r.reason}"
                         </p>
                       )}
+                      {r.hasBirthCertificate && (
+                        <button type="button" onClick={async () => {
+                          try {
+                            const blob = await LeaveApi.birthCertificate(r.id);
+                            const url = URL.createObjectURL(blob);
+                            const anchor = document.createElement("a");
+                            anchor.href = url;
+                            anchor.download = `birth-certificate-${r.employeeCode || r.id}`;
+                            document.body.appendChild(anchor);
+                            anchor.click();
+                            anchor.remove();
+                            URL.revokeObjectURL(url);
+                          } catch (error) {
+                            showToast(getErrorMessage(error), "error");
+                          }
+                        }} className="mt-2 inline-flex items-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">
+                          View birth certificate
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -814,14 +870,14 @@ function LeaveAnalytics() {
             label="Start date"
             type="date"
             value={startDate}
-            max="9999-12-31" onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => setStartDate(e.target.value)}
           />
 
           <TextField
             label="End date"
             type="date"
             value={endDate}
-            max="9999-12-31" onChange={(e) => setEndDate(e.target.value)}
+            onChange={(e) => setEndDate(e.target.value)}
           />
 
           <div>
@@ -1188,14 +1244,14 @@ function LeavePatternDetection() {
             label="Start date"
             type="date"
             value={startDate}
-            max="9999-12-31" onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => setStartDate(e.target.value)}
           />
 
           <TextField
             label="End date"
             type="date"
             value={endDate}
-            max="9999-12-31" onChange={(e) => setEndDate(e.target.value)}
+            onChange={(e) => setEndDate(e.target.value)}
           />
 
           <div>
@@ -1418,6 +1474,16 @@ function LeaveCalendar() {
     queryFn: () => LeaveApi.balances(employeeId, balanceYear),
     enabled: !!employeeId,
     staleTime: 30_000,
+  });
+  const myGender = String(user?.employee?.gender ?? "").trim().toLowerCase();
+  const myMaritalStatus = String(user?.employee?.maritalStatus ?? "").trim().toUpperCase();
+  const myIsFemale = ["female", "f", "woman", "women"].includes(myGender);
+  const myIsMale = ["male", "m", "man", "men"].includes(myGender);
+  const visibleBalances = balances.filter((balance: any) => {
+    const name = String(balance.name ?? "").trim().toLowerCase();
+    if (name === "maternity leave") return myIsFemale && myMaritalStatus === "MARRIED";
+    if (name === "paternity leave") return myIsMale && myMaritalStatus === "MARRIED";
+    return true;
   });
 
   // Build department options from employee records; calendar entries may only
@@ -1724,7 +1790,7 @@ function LeaveCalendar() {
                       id="leave-calendar-month-picker"
                       type="month"
                       value={`${year}-${String(month).padStart(2, "0")}`}
-                      max="9999-12" onChange={(event) => {
+                      onChange={(event) => {
                         const [selectedYear, selectedMonth] = event.target.value.split("-").map(Number);
                         if (selectedYear && selectedMonth) {
                           setCursor(new Date(selectedYear, selectedMonth - 1, 1));
@@ -1752,44 +1818,27 @@ function LeaveCalendar() {
                 </div>
               ))}
 
-              {days.map((date, dayIndex) => {
+              {days.map((date) => {
                 const iso = getCalendarDateIso(date);
-                // Keep the popover inside the calendar at row edges: first-column
-                // cells open to the right, last-column cells open to the left.
-                const calendarColumn = dayIndex % 7;
-                const popoverAlignment = calendarColumn === 0
-                  ? "left-0"
-                  : calendarColumn === 6
-                    ? "right-0"
-                    : "left-1/2 -translate-x-1/2";
                 const dayEntries = entriesForDay(date);
                 const currentMonth = isCurrentMonth(date);
                 const isToday = iso === todayIso;
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
-                const leaveDayEntries = dayEntries.filter((entry: any) => {
-                  const type = String(
-                    entry.category ?? entry.type ?? entry.leaveTypeName ?? "LEAVE",
-                  ).toUpperCase();
-                  return !type.includes("HOLIDAY") && !type.includes("FESTIVAL");
-                });
-                const isDayExpanded = expandedCalendarDay === iso;
-
                 return (
                   <div
                     key={iso}
                     className={cx(
-                      "group relative min-h-[112px] border-b border-r border-line/50 p-2 text-left transition hover:z-20 focus-within:z-20",
+                      "min-h-[112px] border-b border-r border-line/50 p-2 text-left transition",
                       !currentMonth && "bg-slate-50/70",
                       isWeekend && currentMonth && "bg-slate-50/80",
                       isToday && "bg-brand-50/60",
-                      isDayExpanded && "z-30",
                     )}
                   >
-                    <div className="flex items-center justify-between gap-1">
+                    <div className="flex items-center justify-between">
                       <span
                         className={cx(
-                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px]",
+                          "flex h-6 w-6 items-center justify-center rounded-full text-[11px]",
                           isToday
                             ? "bg-brand-600 font-semibold text-white"
                             : currentMonth
@@ -1802,33 +1851,9 @@ function LeaveCalendar() {
                         {date.getDate()}
                       </span>
                       {dayEntries.length > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedCalendarDay((current) => current === iso ? null : iso)
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "Escape") setExpandedCalendarDay(null);
-                          }}
-                          aria-label={
-                            leaveDayEntries.length > 0
-                              ? `${leaveDayEntries.length} employee leave${leaveDayEntries.length === 1 ? "" : "s"} on ${iso}`
-                              : `Calendar events on ${iso}`
-                          }
-                          aria-expanded={isDayExpanded}
-                          className={cx(
-                            "shrink-0 rounded-md px-1.5 py-1 text-[9px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-200",
-                            leaveDayEntries.length > 0
-                              ? "bg-brand-50 text-brand-700 hover:bg-brand-100"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200",
-                          )}
-                        >
-                          {leaveDayEntries.length > 0
-                            ? `${leaveDayEntries.length} leave${leaveDayEntries.length === 1 ? "" : "s"}`
-                            : dayEntries.some((entry: any) => String(entry.category ?? entry.type ?? "").toUpperCase().includes("FESTIVAL"))
-                              ? "Festival"
-                              : "Holiday"}
-                        </button>
+                        <span className="text-[9px] font-medium text-slate-500">
+                          {dayEntries.length} leave{dayEntries.length > 1 ? "s" : ""}
+                        </span>
                       ) : isWeekend && currentMonth ? (
                         <span className="text-[8px] font-medium uppercase tracking-wide text-slate-400">
                           Weekend
@@ -1840,50 +1865,55 @@ function LeaveCalendar() {
                       ) : null}
                     </div>
 
-                    {dayEntries.length > 0 && (
-                      <div
-                        className={cx(
-                          "absolute top-10 z-40 hidden max-h-48 w-52 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-white p-2 shadow-xl group-hover:block group-focus-within:block",
-                          popoverAlignment,
-                          isDayExpanded && "!block",
-                        )}
-                        role="list"
-                        aria-label={`Calendar entries for ${iso}`}
-                      >
-                        {dayEntries.map((entry: any, index: number) => {
-                          const employee = getEntryEmployee(entry);
-                          const employeeName = getLeaveEmployeeName(entry, employee);
-                          const type = String(
-                            entry.category ?? entry.type ?? entry.leaveTypeName ?? "LEAVE",
-                          ).toUpperCase();
-                          const isHoliday = type.includes("HOLIDAY");
-                          const isFestival = type.includes("FESTIVAL");
-                          const isMine = employeeId && String(entry.employeeId ?? entry.employee?.id ?? "") === String(employeeId);
-                          const label = isHoliday || isFestival
-                            ? String(entry.name ?? (isFestival ? "Festival" : "Holiday"))
-                            : `${isMine ? "You" : employeeName} · ${entry.leaveTypeName ?? entry.leaveType ?? "Leave"}`;
+                    <div className="mt-2 space-y-1">
+                      {(expandedCalendarDay === iso ? dayEntries : dayEntries.slice(0, 3)).map((entry: any) => {
+                        const employee = employeeMap.get(entry.employeeId);
+                        const employeeName = getLeaveEmployeeName(entry, employee);
+                        const type = String(
+                          entry.category ?? entry.type ?? entry.leaveTypeName ?? "LEAVE",
+                        ).toUpperCase();
+                        const isHoliday = type.includes("HOLIDAY");
+                        const isFestival = type.includes("FESTIVAL");
+                        const isMine = employeeId && entry.employeeId === employeeId;
 
-                          return (
-                            <div
-                              key={entry.id ?? `${iso}-${index}-${label}`}
-                              role="listitem"
-                              className={cx(
-                                "mb-1 last:mb-0 rounded-lg px-2 py-1.5 text-[10px] font-medium leading-snug last:mb-0",
-                                isHoliday
-                                  ? "bg-red-50 text-red-700"
-                                  : isFestival
-                                    ? "bg-gold-50 text-gold-700"
-                                    : isMine
-                                      ? "bg-brand-50 text-brand-700"
-                                      : "bg-success-50 text-success-700",
-                              )}
-                            >
-                              {label}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                        return (
+                          <div
+                            key={entry.id}
+                            title={`${employeeName} · ${entry.leaveTypeName ?? entry.type ?? "Leave"}`}
+                            className={cx(
+                              "truncate rounded-lg px-2 py-1 text-[9px] font-medium",
+                              isHoliday
+                                ? "bg-red-50 text-red-700"
+                                : isFestival
+                                  ? "bg-gold-50 text-gold-700"
+                                  : isMine
+                                    ? "bg-brand-50 text-brand-700"
+                                    : "bg-success-50 text-success-700",
+                            )}
+                          >
+                            {isHoliday || isFestival
+                              ? entry.name ?? "Holiday"
+                              : `${isMine ? "You" : employeeName} · ${entry.leaveTypeName ?? "Leave"}`}
+                          </div>
+                        );
+                      })}
+                      {dayEntries.length > 3 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedCalendarDay((current) =>
+                              current === iso ? null : iso,
+                            )
+                          }
+                          aria-expanded={expandedCalendarDay === iso}
+                          className="px-1 text-left text-[9px] font-medium text-brand-600 hover:underline"
+                        >
+                          {expandedCalendarDay === iso
+                            ? "Show less"
+                            : `+${dayEntries.length - 3} more`}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -1911,8 +1941,8 @@ function LeaveCalendar() {
                 Array.from({ length: 4 }).map((_, index) => (
                   <Skeleton key={index} className="h-20 rounded-xl" />
                 ))
-              ) : balances.length ? (
-                balances.slice(0, 4).map((balance: any) => {
+              ) : visibleBalances.length ? (
+                visibleBalances.slice(0, 6).map((balance: any) => {
                   const allotted = Math.max(0, Number(balance.allotted ?? 0));
                   const used = Math.max(0, Number(balance.used ?? 0));
                   const available = Math.max(0, allotted - used);
@@ -2227,7 +2257,7 @@ function BulkApplyLeaveModal({
             <option value="">
               {leaveTypesLoading ? "Loading leave types..." : "Select leave type"}
             </option>
-            {leaveTypes?.map((type) => (
+            {leaveTypes?.filter((type) => !/^(maternity|paternity|parental) leave$/i.test(type.name)).map((type) => (
               <option key={type.id} value={type.id}>
                 {type.name}
               </option>
@@ -2349,7 +2379,7 @@ function BulkApplyLeaveModal({
             required
             type="date"
             value={startDate}
-            max="9999-12-31" onChange={(event) => setStartDate(event.target.value)}
+            onChange={(event) => setStartDate(event.target.value)}
             min={getTodayIso()}
           />
           <TextField
@@ -2357,7 +2387,7 @@ function BulkApplyLeaveModal({
             required
             type="date"
             value={endDate}
-            max="9999-12-31" onChange={(event) => setEndDate(event.target.value)}
+            onChange={(event) => setEndDate(event.target.value)}
             min={startDate || getTodayIso()}
           />
         </div>
@@ -2396,9 +2426,17 @@ function ApplyModal({
 
   const employeeId = user?.employee?.id;
   const todayIso = getTodayIso();
+  const { data: applicantEmployee, isLoading: applicantEmployeeLoading } = useQuery({
+    queryKey: ["employees", "leave-eligibility", employeeId],
+    queryFn: () => EmployeesApi.get(employeeId as string),
+    enabled: !!open && !!employeeId,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
 
-  const [generatingReason, setGeneratingReason] =
-    useState(false);
+  const [generatingReason, setGeneratingReason] = useState(false);
+  const [birthCertificate, setBirthCertificate] = useState<File | null>(null);
+  const [survivingChildrenBeforeBirth, setSurvivingChildrenBeforeBirth] = useState("0");
 
   const {
     data: leaveTypes,
@@ -2420,7 +2458,7 @@ function ApplyModal({
     formState: { errors },
   } = useForm<ApplyForm>({
     resolver: zodResolver(applySchema),
-    defaultValues: { halfDay: false, halfDayType: null },
+    defaultValues: { halfDay: false, halfDayType: null, familyLeave: false },
   });
 
   useEffect(() => {
@@ -2433,6 +2471,8 @@ function ApplyModal({
       } else {
         reset();
       }
+      setBirthCertificate(null);
+      setSurvivingChildrenBeforeBirth("0");
     }
   }, [open, prefillData, setValue, reset]);
 
@@ -2443,6 +2483,48 @@ function ApplyModal({
    */
   const startDate = watch("startDate");
   const endDate = watch("endDate");
+  const selectedLeaveTypeId = watch("leaveTypeId");
+  const selectedLeaveType = leaveTypes?.find((type) => type.id === selectedLeaveTypeId);
+  const selectedLeaveTypeName = String(selectedLeaveType?.name ?? "").trim();
+  const isMaternityLeave = selectedLeaveTypeName.toLowerCase() === "maternity leave";
+  const isPaternityLeave = selectedLeaveTypeName.toLowerCase() === "paternity leave";
+  const isParentalLeave = selectedLeaveTypeName.toLowerCase() === "parental leave";
+  const isFamilyLeave = isMaternityLeave || isPaternityLeave || isParentalLeave;
+  const gender = String(applicantEmployee?.gender ?? user?.employee?.gender ?? "").trim().toLowerCase();
+  const maritalStatus = String(applicantEmployee?.maritalStatus ?? user?.employee?.maritalStatus ?? "").trim().toUpperCase();
+  const isFemale = ["female", "f", "woman", "women"].includes(gender);
+  const isMale = ["male", "m", "man", "men"].includes(gender);
+  const availableLeaveTypes = (leaveTypes ?? []).filter((type) => {
+    const name = type.name.trim().toLowerCase();
+    if (name === "maternity leave") return !applicantEmployeeLoading && !!applicantEmployee && isFemale && maritalStatus === "MARRIED";
+    if (name === "paternity leave") return !applicantEmployeeLoading && !!applicantEmployee && isMale && maritalStatus === "MARRIED";
+    return true;
+  });
+
+  // Clear a stale/pre-filled leave type if the refreshed employee record says
+  // it is not eligible. This also prevents hidden options from being submitted.
+  useEffect(() => {
+    if (!selectedLeaveTypeId || applicantEmployeeLoading || !leaveTypes) return;
+    const selectedIsAvailable = availableLeaveTypes.some((type) => type.id === selectedLeaveTypeId);
+    if (!selectedIsAvailable) {
+      setValue("leaveTypeId", "", { shouldValidate: true, shouldDirty: true });
+    }
+  }, [selectedLeaveTypeId, applicantEmployeeLoading, leaveTypes, availableLeaveTypes, setValue]);
+
+  useEffect(() => {
+    setValue("familyLeave", isFamilyLeave, { shouldValidate: true });
+  }, [isFamilyLeave, setValue]);
+
+  useEffect(() => {
+    if (!isFamilyLeave || !startDate) return;
+    const days = isMaternityLeave
+      ? (Number(survivingChildrenBeforeBirth) >= 2 ? 84 : 182)
+      : isPaternityLeave ? 15 : 15;
+    const start = new Date(`${startDate}T00:00:00.000Z`);
+    if (!Number.isFinite(start.getTime())) return;
+    start.setUTCDate(start.getUTCDate() + days - 1);
+    setValue("endDate", start.toISOString().slice(0, 10), { shouldValidate: true });
+  }, [isFamilyLeave, isMaternityLeave, isPaternityLeave, startDate, survivingChildrenBeforeBirth, setValue]);
 
   const validDateRange =
     !!startDate &&
@@ -2541,8 +2623,9 @@ function ApplyModal({
           values.endDate,
         halfDay: values.halfDay === true,
         halfDayType: values.halfDay ? values.halfDayType ?? null : null,
-        reason:
-          values.reason,
+        reason: values.reason,
+        birthCertificate: isFamilyLeave ? birthCertificate : undefined,
+        survivingChildrenBeforeBirth: isMaternityLeave ? Number(survivingChildrenBeforeBirth) : undefined,
       });
     },
 
@@ -2583,12 +2666,9 @@ function ApplyModal({
           </Button>
 
           <Button
-            onClick={handleSubmit((v) =>
-              mutation.mutate(v),
-            )}
-            isLoading={
-              mutation.isPending
-            }
+            onClick={handleSubmit((v) => mutation.mutate(v))}
+            disabled={mutation.isPending || (isFamilyLeave && !birthCertificate) || (isMaternityLeave && (!Number.isInteger(Number(survivingChildrenBeforeBirth)) || Number(survivingChildrenBeforeBirth) < 0 || survivingChildrenBeforeBirth.trim() === ""))}
+            isLoading={mutation.isPending}
           >
             Submit request
           </Button>
@@ -2608,13 +2688,8 @@ function ApplyModal({
             Select leave type
           </option>
 
-          {leaveTypes?.map((t) => (
-            <option
-              key={t.id}
-              value={t.id}
-            >
-              {t.name}
-            </option>
+          {availableLeaveTypes.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </SelectField>
 
@@ -2628,7 +2703,7 @@ function ApplyModal({
               errors.startDate?.message
             }
             {...register("startDate")}
-           max="9999-12-31" />
+          />
 
           <TextField
             label="End date"
@@ -2639,15 +2714,34 @@ function ApplyModal({
               errors.endDate?.message
             }
             {...register("endDate")}
-           max="9999-12-31" />
+          />
         </div>
 
-        <p className="text-[11px] font-medium text-slate-500">
-          Leave can be applied only for today or future working days. Previous
-          dates and Saturdays/Sundays are not available for leave application.
-        </p>
+        {isFamilyLeave && (
+          <div className="space-y-3 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
+            <div>
+              <p className="text-sm font-semibold text-ink">Family leave verification</p>
+              <p className="mt-1 text-xs text-slate-600">Upload the child’s birth certificate (PDF, JPG, PNG, or Word document; maximum 8 MB). HR can access it securely for validation.</p>
+            </div>
+            <label className="block text-xs font-medium text-ink">
+              Child’s birth certificate <span className="text-danger-500">*</span>
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" required className="mt-1 block w-full text-xs" onChange={(event) => setBirthCertificate(event.target.files?.[0] ?? null)} />
+            </label>
+            {isMaternityLeave && (
+              <div>
+                <label className="block text-xs font-medium text-ink" htmlFor="surviving-children-before-birth">Number of surviving children before this birth <span className="text-danger-500">*</span></label>
+                <input id="surviving-children-before-birth" type="number" min={0} max={20} step={1} value={survivingChildrenBeforeBirth} onChange={(event) => setSurvivingChildrenBeforeBirth(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm" required />
+                <p className="mt-1 text-xs text-slate-600">The system calculates a maximum of {Number(survivingChildrenBeforeBirth) >= 2 ? "12 weeks (84 calendar days)" : "26 weeks (182 calendar days)"} based on this count. Your selected end date is prefilled and can be shortened.</p>
+              </div>
+            )}
+            {!isMaternityLeave && <p className="text-xs text-slate-600">Maximum duration: 15 calendar days. The end date is prefilled; you may shorten the period.</p>}
+            {!birthCertificate && <p className="text-xs text-danger-600">A birth certificate is required before submitting this request.</p>}
+          </div>
+        )}
 
-        <div className="space-y-2 rounded-xl border border-line/60 bg-canvas/30 p-3">
+        {!isFamilyLeave && <p className="text-[11px] font-medium text-slate-500">Leave can be applied only for today or future working days. Previous dates and Saturdays/Sundays are not available for leave application.</p>}
+
+        {!isFamilyLeave && <div className="space-y-2 rounded-xl border border-line/60 bg-canvas/30 p-3">
           <label className="flex items-center gap-2 text-[12px] font-medium text-ink">
             <input type="checkbox" className="h-4 w-4 rounded border-line" {...register("halfDay")} />
             Apply as half-day
@@ -2659,7 +2753,7 @@ function ApplyModal({
               <option value="SECOND_HALF">Second half</option>
             </SelectField>
           )}
-        </div>
+        </div>}
 
         {/* ------------------------------------------------------------- */}
         {/* AI Leave Conflict & Team Impact                               */}
