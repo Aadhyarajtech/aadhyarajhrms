@@ -321,6 +321,7 @@ export interface EmployeeInternalJobHistoryEntry {
   };
 }
 
+
 export interface EmployeeSensitiveChangeRequest {
   _id: string;
   fields: string[];
@@ -333,7 +334,19 @@ export interface EmployeeSensitiveChangeRequest {
   reviewedAt: string | null;
   reviewComment: string | null;
   reason?: string | null;
+
+  // Private supporting-document metadata. Never store an absolute path.
+  document?: {
+    storageKey: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    uploadedAt: string;
+  } | null;
 }
+
+
+
 
 export interface EmployeeOffboardingItem {
   item?: string;
@@ -447,6 +460,16 @@ export interface EmployeeDoc {
   onboarding: EmployeeOnboarding;
   sensitiveChangeRequests: EmployeeSensitiveChangeRequest[];
 
+  // Optional top-level employee document metadata. Keep separate from
+  // sensitiveChangeRequests[].document, which belongs to each change request.
+  document?: {
+    storageKey: string | null;
+    originalName: string | null;
+    mimeType: string | null;
+    size: number | null;
+    uploadedAt: string | null;
+  } | null;
+
   isArchived: boolean;
   archivedAt: string | null;
   offboardingChecklist: {
@@ -460,6 +483,8 @@ export interface EmployeeDoc {
   createdAt: string;
   updatedAt: string;
 }
+
+
 
 const employeeEducationSchema = new Schema<EmployeeEducation>(
   {
@@ -614,10 +639,22 @@ const employeeSensitiveChangeRequestSchema =
       reviewedByRole: { type: String, default: null },
       reviewedAt: { type: String, default: null },
       reviewComment: { type: String, default: null },
+      
       reason: { type: String, default: null, maxlength: 1000 },
+      document: {
+        storageKey: { type: String, default: null },
+        originalName: { type: String, default: null },
+        mimeType: { type: String, default: null },
+        size: { type: Number, default: null },
+        uploadedAt: { type: String, default: null },
+      },
+
     },
     { _id: false },
   );
+  
+
+  
 
 const employeeOffboardingItemSchema = new Schema<EmployeeOffboardingItem>(
   {
@@ -761,6 +798,13 @@ const employeeSchema = new Schema<EmployeeDoc>(
       default: [],
     },
 
+   document: {
+        storageKey: { type: String, default: null },
+        originalName: { type: String, default: null },
+        mimeType: { type: String, default: null },
+        size: { type: Number, default: null },
+        uploadedAt: { type: String, default: null },
+      },
     isArchived: { type: Boolean, default: false },
     archivedAt: { type: String, default: null },
 

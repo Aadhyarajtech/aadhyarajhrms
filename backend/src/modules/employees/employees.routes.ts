@@ -1,7 +1,16 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "@/middleware/auth";
-import { profileImageUpload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
+
+import fs from "node:fs";
+import path from "node:path";   
+import {
+  profileImageUpload,
+  UPLOADS_PUBLIC_PATH,
+  sensitiveChangeProofUpload,
+  PRIVATE_DOCUMENT_DIR_ABSOLUTE,
+} from "@/middleware/upload";
+
 import { isAdmin, isManagerOrAbove, requireRole } from "@/middleware/rbac";
 import { requirePermission } from "@/middleware/permissions";
 import { validate } from "@/middleware/validate";
@@ -1050,68 +1059,58 @@ employeesRouter.patch(
         skills: req.body.skills,
       };
 
+      
       const sensitiveFields = [
-        "employeeAadhaar", "employeePan", "employeeTan",
-        "bankAccountNumber", "bankIfscCode", "bankBranch", "investmentDeclarations", "signature",
+        "employeeAadhaar",
+        "employeePan",
+        "employeeTan",
+        "bankAccountNumber",
+        "bankIfscCode",
+        "bankBranch",
+        "investmentDeclarations",
+        "signature",
       ];
-      const changes: Record<string, unknown> = {};
-      for (const field of sensitiveFields) {
-        if (!Object.prototype.hasOwnProperty.call(req.body, field)) continue;
 
-        const submittedValue = req.body[field];
-        // Older versions of the profile edit form sent empty/null sensitive
-        // fields even when the employee was only updating ordinary profile
-        // information. Ignore those blanks; only a real non-empty value can
-        // become a sensitive-change request. Sensitive values are never
-        // applied directly by PATCH /me.
-        if (submittedValue === null || submittedValue === undefined) continue;
-        if (typeof submittedValue === "string" && !submittedValue.trim()) continue;
-        changes[field] = submittedValue;
-      }
-      let changeRequestId: string | null = null;
-      if (Object.keys(changes).length) {
-        const current = await Employee.findById(employee.id).lean<any>();
-        const requests = current?.sensitiveChangeRequests ?? [];
-        const pending = requests.some((item: any) => item.status === "PENDING");
-        if (pending) throw AppError.badRequest("You already have a sensitive profile change request awaiting review.");
-        const reason = typeof req.body.reason === "string" ? req.body.reason.trim() : "";
-        if (reason.length < 3 || reason.length > 1000) {
-          throw AppError.badRequest("Reason must contain between 3 and 1000 characters.");
+      const hasSensitiveSubmission = sensitiveFields.some((field) => {
+        if (!Object.prototype.hasOwnProperty.call(req.body, field)) {
+          return false;
         }
-        const request = {
-          _id: `ecr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          fields: Object.keys(changes),
-          changes,
-          reason,
-          requestedBy: req.user!.userId,
-          requestedAt: new Date().toISOString(),
-          status: "PENDING",
-          reviewedBy: null,
-          reviewedByRole: null,
-          reviewedAt: null,
-          reviewComment: null,
-        };
-        await Employee.updateOne({ _id: employee.id }, { $push: { sensitiveChangeRequests: request } });
-        changeRequestId = request._id;
-        const admins = await User.find({ role: { $in: ["ADMIN", "SUPER_ADMIN"] }, isActive: true }).select("_id").lean<any[]>();
-        await Promise.all(admins.map((admin) => notify({
-          userId: admin._id, type: "SYSTEM", title: "Sensitive profile change requires review",
-          message: `${employee.firstName} ${employee.lastName} submitted a sensitive profile change request.`,
-          link: `/app/employees/${employee.id}`,
-          dedupeKey: `sensitive-change:${employee.id}:${request._id}`,
-        })));
+
+        const value = req.body[field];
+
+        if (value === null || value === undefined) {
+          return false;
+        }
+
+        if (typeof value === "string" && !value.trim()) {
+          return false;
+        }
+
+        return true;
+      });
+
+      // Sensitive changes must use the dedicated multipart endpoint so
+      // that proof upload, validation, and cooldown cannot be bypassed.
+      if (hasSensitiveSubmission) {
+        throw AppError.badRequest(
+          "Sensitive identity and bank changes must be submitted through the Sensitive Profile Change Request form with a supporting document.",
+        );
       }
+
       const updated = await repo.updateEmployee(employee.id, body);
+
       res.set("Cache-Control", "no-store");
+
       res.json({
         employee: filterEmployeeSensitiveFields(
           updated as Record<string, any>,
           req.user!.role,
           true,
         ),
-        sensitiveChangeRequestId: changeRequestId,
-        sensitiveChangesRequireApproval: Boolean(changeRequestId),
+        sensitiveChangeRequestId: null,
+        sensitiveChangesRequireApproval: false,
       });
+
     } catch (err) {
       next(err);
     }
@@ -1565,6 +1564,12 @@ employeesRouter.get(
             reviewedAt: request.reviewedAt ?? null,
             reviewedByRole: request.reviewedByRole ?? null,
             reviewComment: request.reviewComment ?? null,
+            documentAvailable: Boolean(request.document?.storageKey),
+            documentMimeType: request.document?.mimeType ?? null,
+            nextEligibleAt: getSensitiveRequestNextEligibleAt(
+              employee.sensitiveChangeRequests ?? [],
+              (request.fields ?? [])[0] ?? "",
+            ),
           },
         })),
       );
@@ -1613,6 +1618,12 @@ employeesRouter.get(
               reason: request.reason ?? null,
               requestedAt: request.requestedAt ?? null,
               status: request.status,
+              documentAvailable: Boolean(request.document?.storageKey),
+              documentMimeType: request.document?.mimeType ?? null,
+              nextEligibleAt: getSensitiveRequestNextEligibleAt(
+                employee.sensitiveChangeRequests ?? [],
+                (request.fields ?? [])[0] ?? "",
+              ),
             },
           })),
       );
@@ -1623,6 +1634,7 @@ employeesRouter.get(
     }
   },
 );
+
 
 
 const sensitiveRequestBodySchema = z.object({
@@ -1638,17 +1650,113 @@ const sensitiveRequestBodySchema = z.object({
   reason: z.string().trim().min(3).max(1000),
 });
 
-employeesRouter.post(
-  "/me/sensitive-change-requests",
-  validate(sensitiveRequestBodySchema),
+const SENSITIVE_REQUEST_COOLDOWN_DAYS = 90;
+const SENSITIVE_REQUEST_COOLDOWN_MS =
+  SENSITIVE_REQUEST_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+
+function getSensitiveRequestNextEligibleAt(
+  requests: any[],
+  field: string,
+): string | null {
+  const latestRequest = requests
+    .filter(
+      (request: any) =>
+        Array.isArray(request.fields) &&
+        request.fields.includes(field) &&
+        typeof request.requestedAt === "string",
+    )
+    .sort(
+      (a: any, b: any) =>
+        new Date(b.requestedAt).getTime() -
+        new Date(a.requestedAt).getTime(),
+    )[0];
+
+  if (!latestRequest) return null;
+
+  const requestedAt = new Date(latestRequest.requestedAt).getTime();
+
+  if (!Number.isFinite(requestedAt)) return null;
+
+  return new Date(
+    requestedAt + SENSITIVE_REQUEST_COOLDOWN_MS,
+  ).toISOString();
+}
+
+// Securely stream a supporting document for a request belonging to the
+// authenticated employee. Documents remain in private-uploads and are never
+// exposed through the public /uploads static directory.
+employeesRouter.get(
+  "/me/sensitive-change-requests/:requestId/document",
   async (req, res, next) => {
     try {
       const employee = await repo.getEmployeeByUserId(req.user!.userId);
+      if (!employee) throw AppError.notFound("Employee profile not found.");
+
+      const current = await Employee.findById(employee.id)
+        .select("sensitiveChangeRequests")
+        .lean<any>();
+      if (!current) throw AppError.notFound("Employee profile not found.");
+
+      const request = (current.sensitiveChangeRequests ?? []).find(
+        (item: any) => String(item._id) === String(req.params.requestId),
+      );
+      if (!request) throw AppError.notFound("Sensitive change request not found.");
+
+      const storageKey = request.document?.storageKey;
+      if (!storageKey || typeof storageKey !== "string") {
+        throw AppError.notFound("No supporting document is attached to this request.");
+      }
+
+      // Only allow a plain stored filename; never accept a client-supplied path.
+      const safeFilename = path.basename(storageKey);
+      if (safeFilename !== storageKey) {
+        throw AppError.notFound("Supporting document not found.");
+      }
+      const filePath = path.join(PRIVATE_DOCUMENT_DIR_ABSOLUTE, safeFilename);
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        throw AppError.notFound("Supporting document file was not found on the server.");
+      }
+
+      const mimeType = String(request.document?.mimeType ?? "").toLowerCase();
+      const allowedMimeTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
+      if (!allowedMimeTypes.has(mimeType)) {
+        throw AppError.badRequest("This supporting document type cannot be previewed.");
+      }
+
+      res.setHeader("Content-Type", mimeType);
+      res.setHeader("Content-Disposition", `inline; filename="${safeFilename}"`);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "private, no-store, max-age=0");
+      fs.createReadStream(filePath).pipe(res);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+employeesRouter.post(
+  "/me/sensitive-change-requests",
+  sensitiveChangeProofUpload.single("document"),
+  validate(sensitiveRequestBodySchema),
+  async (req, res, next) => {
+    let uploadedFilePath: string | null = req.file?.path ?? null;
+
+    try {
+      const employee = await repo.getEmployeeByUserId(req.user!.userId);
+
       if (!employee) {
         throw AppError.notFound("Employee profile not found.");
       }
 
-      const { field, value, reason } = req.body;
+      if (!req.file) {
+        throw AppError.badRequest(
+          "A supporting document is required for sensitive profile changes.",
+        );
+      }
+
+            const { field, value, reason } = req.body as z.infer<
+        typeof sensitiveRequestBodySchema
+      >;
 
       // Validate the value using the existing field-specific rules.
       const fieldValidation = updateEmployeeSchema.safeParse({
@@ -1658,11 +1766,41 @@ employeesRouter.post(
       if (!fieldValidation.success) {
         throw AppError.badRequest(
           fieldValidation.error.issues[0]?.message ??
-          "Invalid sensitive field value.",
+            "Invalid sensitive field value.",
         );
       }
 
-      // Atomically prevent multiple pending requests for this employee.
+      const requestedAt = new Date();
+      const requestedAtIso = requestedAt.toISOString();
+      const cooldownCutoff = new Date(
+        requestedAt.getTime() - SENSITIVE_REQUEST_COOLDOWN_MS,
+      ).toISOString();
+
+      // Check the latest request for this field, regardless of whether HR
+      // approved or rejected it. The cooldown starts when the request is filed.
+      const existingRequests = (employee as any).sensitiveChangeRequests ?? [];
+      const nextEligibleAt = getSensitiveRequestNextEligibleAt(
+  existingRequests,
+  field,
+);
+
+if (
+  nextEligibleAt &&
+  requestedAt.getTime() < new Date(nextEligibleAt).getTime()
+) {
+  throw AppError.badRequest(
+    `You can submit another ${field} request on or after ${
+      new Date(nextEligibleAt).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      })
+    }.`,
+  );
+}
+
+      // Atomically prevent both concurrent pending requests and a request for
+      // the same field during its 90-day cooldown.
       const requestId = `ecr_${Date.now()}_${Math.random()
         .toString(36)
         .slice(2, 8)}`;
@@ -1675,27 +1813,51 @@ employeesRouter.post(
         },
         reason,
         requestedBy: req.user!.userId,
-        requestedAt: new Date().toISOString(),
+        requestedAt: requestedAtIso,
         status: "PENDING",
         reviewedBy: null,
         reviewedByRole: null,
         reviewedAt: null,
         reviewComment: null,
+        document: {
+          storageKey: req.file.filename,
+          originalName: path.basename(req.file.originalname).slice(0, 255),
+          mimeType: req.file.mimetype,
+          size: req.file.size,
+          uploadedAt: requestedAtIso,
+        },
       };
 
       const result = await Employee.updateOne(
         {
           _id: employee.id,
-          sensitiveChangeRequests: { $not: { $elemMatch: { status: "PENDING" } } },
+          $and: [
+            {
+              sensitiveChangeRequests: {
+                $not: { $elemMatch: { status: "PENDING" } },
+              },
+            },
+            {
+              sensitiveChangeRequests: {
+                $not: {
+                  $elemMatch: {
+                    fields: field,
+                    requestedAt: { $gt: cooldownCutoff },
+                  },
+                },
+              },
+            },
+          ],
         },
         { $push: { sensitiveChangeRequests: request } },
       );
 
       if (result.modifiedCount !== 1) {
         throw AppError.badRequest(
-          "You already have a sensitive profile change request awaiting review.",
+          "A sensitive change request is already pending, or this field is still within its 90-day cooldown. Refresh your history to see the next eligible date.",
         );
       }
+      uploadedFilePath = null; // The private file is now referenced by the saved request.
 
       const admins = await User.find({
         role: { $in: ["ADMIN", "SUPER_ADMIN"] },
@@ -1724,6 +1886,13 @@ employeesRouter.post(
         message: "Sensitive profile change submitted for HR approval.",
       });
     } catch (error) {
+      if (uploadedFilePath) {
+        try {
+          await fs.promises.unlink(uploadedFilePath);
+        } catch {
+          // Preserve the original request error if private-file cleanup fails.
+        }
+      }
       next(error);
     }
   },
@@ -2268,6 +2437,12 @@ employeesRouter.get(
           reviewedAt: request.reviewedAt ?? null,
           reviewComment: request.reviewComment ?? null,
           reviewedByRole: request.reviewedByRole ?? null,
+          documentAvailable: Boolean(request.document?.storageKey),
+          documentMimeType: request.document?.mimeType ?? null,
+          nextEligibleAt: getSensitiveRequestNextEligibleAt(
+            current.sensitiveChangeRequests ?? [],
+            (request.fields ?? [])[0] ?? "",
+          ),
         }))
         .sort(
           (a: any, b: any) =>

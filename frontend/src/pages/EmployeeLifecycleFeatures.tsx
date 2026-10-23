@@ -147,6 +147,9 @@ type SensitiveRequest = {
   reviewedAt?: string | null;
   reviewComment?: string | null;
   reviewedByRole?: string | null;
+  documentAvailable?: boolean;
+  documentMimeType?: string | null;
+  nextEligibleAt?: string | null;
 };
 
 type PendingRequest = {
@@ -314,6 +317,7 @@ export default function EmployeeLifecycleFeatures() {
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [busy, setBusy] = useState("");
+  const [documentBusy, setDocumentBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -321,6 +325,11 @@ export default function EmployeeLifecycleFeatures() {
     useState("bankAccountNumber");
   const [sensitiveValue, setSensitiveValue] = useState("");
   const [sensitiveReason, setSensitiveReason] = useState("");
+
+  const [sensitiveDocument, setSensitiveDocument] =
+  useState<File | null>(null);
+
+  
 
   const [extendDays, setExtendDays] = useState<
   Record<string, number | "">
@@ -497,6 +506,40 @@ export default function EmployeeLifecycleFeatures() {
     (employee) => String(employee.id) === selectedEmployeeId,
   );
 
+  async function viewSupportingDocument(employeeId: string, requestId: string) {
+    // Open a tab synchronously so browsers do not block it while the authenticated
+    // document request is being fetched.
+    const previewWindow = window.open("about:blank", "_blank");
+    if (!previewWindow) {
+      setError("Your browser blocked the document preview. Allow pop-ups for this HRMS page and try again.");
+      return;
+    }
+
+    previewWindow.document.title = "Supporting document";
+    previewWindow.document.body.innerHTML = "<p style='font-family: sans-serif; padding: 1rem'>Loading secure document preview…</p>";
+    setDocumentBusy(requestId);
+    setError("");
+
+    try {
+      const response = await api.get<Blob>(
+        `/employees/${encodeURIComponent(employeeId)}/sensitive-change-requests/${encodeURIComponent(requestId)}/document`,
+        { responseType: "blob" },
+      );
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: "application/octet-stream" });
+      const objectUrl = URL.createObjectURL(blob);
+      previewWindow.location.href = objectUrl;
+      // Revoke the temporary URL after the browser has had time to load the preview.
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (e) {
+      previewWindow.close();
+      setError(`Unable to open the supporting document: ${getError(e)}`);
+    } finally {
+      setDocumentBusy("");
+    }
+  }
+
   async function confirmProbation(employee: Employee) {
     const id = String(employee.id);
 
@@ -568,61 +611,86 @@ export default function EmployeeLifecycleFeatures() {
     }
   }
 
-  async function submitSensitiveRequest(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+async function submitSensitiveRequest(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
 
-    const value = sensitiveValue.trim();
-    const reason = sensitiveReason.trim();
+  const value = sensitiveValue.trim();
+  const reason = sensitiveReason.trim();
 
-    if (!value || !reason) {
-      setError("Enter the new value and the reason for the change.");
-      return;
-    }
-
-    if (reason.length < 3 || reason.length > 1000) {
-      setError("The reason must contain between 3 and 1000 characters.");
-      return;
-    }
-
-    if (
-      !window.confirm(
-        "Submit this sensitive profile change for HR approval?",
-      )
-    ) {
-      return;
-    }
-
-    setBusy("submit-sensitive");
-    setError("");
-    setNotice("");
-
-    try {
-      await api.post("/employees/me/sensitive-change-requests", {
-  field: sensitiveField,
-  value,
-  reason,
-});
-
-setNotice(
-  "Sensitive change request submitted. HR approval is pending. Refresh your history to verify its status.",
-);
-
-      setSensitiveValue("");
-      setSensitiveReason("");
-
-      const refreshTasks: Promise<unknown>[] = [loadMyRequests()];
-      if (canManageLifecycle) refreshTasks.push(loadEmployees());
-      if (isAdmin) {
-        refreshTasks.push(loadPendingRequests());
-        refreshTasks.push(loadAdminHistory());
-      }
-      await Promise.all(refreshTasks);
-    } catch (e) {
-      setError(getError(e));
-    } finally {
-      setBusy("");
-    }
+  if (!value || !reason) {
+    setError("Enter the new value and the reason for the change.");
+    return;
   }
+
+  if (reason.length < 3 || reason.length > 1000) {
+    setError("The reason must contain between 3 and 1000 characters.");
+    return;
+  }
+
+  if (!sensitiveDocument) {
+    setError("Please attach a supporting PDF, JPG, or PNG document.");
+    return;
+  }
+
+  if (sensitiveDocument.size > 5 * 1024 * 1024) {
+    setError("The supporting document must be 5 MB or smaller.");
+    return;
+  }
+
+  const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+  if (!allowedTypes.includes(sensitiveDocument.type)) {
+    setError("Only PDF, JPG, and PNG documents are allowed.");
+    return;
+  }
+
+  if (
+    !window.confirm(
+      "Submit this sensitive profile change and supporting document for HR approval?",
+    )
+  ) {
+    return;
+  }
+
+  setBusy("submit-sensitive");
+  setError("");
+  setNotice("");
+
+  try {
+    const formData = new FormData();
+    formData.append("field", sensitiveField);
+    formData.append("value", value);
+    formData.append("reason", reason);
+    formData.append("document", sensitiveDocument);
+
+    await api.post(
+      "/employees/me/sensitive-change-requests",
+      formData,
+    );
+
+    setNotice(
+      "Sensitive change request submitted. The field is restricted for 90 days from submission, regardless of the review result.",
+    );
+
+    setSensitiveValue("");
+    setSensitiveReason("");
+    setSensitiveDocument(null);
+
+    const refreshTasks: Promise<unknown>[] = [loadMyRequests()];
+
+    if (canManageLifecycle) refreshTasks.push(loadEmployees());
+
+    if (isAdmin) {
+      refreshTasks.push(loadPendingRequests());
+      refreshTasks.push(loadAdminHistory());
+    }
+
+    await Promise.all(refreshTasks);
+  } catch (e) {
+    setError(getError(e));
+  } finally {
+    setBusy("");
+  }
+}
 
   async function reviewRequest(
     item: PendingRequest,
@@ -1044,14 +1112,65 @@ setNotice(
                 onChange={(event) => setSensitiveField(event.target.value)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
               >
-                <option value="bankAccountNumber">Bank account number</option>
-                <option value="bankIfscCode">Bank IFSC code</option>
-                <option value="bankBranch">Bank branch</option>
-                <option value="employeePan">PAN</option>
-                <option value="employeeAadhaar">Aadhaar</option>
-                <option value="employeeTan">TAN</option>
+                {[
+                  ["bankAccountNumber", "Bank account number"],
+                  ["bankIfscCode", "Bank IFSC code"],
+                  ["bankBranch", "Bank branch"],
+                  ["employeePan", "PAN"],
+                  ["employeeAadhaar", "Aadhaar"],
+                  ["employeeTan", "TAN"],
+                ].map(([field, label]) => {
+                  const latestRequest = myRequests
+                    .filter((request) => (request.fields ?? []).includes(field))
+                    .sort(
+                      (a, b) =>
+                        new Date(b.requestedAt ?? 0).getTime() -
+                        new Date(a.requestedAt ?? 0).getTime(),
+                    )[0];
+                  const nextEligibleAt = latestRequest?.nextEligibleAt;
+                  const cooldownActive =
+                    Boolean(nextEligibleAt) &&
+                    new Date(nextEligibleAt as string).getTime() > Date.now();
+                  return (
+                    <option key={field} value={field} disabled={cooldownActive}>
+                      {label}{cooldownActive ? ` (available ${formatDate(nextEligibleAt)})` : ""}
+                    </option>
+                  );
+                })}
               </select>
             </label>
+
+            <label className="text-sm md:col-span-2">
+  <span className="mb-1 block font-semibold">
+    Supporting document (required)
+  </span>
+
+  <input
+    type="file"
+    accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+    required
+    onChange={(event) => {
+      const file = event.target.files?.[0] ?? null;
+
+      if (file && file.size > 5 * 1024 * 1024) {
+        setSensitiveDocument(null);
+        event.target.value = "";
+        setError("The supporting document must be 5 MB or smaller.");
+        return;
+      }
+
+      setError("");
+      setSensitiveDocument(file);
+    }}
+    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+  />
+
+  <span className="mt-1 block text-xs text-slate-500">
+    PDF, JPG or PNG. Maximum 5 MB. Your document is restricted to authorized access.
+  </span>
+</label>
+
+
 
             <label className="text-sm">
               <span className="mb-1 block font-semibold">New value</span>
@@ -1077,6 +1196,7 @@ setNotice(
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
+            
 
             <div className="md:col-span-2">
               <button
@@ -1153,12 +1273,34 @@ setNotice(
                         <p className="mt-2 text-xs text-slate-500">
                           Submitted values are hidden for security.
                         </p>
+                        <p className="mt-2 text-sm text-slate-600">
+                          <span className="font-semibold">Supporting document:</span>{" "}
+                          {item.request.documentAvailable ? "Attached" : "Not recorded"}
+                          {item.request.documentMimeType ? ` (${item.request.documentMimeType})` : ""}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          <span className="font-semibold">Next eligible submission:</span>{" "}
+                          {item.request.nextEligibleAt ? formatDate(item.request.nextEligibleAt) : "—"}
+                        </p>
                         <div className="mt-2">
                           <Status value={item.request.status || "PENDING"} />
                         </div>
                       </div>
 
-                      <div className="flex items-start gap-2">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <button
+                          type="button"
+                          disabled={!requestId || !item.request.documentAvailable || documentBusy === requestId}
+                          onClick={() => void viewSupportingDocument(item.employeeId, requestId)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 disabled:opacity-50"
+                        >
+                          {documentBusy === requestId ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <FileText className="h-4 w-4" />
+                          )}
+                          {documentBusy === requestId ? "Opening…" : "View Document"}
+                        </button>
                         <button
                           type="button"
                           disabled={Boolean(busy) || !requestId}
@@ -1235,6 +1377,15 @@ setNotice(
 
                     <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2">
                       <p className="text-sm text-slate-600">
+                        <span className="font-semibold">Supporting document:</span>{" "}
+                        {request.documentAvailable ? "Attached" : "Not recorded"}
+                        {request.documentMimeType ? ` (${request.documentMimeType})` : ""}
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        <span className="font-semibold">Next eligible submission:</span>{" "}
+                        {request.nextEligibleAt ? formatDate(request.nextEligibleAt) : "—"}
+                      </p>
+                      <p className="text-sm text-slate-600">
                         <span className="font-semibold">Requested:</span>{" "}
                         {formatDate(request.requestedAt)}
                       </p>
@@ -1251,6 +1402,24 @@ setNotice(
                         {request.reason || "—"}
                       </p>
                     </div>
+
+                    {request.documentAvailable && (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          disabled={documentBusy === request._id}
+                          onClick={() => void viewSupportingDocument(item.employeeId, request._id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 disabled:opacity-50"
+                        >
+                          {documentBusy === request._id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <FileText className="h-4 w-4" />
+                          )}
+                          {documentBusy === request._id ? "Opening…" : "View Document"}
+                        </button>
+                      </div>
+                    )}
 
                     {request.reviewComment && (
                       <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
@@ -1301,6 +1470,17 @@ setNotice(
                       </p>
                     )}
 
+                    <p className="mt-2 text-sm text-slate-600">
+                      <span className="font-semibold">Supporting document:</span>{" "}
+                      {request.documentAvailable ? "Attached" : "Not recorded"}
+                      {request.documentMimeType ? ` (${request.documentMimeType})` : ""}
+                    </p>
+
+                    <p className="mt-1 text-sm text-slate-600">
+                      <span className="font-semibold">Next eligible submission:</span>{" "}
+                      {request.nextEligibleAt ? formatDate(request.nextEligibleAt) : "—"}
+                    </p>
+
                     {request.reviewedAt && (
                       <p className="mt-2 text-xs text-slate-500">
                         Reviewed: {formatDate(request.reviewedAt)}
@@ -1330,3 +1510,4 @@ setNotice(
     </main>
   );
 }
+

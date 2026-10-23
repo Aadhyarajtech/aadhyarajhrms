@@ -1078,14 +1078,61 @@ function OverviewTab({
     reviewedAt?: string | null;
     reviewComment?: string | null;
     reviewedByRole?: string | null;
+    document?: {
+      storageKey?: string | null;
+      originalName?: string | null;
+      mimeType?: string | null;
+      size?: number | null;
+      uploadedAt?: string | null;
+    } | null;
+    documentAvailable?: boolean;
+    // Backward-compatible alias used by some API responses.
+    documentAttached?: boolean;
+    documentMimeType?: string | null;
+    nextEligibleAt?: string | null;
   };
   const [sensitiveField, setSensitiveField] = useState("bankAccountNumber");
   const [sensitiveValue, setSensitiveValue] = useState("");
   const [sensitiveReason, setSensitiveReason] = useState("");
+  const [sensitiveDocument, setSensitiveDocument] = useState<File | null>(null);
   const [sensitiveRequests, setSensitiveRequests] = useState<SensitiveRequestHistoryItem[]>([]);
   const [sensitiveBusy, setSensitiveBusy] = useState(false);
+  const [sensitiveDocumentViewBusy, setSensitiveDocumentViewBusy] = useState<string | null>(null);
   const [sensitiveError, setSensitiveError] = useState("");
   const [sensitiveNotice, setSensitiveNotice] = useState("");
+
+  // The cooldown applies per field, from the submission date, regardless of
+  // whether the previous request was approved or rejected.
+  const sensitiveFieldCooldownUntil = (() => {
+    const latestRequest = sensitiveRequests
+      .filter(
+        (request) =>
+          Array.isArray(request.fields) &&
+          request.fields.includes(sensitiveField) &&
+          typeof request.requestedAt === "string",
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.requestedAt ?? 0).getTime() -
+          new Date(a.requestedAt ?? 0).getTime(),
+      )[0];
+
+    if (!latestRequest?.requestedAt) return null;
+    const requestedAt = new Date(latestRequest.requestedAt);
+    if (!Number.isFinite(requestedAt.getTime())) return null;
+
+    const eligibleAt = new Date(requestedAt);
+    eligibleAt.setDate(eligibleAt.getDate() + 90);
+    return eligibleAt.getTime() > Date.now() ? eligibleAt : null;
+  })();
+
+  const sensitiveCooldownDateLabel = sensitiveFieldCooldownUntil
+    ? sensitiveFieldCooldownUntil.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : null;
 
   const loadSensitiveRequests = useCallback(async () => {
     if (!isSelf) return;
@@ -1109,6 +1156,33 @@ function OverviewTab({
     if (isSelf) void loadSensitiveRequests();
   }, [isSelf, loadSensitiveRequests]);
 
+  async function viewSensitiveRequestDocument(requestId: string) {
+    if (!requestId || sensitiveDocumentViewBusy) return;
+    setSensitiveDocumentViewBusy(requestId);
+    setSensitiveError("");
+    try {
+      const response = await api.get<Blob>(
+        `/employees/me/sensitive-change-requests/${encodeURIComponent(requestId)}/document`,
+        { responseType: "blob", headers: { "Cache-Control": "no-cache" } },
+      );
+      const blob = response.data;
+      if (!(blob instanceof Blob) || blob.size === 0) {
+        throw new Error("The supporting document is empty or unavailable.");
+      }
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      setSensitiveError(getErrorMessage(error));
+    } finally {
+      setSensitiveDocumentViewBusy(null);
+    }
+  }
+
   async function submitSensitiveProfileChange(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = sensitiveValue.trim();
@@ -1117,17 +1191,32 @@ function OverviewTab({
       setSensitiveError("Enter a new value and a reason between 3 and 1000 characters.");
       return;
     }
+    if (!sensitiveDocument) {
+      setSensitiveError("Please attach a supporting document.");
+      return;
+    }
+    const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+    if (!allowedTypes.includes(sensitiveDocument.type)) {
+      setSensitiveError("Upload a PDF, JPG, or PNG file.");
+      return;
+    }
+    if (sensitiveDocument.size > 5 * 1024 * 1024) {
+      setSensitiveError("The supporting document must be 5 MB or smaller.");
+      return;
+    }
     setSensitiveBusy(true);
     setSensitiveError("");
     setSensitiveNotice("");
     try {
-      await api.post("/employees/me/sensitive-change-requests", {
-        field: sensitiveField,
-        value,
-        reason,
-      });
+      const formData = new FormData();
+      formData.append("field", sensitiveField);
+      formData.append("value", value);
+      formData.append("reason", reason);
+      formData.append("document", sensitiveDocument);
+      await api.post("/employees/me/sensitive-change-requests", formData);
       setSensitiveValue("");
       setSensitiveReason("");
+      setSensitiveDocument(null);
       setSensitiveNotice("Request submitted. Your existing details will remain unchanged until HR approves the request.");
       await loadSensitiveRequests();
     } catch (error) {
@@ -1249,6 +1338,15 @@ function OverviewTab({
               <p className="mt-1 text-xs leading-5 text-ink-faint">
                 Update bank or identity information by requesting HR approval. Your current sensitive details are not displayed here, and new values are applied only after approval.
               </p>
+              {sensitiveCooldownDateLabel && (
+                <div
+                  role="status"
+                  className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                >
+                  You can try again after 90 days, on <strong>{sensitiveCooldownDateLabel}</strong>.
+                  This field is temporarily unavailable for another request.
+                </div>
+              )}
               <form onSubmit={(event) => void submitSensitiveProfileChange(event)} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-field">Field to update</label>
@@ -1269,11 +1367,44 @@ function OverviewTab({
                   <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-reason">Reason for change</label>
                   <textarea id="sensitive-profile-reason" value={sensitiveReason} onChange={(event) => setSensitiveReason(event.target.value)} required minLength={3} maxLength={1000} rows={3} className="mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" placeholder="Explain why this information needs to change" />
                 </div>
+                <div className="sm:col-span-2">
+                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-document">Supporting document <span className="text-danger-500">*</span></label>
+                  <input
+                    id="sensitive-profile-document"
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                    required
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      if (file && !["application/pdf", "image/jpeg", "image/png"].includes(file.type)) {
+                        setSensitiveDocument(null);
+                        event.target.value = "";
+                        setSensitiveError("Upload a PDF, JPG, or PNG file.");
+                        return;
+                      }
+                      if (file && file.size > 5 * 1024 * 1024) {
+                        setSensitiveDocument(null);
+                        event.target.value = "";
+                        setSensitiveError("The supporting document must be 5 MB or smaller.");
+                        return;
+                      }
+                      setSensitiveError("");
+                      setSensitiveDocument(file);
+                    }}
+                    className="mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
+                  />
+                  <p className="mt-1 text-xs text-ink-faint">PDF, JPG or PNG. Maximum 5 MB.</p>
+                  {sensitiveDocument && <p className="mt-1 text-xs text-ink-soft">Selected: {sensitiveDocument.name}</p>}
+                </div>
                 {sensitiveError && <p role="alert" className="sm:col-span-2 text-sm text-danger-600">{sensitiveError}</p>}
                 {sensitiveNotice && <p role="status" className="sm:col-span-2 text-sm text-emerald-700">{sensitiveNotice}</p>}
                 <div className="sm:col-span-2">
-                  <Button type="submit" disabled={sensitiveBusy}>
-                    {sensitiveBusy ? "Submitting…" : "Submit for approval"}
+                  <Button type="submit" disabled={sensitiveBusy || Boolean(sensitiveCooldownDateLabel)}>
+                    {sensitiveBusy
+                      ? "Submitting…"
+                      : sensitiveCooldownDateLabel
+                        ? `Available on ${sensitiveCooldownDateLabel}`
+                        : "Submit for approval"}
                   </Button>
                 </div>
               </form>
@@ -1292,6 +1423,25 @@ function OverviewTab({
                         </div>
                         <p className="mt-1 text-xs text-ink-faint">Requested: {request.requestedAt ? formatDate(request.requestedAt) : "—"}{request.reviewedAt ? ` · Reviewed: ${formatDate(request.reviewedAt)}` : ""}</p>
                         {request.reason && <p className="mt-2 text-sm text-ink-soft">Reason: {request.reason}</p>}
+                        <p className="mt-1 text-xs text-ink-faint">
+                          Supporting document: {request.documentAvailable || request.documentAttached || request.document?.storageKey ? "Attached" : "Not recorded"}
+                        </p>
+                        {(request.documentAvailable || request.documentAttached || request.document?.storageKey) && (
+                          <button
+                            type="button"
+                            onClick={() => void viewSensitiveRequestDocument(request._id)}
+                            disabled={sensitiveDocumentViewBusy !== null}
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <FileText size={14} />
+                            {sensitiveDocumentViewBusy === request._id ? "Opening document…" : "View Document"}
+                          </button>
+                        )}
+                        {request.nextEligibleAt && (
+                          <p className="mt-1 text-xs text-ink-faint">
+                            Next eligible submission: {formatDate(request.nextEligibleAt)}
+                          </p>
+                        )}
                         {request.reviewComment && <p className="mt-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">HR comment: {request.reviewComment}</p>}
                       </div>
                     ))}
