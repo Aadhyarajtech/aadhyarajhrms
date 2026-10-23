@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -59,12 +59,18 @@ export default function EmployeeDirectory() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
 
   const [search, setSearch] = useState("");
   const [departmentId, setDepartmentId] = useState("");
-  const [status, setStatus] = useState("");
+  // Dashboard KPI links can preselect a directory status through the URL.
+  // Keep the default empty so ordinary visits still show every status.
+  const [status, setStatus] = useState(() => {
+    const requestedStatus = searchParams.get("status")?.toUpperCase();
+    return requestedStatus === "ACTIVE" ? "ACTIVE" : "";
+  });
   const [page, setPage] = useState(1);
   const [addOpen, setAddOpen] = useState(false);
 

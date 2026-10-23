@@ -126,12 +126,14 @@ const DOCUMENT_REJECTION_REASONS = [
   "Document is incomplete",
 ] as const;
 
-// Open the authenticated document URL directly from the click event so the
-// browser opens the real file without creating a blank intermediate tab.
+// Open a same-origin viewer shell. Browser events can be intercepted in the
+// shell for non-admin users, but native PDF viewer/OS screenshot controls remain
+// outside website control. Server-side authorization remains the security boundary.
 function openPrivateDocument(
   id: string,
-  _fileName: string | null | undefined,
+  fileName: string | null | undefined,
   showToast: (message: string, variant?: "success" | "error" | "info") => void,
+  _canDownload: boolean,
 ) {
   try {
     const token = localStorage.getItem("aadhyaraj_token");
@@ -139,21 +141,48 @@ function openPrivateDocument(
     const baseUrl = rawBase.startsWith("http")
       ? rawBase
       : `${window.location.origin}${rawBase}`;
-    const downloadUrl = new URL(`${baseUrl.replace(/\/$/, "")}/documents/${id}/download`);
-
-    if (token) {
-      downloadUrl.searchParams.set("token", token);
+    const documentUrl = new URL(`${baseUrl.replace(/\/$/, "")}/documents/${id}/preview`);
+    if (token) documentUrl.searchParams.set("token", token);
+    if (/\.pdf$/i.test(String(fileName ?? ""))) {
+      // Request a minimal PDF presentation for every role. This is viewer-dependent.
+      documentUrl.hash = "toolbar=0&navpanes=0&scrollbar=1";
     }
 
-    const popup = window.open(downloadUrl.toString(), "_blank", "noopener,noreferrer");
-    if (!popup) {
-      showToast("Please allow popups to open the document in a new tab.", "info");
+    const viewer = window.open("about:blank", "_blank");
+    if (!viewer) {
+      showToast("Please allow popups to preview this document.", "info");
+      return;
     }
+    // Prevent the opened viewer from navigating the originating HRMS tab.
+    viewer.opener = null;
+    const title = String(fileName || "Document").replace(/[<>"&]/g, "");
+    // Apply keyboard/context-menu restrictions to every role, including admins.
+    // These controls deter casual copying in the wrapper but cannot fully control
+    // browser-native PDF viewers, OS shortcuts, screenshots, or cameras.
+    viewer.document.open();
+    viewer.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>
+      html,body{height:100%;margin:0;background:#202124;color:#fff;font:14px system-ui,sans-serif;overflow:hidden}
+      .bar{height:40px;display:flex;align-items:center;padding:0 14px;background:#303134;box-sizing:border-box}
+      .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      iframe{display:block;width:100%;height:calc(100% - 40px);border:0;background:#fff}
+      body.protected{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+    </style></head><body class="protected"><div class="bar"><span class="name">${title}</span></div><iframe title="Protected document preview" src="${documentUrl.toString().replace(/&/g,"&amp;").replace(/"/g,"&quot;")}" referrerpolicy="no-referrer"></iframe>
+    <script>
+      (function(){
+        const block=e=>{e.preventDefault();e.stopPropagation();};
+        ["contextmenu","copy","cut","dragstart","selectstart"].forEach(n=>document.addEventListener(n,block,true));
+        document.addEventListener("keydown",function(e){
+          const k=String(e.key||"").toLowerCase();
+          const mod=e.ctrlKey||e.metaKey;
+          if(mod && ["c","x","a","s","p","u"].includes(k)){block(e);return;}
+          if(e.key==="PrintScreen" || (e.ctrlKey && e.shiftKey && ["i","j","c"].includes(k))){block(e);}
+        },true);
+        document.addEventListener("beforeprint",block,true);
+      })();
+    </script></body></html>`);
+    viewer.document.close();
   } catch (err) {
-    const message =
-      err instanceof Error && err.message
-        ? err.message
-        : getErrorMessage(err);
+    const message = err instanceof Error && err.message ? err.message : getErrorMessage(err);
     showToast(message, "error");
   }
 }
@@ -757,6 +786,7 @@ function DocumentRow({ doc, isCompanyDoc = false }: { doc: any; isCompanyDoc?: b
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { user, hasPermission } = useAuth();
+  const canManageDocuments = !!user?.role && ["SUPER_ADMIN", "ADMIN"].includes(user.role);
 
   const canDelete = ["SUPER_ADMIN", "ADMIN"].includes((user as any)?.role);
 
@@ -819,7 +849,18 @@ function DocumentRow({ doc, isCompanyDoc = false }: { doc: any; isCompanyDoc?: b
   const [showRejectOptions, setShowRejectOptions] = useState(false);
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div
+      className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3 select-none"
+      onContextMenu={(event) => event.preventDefault()}
+      onDragStart={(event) => event.preventDefault()}
+      onCopy={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onKeyDown={(event) => {
+        if ((event.ctrlKey || event.metaKey) && ["p", "s", "c", "x"].includes(event.key.toLowerCase())) {
+          event.preventDefault();
+        }
+      }}
+    >
       <div className="flex min-w-0 items-center gap-3">
         <div className="rounded-xl bg-brand-50 p-2 text-brand-600">
           <FileText size={16} />
@@ -885,11 +926,11 @@ function DocumentRow({ doc, isCompanyDoc = false }: { doc: any; isCompanyDoc?: b
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() => openPrivateDocument(doc.id, doc.fileName, showToast)}
+          onClick={() => openPrivateDocument(doc.id, doc.fileName, showToast, canManageDocuments)}
           className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
         >
           <Download size={14} className="mr-1.5" />
-          Open
+          Preview
         </button>
 
         {canDelete && (
@@ -1021,7 +1062,18 @@ function AssetRow({ asset, canManage }: { asset: Asset; canManage: boolean }) {
   });
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div
+      className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3 select-none"
+      onContextMenu={(event) => event.preventDefault()}
+      onDragStart={(event) => event.preventDefault()}
+      onCopy={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onKeyDown={(event) => {
+        if ((event.ctrlKey || event.metaKey) && ["p", "s", "c", "x"].includes(event.key.toLowerCase())) {
+          event.preventDefault();
+        }
+      }}
+    >
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">{asset.name}</p>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-faint">
@@ -1062,7 +1114,18 @@ function IncomingRequestRow({
   onUpload: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div
+      className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3 select-none"
+      onContextMenu={(event) => event.preventDefault()}
+      onDragStart={(event) => event.preventDefault()}
+      onCopy={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onKeyDown={(event) => {
+        if ((event.ctrlKey || event.metaKey) && ["p", "s", "c", "x"].includes(event.key.toLowerCase())) {
+          event.preventDefault();
+        }
+      }}
+    >
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">
           {typeLabel(request.type)}
@@ -1095,6 +1158,8 @@ function OutgoingRequestRow({
   document?: any;
 }) {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const canManageDocuments = !!user?.role && ["SUPER_ADMIN", "ADMIN"].includes(user.role);
   const activeDoc = document || request?.document;
   const isFulfilled = [
     "UPLOADED",
@@ -1104,7 +1169,18 @@ function OutgoingRequestRow({
   ].includes(String(request?.status).toUpperCase());
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div
+      className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3 select-none"
+      onContextMenu={(event) => event.preventDefault()}
+      onDragStart={(event) => event.preventDefault()}
+      onCopy={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onKeyDown={(event) => {
+        if ((event.ctrlKey || event.metaKey) && ["p", "s", "c", "x"].includes(event.key.toLowerCase())) {
+          event.preventDefault();
+        }
+      }}
+    >
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">
           {typeLabel(request.type)}
@@ -1126,7 +1202,7 @@ function OutgoingRequestRow({
               const fileName =
                 activeDoc.fileName || activeDoc.name || "Document";
               if (docId) {
-                openPrivateDocument(docId, fileName, showToast);
+                openPrivateDocument(docId, fileName, showToast, canManageDocuments);
               }
             }}
             className="inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink hover:border-brand-300 hover:text-brand-700"
@@ -1149,7 +1225,18 @@ function CompanyRequestRow({
   onUpload: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3">
+    <div
+      className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-line/70 bg-surface px-3 py-3 select-none"
+      onContextMenu={(event) => event.preventDefault()}
+      onDragStart={(event) => event.preventDefault()}
+      onCopy={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onKeyDown={(event) => {
+        if ((event.ctrlKey || event.metaKey) && ["p", "s", "c", "x"].includes(event.key.toLowerCase())) {
+          event.preventDefault();
+        }
+      }}
+    >
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">
           {typeLabel(request.type)}

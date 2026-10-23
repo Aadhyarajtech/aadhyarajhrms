@@ -99,6 +99,20 @@ const salarySchema = z.object({
 });
 type SalaryForm = z.infer<typeof salarySchema>;
 
+function getAuthenticatedDocumentUrl(fileUrl: string | null | undefined): string {
+  if (!fileUrl) return "#";
+  const token = localStorage.getItem("aadhyaraj_token");
+  const rawBase = import.meta.env.VITE_API_URL || "/api";
+  const baseUrl = rawBase.startsWith("http")
+    ? rawBase
+    : `${window.location.origin}${rawBase}`;
+  const url = new URL(fileUrl, `${baseUrl.replace(/\/$/, "")}/`);
+  if (token && url.pathname.includes("/documents/")) {
+    url.searchParams.set("token", token);
+  }
+  return url.toString();
+}
+
 export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -3174,7 +3188,7 @@ function DocumentsTab({
             {documents.map((d) => (
               <a
                 key={d.id}
-                href={d.fileUrl}
+                href={getAuthenticatedDocumentUrl(d.fileUrl)}
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center justify-between rounded-xl border border-line/60 px-4 py-2.5 transition hover:border-brand-300 hover:bg-brand-50"

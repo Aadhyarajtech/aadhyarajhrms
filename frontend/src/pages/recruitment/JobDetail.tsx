@@ -225,7 +225,10 @@ export default function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const requestedCandidateId = (location.state as { openCandidateId?: string } | null)?.openCandidateId;
+  const hashCandidateMatch = location.hash.match(/^#job-candidate-(.+)$/);
+  const requestedCandidateId =
+    (location.state as { openCandidateId?: string } | null)?.openCandidateId ??
+    (hashCandidateMatch ? decodeURIComponent(hashCandidateMatch[1]) : undefined);
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { user, hasPermission } = useAuth();
@@ -301,6 +304,38 @@ export default function JobDetail() {
     queryFn: () => RecruitmentApi.candidates(jobId!),
     enabled: !!jobId,
   });
+
+  // A notification hash can target the Candidates section or a specific
+  // candidate. For a candidate hash, pass the ID into the workspace so it opens
+  // the full candidate details view automatically (not just the table row).
+  useEffect(() => {
+    let targetId = location.hash.replace(/^#/, "");
+    try {
+      targetId = decodeURIComponent(targetId);
+    } catch {
+      // Keep the raw hash if it contains malformed percent-encoding.
+    }
+
+    if (targetId !== "job-candidates" && !targetId.startsWith("job-candidate-")) return;
+
+    setActiveCandidateTab("CANDIDATES");
+    if (activeCandidateTab !== "CANDIDATES" || candidatesLoading) return;
+
+    if (targetId === "job-candidates") {
+      document.getElementById("job-candidates")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const candidateId = targetId.slice("job-candidate-".length);
+    const candidateExists = (candidates ?? []).some((candidate) => candidate.id === candidateId);
+    if (!candidateExists) {
+      // The candidate may have been deleted or the link may be stale. Keep the
+      // user in the correct job's Candidates section rather than a blank page.
+      document.getElementById("job-candidates")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    // When the candidate exists, CandidateRecruitmentWorkspace opens its detail
+    // view from requestedCandidateId and scrolls that detail view into place.
+  }, [location.hash, activeCandidateTab, candidatesLoading, candidates]);
   const rankedCandidates = [...(candidates ?? [])]
     .filter((candidate) => candidate.jobFitScore != null)
     .sort(
@@ -1881,6 +1916,13 @@ function CandidateRecruitmentWorkspace({
     | ScreeningCandidate
     | null;
 
+  useEffect(() => {
+    if (!showCandidateDetail || !detailCandidate) return;
+    document
+      .getElementById(`job-candidate-detail-${detailCandidate.id}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showCandidateDetail, detailCandidate?.id]);
+
   const clearFilters = () => {
     setSearch("");
     setStageFilter("ALL");
@@ -1898,7 +1940,7 @@ function CandidateRecruitmentWorkspace({
       detailCandidate.jobFitScore ?? detailCandidate.screening?.score ?? null;
 
     return (
-      <section className="mt-7">
+      <section id={`job-candidate-detail-${detailCandidate.id}`} className="mt-7 scroll-mt-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <button
             type="button"
@@ -2320,7 +2362,7 @@ function CandidateRecruitmentWorkspace({
 
 
 
-      <Card className="overflow-hidden" padded={false}>
+      <Card id="job-candidates" className="overflow-hidden" padded={false}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 px-4">
           <div className="flex items-center gap-1 overflow-x-auto">
 
@@ -2459,6 +2501,7 @@ function CandidateRecruitmentWorkspace({
                       <button
                         type="button"
                         key={candidate.id}
+                        id={`job-candidate-${candidate.id}`}
                         onClick={() => {
                           setSelectedId(candidate.id);
                           setShowCandidateDetail(true);

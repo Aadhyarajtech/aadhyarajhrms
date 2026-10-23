@@ -729,9 +729,9 @@ export default function Dashboard() {
       {/* ========================= KPI CARDS ========================= */}
       <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Link
-          to="/app/employees"
+          to="/app/employees?status=ACTIVE"
           className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
-          aria-label="View employees"
+          aria-label="View active employees"
         >
           <StatCard
             label="Active employees"

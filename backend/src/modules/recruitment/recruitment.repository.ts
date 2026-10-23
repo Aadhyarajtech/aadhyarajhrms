@@ -3,7 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
-import mongoose from "mongoose";
 import {
   JobPosting,
   Candidate,
@@ -75,93 +74,6 @@ async function canActAsRequisitionApprover(userId: string): Promise<boolean> {
   if (!user || user.isActive === false) return false;
   if (user.role === "SUPER_ADMIN" || user.role === "ADMIN") return true;
   return user.role === "RECRUITER" && isRecruitmentHeadEmail(user.email);
-}
-
-/**
- * One-time (idempotent) repair for OLD "New candidate application"
- * notifications that were saved without a job id in their link, which made
- * the Topbar fall back to the generic /recruitment page.
- *
- * It reads "<First Last> applied for <Job Title>." from the message, finds the
- * matching candidate/job, and rewrites the link to /recruitment/<jobId>.
- * Safe to run repeatedly: notifications that already have a job link are
- * skipped, and unmatched ones are left untouched.
- */
-let applicationLinkBackfillDone = false;
-
-export async function backfillCandidateApplicationNotificationLinks() {
-  const collection = mongoose.connection.db?.collection("notifications");
-  if (!collection) return { checked: 0, updated: 0 };
-
-  const stale = await collection
-    .find({
-      type: "RECRUITMENT",
-      title: "New candidate application",
-      $or: [
-        { link: { $exists: false } },
-        { link: null },
-        { link: "" },
-        { link: { $regex: "^/?(app/)?recruitment/?$" } },
-        { link: { $regex: "/candidates/" } },
-      ],
-    })
-    .toArray();
-
-  let updated = 0;
-
-  for (const notification of stale) {
-    const match = String(notification.message ?? "").match(
-      /^(.+?) applied for (.+)\.$/,
-    );
-    if (!match) continue;
-
-    const fullName = match[1].trim().toLowerCase();
-    const jobTitle = match[2].trim();
-
-    const jobs = (await JobPosting.find({ title: jobTitle })
-      .select("_id")
-      .lean()) as AnyDoc[];
-    if (!jobs.length) continue;
-
-    const candidates = (await Candidate.find({
-      jobPostingId: { $in: jobs.map((job) => job._id) },
-    })
-      .select("firstName lastName jobPostingId appliedAt")
-      .lean()) as AnyDoc[];
-
-    const matched = candidates
-      .filter(
-        (candidate) =>
-          `${candidate.firstName} ${candidate.lastName}`
-            .trim()
-            .toLowerCase() === fullName,
-      )
-      .sort((a, b) =>
-        String(b.appliedAt ?? "").localeCompare(String(a.appliedAt ?? "")),
-      )[0];
-
-    const jobId =
-      matched?.jobPostingId ?? (jobs.length === 1 ? jobs[0]._id : null);
-    if (!jobId) continue;
-
-    await collection.updateOne(
-      { _id: notification._id },
-      { $set: { link: `/recruitment/${String(jobId)}` } },
-    );
-    updated += 1;
-  }
-
-  return { checked: stale.length, updated };
-}
-
-async function runApplicationLinkBackfillOnce() {
-  if (applicationLinkBackfillDone) return;
-  applicationLinkBackfillDone = true;
-  try {
-    await backfillCandidateApplicationNotificationLinks();
-  } catch (error) {
-    console.error("[Recruitment] Notification link backfill failed:", error);
-  }
 }
 
 async function notifyCandidateEmail(
@@ -471,9 +383,6 @@ export async function listJobPostings(
   status?: string,
   requisitionStatus?: string,
 ) {
-  // Repairs old candidate-application notification links (runs once per server start).
-  void runApplicationLinkBackfillOnce();
-
   const query: Record<string, any> = {};
 
   if (status) {
@@ -1637,9 +1546,7 @@ export async function createCandidate(input: CreateCandidateInput) {
   await notifyRecruitmentTeam({
     title: "New candidate application",
     message: `${firstName} ${lastName} applied for ${job.title}.`,
-    // Always point at the job (role) the candidate applied for, never the
-    // generic /recruitment list. Use the job's own _id as the source of truth.
-    link: `/recruitment/${String(job._id)}`,
+    link: `/recruitment/${doc.jobPostingId}#job-candidate-${doc._id}`,
   });
   await notifyCandidateEmail(
     createdCandidate,

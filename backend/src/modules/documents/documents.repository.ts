@@ -193,11 +193,12 @@ export async function getPrivateDocumentPath(id: string) {
   }
 
   if (!resolved) {
-    await fs.mkdir(PRIVATE_DOCUMENT_DIR_ABSOLUTE, { recursive: true });
-    const placeholderName = `${path.basename(key).replace(/\.[^/.]+$/, "") || "document"}.txt`;
-    const placeholderPath = path.resolve(PRIVATE_DOCUMENT_DIR_ABSOLUTE, placeholderName);
-    await fs.writeFile(placeholderPath, buildMissingDocumentPlaceholder(String(row.fileName || key), String(row.type || "OTHER")));
-    filePath = placeholderPath;
+    // Never fabricate a placeholder file and return it as if it were the upload.
+    // The database record is retained so the original file can be restored or
+    // re-uploaded without losing document metadata or audit history.
+    throw AppError.notFound(
+      `The uploaded file for "${String(row.fileName || key)}" is missing from server storage. Restore it from persistent storage or upload it again.`,
+    );
   }
 
   return { row: toApiDoc(row), filePath };

@@ -238,15 +238,13 @@ documentsRouter.post(
   },
 );
 
-documentsRouter.get("/:id/download", async (req, res, next) => {
+async function sendAuthorizedDocument(req: any, res: any, next: any, forceDownload: boolean) {
   try {
     const document = await repo.getDocument(req.params.id);
     if (!document) throw AppError.notFound("Document not found.");
 
     const isOwner = String(document.employeeId) === String(req.user!.employeeId ?? "");
-    const isAdminPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(
-      req.user!.role,
-    );
+    const isAdminPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
     let isAuthorized = isOwner || isAdminPrivileged;
 
     if (!isAuthorized && (req.user!.role === "MANAGER" || req.user!.isManager)) {
@@ -255,23 +253,34 @@ documentsRouter.get("/:id/download", async (req, res, next) => {
         String(document.employeeId),
       );
     }
-
     if (!isAuthorized) throw AppError.forbidden();
 
-    const { filePath, row } = await repo.getPrivateDocumentPath(req.params.id);
+    // Viewing and downloading are separate permissions. Only Super Admin/Admin
+    // may use the explicit download endpoint; other authorized users use preview.
+    if (forceDownload && !isAdminPrivileged) throw AppError.forbidden();
 
+    const { filePath, row } = await repo.getPrivateDocumentPath(req.params.id);
     const mimeType = getMimeType(filePath);
+    const safeName = String(row.fileName).replace(/[^a-zA-Z0-9._ -]/g, "_");
     res.setHeader("Content-Type", mimeType);
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${String(row.fileName).replace(/[^a-zA-Z0-9._ -]/g, "_")}"`,
-    );
-    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Content-Disposition", `${forceDownload ? "attachment" : "inline"}; filename="${safeName}"`);
+    res.setHeader("Cache-Control", "private, no-store, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
     res.sendFile(filePath);
   } catch (err) {
     next(err);
   }
-});
+}
+
+documentsRouter.get("/:id/preview", (req, res, next) =>
+  sendAuthorizedDocument(req, res, next, false),
+);
+
+documentsRouter.get("/:id/download", (req, res, next) =>
+  sendAuthorizedDocument(req, res, next, true),
+);
 
 documentsRouter.delete("/:id", isAdmin, async (req, res, next) => {
   try {

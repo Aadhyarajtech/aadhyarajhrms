@@ -479,7 +479,7 @@ export function Topbar({
     // /recruitment/:jobId/candidates/:candidateId -> /recruitment/:jobId
     normalized = normalized.replace(
       /^\/app\/recruitment\/([^/?#]+)\/candidates\/([^/?#]+)(.*)$/i,
-      "/app/recruitment/$1$3",
+      "/app/recruitment/$1$2",
     );
 
     // /recruitment/jobs/:jobId or /recruitment/job/:jobId -> /recruitment/:jobId

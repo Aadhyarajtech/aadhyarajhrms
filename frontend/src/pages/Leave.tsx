@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -1428,6 +1428,24 @@ function LeaveCalendar() {
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [expandedCalendarDay, setExpandedCalendarDay] = useState<string | null>(null);
   const [calendarPopoverPosition, setCalendarPopoverPosition] = useState<{ top: number; left: number } | null>(null);
+  const calendarPopoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelCalendarPopoverClose = () => {
+    if (calendarPopoverCloseTimer.current) {
+      clearTimeout(calendarPopoverCloseTimer.current);
+      calendarPopoverCloseTimer.current = null;
+    }
+  };
+
+  const scheduleCalendarPopoverClose = () => {
+    cancelCalendarPopoverClose();
+    // Small grace period lets the pointer travel from the badge to the portaled popover.
+    calendarPopoverCloseTimer.current = setTimeout(() => {
+      setExpandedCalendarDay(null);
+      setCalendarPopoverPosition(null);
+      calendarPopoverCloseTimer.current = null;
+    }, 140);
+  };
 
   const openCalendarDayPopover = (iso: string, target: HTMLElement) => {
     const rect = target.getBoundingClientRect();
@@ -1858,9 +1876,19 @@ function LeaveCalendar() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
+                              cancelCalendarPopoverClose();
+                              if (expandedCalendarDay === iso) {
+                                setExpandedCalendarDay(null);
+                                setCalendarPopoverPosition(null);
+                              } else {
+                                openCalendarDayPopover(iso, event.currentTarget);
+                              }
+                            }}
+                            onMouseEnter={(event) => {
+                              cancelCalendarPopoverClose();
                               openCalendarDayPopover(iso, event.currentTarget);
                             }}
-                            onMouseEnter={(event) => openCalendarDayPopover(iso, event.currentTarget)}
+                            onMouseLeave={scheduleCalendarPopoverClose}
                             aria-label={`Show ${dayEntries.length} leave ${dayEntries.length === 1 ? "entry" : "entries"} for ${iso}`}
                             aria-expanded={expandedCalendarDay === iso}
                             className="whitespace-nowrap rounded-full bg-violet-100 px-2 py-1 text-[9px] font-semibold leading-none text-violet-700 transition hover:bg-violet-200 focus:outline-none focus:ring-2 focus:ring-violet-300"
@@ -1923,11 +1951,8 @@ function LeaveCalendar() {
 
         {expandedCalendarDay && calendarPopoverPosition && typeof document !== "undefined" && createPortal(
           <div
-            onMouseEnter={() => { /* Keep the popover open while moving into it. */ }}
-            onMouseLeave={() => {
-              setExpandedCalendarDay(null);
-              setCalendarPopoverPosition(null);
-            }}
+            onMouseEnter={cancelCalendarPopoverClose}
+            onMouseLeave={scheduleCalendarPopoverClose}
             style={{ top: calendarPopoverPosition.top, left: calendarPopoverPosition.left, width: "min(16rem, calc(100vw - 1.5rem))" }}
             className="fixed z-[9999] max-h-[min(20rem,calc(100vh-1.5rem))] overflow-hidden rounded-xl border border-violet-100 bg-white p-2.5 text-left shadow-2xl"
             role="dialog"
