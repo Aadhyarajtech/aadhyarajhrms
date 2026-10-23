@@ -334,100 +334,100 @@ export default function BreakGlass() {
                         </div>
                     </div>
                 </section>
+                {!isAdmin && (
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <h2 className="text-lg font-bold">Request emergency access</h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                            Provide a clear reason and select only the fields needed for the emergency.
+                        </p>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <h2 className="text-lg font-bold">Request emergency access</h2>
-                    <p className="mt-1 text-sm text-slate-500">
-                        Provide a clear reason and select only the fields needed for the emergency.
-                    </p>
-
-                    <form onSubmit={createRequest} className="mt-5 space-y-5">
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <label className="block text-sm font-semibold">
-                                Target employee
-                                <select
-                                    value={targetEmployeeId}
-                                    onChange={(event) => setTargetEmployeeId(event.target.value)}
-                                    required
-                                    className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"
-                                >
-                                    <option value="">Select employee</option>
-                                    {employees.map((employee) => (
-                                        <option key={employee.id} value={employee.id}>
-                                            {employeeName(employee.id)}
-                                            {employee.employeeCode ? ` (${employee.employeeCode})` : ""}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-
-                            <label className="block text-sm font-semibold">
-                                Access duration
-                                <select
-                                    value={durationMinutes}
-                                    onChange={(event) => setDurationMinutes(Number(event.target.value))}
-                                    className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"
-                                >
-                                    <option value={5}>5 minutes</option>
-                                    <option value={10}>10 minutes</option>
-                                    <option value={15}>15 minutes</option>
-                                    <option value={30}>30 minutes</option>
-                                </select>
-                            </label>
-                        </div>
-
-                        <fieldset>
-                            <legend className="text-sm font-semibold">Sensitive fields requested</legend>
-                            <p className="mt-1 text-xs text-slate-500">
-                                Select one or more permitted fields. Avoid requesting unrelated information.
-                            </p>
-                            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                {FIELDS.map((field) => (
-                                    <label
-                                        key={field.value}
-                                        className="flex items-start gap-2 rounded-xl border border-slate-200 p-3 text-sm hover:bg-slate-50"
+                        <form onSubmit={createRequest} className="mt-5 space-y-5">
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <label className="block text-sm font-semibold">
+                                    Target employee
+                                    <select
+                                        value={targetEmployeeId}
+                                        onChange={(event) => setTargetEmployeeId(event.target.value)}
+                                        required
+                                        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"
                                     >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedFields.includes(field.value)}
-                                            onChange={(event) => {
-                                                setSelectedFields((current) =>
-                                                    event.target.checked
-                                                        ? [...current, field.value]
-                                                        : current.filter((item) => item !== field.value),
-                                                );
-                                            }}
-                                            className="mt-0.5"
-                                        />
-                                        <span>{field.label}</span>
-                                    </label>
-                                ))}
+                                        <option value="">Select employee</option>
+                                        {employees.map((employee) => (
+                                            <option key={employee.id} value={employee.id}>
+                                                {employeeName(employee.id)}
+                                                {employee.employeeCode ? ` (${employee.employeeCode})` : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+
+                                <label className="block text-sm font-semibold">
+                                    Access duration
+                                    <select
+                                        value={durationMinutes}
+                                        onChange={(event) => setDurationMinutes(Number(event.target.value))}
+                                        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"
+                                    >
+                                        <option value={5}>5 minutes</option>
+                                        <option value={10}>10 minutes</option>
+                                        <option value={15}>15 minutes</option>
+                                        <option value={30}>30 minutes</option>
+                                    </select>
+                                </label>
                             </div>
-                        </fieldset>
 
-                        <label className="block text-sm font-semibold">
-                            Emergency reason
-                            <textarea
-                                value={reason}
-                                onChange={(event) => setReason(event.target.value)}
-                                required
-                                maxLength={1000}
-                                rows={3}
-                                placeholder="Explain why this information is urgently required."
-                                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal"
-                            />
-                        </label>
+                            <fieldset>
+                                <legend className="text-sm font-semibold">Sensitive fields requested</legend>
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Select one or more permitted fields. Avoid requesting unrelated information.
+                                </p>
+                                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                    {FIELDS.map((field) => (
+                                        <label
+                                            key={field.value}
+                                            className="flex items-start gap-2 rounded-xl border border-slate-200 p-3 text-sm hover:bg-slate-50"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedFields.includes(field.value)}
+                                                onChange={(event) => {
+                                                    setSelectedFields((current) =>
+                                                        event.target.checked
+                                                            ? [...current, field.value]
+                                                            : current.filter((item) => item !== field.value),
+                                                    );
+                                                }}
+                                                className="mt-0.5"
+                                            />
+                                            <span>{field.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </fieldset>
 
-                        <button
-                            type="submit"
-                            disabled={busy !== "" || loading}
-                            className="rounded-xl bg-rose-700 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-800 disabled:opacity-50"
-                        >
-                            {busy === "create" ? "Submitting..." : "Submit emergency request"}
-                        </button>
-                    </form>
-                </section>
+                            <label className="block text-sm font-semibold">
+                                Emergency reason
+                                <textarea
+                                    value={reason}
+                                    onChange={(event) => setReason(event.target.value)}
+                                    required
+                                    maxLength={1000}
+                                    rows={3}
+                                    placeholder="Explain why this information is urgently required."
+                                    className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal"
+                                />
+                            </label>
 
+                            <button
+                                type="submit"
+                                disabled={busy !== "" || loading}
+                                className="rounded-xl bg-rose-700 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-800 disabled:opacity-50"
+                            >
+                                {busy === "create" ? "Submitting..." : "Submit emergency request"}
+                            </button>
+                        </form>
+                    </section>
+                )}
                 {isAdmin && (
                     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                         <h2 className="text-lg font-bold">Administrator review</h2>
