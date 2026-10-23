@@ -918,7 +918,7 @@ export default function EmployeeProfile() {
             </div>
             <div>
               <label htmlFor="resignation-date" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Resignation date <span className="text-danger-500">*</span></label>
-              <input id="resignation-date" type="date" max="9999-12-31" value={noticePeriodForm.resignationDate} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, resignationDate: e.target.value }))} aria-invalid={!!noticePeriodErrors.resignationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
+              <input id="resignation-date" type="date" value={noticePeriodForm.resignationDate} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, resignationDate: e.target.value }))} aria-invalid={!!noticePeriodErrors.resignationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
               {noticePeriodErrors.resignationDate && <p className="mt-1 text-xs text-danger-600">{noticePeriodErrors.resignationDate}</p>}
             </div>
             <div className="sm:col-span-2">
@@ -988,7 +988,7 @@ export default function EmployeeProfile() {
             </div>
             <div>
               <label htmlFor="termination-date" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Termination date <span className="text-danger-500">*</span></label>
-              <input id="termination-date" type="date" max="9999-12-31" value={terminationForm.terminationDate} onChange={(e) => setTerminationForm((f) => ({ ...f, terminationDate: e.target.value }))} aria-invalid={!!terminationErrors.terminationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
+              <input id="termination-date" type="date" value={terminationForm.terminationDate} onChange={(e) => setTerminationForm((f) => ({ ...f, terminationDate: e.target.value }))} aria-invalid={!!terminationErrors.terminationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
               {terminationErrors.terminationDate && <p className="mt-1 text-xs text-danger-600">{terminationErrors.terminationDate}</p>}
             </div>
             <div className="sm:col-span-2">
@@ -1114,39 +1114,6 @@ function OverviewTab({
   const [sensitiveDocumentViewBusy, setSensitiveDocumentViewBusy] = useState<string | null>(null);
   const [sensitiveError, setSensitiveError] = useState("");
   const [sensitiveNotice, setSensitiveNotice] = useState("");
-
-  // The cooldown applies per field, from the submission date, regardless of
-  // whether the previous request was approved or rejected.
-  const sensitiveFieldCooldownUntil = (() => {
-    const latestRequest = sensitiveRequests
-      .filter(
-        (request) =>
-          Array.isArray(request.fields) &&
-          request.fields.includes(sensitiveField) &&
-          typeof request.requestedAt === "string",
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.requestedAt ?? 0).getTime() -
-          new Date(a.requestedAt ?? 0).getTime(),
-      )[0];
-
-    if (!latestRequest?.requestedAt) return null;
-    const requestedAt = new Date(latestRequest.requestedAt);
-    if (!Number.isFinite(requestedAt.getTime())) return null;
-
-    const eligibleAt = new Date(requestedAt);
-    eligibleAt.setDate(eligibleAt.getDate() + 90);
-    return eligibleAt.getTime() > Date.now() ? eligibleAt : null;
-  })();
-
-  const sensitiveCooldownDateLabel = sensitiveFieldCooldownUntil
-    ? sensitiveFieldCooldownUntil.toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      })
-    : null;
 
   const loadSensitiveRequests = useCallback(async () => {
     if (!isSelf) return;
@@ -1352,15 +1319,6 @@ function OverviewTab({
               <p className="mt-1 text-xs leading-5 text-ink-faint">
                 Update bank or identity information by requesting HR approval. Your current sensitive details are not displayed here, and new values are applied only after approval.
               </p>
-              {sensitiveCooldownDateLabel && (
-                <div
-                  role="status"
-                  className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-                >
-                  You can try again after 90 days, on <strong>{sensitiveCooldownDateLabel}</strong>.
-                  This field is temporarily unavailable for another request.
-                </div>
-              )}
               <form onSubmit={(event) => void submitSensitiveProfileChange(event)} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-field">Field to update</label>
@@ -1413,12 +1371,8 @@ function OverviewTab({
                 {sensitiveError && <p role="alert" className="sm:col-span-2 text-sm text-danger-600">{sensitiveError}</p>}
                 {sensitiveNotice && <p role="status" className="sm:col-span-2 text-sm text-emerald-700">{sensitiveNotice}</p>}
                 <div className="sm:col-span-2">
-                  <Button type="submit" disabled={sensitiveBusy || Boolean(sensitiveCooldownDateLabel)}>
-                    {sensitiveBusy
-                      ? "Submitting…"
-                      : sensitiveCooldownDateLabel
-                        ? `Available on ${sensitiveCooldownDateLabel}`
-                        : "Submit for approval"}
+                  <Button type="submit" disabled={sensitiveBusy}>
+                    {sensitiveBusy ? "Submitting…" : "Submit for approval"}
                   </Button>
                 </div>
               </form>
@@ -2245,6 +2199,8 @@ function OnboardingWorkflow({
   );
 
   const currentStage = Math.min(8, Math.max(2, Number(onboarding.currentStage ?? 2)));
+  // Selected stage is a UI selection only; selecting a card never completes it.
+  const [selectedStage, setSelectedStage] = useState<number>(currentStage);
   const completedCount = stages.filter(
     (stage: any) => stage.status === "COMPLETED",
   ).length;
@@ -2334,35 +2290,30 @@ function OnboardingWorkflow({
 
   const bulkMutation = useMutation({
     mutationFn: async () => {
-      if (currentStage < 2 || currentStage > 7) return;
+      const unfinishedReadyStages = [2, 3, 4, 5, 6, 7].filter((stageNumber) => {
+        const stage = stages[stageNumber - 1];
+        return stage?.status !== "COMPLETED" && requirementForStage(stageNumber).ready;
+      });
 
-      const missing: string[] = [];
-      for (let stage = currentStage; stage <= 7; stage += 1) {
-        const requirement = requirementForStage(stage);
-        if (!requirement.ready) {
-          missing.push(`Stage ${stage}: ${requirement.label}`);
-        }
+      if (unfinishedReadyStages.length === 0) {
+        throw new Error("No unfinished onboarding stages are ready to complete yet.");
       }
 
-      if (missing.length) {
-        throw new Error(
-          `Complete the required setup before fast-track activation:\n${missing.join("\n")}`,
+      if (unfinishedReadyStages.includes(7)) {
+        const briefingConfirmed = window.confirm(
+          "Stage 7 will be completed only if you confirm that employee orientation and company policy briefing has been completed. Continue?",
         );
+        if (!briefingConfirmed) return null;
       }
-
-      const briefingConfirmed = window.confirm(
-        "Fast-track will complete every remaining eligible onboarding stage (2–7).\n\nConfirm that employee orientation and company policy briefing will be completed/recorded for this employee.",
-      );
-      if (!briefingConfirmed) return;
 
       let latestEmployee: any = employee;
-      for (let stage = currentStage; stage <= 7; stage += 1) {
+      for (const stageNumber of unfinishedReadyStages) {
         latestEmployee = await EmployeesApi.updateOnboardingStage(
           employee.id,
-          stage,
+          stageNumber,
           {
             remarks:
-              stage === 7
+              stageNumber === 7
                 ? "Orientation and company policy briefing confirmed by HR."
                 : undefined,
           },
@@ -2375,7 +2326,7 @@ function OnboardingWorkflow({
       queryClient.setQueryData(["employee", employee.id], latestEmployee);
       void queryClient.invalidateQueries({ queryKey: ["employee", employee.id] });
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
-      showToast("All eligible onboarding stages completed. Employee is ready for activation.");
+      showToast("All currently eligible onboarding stages have been completed.");
     },
     onError: (error) => showToast(getErrorMessage(error), "error"),
   });
@@ -2432,9 +2383,13 @@ function OnboardingWorkflow({
   ];
 
   const stageAction = (stage: number) => {
+    setSelectedStage(stage);
+    // Open the existing destination where the app already has one.
     if (stage === 2 || stage === 4) onOpenEdit();
-    if (stage === 3) onOpenDocuments();
-    if (stage === 5) onOpenPayroll();
+    else if (stage === 3) onOpenDocuments();
+    else if (stage === 5) onOpenPayroll();
+    // Stages 1, 6, 7 and 8 are selected in this control center; their
+    // existing completion/activation actions remain separate and guarded.
   };
 
   const activeStage = stageMeta.find((item) => item.stage === currentStage);
@@ -2459,7 +2414,7 @@ function OnboardingWorkflow({
                   8-Stage Onboarding Control Center
                 </h2>
                 <p className="mt-1 text-[12px] text-ink-faint">
-                  Complete the full onboarding journey from account creation to activation without leaving this page.
+                  Complete available onboarding stages in any order. Finish missing details later; activation remains protected.
                 </p>
               </div>
             </div>
@@ -2491,7 +2446,7 @@ function OnboardingWorkflow({
               const stage = stages[item.stage - 1];
               const completed = stage?.status === "COMPLETED";
               const active = item.stage === currentStage && !completed;
-              const locked = item.stage > currentStage;
+              const locked = false; // Admins may access onboarding stages in any order.
               const ready = requirementForStage(item.stage).ready;
 
               return (
@@ -2653,10 +2608,10 @@ function OnboardingWorkflow({
               Fast-track
             </p>
             <h3 className="mt-1 text-[15px] font-semibold text-ink">
-              Finish eligible stages in one action
+              Complete available stages in one action
             </h3>
             <p className="mt-2 text-[12px] leading-5 text-ink-faint">
-              The system checks the existing profile, documents, organization assignment, payroll and account data, then completes the remaining eligible stages sequentially through the existing onboarding API.
+              The system checks each unfinished stage independently and completes only stages whose requirements are currently satisfied. You can finish missing details later.
             </p>
             <Button
               className="mt-4 w-full"
@@ -2664,7 +2619,7 @@ function OnboardingWorkflow({
               isLoading={bulkMutation.isPending}
               onClick={() => bulkMutation.mutate()}
             >
-              {bulkMutation.isPending ? "Completing onboarding…" : "Complete all eligible stages"}
+              {bulkMutation.isPending ? "Completing available stages…" : "Complete available stages"}
             </Button>
             {currentStage === 7 && (
               <p className="mt-2 text-[10.5px] text-ink-faint">
@@ -2710,13 +2665,30 @@ function OnboardingWorkflow({
             return (
               <div
                 key={item.stage}
+                role="button"
+                tabIndex={0}
+                aria-pressed={selectedStage === item.stage}
+                aria-label={`Select onboarding stage ${item.stage}: ${item.short}`}
+                onClick={() => {
+                  setSelectedStage(item.stage);
+                  stageAction(item.stage);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedStage(item.stage);
+                    stageAction(item.stage);
+                  }
+                }}
                 className={cx(
-                  "rounded-2xl border p-4 transition",
-                  completed
-                    ? "border-success-500/25 bg-success-50/45"
-                    : active
-                      ? "border-brand-300 bg-brand-50/45 shadow-sm"
-                      : "border-line/60 bg-white",
+                  "rounded-2xl border p-4 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2",
+                  selectedStage === item.stage
+                    ? "border-brand-400 bg-brand-50/70 shadow-md ring-1 ring-brand-200"
+                    : completed
+                      ? "border-success-500/25 bg-success-50/45 hover:border-brand-300"
+                      : active
+                        ? "border-brand-300 bg-brand-50/45 shadow-sm hover:border-brand-400"
+                        : "border-line/60 bg-white hover:border-brand-300 hover:bg-brand-50/20",
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -2750,6 +2722,11 @@ function OnboardingWorkflow({
                 <p className="mt-3 text-[10.5px] leading-4 text-ink-faint">
                   {item.detail}
                 </p>
+                {selectedStage === item.stage && (
+                  <p className="mt-2 text-[10px] font-semibold text-brand-700">
+                    Selected · choose an available action below
+                  </p>
+                )}
 
                 {stage?.completedAt && (
                   <p className="mt-2 text-[10px] text-ink-faint">
@@ -2757,19 +2734,56 @@ function OnboardingWorkflow({
                   </p>
                 )}
 
-                {active && item.stage < 8 && (
-                  <div className="mt-3">
+                {item.stage >= 2 && item.stage <= 7 && !completed && (
+                  <div className="mt-3 space-y-2">
                     <div className="rounded-xl bg-white/80 px-3 py-2 text-[10.5px] text-ink-faint">
                       {requirement.ready ? "Requirements satisfied" : requirement.label}
                     </div>
-                    {(item.stage === 2 || item.stage === 4 || item.stage === 3 || item.stage === 5) && (
+                    {[2, 3, 4, 5].includes(item.stage) && (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="mt-2 w-full"
-                        onClick={() => stageAction(item.stage)}
+                        className="w-full"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          stageAction(item.stage);
+                        }}
                       >
                         {requirement.action}
+                      </Button>
+                    )}
+                    {item.stage >= 2 && item.stage <= 6 && requirement.ready && (
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        disabled={isCompletingStage || bulkMutation.isPending}
+                        isLoading={isCompletingStage}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const remarks = window.prompt(`Stage ${item.stage} remarks (optional):`) ?? "";
+                          onCompleteStage(item.stage, remarks.trim() || undefined);
+                        }}
+                      >
+                        Complete Stage {item.stage}
+                      </Button>
+                    )}
+                    {item.stage === 7 && (
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        disabled={isCompletingStage || bulkMutation.isPending}
+                        isLoading={isCompletingStage}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const confirmed = window.confirm(
+                            "Confirm that the employee orientation and company policy briefing has been completed.",
+                          );
+                          if (confirmed) {
+                            onCompleteStage(7, "Orientation and company policy briefing confirmed by HR.");
+                          }
+                        }}
+                      >
+                        Confirm orientation & policies
                       </Button>
                     )}
                   </div>
@@ -2780,7 +2794,7 @@ function OnboardingWorkflow({
         </div>
 
         <div className="mt-4 rounded-xl border border-line/60 bg-canvas/60 px-4 py-3 text-[11px] text-ink-faint">
-          <span className="font-semibold text-ink-soft">Workflow rule:</span> onboarding remains sequential at the API level, but this control center can validate the prerequisites and complete every eligible remaining stage in one action. Activation stays protected behind the existing final onboarding endpoint.
+          <span className="font-semibold text-ink-soft">Workflow rule:</span> Admins can complete available stages in any order. Incomplete stages remain pending for later. Employee activation is still blocked until every required preparation stage is complete.
         </div>
       </div>
     </Card>
@@ -4100,20 +4114,16 @@ function EditEmployeeModal({
                     label="Start year"
                     type="number"
                     {...register(`education.${index}.startYear`, {
-                      setValueAs: (value: unknown) =>
-                        value === "" || value === null || value === undefined
-                          ? null
-                          : Number(value),
+                      setValueAs: (value) =>
+                        value === "" ? null : Number(value),
                     })}
                   />
                   <TextField
                     label="End year"
                     type="number"
                     {...register(`education.${index}.endYear`, {
-                      setValueAs: (value: unknown) =>
-                        value === "" || value === null || value === undefined
-                          ? null
-                          : Number(value),
+                      setValueAs: (value) =>
+                        value === "" ? null : Number(value),
                     })}
                   />
                 </div>

@@ -647,7 +647,7 @@ export async function updateOnboardingStage(
 
   const onboarding = normalizeOnboarding(current.onboarding, current.status);
 
-  if (stageNumber < 2 || stageNumber > 7) {
+  if (!Number.isInteger(stageNumber) || stageNumber < 2 || stageNumber > 7) {
     throw new Error("Only onboarding stages 2 through 7 can be completed individually.");
   }
 
@@ -655,9 +655,14 @@ export async function updateOnboardingStage(
     throw new Error("Only employees in ONBOARDING status can update onboarding stages.");
   }
 
-  const currentStage = Number(onboarding.currentStage || 2);
-  if (stageNumber !== currentStage) {
-    throw new Error(`Complete onboarding stage ${currentStage} before stage ${stageNumber}.`);
+  // Stages 2–7 are independently completable by ADMIN/SUPER_ADMIN.
+  // Do not enforce currentStage ordering here; the route is protected by isAdmin.
+  const targetStage = onboarding.stages.find((stage: any) => stage.stage === stageNumber);
+  if (!targetStage) {
+    throw new Error(`Onboarding stage ${stageNumber} was not found.`);
+  }
+  if (targetStage.status === "COMPLETED") {
+    throw new Error(`Onboarding stage ${stageNumber} is already completed.`);
   }
 
   const now = nowIso();
@@ -671,8 +676,19 @@ export async function updateOnboardingStage(
         remarks: typeof remarks === "string" && remarks.trim() ? remarks.trim() : null,
       };
     }
-    if (stage.stage === stageNumber + 1) {
+    return stage;
+  });
+  // Keep currentStage as the first unfinished preparation stage, regardless
+  // of the order in which stages were completed. Stage 8 is final activation.
+  const nextStage = stages.find(
+    (stage: any) => stage.stage >= 2 && stage.stage <= 7 && stage.status !== "COMPLETED",
+  )?.stage ?? 8;
+  const normalizedStages = stages.map((stage: any) => {
+    if (stage.stage === nextStage && stage.status !== "COMPLETED") {
       return { ...stage, status: "IN_PROGRESS" };
+    }
+    if (stage.stage >= 2 && stage.stage <= 7 && stage.status === "IN_PROGRESS") {
+      return { ...stage, status: "PENDING" };
     }
     return stage;
   });
@@ -683,10 +699,10 @@ export async function updateOnboardingStage(
       $set: {
         onboarding: {
           ...onboarding,
-          currentStage: stageNumber + 1,
+          currentStage: nextStage,
           status: "IN_PROGRESS",
           startedAt: onboarding.startedAt ?? now,
-          stages,
+          stages: normalizedStages,
         },
         updatedAt: now,
       },
