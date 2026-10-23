@@ -427,7 +427,7 @@ function HolidaysTab() {
             type="date"
             required
             {...register("date", { required: true })}
-          />
+           max="9999-12-31" />
           <label className="flex items-center gap-2 text-[13px] text-ink-soft">
             <input
               type="checkbox"
@@ -631,9 +631,9 @@ function CyclesTab() {
           </div>
           <TextField label="Competencies (name:weight)" placeholder="Technical Skills:30, Communication:20, Teamwork:20" {...register("competencies")} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <TextField label="Self-review due" type="date" {...register("selfReviewDueDate")} />
-            <TextField label="Manager review due" type="date" {...register("managerReviewDueDate")} />
-            <TextField label="Final review due" type="date" {...register("finalReviewDueDate")} />
+            <TextField label="Self-review due" type="date" {...register("selfReviewDueDate")}  max="9999-12-31" />
+            <TextField label="Manager review due" type="date" {...register("managerReviewDueDate")}  max="9999-12-31" />
+            <TextField label="Final review due" type="date" {...register("finalReviewDueDate")}  max="9999-12-31" />
           </div>
           <TextField
             label="Purpose (optional)"
@@ -646,13 +646,13 @@ function CyclesTab() {
               type="date"
               required
               {...register("startDate", { required: true })}
-            />
+             max="9999-12-31" />
             <TextField
               label="End date"
               type="date"
               required
               {...register("endDate", { required: true })}
-            />
+             max="9999-12-31" />
           </div>
         </div>
       </Modal>

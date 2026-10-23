@@ -724,7 +724,7 @@ function MyAttendance({
   const canStartBreak =
     !!todayRecord?.checkIn &&
     !todayRecord.checkOut &&
-    (user?.role !== "EMPLOYEE" || activeBreakCount < 2) &&
+
     !breakMutation.isPending &&
     !todayLoading;
 

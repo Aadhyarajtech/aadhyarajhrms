@@ -1644,14 +1644,14 @@ function CreatePipModal({ open, onClose }: { open: boolean; onClose: () => void 
           )}
 
         <div className="grid grid-cols-2 gap-4">
-          <TextField label="Start date" type="date" required {...form.register("startDate")} />
-          <TextField label="End date" type="date" required {...form.register("endDate")} />
+          <TextField label="Start date" type="date" required {...form.register("startDate")}  max="9999-12-31" />
+          <TextField label="End date" type="date" required {...form.register("endDate")}  max="9999-12-31" />
         </div>
 
         <TextField label="Objective title" required {...form.register("title")} />
         <TextareaField label="Objective description" {...form.register("description")} />
         <TextField label="Target" {...form.register("target")} />
-        <TextField label="Objective due date" type="date" required {...form.register("dueDate")} />
+        <TextField label="Objective due date" type="date" required {...form.register("dueDate")}  max="9999-12-31" />
 
         <SelectField label="Check-in frequency" required {...form.register("checkInFrequency")}>
           <option value="WEEKLY">Weekly</option>
@@ -3101,7 +3101,7 @@ function AddGoalModal({
           required
           error={errors.dueDate?.message}
           {...register("dueDate")}
-        />
+         max="9999-12-31" />
       </div>
     </Modal>
   );

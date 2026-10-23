@@ -37,36 +37,36 @@ function toApiDoc(doc: any) {
   return { id: _id, ...rest };
 }
 
-const PARENTAL_LEAVE_DEFAULT_DAYS = 182; // 26 weeks; set an employee's balance to 84 for applicable 12-week cases.
+const MATERNITY_DEFAULT_DAYS = 182; // 26 calendar weeks; third child onward is capped at 84 days.
+const PATERNITY_DEFAULT_DAYS = 15;
+const PARENTAL_DEFAULT_DAYS = 15;
 
-async function ensureParentalLeaveType() {
-  let type = await LeaveType.findOne({ name: /^Parental Leave$/i });
-  if (!type) {
-    type = await LeaveType.create({
-      _id: undefined,
-      name: "Parental Leave",
-      colorHex: "#0E7490",
-      defaultDaysPerYear: PARENTAL_LEAVE_DEFAULT_DAYS,
-      isPaid: true,
-      requiresApproval: true,
-      isActive: true,
-    });
-  } else {
-    const update: Record<string, unknown> = { isActive: true, colorHex: "#0E7490", isPaid: true, requiresApproval: true };
-    // Repair the previous zero-day placeholder without lowering an existing configured value.
-    if (Number(type.defaultDaysPerYear ?? 0) <= 0) update.defaultDaysPerYear = PARENTAL_LEAVE_DEFAULT_DAYS;
-    await LeaveType.updateOne({ _id: type._id }, { $set: update });
+async function ensureFamilyLeaveTypes() {
+  const definitions = [
+    { name: "Maternity Leave", colorHex: "#DB2777", days: MATERNITY_DEFAULT_DAYS },
+    { name: "Paternity Leave", colorHex: "#2563EB", days: PATERNITY_DEFAULT_DAYS },
+    { name: "Parental Leave", colorHex: "#0E7490", days: PARENTAL_DEFAULT_DAYS },
+  ];
+  for (const definition of definitions) {
+    const existing = await LeaveType.findOne({ name: new RegExp(`^${definition.name}$`, "i") });
+    if (!existing) {
+      await LeaveType.create({
+        _id: undefined, name: definition.name, colorHex: definition.colorHex,
+        defaultDaysPerYear: definition.days, isPaid: true, requiresApproval: true, isActive: true,
+      });
+    } else {
+      await LeaveType.updateOne({ _id: existing._id }, { $set: {
+        name: definition.name, colorHex: definition.colorHex, defaultDaysPerYear: definition.days,
+        isPaid: true, requiresApproval: true, isActive: true,
+      } });
+    }
   }
 }
 
 export async function listLeaveTypes() {
   // Ensure the unified type exists even when the seed script is not run in production.
-  await ensureParentalLeaveType();
-  // Legacy names are excluded from new applications; existing requests retain their history.
-  const rows = await LeaveType.find({
-    isActive: { $ne: false },
-    name: { $not: /^(maternity|paternity) leave$/i },
-  }).sort({ name: 1 }).lean();
+  await ensureFamilyLeaveTypes();
+  const rows = await LeaveType.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean();
   return rows.map(toApiDoc);
 }
 
@@ -87,18 +87,20 @@ export async function getOrCreateBalance(
   }).lean();
 
   if (row) {
-    // Repair legacy zero-day Parental Leave balances when they are read.
-    // Do not overwrite valid custom entitlements (for example, 84 days),
-    // and do not reset used or carriedOver values.
+    // Repair legacy zero-day family leave balances without resetting used or carried-over values.
     const existingType = (await getLeaveType(leaveTypeId)) as any;
-    const isParentalLeave = String(existingType?.name ?? "").trim().toLowerCase() === "parental leave";
-    if (isParentalLeave && Number(row.allotted ?? 0) <= 0) {
-      await ensureParentalLeaveType();
+    const isFamilyLeave = /^(maternity|paternity|parental) leave$/i.test(String(existingType?.name ?? "").trim());
+    const existingTypeName = String(existingType?.name ?? "").trim().toLowerCase();
+    const policyDays = existingTypeName === "paternity leave" || existingTypeName === "parental leave" ? 15 : 182;
+    if ((existingTypeName === "paternity leave" || existingTypeName === "parental leave") && Number(row.allotted ?? 0) > policyDays) {
+      await LeaveBalance.updateOne({ employeeId, leaveTypeId, year }, { $set: { allotted: policyDays } });
+      row = await LeaveBalance.findOne({ employeeId, leaveTypeId, year }).lean();
+    }
+    if (row && isFamilyLeave && Number(row.allotted ?? 0) <= 0) {
+      await ensureFamilyLeaveTypes();
       const refreshedType = (await getLeaveType(leaveTypeId)) as any;
-      const defaultDays = Number(refreshedType?.defaultDaysPerYear ?? PARENTAL_LEAVE_DEFAULT_DAYS);
-      const repairedAllotment = Number.isFinite(defaultDays) && defaultDays > 0
-        ? defaultDays
-        : PARENTAL_LEAVE_DEFAULT_DAYS;
+      const defaultDays = Number(refreshedType?.defaultDaysPerYear ?? PARENTAL_DEFAULT_DAYS);
+      const repairedAllotment = Number.isFinite(defaultDays) && defaultDays > 0 ? defaultDays : PARENTAL_DEFAULT_DAYS;
       await LeaveBalance.updateOne(
         { employeeId, leaveTypeId, year, allotted: { $lte: 0 } },
         { $set: { allotted: repairedAllotment } },
@@ -415,7 +417,7 @@ export async function listRequests(filters: {
     }
   }
 
-  const rows = await LeaveRequest.find(query).sort({ appliedAt: -1 }).lean();
+  const rows = await LeaveRequest.find(query).select("+birthCertificateStorageKey").sort({ appliedAt: -1 }).lean();
   if (rows.length === 0) return [];
 
   const employeeIds = [...new Set(rows.map((r) => r.employeeId))];
@@ -434,10 +436,11 @@ export async function listRequests(filters: {
   return rows.map((r) => {
     const emp = empMap.get(String(r.employeeId));
     const type = typeMap.get(String(r.leaveTypeId));
-    const { _id, ...rest } = r;
+    const { _id, birthCertificateStorageKey, ...rest } = r;
     return {
       id: _id,
       ...rest,
+      hasBirthCertificate: Boolean(birthCertificateStorageKey),
       leaveTypeName: type?.name ?? null,
       leaveTypeColor: type?.colorHex ?? null,
       firstName: emp?.firstName ?? null,
@@ -525,6 +528,8 @@ export async function createRequest(input: {
   halfDay?: boolean;
   halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
   reason: string;
+  birthCertificateStorageKey?: string | null;
+  survivingChildrenBeforeBirth?: number | null;
 })
 
 
@@ -548,28 +553,40 @@ if (Number.isNaN(start.getTime())) {
     .trim()
     .toLowerCase();
 
-  // Retired types cannot be submitted directly to the API, even if their
-  // database records have not yet been deactivated by the migration.
-  if (
-    normalizedLeaveTypeName === "maternity leave" ||
-    normalizedLeaveTypeName === "paternity leave"
-  ) {
-    throw AppError.badRequest(
-      "This leave type is no longer available. Please select Parental Leave.",
-    );
-  }
+  const isMaternityLeave = normalizedLeaveTypeName === "maternity leave";
+  const isPaternityLeave = normalizedLeaveTypeName === "paternity leave";
+  const isParentalLeave = normalizedLeaveTypeName === "parental leave";
+  const isFamilyLeave = isMaternityLeave || isPaternityLeave || isParentalLeave;
 
   const employeeForEligibility =
   await Employee.findById(
     input.employeeId,
   )
-    .select("status gender")
+    .select("status gender maritalStatus")
     .lean();
 
 if (!employeeForEligibility) {
-  throw AppError.notFound(
-    "Employee not found.",
-  );
+  throw AppError.notFound("Employee not found.");
+}
+
+if (isFamilyLeave) {
+  if (!input.birthCertificateStorageKey) {
+    throw AppError.badRequest("A child's birth certificate is required for maternity, paternity, and parental leave validation.");
+  }
+  const gender = String(employeeForEligibility.gender ?? "").trim().toLowerCase();
+  const maritalStatus = String(employeeForEligibility.maritalStatus ?? "").trim().toUpperCase();
+  if ((isMaternityLeave || isPaternityLeave) && maritalStatus !== "MARRIED") {
+    throw AppError.badRequest("Maternity and paternity leave are available only to employees whose marital status is recorded as married. Please contact HR if your profile needs updating.");
+  }
+  if (isMaternityLeave && !["female", "f", "woman", "women"].includes(gender)) {
+    throw AppError.badRequest("Maternity Leave is available to eligible women employees only.");
+  }
+  if (isPaternityLeave && !["male", "m", "man", "men"].includes(gender)) {
+    throw AppError.badRequest("Paternity Leave is available to eligible men employees only.");
+  }
+  if (isMaternityLeave && (!Number.isInteger(input.survivingChildrenBeforeBirth) || Number(input.survivingChildrenBeforeBirth) < 0 || Number(input.survivingChildrenBeforeBirth) > 20)) {
+    throw AppError.badRequest("Enter the number of surviving children before this birth to calculate maternity leave correctly.");
+  }
 }
 
 const employeeStatus = String(
@@ -600,10 +617,32 @@ if (
     "Privilege/EL leave is available only to confirmed active employees.",
   );
 }
-let totalDays = await calculateLeaveDays(
-  input.startDate,
-  input.endDate,
-);
+const startDateForPolicy = new Date(`${input.startDate}T00:00:00.000Z`);
+if (!Number.isFinite(startDateForPolicy.getTime())) {
+  throw AppError.badRequest("Select a valid leave start date.");
+}
+
+const familyLeaveDays = isMaternityLeave
+  ? (Number(input.survivingChildrenBeforeBirth) >= 2 ? 84 : 182)
+  : isPaternityLeave ? PATERNITY_DEFAULT_DAYS : PARENTAL_DEFAULT_DAYS;
+
+// Family leave duration is fixed by policy and calculated server-side.
+// Ignore any client-supplied end date for these leave types.
+const effectiveEndDate = isFamilyLeave
+  ? (() => {
+      const end = new Date(startDateForPolicy);
+      end.setUTCDate(end.getUTCDate() + familyLeaveDays - 1);
+      return end.toISOString().slice(0, 10);
+    })()
+  : input.endDate;
+
+let totalDays = isFamilyLeave
+  ? familyLeaveDays
+  : await calculateLeaveDays(input.startDate, effectiveEndDate);
+
+if (isFamilyLeave && !effectiveEndDate) {
+  throw AppError.badRequest(`Unable to calculate ${leaveType.name} duration.`);
+}
 
 const isHalfDay = input.halfDay === true;
 
@@ -615,7 +654,7 @@ if (isHalfDay) {
     );
   }
 
-  if (input.startDate !== input.endDate) {
+  if (input.startDate !== effectiveEndDate) {
     throw AppError.badRequest(
       "Half-day leave can only be applied for one day.",
     );
@@ -652,8 +691,7 @@ if (isBereavementLeave || isElectionLeave) {
   }
 }
 
-// Parental Leave is intentionally gender-neutral. The existing balance and
-// approval workflow remains the source of application eligibility.
+// Family-leave requests continue through the existing balance and approval workflow.
 
   const year = start.getUTCFullYear();
 
@@ -755,6 +793,8 @@ console.log("[Leave Balance Check]", {
 
   const doc = await LeaveRequest.create({
     ...input,
+    birthCertificateStorageKey: input.birthCertificateStorageKey ?? null,
+    survivingChildrenBeforeBirth: input.survivingChildrenBeforeBirth ?? null,
     totalDays,
     status: "PENDING",
     appliedAt: nowIso(),

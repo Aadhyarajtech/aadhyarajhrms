@@ -742,7 +742,7 @@ export default function Dashboard() {
           />
         </Link>
         <Link
-          to="/app/attendance?tab=team"
+          to="/app/attendance?tab=overall"
           className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
           aria-label="View team attendance"
         >

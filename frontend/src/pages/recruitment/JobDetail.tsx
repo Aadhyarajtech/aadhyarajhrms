@@ -3,7 +3,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -224,6 +224,8 @@ type RecruitmentJob = {
 export default function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const requestedCandidateId = (location.state as { openCandidateId?: string } | null)?.openCandidateId;
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { user, hasPermission } = useAuth();
@@ -786,6 +788,7 @@ export default function JobDetail() {
 
       {job && (
         <CandidateRecruitmentWorkspace
+          requestedCandidateId={requestedCandidateId}
           job={job}
           candidates={candidates ?? []}
           isLoading={candidatesLoading}
@@ -1688,6 +1691,7 @@ export default function JobDetail() {
 ========================================================= */
 
 type CandidateWorkspaceProps = {
+  requestedCandidateId?: string;
   job: RecruitmentJob;
   candidates: Candidate[];
   isLoading: boolean;
@@ -1709,6 +1713,7 @@ type CandidateWorkspaceProps = {
 };
 
 function CandidateRecruitmentWorkspace({
+  requestedCandidateId,
   job,
   candidates,
   isLoading,
@@ -1742,13 +1747,19 @@ function CandidateRecruitmentWorkspace({
       return;
     }
 
+    if (requestedCandidateId && candidates.some((candidate) => candidate.id === requestedCandidateId)) {
+      setSelectedId(requestedCandidateId);
+      setShowCandidateDetail(true);
+      return;
+    }
+
     setSelectedId((current) => {
       if (current && candidates.some((candidate) => candidate.id === current)) {
         return current;
       }
       return candidates[0].id;
     });
-  }, [candidates]);
+  }, [candidates, requestedCandidateId]);
 
   const counts = STAGES.reduce<Record<Candidate["stage"], number>>(
     (accumulator, stage) => {
@@ -4493,6 +4504,7 @@ function OfferLetterModal({
               <TextField
                 label="Joining date"
                 type="date"
+                max="9999-12-31"
                 value={joiningDate}
                 onChange={(e) => setJoiningDate(e.target.value)}
               />

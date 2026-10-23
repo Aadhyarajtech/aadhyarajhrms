@@ -1448,18 +1448,7 @@ export const LeaveApi = {
       .get<{
         leaveTypes: LeaveType[];
       }>("/leave/types")
-      .then((r) =>
-        (r.data.leaveTypes ?? []).filter((type) => {
-          const name = String(type.name ?? "").trim().toLowerCase();
-          // Retired types remain in historical request records, but are never
-          // offered in standard or bulk leave-application dropdowns. Parental Leave remains available.
-          return (
-            type.isActive !== false &&
-            name !== "maternity leave" &&
-            name !== "paternity leave"
-          );
-        }),
-      ),
+      .then((r) => (r.data.leaveTypes ?? []).filter((type) => type.isActive !== false)),
 
   balances: (employeeId?: string, year?: number) =>
     api
@@ -1480,6 +1469,10 @@ export const LeaveApi = {
       }>("/leave/requests", { params })
       .then((r) => r.data.requests),
 
+  birthCertificate: (requestId: string) =>
+    api.get<Blob>(`/leave/requests/${encodeURIComponent(requestId)}/birth-certificate`, { responseType: "blob" })
+      .then((r) => r.data),
+
   apply: (payload: {
     leaveTypeId: string;
     startDate: string;
@@ -1487,12 +1480,26 @@ export const LeaveApi = {
     halfDay?: boolean;
     halfDayType?: "FIRST_HALF" | "SECOND_HALF" | null;
     reason: string;
-  }) =>
-    api
-      .post<{
-        request: LeaveRequest;
-      }>("/leave/requests", payload)
-      .then((r) => r.data.request),
+    birthCertificate?: File | null;
+    survivingChildrenBeforeBirth?: number;
+  }) => {
+    const { birthCertificate, survivingChildrenBeforeBirth, ...fields } = payload;
+    if (birthCertificate) {
+      const form = new FormData();
+      form.append("birthCertificate", birthCertificate);
+      form.append("leaveTypeId", fields.leaveTypeId);
+      form.append("startDate", fields.startDate);
+      form.append("endDate", fields.endDate);
+      form.append("reason", fields.reason);
+      if (survivingChildrenBeforeBirth !== undefined) {
+        form.append("survivingChildrenBeforeBirth", String(survivingChildrenBeforeBirth));
+      }
+      return api.post<{ request: LeaveRequest }>("/leave/requests", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }).then((r) => r.data.request);
+    }
+    return api.post<{ request: LeaveRequest }>("/leave/requests", fields).then((r) => r.data.request);
+  },
 
   bulkApply: (payload: {
     applyToAll: boolean;

@@ -1318,6 +1318,7 @@ function UploadDocumentModal({
             </label>
             <input
               type="date"
+              max="9999-12-31"
               value={expiryDate}
               onChange={(e) => setExpiryDate(e.target.value)}
               className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-brand-400 focus:ring-0"

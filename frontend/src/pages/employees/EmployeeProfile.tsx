@@ -904,7 +904,7 @@ export default function EmployeeProfile() {
             </div>
             <div>
               <label htmlFor="resignation-date" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Resignation date <span className="text-danger-500">*</span></label>
-              <input id="resignation-date" type="date" value={noticePeriodForm.resignationDate} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, resignationDate: e.target.value }))} aria-invalid={!!noticePeriodErrors.resignationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
+              <input id="resignation-date" type="date" max="9999-12-31" value={noticePeriodForm.resignationDate} onChange={(e) => setNoticePeriodForm((f) => ({ ...f, resignationDate: e.target.value }))} aria-invalid={!!noticePeriodErrors.resignationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
               {noticePeriodErrors.resignationDate && <p className="mt-1 text-xs text-danger-600">{noticePeriodErrors.resignationDate}</p>}
             </div>
             <div className="sm:col-span-2">
@@ -974,7 +974,7 @@ export default function EmployeeProfile() {
             </div>
             <div>
               <label htmlFor="termination-date" className="mb-1.5 block text-[13px] font-medium text-ink-soft">Termination date <span className="text-danger-500">*</span></label>
-              <input id="termination-date" type="date" value={terminationForm.terminationDate} onChange={(e) => setTerminationForm((f) => ({ ...f, terminationDate: e.target.value }))} aria-invalid={!!terminationErrors.terminationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
+              <input id="termination-date" type="date" max="9999-12-31" value={terminationForm.terminationDate} onChange={(e) => setTerminationForm((f) => ({ ...f, terminationDate: e.target.value }))} aria-invalid={!!terminationErrors.terminationDate} className="h-10 w-full rounded-xl border border-line bg-white px-3.5 text-sm" />
               {terminationErrors.terminationDate && <p className="mt-1 text-xs text-danger-600">{terminationErrors.terminationDate}</p>}
             </div>
             <div className="sm:col-span-2">
@@ -4076,16 +4076,20 @@ function EditEmployeeModal({
                     label="Start year"
                     type="number"
                     {...register(`education.${index}.startYear`, {
-                      setValueAs: (value) =>
-                        value === "" ? null : Number(value),
+                      setValueAs: (value: unknown) =>
+                        value === "" || value === null || value === undefined
+                          ? null
+                          : Number(value),
                     })}
                   />
                   <TextField
                     label="End year"
                     type="number"
                     {...register(`education.${index}.endYear`, {
-                      setValueAs: (value) =>
-                        value === "" ? null : Number(value),
+                      setValueAs: (value: unknown) =>
+                        value === "" || value === null || value === undefined
+                          ? null
+                          : Number(value),
                     })}
                   />
                 </div>

@@ -1486,6 +1486,8 @@ export interface LeaveRequestDoc {
   endDate: string | null;
   totalDays: number;
   reason: string;
+  birthCertificateStorageKey?: string | null;
+  survivingChildrenBeforeBirth?: number | null;
 
   status:
   | "PENDING"
@@ -1535,6 +1537,9 @@ const leaveRequestSchema = new Schema<LeaveRequestDoc>(
       type: String,
       required: true,
     },
+
+    birthCertificateStorageKey: { type: String, default: null, select: false },
+    survivingChildrenBeforeBirth: { type: Number, default: null },
 
     status: {
       type: String,

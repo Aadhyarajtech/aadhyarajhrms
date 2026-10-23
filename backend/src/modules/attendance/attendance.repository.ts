@@ -6,7 +6,7 @@ import {
   Department,
   Shift,
   User,
-  EmployeeBreakSlot,
+
 } from "@/db/models";
 import { env } from "@/config/env";
 import { nowIso } from "@/db/connection";
@@ -19,78 +19,6 @@ import {
 import { notify } from "@/modules/notifications/notifications.repository";
 import { sendRegularizationDecisionEmail } from "@/services/email.service";
 
-async function ensureEmployeeBreakSlots() {
-  const now = nowIso();
-
-  await EmployeeBreakSlot.updateOne(
-    { _id: 1 },
-    {
-      $setOnInsert: {
-        employeeId: null,
-        attendanceId: null,
-        breakStart: null,
-        updatedAt: now,
-      },
-    },
-    { upsert: true },
-  );
-
-  await EmployeeBreakSlot.updateOne(
-    { _id: 2 },
-    {
-      $setOnInsert: {
-        employeeId: null,
-        attendanceId: null,
-        breakStart: null,
-        updatedAt: now,
-      },
-    },
-    { upsert: true },
-  );
-}
-
-async function reserveEmployeeBreakSlot(
-  employeeId: string,
-  attendanceId: string,
-  breakStart: string,
-) {
-  await ensureEmployeeBreakSlots();
-
-  const existingSlot = await EmployeeBreakSlot.findOne({
-    employeeId,
-  }).lean();
-
-  if (existingSlot) {
-    return existingSlot;
-  }
-
-  const now = nowIso();
-
-  for (const slotId of [1, 2]) {
-    const result = await EmployeeBreakSlot.updateOne(
-      {
-        _id: slotId,
-        employeeId: null,
-      },
-      {
-        $set: {
-          employeeId,
-          attendanceId,
-          breakStart,
-          updatedAt: now,
-        },
-      },
-    );
-
-    if (result.modifiedCount === 1) {
-      return EmployeeBreakSlot.findById(slotId).lean();
-    }
-  }
-
-  throw AppError.badRequest(
-    "Both company break slots are occupied. Please try again when an employee ends their break.",
-  );
-}
 
 
 
@@ -815,100 +743,50 @@ export async function startBreak(
     );
   }
 
+
+
+
+
   const now = nowIso();
-  let reservedSlotId: number | null = null;
 
-  if (isEmployee) {
-    const slot = await reserveEmployeeBreakSlot(
-      employeeId,
-      String(attendance._id),
-      now,
-    );
-
-    if (!slot) {
-      throw AppError.badRequest(
-        "Both company break slots are occupied. Please try again when an employee ends their break.",
-      );
-    }
-
-    reservedSlotId = slot._id;
-  }
-
-  try {
-    const updateResult = await Attendance.updateOne(
-      {
-        _id: attendance._id,
-        checkIn: { $ne: null },
-        checkOut: null,
+  const updateResult = await Attendance.updateOne(
+    {
+      _id: attendance._id,
+      checkIn: { $ne: null },
+      checkOut: null,
+      breaks: {
+        $not: {
+          $elemMatch: { end: null },
+        },
+      },
+    },
+    {
+      $push: {
         breaks: {
-          $not: {
-            $elemMatch: { end: null },
-          },
+          start: now,
+          end: null,
+          durationMinutes: 0,
+          reason: normalizedReason,
+        },
+        auditTrail: {
+          action: "BREAK_RECORDED",
+          actorId: employeeId,
+          actorRole,
+          at: now,
+          note: `Break started: ${normalizedReason}`,
         },
       },
-      {
-        $push: {
-          breaks: {
-            start: now,
-            end: null,
-            durationMinutes: 0,
-            reason: normalizedReason,
-          },
-          auditTrail: {
-            action: "BREAK_RECORDED",
-            actorId: employeeId,
-            actorRole,
-            at: now,
-            note: `Break started: ${normalizedReason}`,
-          },
-        },
-        $set: { updatedAt: now },
-      },
+      $set: { updatedAt: now },
+    },
+  );
+
+  if (updateResult.modifiedCount === 0) {
+    throw AppError.badRequest(
+      "The break could not be started because attendance changed. Refresh and try again.",
     );
-
-    if (updateResult.modifiedCount === 0) {
-      throw AppError.badRequest(
-        "The break could not be started because attendance changed. Refresh and try again.",
-      );
-    }
-
-    if (reservedSlotId !== null) {
-      await EmployeeBreakSlot.updateOne(
-        {
-          _id: reservedSlotId,
-          employeeId,
-          attendanceId: String(attendance._id),
-          breakStart: now,
-        },
-        {
-          $set: { updatedAt: nowIso() },
-        },
-      );
-    }
-
-    return getTodayRecord(employeeId);
-  } catch (error) {
-    if (reservedSlotId !== null) {
-      await EmployeeBreakSlot.updateOne(
-        {
-          _id: reservedSlotId,
-          employeeId,
-          attendanceId: String(attendance._id),
-          breakStart: now,
-        },
-        {
-          $set: {
-            employeeId: null,
-            attendanceId: null,
-            breakStart: null,
-            updatedAt: nowIso(),
-          },
-        },
-      );
-    }
-
-    throw error;
   }
+
+  return getTodayRecord(employeeId);
 }
 
 
@@ -992,24 +870,7 @@ export async function endBreak(
     );
   }
 
-  // Release only the slot reserved for this employee and this break.
-  if (actorRole === "EMPLOYEE") {
-    await EmployeeBreakSlot.updateOne(
-      {
-        employeeId,
-        attendanceId: String(attendance._id),
-        breakStart: openBreak.start,
-      },
-      {
-        $set: {
-          employeeId: null,
-          attendanceId: null,
-          breakStart: null,
-          updatedAt: nowIso(),
-        },
-      },
-    );
-  }
+
 
   const updatedAttendance = await Attendance.findById(
     attendance._id,

@@ -597,7 +597,7 @@ export default function EmployeeDirectory() {
             required
             error={errors.dateOfJoining?.message}
             {...register("dateOfJoining")}
-          />
+           max="9999-12-31" />
 
           <SelectField label="System role" required {...register("role")}>
             <option value="EMPLOYEE">Employee</option>

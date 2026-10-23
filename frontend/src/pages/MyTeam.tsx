@@ -710,6 +710,7 @@ function TeamAttendance({ managerId }: { managerId: string }) {
           action={
             <input
               type="date"
+              max="9999-12-31"
               value={selectedDate}
               onChange={(event) => setSelectedDate(event.target.value)}
               className="h-10 rounded-xl border border-blue-100 bg-blue-50/40 px-3 text-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"

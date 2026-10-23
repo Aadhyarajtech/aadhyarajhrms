@@ -32,9 +32,15 @@ interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   hint?: string;
 }
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
-  ({ label, error, hint, required, className, ...props }, ref) => (
+  ({ label, error, hint, required, className, type, max, ...props }, ref) => (
     <FieldWrapper label={label} error={error} hint={hint} required={required}>
-      <input ref={ref} className={cx(fieldBase, error && "border-danger-500", className)} {...props} />
+      <input
+        ref={ref}
+        type={type}
+        max={type === "date" ? (max ?? "9999-12-31") : type === "month" ? (max ?? "9999-12") : max}
+        className={cx(fieldBase, error && "border-danger-500", className)}
+        {...props}
+      />
     </FieldWrapper>
   )
 );
