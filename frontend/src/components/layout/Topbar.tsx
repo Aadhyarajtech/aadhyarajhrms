@@ -392,21 +392,20 @@ export function Topbar({
     const link = resolveNotificationLink(notification);
     /*
      * Reading and opening are independent actions.
-     * A read-status failure must never prevent navigation.
+     * Mark as read in the background so a slow/failed read request
+     * (or the follow-up refetch) can never delay or block navigation.
      */
-    try {
-      if (id) {
-        await markNotificationRead(id);
-      } else {
-        console.warn(
-          "[Notification] Missing notification id; opening destination without marking read.",
-          notification,
+    if (id) {
+      void markNotificationRead(id).catch((error) => {
+        console.error(
+          "[Notification] Failed to mark as read:",
+          error,
         );
-      }
-    } catch (error) {
-      console.error(
-        "[Notification] Failed to mark as read:",
-        error,
+      });
+    } else {
+      console.warn(
+        "[Notification] Missing notification id; opening destination without marking read.",
+        notification,
       );
     }
 
@@ -469,13 +468,49 @@ export function Topbar({
       "/app/",
     );
 
-    // Older job notifications used /recruitment/jobs/:jobId.
-    // Keep the canonical job detail route /app/recruitment/:jobId,
-    // while candidate notifications remain /app/recruitment/candidates/:candidateId.
+    /*
+     * Candidate application notifications must open the JOB (role) the
+     * candidate applied for: /app/recruitment/:jobId
+     *
+     * Older notifications were stored with other shapes. Convert them all
+     * to the job detail URL. Query strings and hashes are preserved.
+     */
+
+    // /recruitment/:jobId/candidates/:candidateId -> /recruitment/:jobId
     normalized = normalized.replace(
-      /^\/app\/recruitment\/jobs\/([^/?#]+)(.*)$/i,
+      /^\/app\/recruitment\/([^/?#]+)\/candidates\/([^/?#]+)(.*)$/i,
+      "/app/recruitment/$1$3",
+    );
+
+    // /recruitment/jobs/:jobId or /recruitment/job/:jobId -> /recruitment/:jobId
+    normalized = normalized.replace(
+      /^\/app\/recruitment\/jobs?\/([^/?#]+)(.*)$/i,
       "/app/recruitment/$1$2",
     );
+
+    // /recruitment?jobId=:jobId (or ?job=, ?jobPostingId=) -> /recruitment/:jobId
+    {
+      const match = normalized.match(
+        /^\/app\/recruitment\/?\?(.*)$/i,
+      );
+      if (match) {
+        const params = new URLSearchParams(match[1].split("#")[0]);
+        const jobId =
+          params.get("jobId") ??
+          params.get("jobPostingId") ??
+          params.get("job");
+        if (jobId) {
+          params.delete("jobId");
+          params.delete("jobPostingId");
+          params.delete("job");
+          const rest = params.toString();
+          normalized = `/app/recruitment/${encodeURIComponent(jobId)}${rest ? `?${rest}` : ""}`;
+        }
+      }
+    }
+
+    // Drop a trailing slash on the path (keep query/hash).
+    normalized = normalized.replace(/^([^?#]*?)\/+([?#].*)?$/, "$1$2");
 
     console.log(
       "[Notification] Navigating to:",

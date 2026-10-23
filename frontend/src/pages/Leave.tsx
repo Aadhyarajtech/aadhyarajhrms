@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -1426,6 +1427,19 @@ function LeaveCalendar() {
   const [departmentFilter, setDepartmentFilter] = useState("ALL");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [expandedCalendarDay, setExpandedCalendarDay] = useState<string | null>(null);
+  const [calendarPopoverPosition, setCalendarPopoverPosition] = useState<{ top: number; left: number } | null>(null);
+
+  const openCalendarDayPopover = (iso: string, target: HTMLElement) => {
+    const rect = target.getBoundingClientRect();
+    const popoverWidth = Math.min(256, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - popoverWidth - 12));
+    const estimatedHeight = Math.min(300, 72 + 54 * (entriesForDay(new Date(`${iso}T12:00:00`)).length || 1));
+    const top = rect.bottom + estimatedHeight <= window.innerHeight - 12
+      ? rect.bottom + 6
+      : Math.max(12, rect.top - estimatedHeight - 6);
+    setCalendarPopoverPosition({ top, left });
+    setExpandedCalendarDay(iso);
+  };
 
   const month = cursor.getMonth() + 1;
   const year = cursor.getFullYear();
@@ -1747,7 +1761,7 @@ function LeaveCalendar() {
 
       {/* Calendar + side panels */}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <Card className="overflow-hidden p-0">
+        <Card className="overflow-visible p-0">
           <div className="border-b border-line/60 px-4 py-3">
             <div className="flex items-center justify-between">
               <div>
@@ -1839,9 +1853,22 @@ function LeaveCalendar() {
                         {date.getDate()}
                       </span>
                       {dayEntries.length > 0 ? (
-                        <span className="text-[9px] font-medium text-slate-500">
-                          {dayEntries.length} leave{dayEntries.length > 1 ? "s" : ""}
-                        </span>
+                        <div className="group relative z-20 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openCalendarDayPopover(iso, event.currentTarget);
+                            }}
+                            onMouseEnter={(event) => openCalendarDayPopover(iso, event.currentTarget)}
+                            aria-label={`Show ${dayEntries.length} leave ${dayEntries.length === 1 ? "entry" : "entries"} for ${iso}`}
+                            aria-expanded={expandedCalendarDay === iso}
+                            className="whitespace-nowrap rounded-full bg-violet-100 px-2 py-1 text-[9px] font-semibold leading-none text-violet-700 transition hover:bg-violet-200 focus:outline-none focus:ring-2 focus:ring-violet-300"
+                          >
+                            {dayEntries.length} {dayEntries.length === 1 ? "leave" : "leaves"}
+                          </button>
+
+                        </div>
                       ) : isWeekend && currentMonth ? (
                         <span className="text-[8px] font-medium uppercase tracking-wide text-slate-400">
                           Weekend
@@ -1854,7 +1881,7 @@ function LeaveCalendar() {
                     </div>
 
                     <div className="mt-2 space-y-1">
-                      {(expandedCalendarDay === iso ? dayEntries : dayEntries.slice(0, 3)).map((entry: any) => {
+                      {false && (expandedCalendarDay === iso ? dayEntries : dayEntries.slice(0, 3)).map((entry: any) => {
                         const employee = employeeMap.get(entry.employeeId);
                         const employeeName = getLeaveEmployeeName(entry, employee);
                         const type = String(
@@ -1885,22 +1912,7 @@ function LeaveCalendar() {
                           </div>
                         );
                       })}
-                      {dayEntries.length > 3 && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedCalendarDay((current) =>
-                              current === iso ? null : iso,
-                            )
-                          }
-                          aria-expanded={expandedCalendarDay === iso}
-                          className="px-1 text-left text-[9px] font-medium text-brand-600 hover:underline"
-                        >
-                          {expandedCalendarDay === iso
-                            ? "Show less"
-                            : `+${dayEntries.length - 3} more`}
-                        </button>
-                      )}
+
                     </div>
                   </div>
                 );
@@ -1908,6 +1920,39 @@ function LeaveCalendar() {
             </div>
           )}
         </Card>
+
+        {expandedCalendarDay && calendarPopoverPosition && typeof document !== "undefined" && createPortal(
+          <div
+            onMouseEnter={() => { /* Keep the popover open while moving into it. */ }}
+            onMouseLeave={() => {
+              setExpandedCalendarDay(null);
+              setCalendarPopoverPosition(null);
+            }}
+            style={{ top: calendarPopoverPosition.top, left: calendarPopoverPosition.left, width: "min(16rem, calc(100vw - 1.5rem))" }}
+            className="fixed z-[9999] max-h-[min(20rem,calc(100vh-1.5rem))] overflow-hidden rounded-xl border border-violet-100 bg-white p-2.5 text-left shadow-2xl"
+            role="dialog"
+            aria-label="Leave details"
+          >
+            <p className="mb-2 border-b border-slate-100 pb-2 text-[11px] font-semibold text-slate-700">
+              Leave details · {new Date(`${expandedCalendarDay}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+            </p>
+            <div className="max-h-64 space-y-1.5 overflow-y-auto">
+              {entriesForDay(new Date(`${expandedCalendarDay}T12:00:00`)).map((entry: any) => {
+                const employee = employeeMap.get(entry.employeeId);
+                const employeeName = getLeaveEmployeeName(entry, employee);
+                const leaveType = String(entry.leaveTypeName ?? entry.type ?? entry.category ?? "Leave");
+                const isHolidayEntry = /HOLIDAY|FESTIVAL/i.test(leaveType);
+                return (
+                  <div key={entry.id} className="rounded-md bg-violet-50 px-2.5 py-2">
+                    <p className="whitespace-normal break-words [overflow-wrap:anywhere] text-[11px] font-semibold leading-snug text-slate-800">{entry.name ?? employeeName}</p>
+                    <p className="mt-0.5 whitespace-normal break-words [overflow-wrap:anywhere] text-[10px] leading-snug text-slate-600">{isHolidayEntry ? leaveType : (entry.leaveTypeName ?? entry.type ?? "Leave")}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>,
+          document.body,
+        )}
 
         <div className="space-y-5">
           {/* Leave balance */}
