@@ -770,7 +770,7 @@ const createEmployeeSchema = z.object({
   probationPeriodMonths: z.coerce.number().int().min(0).optional(),
 
   emergencyContactName: z.string().nullable().optional(),
-  emergencyContactPhone: z.string().nullable().optional(),
+  emergencyContactPhone: z.string().regex(/^\d*$/, "Emergency contact phone must contain digits only.").nullable().optional(),
   emergencyContactRelationship: z.string().nullable().optional(),
   emergencyContactEmail: z.string().email().or(z.literal("")).nullable().optional(),
   employeeAadhaar: z.string().nullable().optional(),
@@ -883,7 +883,7 @@ const updateEmployeeSchema = z.object({
   state: z.string().nullable().optional(),
   country: z.string().optional(),
   emergencyContactName: z.string().optional(),
-  emergencyContactPhone: z.string().optional(),
+  emergencyContactPhone: z.string().regex(/^\d*$/, "Emergency contact phone must contain digits only.").optional(),
   emergencyContactRelationship: z.string().nullable().optional(),
   emergencyContactEmail: z
     .string()

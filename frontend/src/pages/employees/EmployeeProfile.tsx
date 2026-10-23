@@ -3912,7 +3912,17 @@ function EditEmployeeModal({
         />
         <TextField
           label="Emergency contact phone"
-          {...register("emergencyContactPhone")}
+          type="tel"
+          inputMode="numeric"
+          {...register("emergencyContactPhone", {
+            setValueAs: (value: string) =>
+              typeof value === "string" ? value.replace(/[^0-9]/g, "") : value,
+          })}
+          onInput={(event: React.FormEvent<HTMLInputElement>) => {
+            const input = event.currentTarget;
+            const digitsOnly = input.value.replace(/[^0-9]/g, "");
+            if (input.value !== digitsOnly) input.value = digitsOnly;
+          }}
         />
         <TextField
           label="Emergency Contact Relationship"
@@ -5531,3 +5541,4 @@ function EmployeeAIInsightsSection({
     </div>
   );
 }
+
