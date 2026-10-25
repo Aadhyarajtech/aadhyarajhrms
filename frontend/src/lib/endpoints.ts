@@ -66,10 +66,10 @@ export const AuthApi = {
 
   requestPasswordResetOtp: (email: string) =>
     api
-      .post<{
-        message: string;
-        expiresInSeconds?: number;
-      }>("/auth/forgot-password/request-otp", { email })
+      .post<{ message: string; expiresInSeconds?: number }>(
+        "/auth/forgot-password/request-otp",
+        { email },
+      )
       .then((r) => r.data),
 
   resetPasswordWithOtp: (
@@ -215,10 +215,7 @@ export const EmployeesApi = {
       .patch<{ employee: Employee }>(`/employees/${id}`, payload)
       .then((r) => r.data.employee),
 
-  updateRole: (
-    id: string,
-    role: Exclude<Employee["role"], "MANAGER" | null | undefined>,
-  ) =>
+  updateRole: (id: string, role: Exclude<Employee["role"], "MANAGER" | null | undefined>) =>
     api
       .patch<{ employee: Employee }>(`/employees/${id}/role`, { role })
       .then((r) => r.data.employee),
@@ -418,7 +415,10 @@ export const OrganizationApi = {
       }>("/organization/holidays", payload)
       .then((r) => r.data.holiday),
 
-  deleteHoliday: (id: string) => api.delete(`/organization/holidays/${id}`),
+  deleteHoliday: (id: string) =>
+    api.delete(
+      `/organization/holidays/${id}`,
+    ),
 
   aiSearch: (query: string) =>
     api
@@ -912,12 +912,14 @@ export const AttendanceApi = {
       }>("/attendance/check-out", options)
       .then((r) => r.data.record),
 
+
   startBreak: (reason: string) =>
     api
       .post<{ record: AttendanceRecord }>("/attendance/break/start", {
         reason,
       })
       .then((r) => r.data.record),
+
 
   endBreak: () =>
     api
@@ -938,7 +940,12 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.records),
 
-  aiForecast: async (months = 6, employeeId?: string) => {
+
+
+  aiForecast: async (
+    months = 6,
+    employeeId?: string,
+  ) => {
     const response = await api.get("/attendance/ai-forecast", {
       params: {
         months,
@@ -948,18 +955,28 @@ export const AttendanceApi = {
 
     return response.data;
   },
-  smartRegularization: async (date: string, employeeId?: string) => {
-    const response = await api.get("/attendance/smart-regularization", {
-      params: {
-        date,
-        employeeId,
+  smartRegularization: async (
+    date: string,
+    employeeId?: string,
+  ) => {
+    const response = await api.get(
+      "/attendance/smart-regularization",
+      {
+        params: {
+          date,
+          employeeId,
+        },
       },
-    });
+    );
 
     return response.data;
   },
 
-  forEmployee: (employeeId: string, month?: number, year?: number) =>
+  forEmployee: (
+    employeeId: string,
+    month?: number,
+    year?: number,
+  ) =>
     api
       .get<{
         records: AttendanceRecord[];
@@ -1044,7 +1061,12 @@ export const AttendanceApi = {
       })
       .then((r) => r.data.data),
 
-  exportMine: (month: number, year: number, format: "xlsx" | "pdf") =>
+
+  exportMine: (
+    month: number,
+    year: number,
+    format: "xlsx" | "pdf",
+  ) =>
     api
       .get(`/attendance/export/me`, {
         params: {
@@ -1090,6 +1112,7 @@ export const AttendanceApi = {
       })
       .then((r) => r.data as Blob),
 
+
   listFiles: () =>
     api
       .get<{
@@ -1108,7 +1131,9 @@ export const AttendanceApi = {
     const formData = new FormData();
     formData.append("file", file);
 
-    return api.post("/attendance/files", formData).then((r) => r.data);
+    return api
+      .post("/attendance/files", formData)
+      .then((r) => r.data);
   },
 
   downloadFile: (fileId: string) =>
@@ -1146,6 +1171,7 @@ export const AttendanceApi = {
   ) =>
     api
       .get<{
+
         requests: Array<{
           id: string;
           employeeId: string;
@@ -1155,7 +1181,12 @@ export const AttendanceApi = {
           requestedCheckOut: string | null;
           requestedStatus: string;
           reason: string;
-          status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXPIRED";
+          status:
+          | "PENDING"
+          | "APPROVED"
+          | "REJECTED"
+          | "CANCELLED"
+          | "EXPIRED";
           approverId: string | null;
           decisionNote: string | null;
           requestedAt: string;
@@ -1167,6 +1198,9 @@ export const AttendanceApi = {
           expiresAt: string | null;
           expiredAt: string | null;
         }>;
+
+
+
       }>("/attendance/regularization/team", {
         params: { status },
       })
@@ -1414,9 +1448,7 @@ export const LeaveApi = {
       .get<{
         leaveTypes: LeaveType[];
       }>("/leave/types")
-      .then((r) =>
-        (r.data.leaveTypes ?? []).filter((type) => type.isActive !== false),
-      ),
+      .then((r) => (r.data.leaveTypes ?? []).filter((type) => type.isActive !== false)),
 
   balances: (employeeId?: string, year?: number) =>
     api
@@ -1424,19 +1456,14 @@ export const LeaveApi = {
         balances: LeaveBalance[];
       }>("/leave/balances", { params: { employeeId, year } })
       .then((r) => r.data.balances),
+
   adjustBalance: (payload: {
     leaveTypeId: string;
     year: number;
     allotted: number;
   }) =>
     api
-      .post<{
-        message: string;
-        leaveTypeId: string;
-        year: number;
-        allotted: number;
-        updatedBalances: number;
-      }>("/leave/balances/adjust", payload)
+      .post<{ updatedBalances: number; message: string }>("/leave/balances/adjust", payload)
       .then((r) => r.data),
   requests: (
     params: {
@@ -1452,11 +1479,7 @@ export const LeaveApi = {
       .then((r) => r.data.requests),
 
   birthCertificate: (requestId: string) =>
-    api
-      .get<Blob>(
-        `/leave/requests/${encodeURIComponent(requestId)}/birth-certificate`,
-        { responseType: "blob" },
-      )
+    api.get<Blob>(`/leave/requests/${encodeURIComponent(requestId)}/birth-certificate`, { responseType: "blob" })
       .then((r) => r.data),
 
   apply: (payload: {
@@ -1469,8 +1492,7 @@ export const LeaveApi = {
     birthCertificate?: File | null;
     survivingChildrenBeforeBirth?: number;
   }) => {
-    const { birthCertificate, survivingChildrenBeforeBirth, ...fields } =
-      payload;
+    const { birthCertificate, survivingChildrenBeforeBirth, ...fields } = payload;
     if (birthCertificate) {
       const form = new FormData();
       form.append("birthCertificate", birthCertificate);
@@ -1479,20 +1501,13 @@ export const LeaveApi = {
       form.append("endDate", fields.endDate);
       form.append("reason", fields.reason);
       if (survivingChildrenBeforeBirth !== undefined) {
-        form.append(
-          "survivingChildrenBeforeBirth",
-          String(survivingChildrenBeforeBirth),
-        );
+        form.append("survivingChildrenBeforeBirth", String(survivingChildrenBeforeBirth));
       }
-      return api
-        .post<{ request: LeaveRequest }>("/leave/requests", form, {
-          headers: { "Content-Type": "multipart/form-data" },
-        })
-        .then((r) => r.data.request);
+      return api.post<{ request: LeaveRequest }>("/leave/requests", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }).then((r) => r.data.request);
     }
-    return api
-      .post<{ request: LeaveRequest }>("/leave/requests", fields)
-      .then((r) => r.data.request);
+    return api.post<{ request: LeaveRequest }>("/leave/requests", fields).then((r) => r.data.request);
   },
 
   bulkApply: (payload: {
@@ -1605,9 +1620,7 @@ export const LeaveApi = {
 
   aiApproval: (requestId: string) =>
     api
-      .post<LeaveApprovalSuggestionResponse>("/leave/ai/approval", {
-        requestId,
-      })
+      .post<LeaveApprovalSuggestionResponse>("/leave/ai/approval", { requestId })
       .then((r) => r.data),
 
   aiAssistant: (payload: { question: string; employeeId?: string }) =>
@@ -1615,6 +1628,8 @@ export const LeaveApi = {
       .post<AskLeaveAIResult>("/leave/ai/assistant", payload)
       .then((r) => r.data),
 };
+
+
 
 // --- Recruitment ------------------------------------------------------------------
 export interface GenerateJobDescriptionPayload {
@@ -1657,7 +1672,7 @@ export interface InterviewCopilot {
   behavioralQuestions: string[];
 }
 
-export interface InterviewCopilotResponse extends InterviewCopilot {}
+export interface InterviewCopilotResponse extends InterviewCopilot { }
 
 export interface InterviewCopilotApiResponse {
   message?: string;
@@ -1675,7 +1690,7 @@ export interface InterviewEvaluation {
   suggestedNextStep: string;
 }
 
-export interface InterviewEvaluationResponse extends InterviewEvaluation {}
+export interface InterviewEvaluationResponse extends InterviewEvaluation { }
 
 export interface InterviewEvaluationApiResponse {
   message?: string;
@@ -2124,9 +2139,9 @@ export interface PerformancePip {
 export const PerformanceApi = {
   pipEligibleReviews: () =>
     api
-      .get<{
-        reviews: PerformanceReview[];
-      }>("/performance/pips/eligible-reviews")
+      .get<{ reviews: PerformanceReview[] }>(
+        "/performance/pips/eligible-reviews",
+      )
       .then((r) => r.data.reviews),
 
   pips: () =>
@@ -2209,9 +2224,7 @@ export const PerformanceApi = {
 
   setCycleActive: (id: string, isActive: boolean) =>
     api
-      .patch<{
-        cycle: PerformanceCycle;
-      }>(`/performance/cycles/${id}/status`, { isActive })
+      .patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/status`, { isActive })
       .then((r) => r.data.cycle),
   reviews: (
     params: {
@@ -2329,52 +2342,24 @@ export const PerformanceApi = {
       .then((r) => r.data.data),
 
   activateCycle: (id: string) =>
-    api
-      .patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/activate`)
-      .then((r) => r.data.cycle),
+    api.patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/activate`).then((r) => r.data.cycle),
 
   deactivateCycle: (id: string) =>
-    api
-      .patch<{
-        cycle: PerformanceCycle;
-      }>(`/performance/cycles/${id}/deactivate`)
-      .then((r) => r.data.cycle),
+    api.patch<{ cycle: PerformanceCycle }>(`/performance/cycles/${id}/deactivate`).then((r) => r.data.cycle),
 
   feedbackRequests: (cycleId?: string) =>
     api
-      .get<{
-        requests: PerformanceFeedbackRequest[];
-      }>(
+      .get<{ requests: PerformanceFeedbackRequest[] }>(
         "/performance/feedback-requests",
         cycleId ? { params: { cycleId } } : undefined,
       )
       .then((r) => r.data.requests),
 
-  createFeedbackRequest: (payload: {
-    cycleId: string;
-    reviewId: string;
-    reviewerEmployeeId: string;
-    revieweeEmployeeId: string;
-    type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
-    dueDate?: string;
-  }) =>
-    api
-      .post<{
-        request: PerformanceFeedbackRequest;
-      }>("/performance/feedback-requests", payload)
-      .then((r) => r.data.request),
+  createFeedbackRequest: (payload: { cycleId: string; reviewId: string; reviewerEmployeeId: string; revieweeEmployeeId: string; type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL"; dueDate?: string }) =>
+    api.post<{ request: PerformanceFeedbackRequest }>("/performance/feedback-requests", payload).then((r) => r.data.request),
 
-  submitFeedbackRequest: (
-    id: string,
-    payload: {
-      type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL";
-      competencyRatings: { competency: string; rating: number }[];
-      comments?: string;
-    },
-  ) =>
-    api
-      .post(`/performance/feedback-requests/${id}/submit`, payload)
-      .then((r) => r.data.feedback),
+  submitFeedbackRequest: (id: string, payload: { type: "PEER" | "SUBORDINATE" | "CROSS_FUNCTIONAL"; competencyRatings: { competency: string; rating: number }[]; comments?: string }) =>
+    api.post(`/performance/feedback-requests/${id}/submit`, payload).then((r) => r.data.feedback),
 
   submitFeedback: (
     id: string,
@@ -2404,7 +2389,9 @@ export const PerformanceApi = {
           goalInsight: string;
           suggestedFocus: string;
         };
-      }>(`/performance/reviews/${id}/ai-insights`)
+      }>(
+        `/performance/reviews/${id}/ai-insights`,
+      )
       .then((r) => r.data.insights),
   aiGoalHealth: (id: string) =>
     api.get(`/performance/goals/${id}/health`).then((res) => res.data),
@@ -2436,13 +2423,17 @@ export const PerformanceApi = {
     api
       .post<{
         answer: string;
-      }>(`/performance/reviews/${id}/ai-chat`, { question })
+      }>(
+        `/performance/reviews/${id}/ai-chat`,
+        { question },
+      )
       .then((r) => r.data.answer),
   aiGoalCoach: (id: string, question?: string) =>
     api
-      .post<{
-        answer: string;
-      }>(`/performance/goals/${id}/ai-coach`, { question })
+      .post<{ answer: string }>(
+        `/performance/goals/${id}/ai-coach`,
+        { question },
+      )
       .then((r) => r.data.answer),
   outcomes: (cycleId?: string) =>
     api
@@ -2567,23 +2558,10 @@ export const PerformanceApi = {
       .then((r) => r.data.data),
 
   calibration: (cycleId?: string) =>
-    api
-      .get<{
-        reviews: PerformanceReview[];
-      }>("/performance/calibration", {
-        params: cycleId ? { cycleId } : undefined,
-      })
-      .then((r) => r.data.reviews),
+    api.get<{ reviews: PerformanceReview[] }>("/performance/calibration", { params: cycleId ? { cycleId } : undefined }).then((r) => r.data.reviews),
 
-  calibrate: (
-    id: string,
-    payload: { calibratedRating: number; comments?: string },
-  ) =>
-    api
-      .patch<{
-        review: PerformanceReview;
-      }>(`/performance/reviews/${id}/calibration`, payload)
-      .then((r) => r.data.review),
+  calibrate: (id: string, payload: { calibratedRating: number; comments?: string }) =>
+    api.patch<{ review: PerformanceReview }>(`/performance/reviews/${id}/calibration`, payload).then((r) => r.data.review),
 
   analyticsSummary: () =>
     api
@@ -2645,10 +2623,7 @@ export const PayrollApi = {
     api.get<{ runs: PayrollRun[] }>("/payroll/runs").then((r) => r.data.runs),
   validateReadiness: (month: number, year: number) =>
     api
-      .post<PayrollReadinessResult>("/payroll/validate-readiness", {
-        month,
-        year,
-      })
+      .post<PayrollReadinessResult>("/payroll/validate-readiness", { month, year })
       .then((r) => r.data),
   lockAttendance: (
     startDate: string,
@@ -2663,7 +2638,11 @@ export const PayrollApi = {
       })
       .then((r) => r.data.runs),
 
-  process: (startDate: string, endDate: string, departmentIds: string[]) =>
+  process: (
+    startDate: string,
+    endDate: string,
+    departmentIds: string[],
+  ) =>
     api
       .post<{ runs: PayrollRun[] }>("/payroll/runs/process", {
         startDate,
@@ -2734,17 +2713,16 @@ export const PayrollApi = {
 
   explainPayslip: (id: string) =>
     api
-      .get<{
-        explanation: PayslipExplanation;
-      }>(`/payroll/payslips/${id}/explain`)
+      .get<{ explanation: PayslipExplanation }>(
+        `/payroll/payslips/${id}/explain`,
+      )
       .then((r) => r.data.explanation),
   askPayslipQuestion: (id: string, question: string) =>
     api
-      .post<{
-        question: string;
-        answer: string;
-        source: string;
-      }>(`/payroll/payslips/${id}/ask`, { question })
+      .post<{ question: string; answer: string; source: string }>(
+        `/payroll/payslips/${id}/ask`,
+        { question },
+      )
       .then((r) => r.data),
   costTrend: (months = 6) =>
     api
@@ -2977,14 +2955,11 @@ export const DocumentsApi = {
 
   download: async (id: string) => {
     const token = localStorage.getItem("aadhyaraj_token");
-    const response = await fetch(
-      `${api.defaults.baseURL ?? ""}/documents/${id}/download`,
-      {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : "",
-        },
+    const response = await fetch(`${api.defaults.baseURL ?? ""}/documents/${id}/download`, {
+      headers: {
+        Authorization: token ? `Bearer ${token}` : "",
       },
-    );
+    });
 
     if (!response.ok) {
       const raw = await response.text();
@@ -3225,6 +3200,7 @@ export interface ReportsOverview {
     assignedAssets: number;
     complianceRate: number;
   };
+
 }
 
 export type ReportExportSection =
@@ -3269,18 +3245,9 @@ export const ReportsApi = {
       .post<AiCustomReportResult>("/reports/custom-builder", payload)
       .then((r) => r.data),
 
-  retentionRadar: (
-    filters: {
-      departmentId?: string;
-      minRiskLevel?: string;
-      from?: string;
-      to?: string;
-    } = {},
-  ) =>
+  retentionRadar: (filters: { departmentId?: string; minRiskLevel?: string; from?: string; to?: string } = {}) =>
     api
-      .get<RetentionRadarResult>("/reports/retention-radar", {
-        params: filters,
-      })
+      .get<RetentionRadarResult>("/reports/retention-radar", { params: filters })
       .then((r) => r.data),
 
   export: async (
@@ -3295,8 +3262,8 @@ export const ReportsApi = {
         section,
         ...(section === "custom" && customSections.length > 0
           ? {
-              customSections: customSections.join(","),
-            }
+            customSections: customSections.join(","),
+          }
           : {}),
       },
       responseType: "blob",
@@ -3328,6 +3295,7 @@ export const ReportsApi = {
     URL.revokeObjectURL(url);
   },
 };
+
 
 // --- AI HR Copilot ---------------------------------------------------------------
 export interface HrCopilotSource {
@@ -3449,3 +3417,4 @@ export const DashboardApi = {
   overview: () =>
     api.get<DashboardOverview>("/dashboard/overview").then((r) => r.data),
 };
+

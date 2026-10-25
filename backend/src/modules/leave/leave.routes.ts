@@ -148,14 +148,15 @@ const adjustLeaveBalanceSchema = z.object({
 
 /**
  * POST /balances/adjust
- * Admin/Super Admin only. Changes the annual entitlement for an entire
- * organization for the selected leave type and year.
+ * Admin/Super Admin only. Sets the annual entitlement for every active employee
+ * for the selected leave type and year. The operation is prevalidated across
+ * all employees before any balances are changed.
  */
 leaveRouter.post("/balances/adjust", validate(adjustLeaveBalanceSchema), async (req, res, next) => {
   try {
     const requester = req.user!;
     if (!["SUPER_ADMIN", "ADMIN"].includes(requester.role)) {
-      throw AppError.forbidden("Only Admin and Super Admin can adjust organization-wide leave entitlements.");
+      throw AppError.forbidden("Only Admin and Super Admin can update organization-wide leave entitlements.");
     }
 
     const { leaveTypeId, year, allotted } = req.body as z.infer<typeof adjustLeaveBalanceSchema>;
@@ -163,68 +164,61 @@ leaveRouter.post("/balances/adjust", validate(adjustLeaveBalanceSchema), async (
     if (!leaveType || leaveType.isActive === false) {
       throw AppError.badRequest("Select an active leave type.");
     }
-    if (allotted <= 0 && /^(maternity|paternity|parental) leave$/i.test(String(leaveType.name ?? "").trim())) {
-      throw AppError.badRequest("Family leave allotment must be greater than zero.");
+    if (allotted <= 0 && /^(maternity|paternity) leave$/i.test(String(leaveType.name ?? "").trim())) {
+      throw AppError.badRequest("Family leave entitlement must be greater than zero.");
     }
 
-    const yearStart = `${year}-01-01`;
-    const yearEnd = `${year}-12-31`;
-    const [balances, pendingRequests] = await Promise.all([
-      LeaveBalance.find({ leaveTypeId, year }).select("employeeId allotted used carriedOver").lean(),
-      LeaveRequest.find({
+    const employeeIds = await repo.listActiveEmployeeIds();
+    if (!employeeIds.length) {
+      throw AppError.badRequest("No active employees were found to update.");
+    }
+
+    // Prepare each balance and validate every employee before writing any updates.
+    const prepared: Array<{ employeeId: string; usedDays: number; pendingDays: number }> = [];
+    for (const employeeId of employeeIds) {
+      const currentBalance = await repo.getOrCreateBalance(employeeId, leaveTypeId, year) as any;
+      const yearStart = `${year}-01-01`;
+      const yearEnd = `${year}-12-31`;
+      const pendingRows = await LeaveRequest.find({
+        employeeId,
         leaveTypeId,
         status: "PENDING",
         startDate: { $lte: yearEnd },
         endDate: { $gte: yearStart },
-      }).select("employeeId totalDays").lean(),
-    ]);
-
-    const pendingByEmployee = new Map<string, number>();
-    for (const request of pendingRequests) {
-      const id = String(request.employeeId);
-      pendingByEmployee.set(id, (pendingByEmployee.get(id) ?? 0) + Number(request.totalDays ?? 0));
-    }
-
-    // Validate all employees before writing anything. Carried-over days remain
-    // part of the employee's total available allotment for this year.
-    const balanceByEmployee = new Map<string, any>();
-    for (const balance of balances) balanceByEmployee.set(String(balance.employeeId), balance);
-    const employeeIds = new Set<string>([
-      ...balanceByEmployee.keys(),
-      ...pendingByEmployee.keys(),
-    ]);
-    for (const employeeId of employeeIds) {
-      const balance = balanceByEmployee.get(employeeId);
-      const usedDays = Number(balance?.used ?? 0);
-      const carriedOver = Number(balance?.carriedOver ?? 0);
-      const pendingDays = Number(pendingByEmployee.get(employeeId) ?? 0);
-      const newTotal = allotted + carriedOver;
-      if (newTotal + 1e-9 < usedDays + pendingDays) {
+      }).select("totalDays").lean();
+      const pendingDays = pendingRows.reduce(
+        (total: number, row: { totalDays?: number | null }) => total + Number(row.totalDays ?? 0),
+        0,
+      );
+      const usedDays = Number(currentBalance?.used ?? 0);
+      if (allotted + 1e-9 < usedDays + pendingDays) {
         throw AppError.badRequest(
-          `The new organization-wide allotment cannot be lower than leave already used plus pending requests for employee ${employeeId} (${usedDays + pendingDays} day(s), including ${pendingDays} pending).`,
+          `Cannot update the organization: at least one employee has ${usedDays} day(s) used and ${pendingDays} day(s) pending. The new entitlement must cover used plus pending leave for every employee. No entitlements were changed.`,
         );
       }
+      prepared.push({ employeeId, usedDays, pendingDays });
     }
 
-    // Save the default for employees whose balances will be created later, and
-    // update all existing balances for this leave type/year without changing
-    // used or carried-over values.
-    await LeaveType.updateOne({ _id: leaveTypeId }, { $set: { defaultDaysPerYear: allotted } });
-    if (balances.length) {
-      await LeaveBalance.bulkWrite(balances.map((balance: any) => ({
+    // Apply the organization-wide change in one bulk database operation, only
+    // after every employee has passed validation above. Existing used/remaining
+    // fields are intentionally untouched.
+    await LeaveBalance.bulkWrite(
+      prepared.map((item) => ({
         updateOne: {
-          filter: { _id: balance._id },
-          update: { $set: { allotted: allotted + Number(balance.carriedOver ?? 0) } },
+          filter: { employeeId: item.employeeId, leaveTypeId, year },
+          update: { $set: { allotted } },
+          upsert: true,
         },
-      })));
-    }
+      })),
+      { ordered: true },
+    );
 
     res.json({
-      message: `Annual entitlement updated for ${balances.length} existing employee balance(s). New balances will use ${allotted} days.`,
+      updatedBalances: prepared.length,
       leaveTypeId,
       year,
       allotted,
-      updatedBalances: balances.length,
+      message: `Updated ${leaveType.name} entitlement to ${allotted} day(s) for ${prepared.length} active employees for ${year}.`,
     });
   } catch (err) {
     next(err);
@@ -802,10 +796,13 @@ leaveRouter.post(
       const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
 
       const leaveTypeId = String(req.body.leaveTypeId ?? "");
-      const submittedType = await LeaveType.findById(leaveTypeId).select("name").lean();
-      const isFamilyLeave = /^(maternity|paternity|parental) leave$/i.test(String(submittedType?.name ?? ""));
+      const submittedType = await LeaveType.findById(leaveTypeId).select("name isActive").lean();
+      if (/^parental leave$/i.test(String(submittedType?.name ?? "").trim())) {
+        throw AppError.badRequest("Parental Leave is no longer available. Please select another leave type.");
+      }
+      const isFamilyLeave = /^(maternity|paternity) leave$/i.test(String(submittedType?.name ?? ""));
       if (isFamilyLeave && !req.file) {
-        throw AppError.badRequest("Upload the child's birth certificate to apply for maternity, paternity, or parental leave.");
+        throw AppError.badRequest("Upload the child's birth certificate to apply for maternity or paternity leave.");
       }
       let request = await repo.createRequest({
         employeeId: req.user!.employeeId,

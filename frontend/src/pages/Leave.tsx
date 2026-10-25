@@ -287,7 +287,7 @@ export default function Leave() {
                 leftIcon={<SlidersHorizontal size={16} />}
                 onClick={() => setAdjustBalanceOpen(true)}
               >
-                Adjust Leave Balance
+                Adjust Leave Balances
               </Button>
             )}
           </div>
@@ -2166,7 +2166,7 @@ function AdjustLeaveBalanceModal({
   const [leaveTypeId, setLeaveTypeId] = useState("");
   const [allotted, setAllotted] = useState("");
 
-  const { data: leaveTypes = [], isLoading: leaveTypesLoading, isError: leaveTypesError } = useQuery({
+  const { data: leaveTypes = [], isLoading: leaveTypesLoading } = useQuery({
     queryKey: ["leave-types", "adjust-balance"],
     queryFn: LeaveApi.types,
     enabled: open,
@@ -2178,14 +2178,6 @@ function AdjustLeaveBalanceModal({
     setLeaveTypeId("");
     setAllotted("");
   }, [open]);
-
-  useEffect(() => {
-    if (!leaveTypeId || !selectedLeaveType) {
-      setAllotted("");
-      return;
-    }
-    setAllotted(String(selectedLeaveType.defaultDaysPerYear ?? ""));
-  }, [leaveTypeId, selectedLeaveType?.id, selectedLeaveType?.defaultDaysPerYear]);
 
   const mutation = useMutation({
     mutationFn: () => LeaveApi.adjustBalance({
@@ -2199,82 +2191,51 @@ function AdjustLeaveBalanceModal({
       showToast(result.message || "Organization-wide leave entitlement updated successfully.");
       onClose();
     },
-    onError: (error) => {
-      const axiosError = error as {
-        message?: string;
-        response?: { status?: number; data?: unknown };
-        config?: { method?: string; url?: string };
-        code?: string;
-      };
-      console.error("[LeaveBalanceAdjust] Organization-wide update failed", {
-        method: axiosError.config?.method,
-        url: axiosError.config?.url,
-        status: axiosError.response?.status,
-        response: axiosError.response?.data,
-        code: axiosError.code,
-        message: axiosError.message,
-      });
-      showToast(getErrorMessage(error), "error");
-    },
+    onError: (error) => showToast(getErrorMessage(error), "error"),
   });
 
   const parsedAllotted = Number(allotted);
-  const validAllotted = allotted.trim() !== "" && Number.isFinite(parsedAllotted) && parsedAllotted >= 0 && parsedAllotted <= 366 && Math.round(parsedAllotted * 2) === parsedAllotted * 2;
-  const isFamilyLeaveType = /^(maternity|paternity|parental) leave$/i.test(String(selectedLeaveType?.name ?? "").trim());
+  const validAllotted = allotted.trim() !== "" && Number.isFinite(parsedAllotted) && parsedAllotted >= 0 && parsedAllotted <= 366;
+  const isFamilyLeaveType = /^(maternity|paternity) leave$/i.test(String(selectedLeaveType?.name ?? "").trim());
   const validPolicyAllotment = !(isFamilyLeaveType && parsedAllotted <= 0);
-  const currentAllotment = Number(selectedLeaveType?.defaultDaysPerYear ?? 0);
-  const isChanged = !!selectedLeaveType && validAllotted && validPolicyAllotment && parsedAllotted !== currentAllotment;
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Adjust Organization Leave Entitlement"
-      subtitle={`Set the annual entitlement for every employee for ${year}. Existing used and pending leave cannot be undercut.`}
+      title="Update Leave for Entire Organization"
+      subtitle={`Set the annual entitlement for every active employee for ${year}. Employees' used and pending leave must remain covered.`}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !leaveTypeId || !isChanged || !validAllotted || leaveTypesLoading}
+            disabled={mutation.isPending || !leaveTypeId || !validAllotted || !validPolicyAllotment || leaveTypesLoading}
             isLoading={mutation.isPending}
           >
-            Save entitlement
+            Update organization
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-ink-soft">Leave type</label>
-          <SelectField
-            label=""
-            value={leaveTypeId}
-            onChange={(event) => setLeaveTypeId(event.target.value)}
-            disabled={leaveTypesLoading}
-            required
-          >
-            <option value="">Select a leave type</option>
-            {leaveTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
-          </SelectField>
-          {leaveTypesLoading && <p className="mt-1 text-xs text-ink-faint">Loading leave types…</p>}
-          {leaveTypesError && <p className="mt-1 text-xs text-danger-500">Unable to load leave types. Close and reopen this popup to retry.</p>}
+        <div className="rounded-xl border border-line bg-surface/60 p-3 text-sm text-ink-soft">
+          This updates the selected leave type's total allotted days for all active employees. The server checks existing used and pending leave before applying any changes.
         </div>
 
-        {selectedLeaveType && (
-          <div className="rounded-xl border border-line bg-surface/60 p-3 text-sm">
-            <p className="font-medium text-ink">Organization-wide entitlement</p>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-ink-soft">
-              <span>Current annual entitlement</span>
-              <strong className="text-right text-ink">{currentAllotment} days per employee</strong>
-              <span>Applies to</span>
-              <strong className="text-right text-ink">All employees</strong>
-            </div>
-          </div>
-        )}
+        <SelectField
+          label="Leave type"
+          value={leaveTypeId}
+          onChange={(event) => setLeaveTypeId(event.target.value)}
+          disabled={leaveTypesLoading}
+          required
+        >
+          <option value="">Select a leave type</option>
+          {leaveTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+        </SelectField>
 
         <TextField
-          label={`New annual entitlement for ${year} (days per employee)`}
+          label={`New annual entitlement for ${year}`}
           type="number"
           min={0}
           max={366}
@@ -2282,10 +2243,10 @@ function AdjustLeaveBalanceModal({
           value={allotted}
           onChange={(event) => setAllotted(event.target.value)}
           disabled={!leaveTypeId || leaveTypesLoading}
-          placeholder="Enter annual leave days"
-          hint={isFamilyLeaveType ? "Family leave entitlement must remain above zero. The update is blocked if it would undercut used or pending leave for any employee." : "Use whole or half-day increments. The update is blocked if it would undercut used or pending leave for any employee."}
+          placeholder="Enter the number of days"
+          hint={isFamilyLeaveType ? "Family leave entitlement must remain above zero. The update will be rejected if it would fall below any employee's used plus pending leave." : "Whole or half-day increments are supported. The update will be rejected if it would fall below any employee's used plus pending leave."}
         />
-        {selectedLeaveType && <p className="text-xs text-ink-faint">This changes the annual policy for {selectedLeaveType.name} for {year}, updates existing employee balances, and sets the default for balances created later.</p>}
+        {selectedLeaveType && <p className="text-xs text-ink-faint">Policy: {selectedLeaveType.name}. Applies to active employees for {year} only.</p>}
       </div>
     </Modal>
   );
@@ -2472,7 +2433,7 @@ function BulkApplyLeaveModal({
             <option value="">
               {leaveTypesLoading ? "Loading leave types..." : "Select leave type"}
             </option>
-            {leaveTypes?.filter((type) => !/^(maternity|paternity|parental) leave$/i.test(type.name)).map((type) => (
+            {leaveTypes?.filter((type) => !/^(maternity|paternity) leave$/i.test(type.name)).map((type) => (
               <option key={type.id} value={type.id}>
                 {type.name}
               </option>
@@ -2703,14 +2664,14 @@ function ApplyModal({
   const selectedLeaveTypeName = String(selectedLeaveType?.name ?? "").trim();
   const isMaternityLeave = selectedLeaveTypeName.toLowerCase() === "maternity leave";
   const isPaternityLeave = selectedLeaveTypeName.toLowerCase() === "paternity leave";
-  const isParentalLeave = selectedLeaveTypeName.toLowerCase() === "parental leave";
-  const isFamilyLeave = isMaternityLeave || isPaternityLeave || isParentalLeave;
+  const isFamilyLeave = isMaternityLeave || isPaternityLeave;
   const gender = String(applicantEmployee?.gender ?? user?.employee?.gender ?? "").trim().toLowerCase();
   const maritalStatus = String(applicantEmployee?.maritalStatus ?? user?.employee?.maritalStatus ?? "").trim().toUpperCase();
   const isFemale = ["female", "f", "woman", "women"].includes(gender);
   const isMale = ["male", "m", "man", "men"].includes(gender);
   const availableLeaveTypes = (leaveTypes ?? []).filter((type) => {
     const name = type.name.trim().toLowerCase();
+    if (name === "parental leave") return false;
     if (name === "maternity leave") return !applicantEmployeeLoading && !!applicantEmployee && isFemale && maritalStatus === "MARRIED";
     if (name === "paternity leave") return !applicantEmployeeLoading && !!applicantEmployee && isMale && maritalStatus === "MARRIED";
     return true;

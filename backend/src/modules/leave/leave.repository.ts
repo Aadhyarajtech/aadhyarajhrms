@@ -39,14 +39,18 @@ function toApiDoc(doc: any) {
 
 const MATERNITY_DEFAULT_DAYS = 182; // 26 calendar weeks; third child onward is capped at 84 days.
 const PATERNITY_DEFAULT_DAYS = 15;
-const PARENTAL_DEFAULT_DAYS = 15;
 
 async function ensureFamilyLeaveTypes() {
   const definitions = [
     { name: "Maternity Leave", colorHex: "#DB2777", days: MATERNITY_DEFAULT_DAYS },
     { name: "Paternity Leave", colorHex: "#2563EB", days: PATERNITY_DEFAULT_DAYS },
-    { name: "Parental Leave", colorHex: "#0E7490", days: PARENTAL_DEFAULT_DAYS },
   ];
+  // Keep historical records/balances intact, but prevent Parental Leave from
+  // appearing as an active option or being recreated by this ensure routine.
+  await LeaveType.updateMany(
+    { name: /^Parental Leave$/i },
+    { $set: { isActive: false } },
+  );
   for (const definition of definitions) {
     const existing = await LeaveType.findOne({ name: new RegExp(`^${definition.name}$`, "i") });
     if (!existing) {
@@ -55,14 +59,9 @@ async function ensureFamilyLeaveTypes() {
         defaultDaysPerYear: definition.days, isPaid: true, requiresApproval: true, isActive: true,
       });
     } else {
-      // Keep the administrator-configured annual entitlement. This function runs
-      // whenever leave types are listed, so resetting defaultDaysPerYear here
-      // would silently undo every organization-wide entitlement change.
       await LeaveType.updateOne({ _id: existing._id }, { $set: {
-        colorHex: definition.colorHex,
-        isPaid: true,
-        requiresApproval: true,
-        isActive: true,
+        name: definition.name, colorHex: definition.colorHex, defaultDaysPerYear: definition.days,
+        isPaid: true, requiresApproval: true, isActive: true,
       } });
     }
   }
@@ -94,12 +93,15 @@ export async function getOrCreateBalance(
   if (row) {
     // Repair legacy zero-day family leave balances without resetting used or carried-over values.
     const existingType = (await getLeaveType(leaveTypeId)) as any;
-    const isFamilyLeave = /^(maternity|paternity|parental) leave$/i.test(String(existingType?.name ?? "").trim());
+    const isFamilyLeave = /^(maternity|paternity) leave$/i.test(String(existingType?.name ?? "").trim());
     if (row && isFamilyLeave && Number(row.allotted ?? 0) <= 0) {
       await ensureFamilyLeaveTypes();
       const refreshedType = (await getLeaveType(leaveTypeId)) as any;
-      const defaultDays = Number(refreshedType?.defaultDaysPerYear ?? PARENTAL_DEFAULT_DAYS);
-      const repairedAllotment = Number.isFinite(defaultDays) && defaultDays > 0 ? defaultDays : PARENTAL_DEFAULT_DAYS;
+      const fallbackDays = /^maternity leave$/i.test(String(refreshedType?.name ?? existingType?.name ?? ""))
+        ? MATERNITY_DEFAULT_DAYS
+        : PATERNITY_DEFAULT_DAYS;
+      const defaultDays = Number(refreshedType?.defaultDaysPerYear ?? fallbackDays);
+      const repairedAllotment = Number.isFinite(defaultDays) && defaultDays > 0 ? defaultDays : fallbackDays;
       await LeaveBalance.updateOne(
         { employeeId, leaveTypeId, year, allotted: { $lte: 0 } },
         { $set: { allotted: repairedAllotment } },
@@ -554,8 +556,7 @@ if (Number.isNaN(start.getTime())) {
 
   const isMaternityLeave = normalizedLeaveTypeName === "maternity leave";
   const isPaternityLeave = normalizedLeaveTypeName === "paternity leave";
-  const isParentalLeave = normalizedLeaveTypeName === "parental leave";
-  const isFamilyLeave = isMaternityLeave || isPaternityLeave || isParentalLeave;
+  const isFamilyLeave = isMaternityLeave || isPaternityLeave;
 
   const employeeForEligibility =
   await Employee.findById(
@@ -570,7 +571,7 @@ if (!employeeForEligibility) {
 
 if (isFamilyLeave) {
   if (!input.birthCertificateStorageKey) {
-    throw AppError.badRequest("A child's birth certificate is required for maternity, paternity, and parental leave validation.");
+    throw AppError.badRequest("A child's birth certificate is required for maternity and paternity leave validation.");
   }
   const gender = String(employeeForEligibility.gender ?? "").trim().toLowerCase();
   const maritalStatus = String(employeeForEligibility.maritalStatus ?? "").trim().toUpperCase();
@@ -623,7 +624,7 @@ if (!Number.isFinite(startDateForPolicy.getTime())) {
 
 const familyLeaveDays = isMaternityLeave
   ? (Number(input.survivingChildrenBeforeBirth) >= 2 ? 84 : 182)
-  : isPaternityLeave ? PATERNITY_DEFAULT_DAYS : PARENTAL_DEFAULT_DAYS;
+  : PATERNITY_DEFAULT_DAYS;
 
 // Family leave duration is fixed by policy and calculated server-side.
 // Ignore any client-supplied end date for these leave types.

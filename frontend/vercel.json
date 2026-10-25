@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://aadhyarajhrms-1.onrender.com/api/:path*"
+      "destination": "https://aadhyarajhrms.onrender.com/api/:path*"
     },
     {
       "source": "/uploads/:path*",
-      "destination": "https://aadhyarajhrms-1.onrender.com/uploads/:path*"
+      "destination": "https://aadhyarajhrms.onrender.com/uploads/:path*"
     },
     {
       "source": "/(.*)",
