@@ -76,6 +76,24 @@
   }
 }
 
+/* Disable text selection and native dragging across the HRMS UI. */
+html,
+body,
+#root {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Keep form controls usable for editing and copying typed content. */
+input,
+textarea,
+select,
+[contenteditable="true"],
+[data-allow-selection="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 @layer utilities {
   .font-display {
     font-feature-settings: "ss01" 1;

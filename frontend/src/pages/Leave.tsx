@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Users,
   CheckCircle2,
+  SlidersHorizontal,
 } from "lucide-react";
 import { EmployeesApi, LeaveApi } from "@/lib/endpoints";
 import { getErrorMessage } from "@/lib/api";
@@ -229,6 +230,7 @@ export default function Leave() {
 
   const [applyOpen, setApplyOpen] = useState(false);
   const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
+  const [adjustBalanceOpen, setAdjustBalanceOpen] = useState(false);
   const [applyPrefill, setApplyPrefill] = useState<{
     startDate?: string;
     endDate?: string;
@@ -257,24 +259,35 @@ export default function Leave() {
         title="Leave"
         subtitle="Apply for leave, track balances, and manage approvals."
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              leftIcon={<Plus size={16} />}
-              onClick={() => {
-                setApplyPrefill(null);
-                setApplyOpen(true);
-              }}
-            >
-              Apply for leave
-            </Button>
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button
+                leftIcon={<Plus size={16} />}
+                onClick={() => {
+                  setApplyPrefill(null);
+                  setApplyOpen(true);
+                }}
+              >
+                Apply for leave
+              </Button>
 
+              {isLeaveAdmin && (
+                <Button
+                  variant="outline"
+                  leftIcon={<Users size={16} />}
+                  onClick={() => setBulkApplyOpen(true)}
+                >
+                  Apply for employee
+                </Button>
+              )}
+            </div>
             {isLeaveAdmin && (
               <Button
                 variant="outline"
-                leftIcon={<Users size={16} />}
-                onClick={() => setBulkApplyOpen(true)}
+                leftIcon={<SlidersHorizontal size={16} />}
+                onClick={() => setAdjustBalanceOpen(true)}
               >
-                Apply for employee
+                Adjust Leave Balance
               </Button>
             )}
           </div>
@@ -312,10 +325,16 @@ export default function Leave() {
       />
 
       {isLeaveAdmin && (
-        <BulkApplyLeaveModal
-          open={bulkApplyOpen}
-          onClose={() => setBulkApplyOpen(false)}
-        />
+        <>
+          <BulkApplyLeaveModal
+            open={bulkApplyOpen}
+            onClose={() => setBulkApplyOpen(false)}
+          />
+          <AdjustLeaveBalanceModal
+            open={adjustBalanceOpen}
+            onClose={() => setAdjustBalanceOpen(false)}
+          />
+        </>
       )}
     </div>
   );
@@ -2133,6 +2152,144 @@ function LeaveCalendar() {
   );
 }
 
+
+function AdjustLeaveBalanceModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const year = new Date().getFullYear();
+  const [leaveTypeId, setLeaveTypeId] = useState("");
+  const [allotted, setAllotted] = useState("");
+
+  const { data: leaveTypes = [], isLoading: leaveTypesLoading, isError: leaveTypesError } = useQuery({
+    queryKey: ["leave-types", "adjust-balance"],
+    queryFn: LeaveApi.types,
+    enabled: open,
+  });
+  const selectedLeaveType = leaveTypes.find((type) => type.id === leaveTypeId);
+
+  useEffect(() => {
+    if (!open) return;
+    setLeaveTypeId("");
+    setAllotted("");
+  }, [open]);
+
+  useEffect(() => {
+    if (!leaveTypeId || !selectedLeaveType) {
+      setAllotted("");
+      return;
+    }
+    setAllotted(String(selectedLeaveType.defaultDaysPerYear ?? ""));
+  }, [leaveTypeId, selectedLeaveType?.id, selectedLeaveType?.defaultDaysPerYear]);
+
+  const mutation = useMutation({
+    mutationFn: () => LeaveApi.adjustBalance({
+      leaveTypeId,
+      year,
+      allotted: Number(allotted),
+    }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["leave"] });
+      void queryClient.invalidateQueries({ queryKey: ["leave-types"] });
+      showToast(result.message || "Organization-wide leave entitlement updated successfully.");
+      onClose();
+    },
+    onError: (error) => {
+      const axiosError = error as {
+        message?: string;
+        response?: { status?: number; data?: unknown };
+        config?: { method?: string; url?: string };
+        code?: string;
+      };
+      console.error("[LeaveBalanceAdjust] Organization-wide update failed", {
+        method: axiosError.config?.method,
+        url: axiosError.config?.url,
+        status: axiosError.response?.status,
+        response: axiosError.response?.data,
+        code: axiosError.code,
+        message: axiosError.message,
+      });
+      showToast(getErrorMessage(error), "error");
+    },
+  });
+
+  const parsedAllotted = Number(allotted);
+  const validAllotted = allotted.trim() !== "" && Number.isFinite(parsedAllotted) && parsedAllotted >= 0 && parsedAllotted <= 366 && Math.round(parsedAllotted * 2) === parsedAllotted * 2;
+  const isFamilyLeaveType = /^(maternity|paternity|parental) leave$/i.test(String(selectedLeaveType?.name ?? "").trim());
+  const validPolicyAllotment = !(isFamilyLeaveType && parsedAllotted <= 0);
+  const currentAllotment = Number(selectedLeaveType?.defaultDaysPerYear ?? 0);
+  const isChanged = !!selectedLeaveType && validAllotted && validPolicyAllotment && parsedAllotted !== currentAllotment;
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Adjust Organization Leave Entitlement"
+      subtitle={`Set the annual entitlement for every employee for ${year}. Existing used and pending leave cannot be undercut.`}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !leaveTypeId || !isChanged || !validAllotted || leaveTypesLoading}
+            isLoading={mutation.isPending}
+          >
+            Save entitlement
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-ink-soft">Leave type</label>
+          <SelectField
+            label=""
+            value={leaveTypeId}
+            onChange={(event) => setLeaveTypeId(event.target.value)}
+            disabled={leaveTypesLoading}
+            required
+          >
+            <option value="">Select a leave type</option>
+            {leaveTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+          </SelectField>
+          {leaveTypesLoading && <p className="mt-1 text-xs text-ink-faint">Loading leave types…</p>}
+          {leaveTypesError && <p className="mt-1 text-xs text-danger-500">Unable to load leave types. Close and reopen this popup to retry.</p>}
+        </div>
+
+        {selectedLeaveType && (
+          <div className="rounded-xl border border-line bg-surface/60 p-3 text-sm">
+            <p className="font-medium text-ink">Organization-wide entitlement</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-ink-soft">
+              <span>Current annual entitlement</span>
+              <strong className="text-right text-ink">{currentAllotment} days per employee</strong>
+              <span>Applies to</span>
+              <strong className="text-right text-ink">All employees</strong>
+            </div>
+          </div>
+        )}
+
+        <TextField
+          label={`New annual entitlement for ${year} (days per employee)`}
+          type="number"
+          min={0}
+          max={366}
+          step="0.5"
+          value={allotted}
+          onChange={(event) => setAllotted(event.target.value)}
+          disabled={!leaveTypeId || leaveTypesLoading}
+          placeholder="Enter annual leave days"
+          hint={isFamilyLeaveType ? "Family leave entitlement must remain above zero. The update is blocked if it would undercut used or pending leave for any employee." : "Use whole or half-day increments. The update is blocked if it would undercut used or pending leave for any employee."}
+        />
+        {selectedLeaveType && <p className="text-xs text-ink-faint">This changes the annual policy for {selectedLeaveType.name} for {year}, updates existing employee balances, and sets the default for balances created later.</p>}
+      </div>
+    </Modal>
+  );
+}
 
 function BulkApplyLeaveModal({
   open,

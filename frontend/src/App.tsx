@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
@@ -124,6 +124,39 @@ function PageFallback() {
 // =========================================================
 
 export default function App() {
+  useEffect(() => {
+    const preventContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+
+    const preventTextSelection = (event: Event) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest(
+          "input, textarea, select, [contenteditable='true'], [data-allow-selection='true']",
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+    };
+
+    const preventNativeDrag = (event: DragEvent) => {
+      event.preventDefault();
+    };
+
+    document.addEventListener("contextmenu", preventContextMenu, true);
+    document.addEventListener("selectstart", preventTextSelection, true);
+    document.addEventListener("dragstart", preventNativeDrag, true);
+
+    return () => {
+      document.removeEventListener("contextmenu", preventContextMenu, true);
+      document.removeEventListener("selectstart", preventTextSelection, true);
+      document.removeEventListener("dragstart", preventNativeDrag, true);
+    };
+  }, []);
+
   return (
     <Suspense fallback={<PageFallback />}>
       <Routes>

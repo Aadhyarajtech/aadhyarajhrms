@@ -55,9 +55,14 @@ async function ensureFamilyLeaveTypes() {
         defaultDaysPerYear: definition.days, isPaid: true, requiresApproval: true, isActive: true,
       });
     } else {
+      // Keep the administrator-configured annual entitlement. This function runs
+      // whenever leave types are listed, so resetting defaultDaysPerYear here
+      // would silently undo every organization-wide entitlement change.
       await LeaveType.updateOne({ _id: existing._id }, { $set: {
-        name: definition.name, colorHex: definition.colorHex, defaultDaysPerYear: definition.days,
-        isPaid: true, requiresApproval: true, isActive: true,
+        colorHex: definition.colorHex,
+        isPaid: true,
+        requiresApproval: true,
+        isActive: true,
       } });
     }
   }
@@ -90,12 +95,6 @@ export async function getOrCreateBalance(
     // Repair legacy zero-day family leave balances without resetting used or carried-over values.
     const existingType = (await getLeaveType(leaveTypeId)) as any;
     const isFamilyLeave = /^(maternity|paternity|parental) leave$/i.test(String(existingType?.name ?? "").trim());
-    const existingTypeName = String(existingType?.name ?? "").trim().toLowerCase();
-    const policyDays = existingTypeName === "paternity leave" || existingTypeName === "parental leave" ? 15 : 182;
-    if ((existingTypeName === "paternity leave" || existingTypeName === "parental leave") && Number(row.allotted ?? 0) > policyDays) {
-      await LeaveBalance.updateOne({ employeeId, leaveTypeId, year }, { $set: { allotted: policyDays } });
-      row = await LeaveBalance.findOne({ employeeId, leaveTypeId, year }).lean();
-    }
     if (row && isFamilyLeave && Number(row.allotted ?? 0) <= 0) {
       await ensureFamilyLeaveTypes();
       const refreshedType = (await getLeaveType(leaveTypeId)) as any;

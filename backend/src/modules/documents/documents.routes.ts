@@ -118,9 +118,14 @@ const assetStatusSchema = z.object({
 documentsRouter.get("/employee/:employeeId", async (req, res, next) => {
   try {
     const targetEmployeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
-    const isOwner = targetEmployeeId === String(req.user!.employeeId ?? "");
+    const requesterEmployeeId = String(req.user!.employeeId ?? "");
+    const isOwner = targetEmployeeId === requesterEmployeeId;
     const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
-    if (!isOwner && !isPrivileged) throw AppError.forbidden();
+    let isAuthorized = isOwner || isPrivileged;
+    if (!isAuthorized && requesterEmployeeId && (req.user!.role === "MANAGER" || req.user!.isManager)) {
+      isAuthorized = await repo.isDirectReport(requesterEmployeeId, targetEmployeeId);
+    }
+    if (!isAuthorized) throw AppError.forbidden();
     res.json({ documents: await repo.listDocuments(targetEmployeeId) });
   } catch (err) {
     next(err);
@@ -445,9 +450,14 @@ documentsRouter.get("/assets/all", isAdmin, async (_req, res, next) => {
 documentsRouter.get("/assets/employee/:employeeId", async (req, res, next) => {
   try {
     const targetEmployeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
-    const isOwner = targetEmployeeId === String(req.user!.employeeId ?? "");
+    const requesterEmployeeId = String(req.user!.employeeId ?? "");
+    const isOwner = targetEmployeeId === requesterEmployeeId;
     const isPrivileged = ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role);
-    if (!isOwner && !isPrivileged) throw AppError.forbidden();
+    let isAuthorized = isOwner || isPrivileged;
+    if (!isAuthorized && requesterEmployeeId && (req.user!.role === "MANAGER" || req.user!.isManager)) {
+      isAuthorized = await repo.isDirectReport(requesterEmployeeId, targetEmployeeId);
+    }
+    if (!isAuthorized) throw AppError.forbidden();
     res.json({ assets: await repo.listAssets(targetEmployeeId) });
   } catch (err) {
     next(err);

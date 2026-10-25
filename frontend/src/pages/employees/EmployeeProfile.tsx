@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode, type SyntheticEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -40,6 +40,7 @@ import {
   OrganizationApi,
 } from "@/lib/endpoints";
 import { api, getErrorMessage } from "@/lib/api";
+import { openPrivateDocument } from "@/lib/protectedDocument";
 import { useToast } from "@/context/ToastContext";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -98,20 +99,6 @@ const salarySchema = z.object({
   taxPreviousTds: z.coerce.number().min(0).default(0),
 });
 type SalaryForm = z.infer<typeof salarySchema>;
-
-function getAuthenticatedDocumentUrl(fileUrl: string | null | undefined): string {
-  if (!fileUrl) return "#";
-  const token = localStorage.getItem("aadhyaraj_token");
-  const rawBase = import.meta.env.VITE_API_URL || "/api";
-  const baseUrl = rawBase.startsWith("http")
-    ? rawBase
-    : `${window.location.origin}${rawBase}`;
-  const url = new URL(fileUrl, `${baseUrl.replace(/\/$/, "")}/`);
-  if (token && url.pathname.includes("/documents/")) {
-    url.searchParams.set("token", token);
-  }
-  return url.toString();
-}
 
 export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>();
@@ -3171,8 +3158,70 @@ function DocumentsTab({
     queryFn: () => DocumentsApi.assetsForEmployee(employeeId),
   });
 
+  const blockDocumentAction = (event: SyntheticEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const blockDocumentShortcut = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const key = event.key.toLowerCase();
+    const modifier = event.ctrlKey || event.metaKey;
+    if (modifier && ["c", "x", "a", "s", "p", "u"].includes(key)) {
+      blockDocumentAction(event);
+      return;
+    }
+    if (event.key === "PrintScreen" || (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key))) {
+      blockDocumentAction(event);
+    }
+  };
+
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return target.isContentEditable || !!target.closest("input, textarea, select, [contenteditable='true']");
+    };
+    const blockNativeEvent = (event: Event) => {
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const blockNativeShortcut = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      const key = String(event.key || "").toLowerCase();
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && ["c", "x", "a", "s", "p", "u"].includes(key)) {
+        blockNativeEvent(event);
+        return;
+      }
+      if (event.key === "PrintScreen" || (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key))) {
+        blockNativeEvent(event);
+      }
+    };
+    const protectedEvents = ["contextmenu", "copy", "cut", "dragstart", "selectstart", "beforeprint"];
+    protectedEvents.forEach((eventName) => document.addEventListener(eventName, blockNativeEvent, true));
+    document.addEventListener("keydown", blockNativeShortcut, true);
+    return () => {
+      protectedEvents.forEach((eventName) => document.removeEventListener(eventName, blockNativeEvent, true));
+      document.removeEventListener("keydown", blockNativeShortcut, true);
+    };
+  }, []);
+
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div
+      className="grid select-none gap-6 lg:grid-cols-2"
+      onContextMenu={blockDocumentAction}
+      onCopy={blockDocumentAction}
+      onCut={blockDocumentAction}
+      onPaste={blockDocumentAction}
+      onDragStart={blockDocumentAction}
+      onDrag={blockDocumentAction}
+      onDragOver={blockDocumentAction}
+      onDrop={blockDocumentAction}
+      onSelect={blockDocumentAction}
+      onMouseDown={(event) => {
+        if (event.button === 2) blockDocumentAction(event);
+      }}
+      onKeyDown={blockDocumentShortcut}
+    >
       <Card>
         <CardHeader
           title="Documents"
@@ -3200,17 +3249,20 @@ function DocumentsTab({
         ) : (
           <div className="space-y-2">
             {documents.map((d) => (
-              <a
+              <div
                 key={d.id}
-                href={getAuthenticatedDocumentUrl(d.fileUrl)}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center justify-between rounded-xl border border-line/60 px-4 py-2.5 transition hover:border-brand-300 hover:bg-brand-50"
+                className="flex items-center justify-between gap-3 rounded-xl border border-line/60 px-4 py-2.5 transition hover:border-brand-300 hover:bg-brand-50"
               >
-                <span className="flex min-w-0 items-center gap-2.5 text-[13px] text-ink">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left text-[13px] text-ink"
+                  onClick={() => openPrivateDocument(d.id, d.fileName, showToast, canManage)}
+                  onDragStart={blockDocumentAction}
+                >
                   <FileText size={15} className="shrink-0 text-brand-500" />
                   <span className="min-w-0 truncate">{d.fileName}</span>
-                </span>
+                  <span className="sr-only">Open document preview</span>
+                </button>
                 <div className="flex shrink-0 items-center gap-2">
                   <Badge tone={d.status === "VERIFIED" ? "success" : d.status === "REJECTED" ? "danger" : "neutral"}>
                     {d.status ?? "PENDING"}
@@ -3221,11 +3273,7 @@ function DocumentsTab({
                       size="sm"
                       variant="outline"
                       disabled={reviewDocumentMutation.isPending}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        reviewDocumentMutation.mutate({ id: d.id, status: "VERIFIED" });
-                      }}
+                      onClick={() => reviewDocumentMutation.mutate({ id: d.id, status: "VERIFIED" })}
                     >
                       Verify
                     </Button>
@@ -3236,9 +3284,7 @@ function DocumentsTab({
                       size="sm"
                       variant="outline"
                       disabled={reviewDocumentMutation.isPending}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
+                      onClick={() => {
                         const reason = window.prompt("Rejection reason:");
                         if (!reason?.trim()) return;
                         reviewDocumentMutation.mutate({
@@ -3252,7 +3298,7 @@ function DocumentsTab({
                     </Button>
                   )}
                 </div>
-              </a>
+              </div>
             ))}
           </div>
         )}
