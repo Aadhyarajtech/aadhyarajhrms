@@ -272,7 +272,10 @@ async function sendAuthorizedDocument(req: any, res: any, next: any, forceDownlo
     res.setHeader("Cache-Control", "private, no-store, max-age=0");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+    // The frontend (Vercel) and API (Render) use different origins. The route
+    // is protected by authenticate + per-document authorization above, so allow
+    // the authorized response to be embedded by the frontend origin.
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     res.sendFile(filePath);
   } catch (err) {
     next(err);
