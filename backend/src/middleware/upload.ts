@@ -29,11 +29,19 @@ const ALLOWED_MIME = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
-const PRIVATE_DOCUMENT_DIR = path.join(
-  process.cwd(),
-  "private-uploads",
-  "documents",
-);
+/**
+ * Private document storage.
+ *
+ * Local development keeps the existing project-relative directory.
+ * In production, set DOCUMENT_STORAGE_DIR to a persistent mounted directory,
+ * e.g. /var/data/documents when a Render disk is mounted at /var/data.
+ *
+ * IMPORTANT: This directory is only persistent if the configured path is
+ * actually on a persistent disk. An ordinary Render filesystem path is not.
+ */
+const PRIVATE_DOCUMENT_DIR = process.env.DOCUMENT_STORAGE_DIR
+  ? path.resolve(process.env.DOCUMENT_STORAGE_DIR)
+  : path.join(process.cwd(), "private-uploads", "documents");
 
 if (!fs.existsSync(PRIVATE_DOCUMENT_DIR)) {
   fs.mkdirSync(PRIVATE_DOCUMENT_DIR, { recursive: true });
