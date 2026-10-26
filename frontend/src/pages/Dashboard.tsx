@@ -509,9 +509,9 @@ export default function Dashboard() {
 
   const { kpis } = data;
 
-  // Keep the displayed open-role KPI consistent across every dashboard role.
-  // The requested organization-wide open-role count is 10.
-  const availableOpenRoles = 10;
+  // Use the live organization-wide count returned by the dashboard API.
+  // The backend calculates this from approved, published open job postings.
+  const availableOpenRoles = Number(kpis.openRoles ?? 0);
 
 
 
