@@ -10,6 +10,8 @@ import { notify } from "@/modules/notifications/notifications.repository";
 import { AppError } from "@/utils/errors";
 import fs from "node:fs/promises";
 import path from "node:path";
+import mongoose from "mongoose";
+import { GridFSBucket, ObjectId } from "mongodb";
 import {
   PRIVATE_DOCUMENT_DIR_ABSOLUTE,
   UPLOAD_DIR_ABSOLUTE,
@@ -146,73 +148,97 @@ function safePublicUploadPath(storageKey: string) {
   return target;
 }
 
-function buildMissingDocumentPlaceholder(fileName: string, type: string) {
-  const cleanedName = String(fileName || "document").trim() || "document";
-  const plainText = [
-    "Document not available in storage.",
-    "",
-    `Name: ${cleanedName}`,
-    `Type: ${type || "UNSPECIFIED"}`,
-    "",
-    "This placeholder was generated because the original file was not found on disk.",
-  ].join("\n");
+const GRIDFS_PREFIX = "gridfs:";
+const GRIDFS_BUCKET_NAME = "hrmsDocuments";
 
-  return Buffer.from(plainText, "utf8");
+function getDocumentsBucket() {
+  const db = mongoose.connection.db;
+  if (!db) throw new Error("MongoDB is not connected; document storage is unavailable.");
+  return new GridFSBucket(db, { bucketName: GRIDFS_BUCKET_NAME });
 }
 
-export async function getPrivateDocumentPath(id: string) {
+/** Persist an uploaded document to MongoDB GridFS and return its stable storage key. */
+export async function storeDocumentFile(
+  buffer: Buffer,
+  fileName: string,
+  contentType: string,
+): Promise<string> {
+  if (!buffer?.length) throw AppError.badRequest("The uploaded file is empty.");
+  const bucket = getDocumentsBucket();
+  const upload = bucket.openUploadStream(fileName, {
+    metadata: { contentType: contentType || "application/octet-stream" },
+  });
+  await new Promise<void>((resolve, reject) => {
+    upload.once("finish", () => resolve());
+    upload.once("error", reject);
+    upload.end(buffer);
+  });
+  return `${GRIDFS_PREFIX}${String(upload.id)}`;
+}
+
+async function readGridFsFile(storageKey: string): Promise<Buffer> {
+  const idText = storageKey.slice(GRIDFS_PREFIX.length);
+  if (!ObjectId.isValid(idText)) throw AppError.notFound("Stored document reference is invalid.");
+  const bucket = getDocumentsBucket();
+  const chunks: Buffer[] = [];
+  await new Promise<void>((resolve, reject) => {
+    const stream = bucket.openDownloadStream(new ObjectId(idText));
+    stream.on("data", (chunk: Buffer | Uint8Array) => chunks.push(Buffer.from(chunk)));
+    stream.once("error", reject);
+    stream.once("end", resolve);
+  }).catch((error: any) => {
+    if (error?.code === "ENOENT" || error?.codeName === "NoSuchKey") {
+      throw AppError.notFound("The uploaded document is missing from database storage.");
+    }
+    throw error;
+  });
+  return Buffer.concat(chunks);
+}
+
+/** Reads a document from GridFS or the legacy local folders during migration. */
+export async function getPrivateDocumentContent(id: string) {
   const row = await DocumentRecord.findById(id).lean();
   if (!row) throw AppError.notFound("Document not found.");
 
-  let key = row.storageKey;
+  let key = String(row.storageKey || "");
+  if (key.startsWith(GRIDFS_PREFIX)) {
+    return { row: toApiDoc(row), buffer: await readGridFsFile(key) };
+  }
   if (!key && row.fileUrl) {
-    key = path.basename(row.fileUrl);
+    const value = String(row.fileUrl);
+    key = value.startsWith("/uploads/") ? path.basename(value) : "";
   }
-
   if (!key) {
-    throw AppError.notFound("This document is not available through secure storage yet.");
+    throw AppError.notFound(`The uploaded file for "${String(row.fileName || "document")}" is not available in storage.`);
   }
 
-  const candidatePaths = [
-    safePrivateDocumentPath(key),
-    safePublicUploadPath(key),
-  ];
-
-  let filePath = candidatePaths[0];
-  let resolved = false;
-
-  for (const candidate of candidatePaths) {
+  const candidates = [safePrivateDocumentPath(key), safePublicUploadPath(key)];
+  for (const filePath of candidates) {
     try {
-      await fs.access(candidate);
-      filePath = candidate;
-      resolved = true;
-      break;
-    } catch {
-      // continue to next fallback path
+      const buffer = await fs.readFile(filePath);
+      return { row: toApiDoc(row), buffer };
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
     }
   }
-
-  if (!resolved) {
-    // Never fabricate a placeholder file and return it as if it were the upload.
-    // The database record is retained so the original file can be restored or
-    // re-uploaded without losing document metadata or audit history.
-    throw AppError.notFound(
-      `The uploaded file for "${String(row.fileName || key)}" is missing from server storage. Restore it from persistent storage or upload it again.`,
-    );
-  }
-
-  return { row: toApiDoc(row), filePath };
+  throw AppError.notFound(`The uploaded file for "${String(row.fileName || key)}" is missing from server storage. It must be restored or re-uploaded.`);
 }
 
 export async function deleteDocument(id: string) {
   const row = await DocumentRecord.findById(id).lean();
   if (!row) return;
 
-  if (row.storageKey) {
-    try {
-      await fs.unlink(safePrivateDocumentPath(row.storageKey));
-    } catch (error: any) {
-      if (error?.code !== "ENOENT") throw error;
+  const storageKey = String(row.storageKey || "");
+  if (storageKey.startsWith(GRIDFS_PREFIX)) {
+    const idText = storageKey.slice(GRIDFS_PREFIX.length);
+    if (ObjectId.isValid(idText)) {
+      try { await getDocumentsBucket().delete(new ObjectId(idText)); }
+      catch (error: any) { if (error?.code !== "ENOENT") throw error; }
+    }
+  } else if (storageKey) {
+    for (const candidate of [safePrivateDocumentPath(storageKey), safePublicUploadPath(storageKey)]) {
+      try { await fs.unlink(candidate); break; }
+      catch (error: any) { if (error?.code !== "ENOENT") throw error; }
     }
   }
 
@@ -220,63 +246,56 @@ export async function deleteDocument(id: string) {
 }
 
 export async function migrateLegacyDocumentsToPrivateStorage() {
-  const rows = await DocumentRecord.find({
-    $or: [
-      { storageKey: { $exists: false } },
-      { storageKey: null },
-    ],
-  }).lean();
-
+  // On startup, move any documents still on local disk into GridFS. This also
+  // migrates legacy /uploads records where the original file is still present.
+  const rows = await DocumentRecord.find({}).lean();
   let migrated = 0;
   let skipped = 0;
 
   for (const row of rows) {
-    const value = String(row.fileUrl ?? "");
-    if (!value.startsWith("/uploads/")) {
-      skipped += 1;
-      continue;
-    }
+    const existingKey = String(row.storageKey || "");
+    if (existingKey.startsWith(GRIDFS_PREFIX)) continue;
 
-    const filename = path.basename(value);
-    if (!filename || filename === "." || filename === "..") {
-      skipped += 1;
-      continue;
+    let key = existingKey;
+    if (!key) {
+      const fileUrl = String(row.fileUrl || "");
+      if (fileUrl.startsWith("/uploads/")) key = path.basename(fileUrl);
     }
+    if (!key || key === "." || key === "..") { skipped += 1; continue; }
 
-    const source = path.resolve(UPLOAD_DIR_ABSOLUTE, filename);
-    const destination = safePrivateDocumentPath(filename);
+    let sourcePath: string | null = null;
+    for (const candidate of [safePrivateDocumentPath(key), safePublicUploadPath(key)]) {
+      try { await fs.access(candidate); sourcePath = candidate; break; }
+      catch (error: any) { if (error?.code !== "ENOENT") throw error; }
+    }
+    if (!sourcePath) { skipped += 1; continue; }
 
     try {
-      await fs.access(source);
-      await fs.mkdir(PRIVATE_DOCUMENT_DIR_ABSOLUTE, { recursive: true });
-
-      try {
-        await fs.rename(source, destination);
-      } catch (error: any) {
-        if (error?.code !== "EXDEV") throw error;
-        await fs.copyFile(source, destination);
-        await fs.unlink(source);
-      }
-
+      const buffer = await fs.readFile(sourcePath);
+      const ext = path.extname(String(row.fileName || key)).toLowerCase();
+      const contentType = ext === ".pdf" ? "application/pdf"
+        : [".jpg", ".jpeg"].includes(ext) ? "image/jpeg"
+        : ext === ".png" ? "image/png"
+        : ext === ".webp" ? "image/webp"
+        : ext === ".txt" ? "text/plain"
+        : ext === ".doc" ? "application/msword"
+        : ext === ".docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : "application/octet-stream";
+      const gridfsKey = await storeDocumentFile(buffer, String(row.fileName || key), contentType);
       await DocumentRecord.updateOne(
         { _id: row._id },
-        {
-          $set: {
-            storageKey: filename,
-            fileUrl: `/api/documents/${row._id}/download`,
-          },
-        },
+        { $set: { storageKey: gridfsKey, fileUrl: `/api/documents/${row._id}/download` } },
       );
+      await fs.unlink(sourcePath).catch(() => undefined);
       migrated += 1;
-    } catch {
+    } catch (error) {
       skipped += 1;
+      console.warn(`[documents] Could not migrate document ${String(row._id)} to GridFS`, error);
     }
   }
 
   if (migrated || skipped) {
-    console.info(
-      `[documents] legacy storage migration complete: ${migrated} migrated, ${skipped} skipped`,
-    );
+    console.info(`[documents] GridFS migration complete: ${migrated} migrated, ${skipped} skipped`);
   }
 }
 

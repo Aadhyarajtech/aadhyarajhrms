@@ -76,6 +76,27 @@ export const privateDocumentUpload = multer({
 
 export const PRIVATE_DOCUMENT_DIR_ABSOLUTE = PRIVATE_DOCUMENT_DIR;
 
+/**
+ * Documents module upload middleware. Files are held in memory briefly and
+ * then persisted to MongoDB GridFS by the documents repository. This avoids
+ * relying on Render's ephemeral local filesystem for employee documents.
+ */
+export const documentsGridFsUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_MIME.has(file.mimetype)) {
+      return cb(
+        new Error(
+          "Unsupported file type. Please upload a PDF, Word document, or image.",
+        ),
+      );
+    }
+    cb(null, true);
+  },
+});
+
+
 // Dedicated upload middleware for sensitive profile change proof.
 // This folder is not served through the public /uploads static route.
 const SENSITIVE_PROOF_MIME = new Set([

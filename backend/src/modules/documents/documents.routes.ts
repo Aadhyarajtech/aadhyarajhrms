@@ -4,7 +4,7 @@ import path from "node:path";
 import { authenticate } from "@/middleware/auth";
 import { isAdmin } from "@/middleware/rbac";
 import { validate } from "@/middleware/validate";
-import { privateDocumentUpload } from "@/middleware/upload";
+import { documentsGridFsUpload } from "@/middleware/upload";
 import { AppError } from "@/utils/errors";
 import * as repo from "./documents.repository";
 
@@ -134,7 +134,7 @@ documentsRouter.get("/employee/:employeeId", async (req, res, next) => {
 
 documentsRouter.post(
   "/employee/:employeeId",
-  privateDocumentUpload.single("file"),
+  documentsGridFsUpload.single("file"),
   async (req, res, next) => {
     try {
       const employeeId = resolveEmployeeId(req.params.employeeId, req.user?.employeeId);
@@ -174,18 +174,23 @@ documentsRouter.post(
           throw AppError.badRequest("Invalid expiry date.");
         }
 
+        const storageKey = await repo.storeDocumentFile(
+          req.file.buffer,
+          req.file.originalname,
+          req.file.mimetype,
+        );
         const { document } = await repo.fulfillDocumentRequest({
           requestId,
           fileName: req.file.originalname,
           fileUrl: "pending",
-          storageKey: req.file.filename,
+          storageKey,
           uploadedByUserId: req.user!.userId,
           expiryDate: parsedExpiryDate.data ?? null,
         });
 
         const secureDocument = await repo.setDocumentFileUrl(
           document.id,
-          req.file.filename,
+          storageKey,
         );
 
         res.status(201).json({ document: secureDocument });
@@ -220,6 +225,11 @@ documentsRouter.post(
         throw AppError.badRequest("Invalid expiry date.");
       }
 
+      const storageKey = await repo.storeDocumentFile(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+      );
       const document = await repo.addDocument({
         employeeId,
         uploadedBy: req.user!.userId,
@@ -227,13 +237,13 @@ documentsRouter.post(
         type,
         fileName: req.file.originalname,
         fileUrl: "pending",
-        storageKey: req.file.filename,
+        storageKey,
         expiryDate: parsedExpiryDate.data ?? null,
       });
 
       const secureDocument = await repo.setDocumentFileUrl(
         document.id,
-        req.file.filename,
+        storageKey,
       );
 
       res.status(201).json({ document: secureDocument });
@@ -264,8 +274,8 @@ async function sendAuthorizedDocument(req: any, res: any, next: any, forceDownlo
     // may use the explicit download endpoint; other authorized users use preview.
     if (forceDownload && !isAdminPrivileged) throw AppError.forbidden();
 
-    const { filePath, row } = await repo.getPrivateDocumentPath(req.params.id);
-    const mimeType = getMimeType(filePath);
+    const { buffer, row } = await repo.getPrivateDocumentContent(req.params.id);
+    const mimeType = getMimeType(String(row.fileName || ""));
     const safeName = String(row.fileName).replace(/[^a-zA-Z0-9._ -]/g, "_");
     res.setHeader("Content-Type", mimeType);
     res.setHeader("Content-Disposition", `${forceDownload ? "attachment" : "inline"}; filename="${safeName}"`);
@@ -276,7 +286,8 @@ async function sendAuthorizedDocument(req: any, res: any, next: any, forceDownlo
     // is protected by authenticate + per-document authorization above, so allow
     // the authorized response to be embedded by the frontend origin.
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    res.sendFile(filePath);
+    res.setHeader("Content-Length", String(buffer.length));
+    res.send(buffer);
   } catch (err) {
     next(err);
   }
