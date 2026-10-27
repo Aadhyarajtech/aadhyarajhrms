@@ -721,10 +721,11 @@ function MyAttendance({
     todayRecord?.breaks?.filter((item) => !item.end).length ?? 0;
 
   const breakInProgress = activeBreakCount > 0;
+
   const canStartBreak =
     !!todayRecord?.checkIn &&
     !todayRecord.checkOut &&
-
+    !breakInProgress &&
     !breakMutation.isPending &&
     !todayLoading;
 
