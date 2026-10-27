@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import {
+import { LayoutGrid,
   Briefcase,
   FileText,
   MapPin,
@@ -262,6 +263,55 @@ export default function Recruitment() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [hiringModeFilter, setHiringModeFilter] = useState("ALL");
   const [departmentFilter, setDepartmentFilter] = useState("ALL");
+  const [showAllKpis, setShowAllKpis] = useState(false);
+  const [kpiWorkspace, setKpiWorkspace] = useState<
+    "pipeline" | "hired" | "referrals" | "openings" | "workload" | "walkin" | "campus"
+  >("pipeline");
+
+  // KPI navigation: apply the relevant filter first, then move to its destination.
+  const requisitionsRef = useRef<HTMLDivElement | null>(null);
+  const pipelineRef = useRef<HTMLDivElement | null>(null);
+  const referralsRef = useRef<HTMLDivElement | null>(null);
+
+  const navigateKpi = (
+    target: "open" | "pending" | "pipeline" | "hired" | "referrals" | "openings" | "average" | "hiringMix",
+  ) => {
+    if (target === "open") {
+      setSearchTerm("");
+      setStatusFilter("OPEN");
+      setHiringModeFilter("ALL");
+      setDepartmentFilter("ALL");
+    } else if (target === "pending") {
+      setSearchTerm("");
+      setStatusFilter("PENDING_APPROVAL");
+      setHiringModeFilter("ALL");
+      setDepartmentFilter("ALL");
+    } else if (target === "openings") {
+      setSearchTerm("");
+      setStatusFilter("OPEN");
+      setHiringModeFilter("ALL");
+      setDepartmentFilter("ALL");
+    } else if (target === "average") {
+      clearFilters();
+    }
+
+    if (target === "pipeline" || target === "hired" || target === "referrals" ||
+        target === "openings" || target === "average" || target === "hiringMix") {
+      setKpiWorkspace(
+        target === "pipeline" ? "pipeline" :
+        target === "hired" ? "hired" :
+        target === "referrals" ? "referrals" :
+        target === "openings" ? "openings" :
+        target === "average" ? "workload" : "walkin",
+      );
+      setShowAllKpis(true);
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      requisitionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const {
     data: jobs,
@@ -279,6 +329,19 @@ export default function Recruitment() {
     queryKey: ["recruitment", "pipeline"],
     queryFn: RecruitmentApi.pipelineSummary,
     enabled: canManageRecruitment,
+  });
+
+  // The existing candidates endpoint accepts an optional jobPostingId.
+  // Omitting it loads the global recruitment candidate collection for KPI views.
+  const {
+    data: allRecruitmentCandidates = [],
+    isLoading: isKpiCandidatesLoading,
+    isError: isKpiCandidatesError,
+  } = useQuery({
+    queryKey: ["recruitment", "kpi-candidates"],
+    queryFn: () => RecruitmentApi.candidates(),
+    enabled: canManageRecruitment && showAllKpis,
+    retry: 1,
   });
 
   const { data: sourceAnalytics } = useQuery({
@@ -392,7 +455,9 @@ export default function Recruitment() {
 
     const matchesStatus =
       statusFilter === "ALL" ||
-      String(job.status ?? "").toUpperCase() === statusFilter;
+      (statusFilter === "PENDING_APPROVAL"
+        ? String(job.requisitionStatus ?? "").trim().toUpperCase() === "PENDING_APPROVAL"
+        : String(job.status ?? "").trim().toUpperCase() === statusFilter);
 
     const matchesHiringMode =
       hiringModeFilter === "ALL" ||
@@ -486,6 +551,18 @@ export default function Recruitment() {
           title="Available Job Roles"
           subtitle="Browse approved openings and identify positions available for employee referrals. Candidate information and recruitment management remain restricted."
         />
+      <div className="mb-3 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowAllKpis(true)}
+          className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          aria-haspopup="dialog"
+          aria-expanded={showAllKpis}
+        >
+          <LayoutGrid size={16} />
+          View All KPIs
+        </button>
+      </div>
 
         {!isLoading && !jobsLoadFailed && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -720,7 +797,7 @@ export default function Recruitment() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="relative overflow-hidden rounded-[22px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(79,70,229,0.06)]">
+        <div className="relative overflow-hidden rounded-[22px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(79,70,229,0.06)]" role="button" tabIndex={0} onClick={() => navigateKpi("open")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("open"); } }} aria-label="Navigate from open KPI">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Open roles</p>
@@ -733,7 +810,7 @@ export default function Recruitment() {
           <p className="mt-2 text-[11px] text-slate-500">Current recruitment requisitions</p>
         </div>
 
-        <div className="relative overflow-hidden rounded-[22px] border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(14,165,233,0.05)]">
+        <div className="relative overflow-hidden rounded-[22px] border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(14,165,233,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("pipeline")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("pipeline"); } }} aria-label="Navigate from pipeline KPI">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-600">In pipeline</p>
@@ -746,7 +823,7 @@ export default function Recruitment() {
           <p className="mt-2 text-[11px] text-slate-500">Candidates across all stages</p>
         </div>
 
-        <div className="relative overflow-hidden rounded-[22px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(16,185,129,0.05)]">
+        <div className="relative overflow-hidden rounded-[22px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(16,185,129,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("hired")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("hired"); } }} aria-label="Navigate from hired KPI">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Hired</p>
@@ -759,7 +836,7 @@ export default function Recruitment() {
           <p className="mt-2 text-[11px] text-slate-500">Completed hiring outcomes</p>
         </div>
 
-        <div className="relative overflow-hidden rounded-[22px] border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(245,158,11,0.05)]">
+        <div className="relative overflow-hidden rounded-[22px] border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(245,158,11,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("referrals")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("referrals"); } }} aria-label="Navigate from referrals KPI">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Referrals</p>
@@ -774,7 +851,7 @@ export default function Recruitment() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-[22px] border border-orange-100 bg-white p-4 shadow-[0_8px_24px_rgba(249,115,22,0.05)]">
+        <div className="rounded-[22px] border border-orange-100 bg-white p-4 shadow-[0_8px_24px_rgba(249,115,22,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("pending")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("pending"); } }} aria-label="Navigate from pending KPI">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">Pending approval</p>
@@ -787,7 +864,7 @@ export default function Recruitment() {
           <p className="mt-2 text-[11px] text-slate-500">Requisitions awaiting approval</p>
         </div>
 
-        <div className="rounded-[22px] border border-cyan-100 bg-white p-4 shadow-[0_8px_24px_rgba(6,182,212,0.05)]">
+        <div className="rounded-[22px] border border-cyan-100 bg-white p-4 shadow-[0_8px_24px_rgba(6,182,212,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("openings")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("openings"); } }} aria-label="Navigate from openings KPI">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-cyan-600">Total openings</p>
@@ -800,7 +877,7 @@ export default function Recruitment() {
           <p className="mt-2 text-[11px] text-slate-500">Planned positions across requisitions</p>
         </div>
 
-        <div className="rounded-[22px] border border-fuchsia-100 bg-white p-4 shadow-[0_8px_24px_rgba(217,70,239,0.05)]">
+        <div className="rounded-[22px] border border-fuchsia-100 bg-white p-4 shadow-[0_8px_24px_rgba(217,70,239,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("average")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("average"); } }} aria-label="Navigate from average KPI">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-fuchsia-600">Avg. candidates / role</p>
@@ -813,7 +890,7 @@ export default function Recruitment() {
           <p className="mt-2 text-[11px] text-slate-500">Average candidate volume per role</p>
         </div>
 
-        <div className="rounded-[22px] border border-violet-100 bg-white p-4 shadow-[0_8px_24px_rgba(124,92,255,0.05)]">
+        <div className="rounded-[22px] border border-violet-100 bg-white p-4 shadow-[0_8px_24px_rgba(124,92,255,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("hiringMix")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("hiringMix"); } }} aria-label="Navigate from hiringMix KPI">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Hiring mix</p>
@@ -827,9 +904,9 @@ export default function Recruitment() {
         </div>
       </div>
 
-      <Card className="mb-6 border-indigo-100/70 bg-gradient-to-br from-white to-[#FBFAFF] shadow-[0_10px_30px_rgba(79,70,229,0.05)]">
+      <div ref={pipelineRef} className="scroll-mt-5"><Card className="mb-6 border-indigo-100/70 bg-gradient-to-br from-white to-[#FBFAFF] shadow-[0_10px_30px_rgba(79,70,229,0.05)]">
         <CardHeader
-          title="Pipiline Overview"
+          title="Pipeline Overview"
           subtitle="Candidates by stage across all recruitment roles"
         />
 
@@ -860,9 +937,9 @@ export default function Recruitment() {
             <Bar dataKey="count" radius={[8, 8, 0, 0]} fill="#5B4FE5" />
           </BarChart>
         </ResponsiveContainer>
-      </Card>
+      </Card></div>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      <div ref={referralsRef} className="scroll-mt-5 mb-6 grid gap-4 lg:grid-cols-2">
         <Card className="border-slate-200/70 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.045)]">
           <CardHeader
             title="Recruitment Source Analytics"
@@ -997,7 +1074,7 @@ export default function Recruitment() {
         />
       ) : (
         <>
-          <div className="mb-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.045)]">
+          <div ref={requisitionsRef} className="scroll-mt-5 mb-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.045)]">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Hiring workspace</p>
@@ -1027,7 +1104,8 @@ export default function Recruitment() {
                 className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
               >
                 <option value="ALL">All statuses</option>
-                {statusOptions.map((status) => (
+                <option value="PENDING_APPROVAL">Pending approval</option>
+                {statusOptions.filter((status) => status !== "PENDING_APPROVAL").map((status) => (
                   <option key={status} value={status}>{status.replace(/_/g, " ")}</option>
                 ))}
               </select>
@@ -1130,6 +1208,141 @@ export default function Recruitment() {
         </>
       )}
 
+
+      {showAllKpis && createPortal((
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden bg-slate-950/50 p-3 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowAllKpis(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="all-recruitment-kpis-title"
+            className="flex w-[min(96vw,1400px)] max-w-[96vw] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl"
+            style={{ maxHeight: "calc(100dvh - 24px)", height: "fit-content" }}
+          >
+            <div className="z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
+              <div>
+                <h2 id="all-recruitment-kpis-title" className="text-lg font-semibold text-slate-900">Recruitment KPI Workspace</h2>
+                <p className="mt-1 text-sm text-slate-500">Select a metric to review its relevant recruitment records.</p>
+              </div>
+              <button type="button" onClick={() => setShowAllKpis(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close KPI workspace">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid shrink-0 gap-2 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-4">
+              {[
+                { label: "Open Roles", value: openApprovedJobs.length, action: "open", color: "indigo" },
+                { label: "In Pipeline", value: pipelineTotal, action: "pipeline", color: "sky" },
+                { label: "Hired", value: hiredCount, action: "hired", color: "emerald" },
+                { label: "Referrals", value: referralAnalytics?.totalReferrals ?? 0, action: "referrals", color: "amber" },
+                { label: "Pending Approval", value: pendingApprovalCount, action: "pending", color: "orange" },
+                { label: "Total Openings", value: totalOpenings, action: "openings", color: "cyan" },
+                { label: "Avg. Candidates / Role", value: averageCandidatesPerRole, action: "workload", color: "fuchsia" },
+                { label: "Hiring Mix", value: (jobs ?? []).filter((job: any) => String(job.hiringMode ?? "STANDARD").toUpperCase() !== "STANDARD").length, action: "walkin", color: "violet" },
+              ].map((kpi) => (
+                <button key={kpi.action} type="button"
+                  onClick={() => {
+                    if (kpi.action === "open" || kpi.action === "pending") {
+                      setShowAllKpis(false);
+                      navigateKpi(kpi.action);
+                    } else {
+                      setKpiWorkspace(kpi.action === "average" ? "workload" : kpi.action as typeof kpiWorkspace);
+                    }
+                  }}
+                  className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-200 ${kpiWorkspace === kpi.action ? "border-indigo-300 ring-1 ring-indigo-100" : "border-slate-200"}`}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{kpi.label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">{kpi.value}</p>
+                  <p className="mt-2 text-xs font-semibold text-indigo-600">View details →</p>
+                </button>
+              ))}
+            </div>
+
+            <div className="mx-3 mb-3 flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white sm:mx-4 sm:mb-4">
+              <div className="flex shrink-0 flex-col gap-3 border-b border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="font-semibold text-slate-900">
+                    {kpiWorkspace === "pipeline" ? "Candidate Pipeline" :
+                     kpiWorkspace === "hired" ? "Hired Candidates" :
+                     kpiWorkspace === "referrals" ? "Employee Referrals" :
+                     kpiWorkspace === "openings" ? "Open Positions" :
+                     kpiWorkspace === "workload" ? "Candidates per Role" :
+                     kpiWorkspace === "walkin" ? "Walk-in Hiring" : "Campus Hiring"}
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">Live data from existing Recruitment APIs.</p>
+                </div>
+                <select value={kpiWorkspace} onChange={(event) => setKpiWorkspace(event.target.value as typeof kpiWorkspace)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm sm:w-64"
+                  aria-label="Choose KPI details view">
+                  <option value="pipeline">Candidate Pipeline</option>
+                  <option value="hired">Hired Candidates</option>
+                  <option value="referrals">Employee Referrals</option>
+                  <option value="openings">Open Positions</option>
+                  <option value="workload">Candidates per Role</option>
+                  <option value="walkin">Walk-in Hiring</option>
+                  <option value="campus">Campus Hiring</option>
+                </select>
+              </div>
+
+              {kpiWorkspace === "openings" ? (
+                <div className="min-h-0 flex-1 overflow-auto">
+                  <table className="w-full min-w-[650px] text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Role</th><th className="px-4 py-3">Department</th><th className="px-4 py-3">Location</th><th className="px-4 py-3">Openings</th><th className="px-4 py-3">Status</th></tr></thead>
+                    <tbody>{openApprovedJobs.map((job: any) => <tr key={job.id} className="border-t border-slate-100"><td className="px-4 py-3 font-medium text-slate-800">{job.title}</td><td className="px-4 py-3">{job.departmentName || "—"}</td><td className="px-4 py-3">{job.location || "—"}</td><td className="px-4 py-3">{job.openings ?? job.headcount ?? 0}</td><td className="px-4 py-3"><StatusBadge status={job.status} /></td></tr>)}</tbody>
+                  </table>
+                </div>
+              ) : kpiWorkspace === "workload" ? (
+                <div className="min-h-0 flex-1 overflow-auto">
+                  <table className="w-full min-w-[550px] text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Role</th><th className="px-4 py-3">Department</th><th className="px-4 py-3">Candidates</th><th className="px-4 py-3">Openings</th></tr></thead>
+                    <tbody>{[...(jobs ?? [])].sort((a: any,b: any) => Number(b.candidateCount ?? 0)-Number(a.candidateCount ?? 0)).map((job: any) => <tr key={job.id} className="border-t border-slate-100"><td className="px-4 py-3 font-medium text-slate-800">{job.title}</td><td className="px-4 py-3">{job.departmentName || "—"}</td><td className="px-4 py-3">{job.candidateCount ?? 0}</td><td className="px-4 py-3">{job.openings ?? job.headcount ?? 0}</td></tr>)}</tbody>
+                  </table>
+                </div>
+              ) : kpiWorkspace === "walkin" || kpiWorkspace === "campus" ? (
+                <div className="grid gap-3 p-4 sm:grid-cols-2">
+                  {(() => {
+                    const metric = kpiWorkspace === "walkin" ? volumeHiringAnalytics?.walkIn : volumeHiringAnalytics?.campus;
+                    return [
+                      ["Applications", metric?.applications ?? 0],
+                      ["Screening", metric?.screening ?? 0],
+                      ["Interviewed", metric?.interviewed ?? 0],
+                      ["Hired", metric?.hired ?? 0],
+                      ["Conversion rate", `${metric?.conversionRate ?? 0}%`],
+                    ].map(([label, value]) => <div key={String(label)} className="rounded-lg border border-slate-100 bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-xl font-semibold text-slate-900">{value}</p></div>);
+                  })()}
+                </div>
+              ) : isKpiCandidatesLoading ? (
+                <div className="p-8 text-center text-sm text-slate-500">Loading candidates…</div>
+              ) : isKpiCandidatesError ? (
+                <div className="p-8 text-center text-sm text-rose-600">Unable to load candidate records. Please try again.</div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-auto">
+                  {(() => {
+                    const candidates = (allRecruitmentCandidates as any[]).filter((candidate) => {
+                      const stage = String(candidate.stage ?? candidate.currentStage ?? "").toUpperCase().replace(/[\s-]+/g, "_");
+                      if (kpiWorkspace === "hired") return stage === "HIRED" || String(candidate.finalResult ?? "").toUpperCase() === "HIRED";
+                      if (kpiWorkspace === "referrals") return String(candidate.source ?? candidate.applicationSource ?? "").toUpperCase().includes("REFERR");
+                      if (kpiWorkspace === "pipeline") return !["HIRED", "REJECTED", "WITHDRAWN"].includes(stage);
+                      return false;
+                    });
+                    return candidates.length ? (
+                      <table className="w-full min-w-[750px] text-left text-sm">
+                        <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Job</th><th className="px-4 py-3">Stage</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Applied</th></tr></thead>
+                        <tbody>{candidates.map((candidate: any) => <tr key={candidate.id} className="border-t border-slate-100"><td className="px-4 py-3 font-medium text-slate-800">{candidate.fullName ?? candidate.name ?? [candidate.firstName,candidate.lastName].filter(Boolean).join(" ") ?? "Candidate"}</td><td className="px-4 py-3">{candidate.jobTitle ?? candidate.job?.title ?? candidate.jobPosting?.title ?? "—"}</td><td className="px-4 py-3">{String(candidate.stage ?? candidate.currentStage ?? "—").replace(/_/g," ")}</td><td className="px-4 py-3">{String(candidate.source ?? candidate.applicationSource ?? "—").replace(/_/g," ")}</td><td className="px-4 py-3">{candidate.createdAt ? new Date(candidate.createdAt).toLocaleDateString() : "—"}</td></tr>)}</tbody>
+                      </table>
+                    ) : <div className="p-8 text-center text-sm text-slate-500">No matching records found for this view.</div>;
+                  })()}
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      ), document.body)}
       <PostJobModal open={postOpen} onClose={() => setPostOpen(false)} />
     </div>
   );
