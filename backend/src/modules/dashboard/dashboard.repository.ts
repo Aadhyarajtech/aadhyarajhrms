@@ -67,15 +67,10 @@ export async function getKpis() {
     }),
   ]);
 
-  // Use the most recent attendance date on or before today.
-  // This avoids misleading zero values on weekends and holidays.
-  const attendanceDateRow = await Attendance.findOne({
-    date: { $lte: today },
-  })
-    .sort({ date: -1 })
-    .lean();
-
-  const attendanceDate = attendanceDateRow?.date ?? today;
+  // Dashboard attendance KPIs must reflect today's attendance only.
+  // Falling back to an older attendance date can show a non-zero rate even
+  // when nobody is marked present today.
+  const attendanceDate = today;
 
   // Include every attendance status recognised as present
   // by the Attendance module.

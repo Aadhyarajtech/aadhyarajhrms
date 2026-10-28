@@ -510,7 +510,7 @@ export default function Dashboard() {
   const { kpis } = data;
 
   // Use the live organization-wide count returned by the dashboard API.
-  // The backend calculates this from approved, published open job postings.
+  // Both open-role displays below share this value so they cannot drift apart.
   const availableOpenRoles = Number(kpis.openRoles ?? 0);
 
 
