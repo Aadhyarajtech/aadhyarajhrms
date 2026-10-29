@@ -625,19 +625,87 @@ export async function getMyTickets(employeeId: string) {
     employeeId,
   );
 
-  const tickets = await Ticket.find({
-    employeeId: employeeId,
-  })
-    .sort({
-      createdAt: -1,
-    })
+  const tickets = await Ticket.find({ employeeId })
+    .sort({ createdAt: -1 })
     .lean();
 
   console.log(
     `[Tickets] Found ${tickets.length} ticket(s) for employee ${employeeId}`,
   );
 
-  return tickets;
+  // My Tickets must show the actual person assigned to a ticket, not just
+  // the department/role queue stored in assignedTo. Older tickets may only
+  // have assignedManagerId, so resolve both supported assignment fields.
+  const assigneeIds = Array.from(
+    new Set(
+      tickets
+        .flatMap((ticket: any) => [
+          String(ticket.assignedEmployeeId || "").trim(),
+          String(ticket.assignedManagerId || "").trim(),
+        ])
+        .filter(Boolean),
+    ),
+  );
+
+  // Current tickets store employee document IDs. Some older records may
+  // contain the linked login/user ID instead, so resolve both forms without
+  // changing the ticket's stored assignment or exposing unrelated users.
+  const assignedEmployees = assigneeIds.length
+    ? await Employee.find({
+        $or: [
+          { _id: { $in: assigneeIds } },
+          { userId: { $in: assigneeIds } },
+        ],
+      })
+        .select("_id userId firstName lastName employeeCode")
+        .lean()
+    : [];
+
+  const employeeMap = new Map<string, { name: string; employeeCode: string; id: string }>();
+  for (const employee of assignedEmployees as any[]) {
+    const resolved = {
+      id: String(employee._id),
+      name:
+        `${employee.firstName || ""} ${employee.lastName || ""}`.trim() ||
+        String(employee.employeeCode || "Employee"),
+      employeeCode: String(employee.employeeCode || ""),
+    };
+    employeeMap.set(String(employee._id), resolved);
+    if (employee.userId) employeeMap.set(String(employee.userId), resolved);
+  }
+
+  return tickets.map((ticket: any) => {
+    const assignedEmployeeId = String(ticket.assignedEmployeeId || "").trim();
+    const assignedManagerId = String(ticket.assignedManagerId || "").trim();
+    const assignedEmployee = assignedEmployeeId
+      ? employeeMap.get(assignedEmployeeId)
+      : undefined;
+    const assignedManager = assignedManagerId
+      ? employeeMap.get(assignedManagerId)
+      : undefined;
+    const assignedPerson = assignedEmployee || assignedManager;
+
+    return {
+      ...ticket,
+      assignedEmployee: assignedEmployee
+        ? {
+            id: assignedEmployee.id,
+            name: assignedEmployee.name,
+            employeeCode: assignedEmployee.employeeCode,
+          }
+        : null,
+      assignedManager: assignedManager
+        ? {
+            id: assignedManager.id,
+            name: assignedManager.name,
+            employeeCode: assignedManager.employeeCode,
+          }
+        : null,
+      assignedPersonName: assignedPerson?.name || null,
+      assignedPersonEmployeeCode: assignedPerson?.employeeCode || null,
+      assignedQueue: ticket.assignedTo || null,
+    };
+  });
 }
 
 // =========================================================

@@ -16,6 +16,14 @@ interface Ticket {
   status: string;
   createdAt: string;
   attachment?: string;
+  assignedTo?: string | null;
+  assignedEmployeeId?: string | null;
+  assignedManagerId?: string | null;
+  assignedEmployee?: { id: string; name: string; employeeCode?: string } | null;
+  assignedManager?: { id: string; name: string; employeeCode?: string } | null;
+  assignedPersonName?: string | null;
+  assignedPersonEmployeeCode?: string | null;
+  assignedQueue?: string | null;
 }
 
 export default function MyTickets() {
@@ -133,6 +141,10 @@ export default function MyTickets() {
               </th>
 
               <th className="p-3 text-left text-sm font-semibold">
+                Assigned Person
+              </th>
+
+              <th className="p-3 text-left text-sm font-semibold">
                 Status
               </th>
 
@@ -206,6 +218,37 @@ export default function MyTickets() {
                   </Link>
                 </td>
 
+                <td className="p-3 text-sm text-gray-700">
+                  <div
+                    className="font-medium text-gray-900"
+                    title={
+                      ticket.assignedEmployee?.name ||
+                      ticket.assignedManager?.name ||
+                      ticket.assignedPersonName ||
+                      "No individual assignee is recorded"
+                    }
+                  >
+                    {ticket.assignedEmployee?.name ||
+                      ticket.assignedManager?.name ||
+                      ticket.assignedPersonName ||
+                      "Not individually assigned"}
+                  </div>
+                  {(ticket.assignedEmployee?.employeeCode ||
+                    ticket.assignedManager?.employeeCode ||
+                    ticket.assignedPersonEmployeeCode) ? (
+                    <div className="mt-0.5 text-xs text-gray-500">
+                      {ticket.assignedEmployee?.employeeCode ||
+                        ticket.assignedManager?.employeeCode ||
+                        ticket.assignedPersonEmployeeCode}
+                    </div>
+                  ) : null}
+                  {ticket.assignedQueue ? (
+                    <div className="mt-0.5 text-xs text-gray-500">
+                      Queue: {ticket.assignedQueue.replaceAll("_", " ")}
+                    </div>
+                  ) : null}
+                </td>
+
                 <td className="p-3">
                   <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
                       {ticket.status.replaceAll("_", " ")}
@@ -250,7 +293,7 @@ export default function MyTickets() {
             {!data?.length && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="p-8 text-center text-sm text-gray-500"
                 >
                   No tickets found.
