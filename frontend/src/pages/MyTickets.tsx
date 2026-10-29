@@ -141,7 +141,7 @@ export default function MyTickets() {
               </th>
 
               <th className="p-3 text-left text-sm font-semibold">
-                Assigned Person
+                Assigned 
               </th>
 
               <th className="p-3 text-left text-sm font-semibold">
