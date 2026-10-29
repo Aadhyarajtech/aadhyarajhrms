@@ -7,8 +7,8 @@ export default {
       colors: {
         ink: {
           DEFAULT: "#1A1D29",
-          soft: "#4B5066",
-          faint: "#8A8FA3",
+          soft: "#1A1D29",
+          faint: "#1A1D29",
         },
         canvas: "#FAFAF8",
         surface: "#FFFFFF",

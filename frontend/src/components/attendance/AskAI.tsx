@@ -144,7 +144,7 @@ export default function AskAI({
               setQuestion(suggestion);
               handleAsk(suggestion);
             }}
-            className="rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[15px] text-gray-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[15px] text-gray-800 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {suggestion}
           </button>

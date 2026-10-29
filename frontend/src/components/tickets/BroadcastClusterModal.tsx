@@ -256,7 +256,7 @@ export default function BroadcastClusterModal({
                     <span className="font-mono font-semibold text-gray-900 shrink-0">
                       {t.ticketId}
                     </span>
-                    <span className="text-gray-700 truncate">
+                    <span className="text-gray-800 truncate">
                       {t.subject}
                     </span>
                   </div>
@@ -273,7 +273,7 @@ export default function BroadcastClusterModal({
 
         {/* Quick Presets */}
         <div>
-          <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5 mb-1.5">
+          <label className="text-xs font-semibold text-gray-800 flex items-center gap-1.5 mb-1.5">
             <Sparkles className="h-3.5 w-3.5 text-brand-600" />
             Quick Presets (Click to insert):
           </label>
@@ -298,7 +298,7 @@ export default function BroadcastClusterModal({
 
         {/* Message Input */}
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
+          <label className="block text-xs font-semibold text-gray-800 mb-1">
             Broadcast Message <span className="text-red-500">*</span>
           </label>
           <textarea
@@ -329,7 +329,7 @@ export default function BroadcastClusterModal({
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition ${
                   updateStatus === opt.value
                     ? "border-brand-500 bg-brand-50 text-brand-800"
-                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                    : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
                 }`}
               >
                 <input

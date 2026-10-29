@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
+import { candidateResumeUpload } from "@/middleware/upload";
+import { storeGridFsFile } from "@/services/gridfsStorage.service";
 import { AppError } from "@/utils/errors";
 import * as repo from "./recruitment.repository";
 import { parseResumeFile } from "./resumeParser";
@@ -36,7 +37,7 @@ publicRecruitmentRouter.get("/jobs/:id", async (req, res, next) => {
 
 publicRecruitmentRouter.post(
   "/jobs/:id/applications",
-  upload.single("resume"),
+  candidateResumeUpload.single("resume"),
   async (req, res, next) => {
     try {
       const parsed = applicationSchema.safeParse(req.body);
@@ -91,10 +92,14 @@ publicRecruitmentRouter.post(
 
       let updatedCandidate = candidate;
       if (req.file) {
-        const resumeUrl = `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`;
-        const resumeCandidate = await repo.setCandidateResume(candidate.id, {
-          resumeUrl,
+        const storedResume = await storeGridFsFile({
+          buffer: req.file.buffer,
+          filename: req.file.originalname,
+          contentType: req.file.mimetype,
+          category: "resume",
         });
+        const resumeUrl = `/api/files/resumes/${storedResume.id}`;
+        const resumeCandidate = await repo.setCandidateResume(candidate.id, { resumeUrl });
         if (resumeCandidate) updatedCandidate = resumeCandidate;
 
         if (resumeCandidate) {

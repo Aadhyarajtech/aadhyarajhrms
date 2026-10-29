@@ -1018,7 +1018,7 @@ export default function Tickets() {
 
                 onChange={(e) => setCategoryFilter(e.target.value)}
 
-                className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 focus:border-brand-500 focus:outline-none"
+                className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 focus:border-brand-500 focus:outline-none"
 
               >
 
@@ -1050,7 +1050,7 @@ export default function Tickets() {
 
               <thead>
 
-                <tr className="border-b bg-gray-50/90 text-gray-700 font-semibold">
+                <tr className="border-b bg-gray-50/90 text-gray-800 font-semibold">
 
                   <th className="py-2.5 px-3 text-left whitespace-nowrap">Ticket ID</th>
 
@@ -1136,7 +1136,7 @@ export default function Tickets() {
 
                       {/* Category */}
 
-                      <td className="py-2.5 px-2 text-gray-700 whitespace-nowrap">
+                      <td className="py-2.5 px-2 text-gray-800 whitespace-nowrap">
 
                         {ticket.category === "Complaint" ? (
 
@@ -1465,7 +1465,7 @@ export default function Tickets() {
 
                           }}
 
-                          className="rounded border border-gray-300 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 focus:border-brand-500 focus:outline-none"
+                          className="rounded border border-gray-300 bg-white px-2 py-1 text-[11px] font-medium text-gray-800 focus:border-brand-500 focus:outline-none"
 
                         >
 
@@ -1641,7 +1641,7 @@ export default function Tickets() {
 
                                 onClick={() => setHistoryTicket(ticket)}
 
-                                className="inline-flex items-center rounded border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-50 transition"
+                                className="inline-flex items-center rounded border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-50 transition"
 
                               >
 
@@ -1883,7 +1883,7 @@ export default function Tickets() {
 
               <div>
 
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-medium text-gray-800">
 
                   Escalate To
 
@@ -1919,7 +1919,7 @@ export default function Tickets() {
 
               <div>
 
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-medium text-gray-800">
 
                   Escalation Reason
 
@@ -1973,7 +1973,7 @@ export default function Tickets() {
 
                   disabled={escalateTicket.isPending}
 
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
 
                 >
 

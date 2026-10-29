@@ -744,7 +744,7 @@ export default function TicketDetails() {
           </p>
         </div>
 
-        <span className="inline-flex w-fit rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700">
+        <span className="inline-flex w-fit rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800">
           {formatStatus(data.status)}
         </span>
       </div>
@@ -813,7 +813,7 @@ export default function TicketDetails() {
               Created
             </p>
 
-            <p className="mt-1 text-sm text-gray-700">
+            <p className="mt-1 text-sm text-gray-800">
               {formatDateTime(
                 data.createdAt,
               )}
@@ -825,7 +825,7 @@ export default function TicketDetails() {
               Last Updated
             </p>
 
-            <p className="mt-1 text-sm text-gray-700">
+            <p className="mt-1 text-sm text-gray-800">
               {formatDateTime(
                 data.updatedAt,
               )}
@@ -943,7 +943,7 @@ export default function TicketDetails() {
             Description
           </p>
 
-          <div className="whitespace-pre-wrap rounded-xl bg-gray-50 p-4 text-sm leading-6 text-gray-700">
+          <div className="whitespace-pre-wrap rounded-xl bg-gray-50 p-4 text-sm leading-6 text-gray-800">
             {data.description}
           </div>
         </div>
@@ -1225,7 +1225,7 @@ export default function TicketDetails() {
 
               <div className="rounded-2xl bg-white px-8 py-6 text-center shadow-sm">
 
-                <p className="text-sm font-medium text-gray-700">
+                <p className="text-sm font-medium text-gray-800">
                   No messages yet
                 </p>
 
@@ -1517,7 +1517,7 @@ export default function TicketDetails() {
               href={attachmentUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-100"
+              className="inline-flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-800 transition hover:bg-gray-100"
             >
               <FileText size={20} />
 

@@ -509,7 +509,7 @@ export default function TicketConversation() {
           </p>
 
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500 mt-0.5">
-            <span className="font-medium text-gray-700">{ticket.category}</span>
+            <span className="font-medium text-gray-800">{ticket.category}</span>
             {ticket.category === "Other" && ticket.description?.match(/^Other Concern:\s*([^\n]+)/)?.[1] && (
               <span
                 className="max-w-[260px] truncate text-gray-600"
@@ -683,7 +683,7 @@ export default function TicketConversation() {
               <ChevronUp className="h-3.5 w-3.5" />
             </button>
           </div>
-          <div className="space-y-1.5 text-gray-700">
+          <div className="space-y-1.5 text-gray-800">
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               <span>
                 <strong className="text-gray-500">Predicted Category:</strong> {ticket.aiCategory}
@@ -761,21 +761,21 @@ export default function TicketConversation() {
               <div className="flex items-center gap-1.5 font-semibold text-red-700 mb-1">
                 <span>🔴</span> Issue Reported
               </div>
-              <p className="text-gray-700 leading-snug">{summary.issue}</p>
+              <p className="text-gray-800 leading-snug">{summary.issue}</p>
             </div>
 
             <div className="rounded-lg bg-white/80 p-2.5 border border-violet-100 shadow-2xs">
               <div className="flex items-center gap-1.5 font-semibold text-amber-700 mb-1">
                 <span>🟡</span> Thread Progression
               </div>
-              <p className="text-gray-700 leading-snug">{summary.currentStatus}</p>
+              <p className="text-gray-800 leading-snug">{summary.currentStatus}</p>
             </div>
 
             <div className="rounded-lg bg-white/80 p-2.5 border border-violet-100 shadow-2xs">
               <div className="flex items-center gap-1.5 font-semibold text-emerald-700 mb-1">
                 <span>🟢</span> Pending Action
               </div>
-              <p className="text-gray-700 leading-snug">{summary.pendingAction}</p>
+              <p className="text-gray-800 leading-snug">{summary.pendingAction}</p>
             </div>
           </div>
         </div>
@@ -834,7 +834,7 @@ export default function TicketConversation() {
                 </p>
                 <div className="flex items-center justify-between text-[10px] text-gray-500 mt-2 pt-1.5 border-t border-gray-100">
                   <span className="truncate max-w-[130px] font-medium">{sim.employeeName || "Employee"}</span>
-                  <span className="font-semibold uppercase tracking-wider text-[9px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
+                  <span className="font-semibold uppercase tracking-wider text-[9px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-800">
                     {sim.status}
                   </span>
                 </div>
@@ -851,7 +851,7 @@ export default function TicketConversation() {
       <div ref={containerRef} className="relative flex-1 overflow-y-auto bg-[#f7f3ea] px-5 py-6">
         {ticket.description && (
           <div className="mb-6 flex justify-center">
-            <div className="max-w-xl w-full rounded-lg bg-white px-4 py-3 text-sm text-gray-700 shadow-sm">
+            <div className="max-w-xl w-full rounded-lg bg-white px-4 py-3 text-sm text-gray-800 shadow-sm">
               <p className="mb-1 text-xs font-semibold text-gray-500">
                 Ticket Description
               </p>
@@ -883,7 +883,7 @@ export default function TicketConversation() {
           messages.length === 0 && (
             <div className="flex h-full items-center justify-center">
               <div className="rounded-xl bg-white px-6 py-5 text-center shadow-sm">
-                <p className="text-sm font-medium text-gray-700">
+                <p className="text-sm font-medium text-gray-800">
                   No messages yet
                 </p>
 
@@ -920,7 +920,7 @@ export default function TicketConversation() {
                           href={resolveAssetUrl(item.attachment) ?? "#"}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700"
+                          className="inline-flex items-center gap-2 rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800"
                         >
                           <Paperclip className="h-3 w-3" />
                           {item.attachment.split("/").pop()}
@@ -952,7 +952,7 @@ export default function TicketConversation() {
             <div className="flex min-w-0 items-center gap-2">
               <Paperclip className="h-4 w-4 shrink-0 text-gray-500" />
 
-              <span className="truncate text-sm text-gray-700">
+              <span className="truncate text-sm text-gray-800">
                 {selectedFile.name}
               </span>
             </div>
@@ -1076,7 +1076,7 @@ export default function TicketConversation() {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={ticketExpired}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100 hover:text-gray-700"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
             title="Attach file"
           >
             <Paperclip className="h-5 w-5" />

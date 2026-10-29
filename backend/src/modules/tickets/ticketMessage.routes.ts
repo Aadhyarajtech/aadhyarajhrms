@@ -7,7 +7,8 @@ import {
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
+import { ticketAttachmentUpload } from "@/middleware/upload";
+import { findGridFsFile, storeGridFsFile, streamGridFsFile } from "@/services/gridfsStorage.service";
 
 import type { AuthUser } from "@/types/express";
 
@@ -28,6 +29,27 @@ ticketMessageRouter.use(authenticate);
    GET TICKET MESSAGES
    GET /api/tickets/:id/messages
 ========================================================= */
+
+ticketMessageRouter.get(
+  "/:id/attachments/:fileId",
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: { message: "Unauthorized" } });
+      const ticket = await ticketRepo.getTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ error: { message: "Ticket not found" } });
+      if (!ticketRepo.isUserAuthorizedForTicket(ticket, req.user)) return res.status(403).json({ error: { message: "You are not authorized to view this attachment" } });
+      const file = await findGridFsFile(req.params.fileId);
+      if (!file || file.metadata?.category !== "ticket-attachment") return res.status(404).json({ error: { message: "Attachment not found" } });
+      const attachmentUrl = `/api/tickets/${req.params.id}/attachments/${req.params.fileId}`;
+      const messages = await messageRepo.getTicketMessages(req.params.id);
+      if (!messages.some((message: any) => message.attachment === attachmentUrl)) return res.status(404).json({ error: { message: "Attachment not found" } });
+      res.setHeader("Content-Type", file.contentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `inline; filename="${String(file.filename || "attachment").replace(/[^a-zA-Z0-9._ -]/g, "_")}"`);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      streamGridFsFile(req.params.fileId, res);
+    } catch (error) { next(error); }
+  },
+);
 
 ticketMessageRouter.get(
   "/:id/messages",
@@ -100,7 +122,7 @@ const createMessageSchema = z.object({
 
 ticketMessageRouter.post(
   "/:id/messages",
-  upload.single("attachment"),
+  ticketAttachmentUpload.single("attachment"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user) {
@@ -143,10 +165,7 @@ ticketMessageRouter.post(
       }
 
       const uploadedFile = req.file;
-
-      const attachment = uploadedFile
-        ? `${UPLOADS_PUBLIC_PATH}/${uploadedFile.filename}`
-        : "";
+      let attachment = "";
 
       if (!parsed.data.message.trim() && !attachment) {
         return res.status(400).json({
@@ -175,6 +194,16 @@ ticketMessageRouter.post(
       }
 
       const role = String(req.user.role);
+
+      if (uploadedFile) {
+        const storedAttachment = await storeGridFsFile({
+          buffer: uploadedFile.buffer,
+          filename: uploadedFile.originalname,
+          contentType: uploadedFile.mimetype,
+          category: "ticket-attachment",
+        });
+        attachment = `/api/tickets/${ticketId}/attachments/${storedAttachment.id}`;
+      }
 
       const message = await messageRepo.createTicketMessage({
         ticketId,

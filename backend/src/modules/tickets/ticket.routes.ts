@@ -7,7 +7,8 @@ import {
 import { z } from "zod";
 
 import { authenticate } from "@/middleware/auth";
-import { upload, UPLOADS_PUBLIC_PATH } from "@/middleware/upload";
+import { ticketAttachmentUpload } from "@/middleware/upload";
+import { findGridFsFile, storeGridFsFile, streamGridFsFile } from "@/services/gridfsStorage.service";
 import { validate } from "@/middleware/validate";
 import { requirePermission } from "@/middleware/permissions";
 
@@ -149,6 +150,25 @@ async function canChangeTicketPriority(
    Optional attachment supported.
 ========================================================= */
 
+// Ticket attachments are streamed from MongoDB GridFS only after the requester
+// is authorized to view the ticket that owns the file.
+ticketRouter.get("/attachments/:fileId", async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const file = await findGridFsFile(req.params.fileId);
+    if (!file || file.metadata?.category !== "ticket-attachment") {
+      return res.status(404).json({ error: { message: "Attachment not found." } });
+    }
+    const attachmentUrl = `/api/tickets/attachments/${req.params.fileId}`;
+    const ticket = await Ticket.findOne({ attachment: attachmentUrl }).lean();
+    if (!ticket) return res.status(404).json({ error: { message: "Attachment not found." } });
+    if (!(await canAccessTicket(ticket, req.user!))) return res.status(403).json({ error: { message: "You are not authorized to view this attachment." } });
+    res.setHeader("Content-Type", file.contentType || "application/octet-stream");
+    res.setHeader("Content-Disposition", `inline; filename="${String(file.filename || "attachment").replace(/[^a-zA-Z0-9._ -]/g, "_")}"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    streamGridFsFile(req.params.fileId, res);
+  } catch (error) { next(error); }
+});
+
 const createTicketSchema = z.object({
   category: z.enum([
     "Payroll Issue",
@@ -179,7 +199,7 @@ const createTicketSchema = z.object({
 
 ticketRouter.post(
   "/",
-  upload.single("attachment"),
+  ticketAttachmentUpload.single("attachment"),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (!req.user?.employeeId) {
@@ -202,10 +222,7 @@ ticketRouter.post(
       }
 
       const uploadedFile = req.file;
-
-      const attachment = uploadedFile
-        ? `${UPLOADS_PUBLIC_PATH}/${uploadedFile.filename}`
-        : "";
+      let attachment = "";
 
       // Resolve manager ownership from the employee's existing reporting relationship.
       // Employees never select a manager while raising a ticket.
@@ -265,6 +282,16 @@ ticketRouter.post(
         effectivePriority !== "CRITICAL"
       ) {
         effectivePriority = "HIGH";
+      }
+
+      if (uploadedFile) {
+        const storedAttachment = await storeGridFsFile({
+          buffer: uploadedFile.buffer,
+          filename: uploadedFile.originalname,
+          contentType: uploadedFile.mimetype,
+          category: "ticket-attachment",
+        });
+        attachment = `/api/tickets/attachments/${storedAttachment.id}`;
       }
 
       const ticket = await repo.createTicket({

@@ -367,7 +367,7 @@ export default function AiAttendanceAnomaly({
                               isExpanded ? null : group.employeeId,
                             )
                           }
-                          className="border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                          className="border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
                         >
                           {isExpanded ? "Hide" : "View"}
                         </Button>

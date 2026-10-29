@@ -505,7 +505,7 @@ export default function OrgChart() {
               <button
                 type="button"
                 onClick={() => setGlobalExpand(!globalExpand)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#e0ddd8] bg-[#fcfbf9] px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#e0ddd8] bg-[#fcfbf9] px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-100 transition cursor-pointer"
                 title={globalExpand ? "Collapse all tree branches" : "Expand all tree branches"}
               >
                 {globalExpand ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
@@ -605,7 +605,7 @@ export default function OrgChart() {
             <button
               type="button"
               onClick={() => setQuickViewEmp(null)}
-              className="rounded-md p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+              className="rounded-md p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-800"
             >
               <X size={16} />
             </button>
@@ -628,7 +628,7 @@ export default function OrgChart() {
             </div>
 
             {/* Direct Details */}
-            <div className="space-y-3 border-t border-b border-gray-100 py-4 text-gray-700">
+            <div className="space-y-3 border-t border-b border-gray-100 py-4 text-gray-800">
               <div className="flex justify-between">
                 <span className="text-gray-400">Employee ID:</span>
                 <span className="font-medium text-gray-900">{quickViewEmp.id}</span>
@@ -744,7 +744,7 @@ export default function OrgChart() {
           {/* Expanded Questions Selector */}
           <div className="h-80 flex flex-col border-t border-[#eeecea] bg-[#faf9f8]">
             <div className="p-3 border-b border-[#eeecea] bg-white space-y-2">
-              <p className="text-[11px] font-semibold text-gray-700 flex items-center gap-1.5">
+              <p className="text-[11px] font-semibold text-gray-800 flex items-center gap-1.5">
                 <HelpCircle size={13} className="text-purple-600" />
                 Select an admin question to view data:
               </p>

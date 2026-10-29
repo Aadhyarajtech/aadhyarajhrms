@@ -7,6 +7,7 @@ import { validate } from "@/middleware/validate";
 import { AppError } from "@/utils/errors";
 import {
   upload,
+  candidateResumeUpload,
   UPLOADS_PUBLIC_PATH,
   UPLOAD_DIR,
 } from "@/middleware/upload";
@@ -15,6 +16,8 @@ import * as repo from "./recruitment.repository";
 import { parseResumeFile } from "./resumeParser";
 import { generateInterviewCopilotAI } from "@/services/ai.service";
 import { generateResumeAutofill } from "./resumeAutofill.ai";
+import { storeGridFsFile } from "@/services/gridfsStorage.service";
+import { parseResumeBuffer } from "./resumeParser";
 export const recruitmentRouter = Router();
 
 recruitmentRouter.use(authenticate);
@@ -698,20 +701,14 @@ const candidateResumeSchema = z.object({
 recruitmentRouter.post(
   "/candidates/resume/autofill",
   requirePermission("recruitment.manage"),
-  upload.single("resume"),
+  candidateResumeUpload.single("resume"),
   async (req, res, next) => {
-    let temporaryFilePath: string | null = null;
-
     try {
       if (!req.file) {
         throw AppError.badRequest("Resume file is required.");
       }
 
-      temporaryFilePath = req.file.path;
-
-      const parsedResume = await parseResumeFile(
-        `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`,
-      );
+      const parsedResume = await parseResumeBuffer(req.file.buffer, req.file.originalname);
 
       const autofill = await generateResumeAutofill(parsedResume.text);
 
@@ -721,15 +718,6 @@ recruitmentRouter.post(
       });
     } catch (err) {
       next(err);
-    } finally {
-      if (temporaryFilePath) {
-        try {
-          const fs = await import("node:fs/promises");
-          await fs.unlink(temporaryFilePath);
-        } catch {
-          // Ignore cleanup errors.
-        }
-      }
     }
   },
 );
@@ -738,17 +726,21 @@ recruitmentRouter.post(
 recruitmentRouter.post(
   "/candidates/:id/resume/upload",
   requirePermission("recruitment.manage"),
-  upload.single("resume"),
+  candidateResumeUpload.single("resume"),
   async (req, res, next) => {
     try {
       if (!req.file) {
         throw AppError.badRequest("Resume file is required.");
       }
 
-      const resumeUrl = `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`;
-      const candidate = await repo.setCandidateResume(req.params.id, {
-        resumeUrl,
+      const storedResume = await storeGridFsFile({
+        buffer: req.file.buffer,
+        filename: req.file.originalname,
+        contentType: req.file.mimetype,
+        category: "resume",
       });
+      const resumeUrl = `/api/files/resumes/${storedResume.id}`;
+      const candidate = await repo.setCandidateResume(req.params.id, { resumeUrl });
 
       if (!candidate) {
         throw AppError.notFound("Candidate not found.");

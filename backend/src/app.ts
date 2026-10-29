@@ -10,6 +10,8 @@ import { env } from "@/config/env";
 import { notFoundHandler, errorHandler } from "@/middleware/errorHandler";
 
 import { UPLOAD_DIR_ABSOLUTE } from "@/middleware/upload";
+import { publicFilesRouter } from "@/modules/files/publicFiles.routes";
+import { findGridFsFile, streamGridFsFile } from "@/services/gridfsStorage.service";
 import { hrCopilotRouter } from "@/modules/ai/hr-copilot/hr-copilot.routes";
 import { requirePasswordResetComplete } from "@/middleware/passwordResetGate";
 import { breakGlassRouter } from "@/modules/break-glass/break-glass.routes";
@@ -134,6 +136,22 @@ export function createApp() {
   // =======================================================
 
   app.use("/uploads", express.static(UPLOAD_DIR_ABSOLUTE));
+  // Fallback for files uploaded through the shared upload middleware: legacy
+  // local files are served by express.static above, new files stream from GridFS.
+  app.get("/uploads/:fileId", async (req, res, next) => {
+    try {
+      const file = await findGridFsFile(req.params.fileId);
+      if (!file || file.metadata?.category !== "general") {
+        return res.status(404).json({ error: { message: "Uploaded file not found." } });
+      }
+      const safeName = String(file.filename || "attachment").replace(/[^a-zA-Z0-9._ -]/g, "_");
+      res.setHeader("Content-Type", file.contentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      streamGridFsFile(req.params.fileId, res);
+    } catch (error) { next(error); }
+  });
+  app.use("/api/files", publicFilesRouter);
 
   // =======================================================
   // HEALTH CHECK

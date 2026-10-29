@@ -141,7 +141,7 @@ export default function ExecutiveHelpdeskAnalytics({
     return (
       <div className="flex flex-col items-center justify-center p-16 bg-white rounded-2xl border border-gray-200 shadow-xs">
         <RefreshCw className="h-8 w-8 text-indigo-600 animate-spin mb-3" />
-        <p className="text-sm font-medium text-gray-700">Synthesizing Executive AI Helpdesk Analytics...</p>
+        <p className="text-sm font-medium text-gray-800">Synthesizing Executive AI Helpdesk Analytics...</p>
         <p className="text-xs text-gray-400 mt-1">Aggregating SLA compliance, sentiment signals, and anomaly patterns</p>
       </div>
     );
@@ -219,8 +219,8 @@ export default function ExecutiveHelpdeskAnalytics({
           <span className="text-xs font-medium text-gray-500">High Priority Tickets Requiring Immediate Action</span>
         </div>
         <div className="mt-2 flex items-center justify-between text-xs text-gray-500 border-t border-gray-100 pt-2">
-          <span>Medium Priority: <strong className="text-gray-700 font-semibold">{priorityDistribution.MEDIUM}</strong></span>
-          <span>Low Priority: <strong className="text-gray-700 font-semibold">{priorityDistribution.LOW}</strong></span>
+          <span>Medium Priority: <strong className="text-gray-800 font-semibold">{priorityDistribution.MEDIUM}</strong></span>
+          <span>Low Priority: <strong className="text-gray-800 font-semibold">{priorityDistribution.LOW}</strong></span>
         </div>
       </div>
 
@@ -236,7 +236,7 @@ export default function ExecutiveHelpdeskAnalytics({
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">Real-time emotional tone extracted across all ticket descriptions</p>
             </div>
-            <span className="text-xs font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">
+            <span className="text-xs font-semibold bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full">
               {totalSentiment} Analyzed
             </span>
           </div>
@@ -291,7 +291,7 @@ export default function ExecutiveHelpdeskAnalytics({
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">Volume share by organizational support vertical</p>
             </div>
-            <span className="text-xs font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">
+            <span className="text-xs font-semibold bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full">
               {overview.totalTickets} Total
             </span>
           </div>
@@ -300,7 +300,7 @@ export default function ExecutiveHelpdeskAnalytics({
             {categoryDistribution.slice(0, 5).map((cat) => (
               <div key={cat.category} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium text-gray-700">{cat.category}</span>
+                  <span className="font-medium text-gray-800">{cat.category}</span>
                   <span className="font-semibold text-gray-900">{cat.count} ({cat.percentage}%)</span>
                 </div>
                 <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
@@ -330,7 +330,7 @@ export default function ExecutiveHelpdeskAnalytics({
                 className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
                   recurringGroups.length > 0
                     ? "bg-amber-100 text-amber-900 border border-amber-300"
-                    : "bg-gray-100 text-gray-700"
+                    : "bg-gray-100 text-gray-800"
                 }`}
               >
                 {recurringGroups.length} Incident {recurringGroups.length === 1 ? "Cluster" : "Clusters"}
@@ -409,13 +409,13 @@ export default function ExecutiveHelpdeskAnalytics({
                   {/* Suggested Action Box */}
                   <div className="mt-3 p-3 bg-white/95 rounded-lg border border-amber-200/80 text-xs text-gray-800">
                     <span className="font-bold text-amber-900">Suggested Action:</span>{" "}
-                    <span className="text-gray-700">{group.suggestedAction}</span>
+                    <span className="text-gray-800">{group.suggestedAction}</span>
                   </div>
 
                   {/* Expanded Ticket Breakdown */}
                   {isExpanded && (
                     <div className="mt-3 pt-3 border-t border-amber-200/70 animate-fadeIn space-y-2">
-                      <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
+                      <div className="text-[11px] font-bold text-gray-800 uppercase tracking-wider mb-1">
                         Affected Tickets In This Incident:
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -431,7 +431,7 @@ export default function ExecutiveHelpdeskAnalytics({
                                   {t.ticketId}
                                   <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition" />
                                 </span>
-                                <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
+                                <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-800">
                                   {t.status}
                                 </span>
                               </div>
@@ -487,7 +487,7 @@ export default function ExecutiveHelpdeskAnalytics({
                     <span className="text-[10px] text-gray-500 font-medium">{item.category}</span>
                   </div>
                 </div>
-                <span className="text-xs font-bold text-gray-700 bg-white px-2 py-0.5 rounded-md border border-gray-200">
+                <span className="text-xs font-bold text-gray-800 bg-white px-2 py-0.5 rounded-md border border-gray-200">
                   {item.count} tickets
                 </span>
               </div>

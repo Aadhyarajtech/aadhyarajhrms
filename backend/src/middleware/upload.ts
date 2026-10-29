@@ -3,6 +3,7 @@ import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { storeGridFsFile, deleteGridFsFile } from "../services/gridfsStorage.service";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -29,19 +30,11 @@ const ALLOWED_MIME = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
-/**
- * Private document storage.
- *
- * Local development keeps the existing project-relative directory.
- * In production, set DOCUMENT_STORAGE_DIR to a persistent mounted directory,
- * e.g. /var/data/documents when a Render disk is mounted at /var/data.
- *
- * IMPORTANT: This directory is only persistent if the configured path is
- * actually on a persistent disk. An ordinary Render filesystem path is not.
- */
-const PRIVATE_DOCUMENT_DIR = process.env.DOCUMENT_STORAGE_DIR
-  ? path.resolve(process.env.DOCUMENT_STORAGE_DIR)
-  : path.join(process.cwd(), "private-uploads", "documents");
+const PRIVATE_DOCUMENT_DIR = path.join(
+  process.cwd(),
+  "private-uploads",
+  "documents",
+);
 
 if (!fs.existsSync(PRIVATE_DOCUMENT_DIR)) {
   fs.mkdirSync(PRIVATE_DOCUMENT_DIR, { recursive: true });
@@ -76,27 +69,6 @@ export const privateDocumentUpload = multer({
 
 export const PRIVATE_DOCUMENT_DIR_ABSOLUTE = PRIVATE_DOCUMENT_DIR;
 
-/**
- * Documents module upload middleware. Files are held in memory briefly and
- * then persisted to MongoDB GridFS by the documents repository. This avoids
- * relying on Render's ephemeral local filesystem for employee documents.
- */
-export const documentsGridFsUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
-  fileFilter: (_req, file, cb) => {
-    if (!ALLOWED_MIME.has(file.mimetype)) {
-      return cb(
-        new Error(
-          "Unsupported file type. Please upload a PDF, Word document, or image.",
-        ),
-      );
-    }
-    cb(null, true);
-  },
-});
-
-
 // Dedicated upload middleware for sensitive profile change proof.
 // This folder is not served through the public /uploads static route.
 const SENSITIVE_PROOF_MIME = new Set([
@@ -122,8 +94,28 @@ export const sensitiveChangeProofUpload = multer({
   },
 });
 
+const persistentGridFsStorage: multer.StorageEngine = {
+  _handleFile(_req, file, callback) {
+    const chunks: Buffer[] = [];
+    file.stream.on("data", (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    file.stream.on("error", callback);
+    file.stream.on("end", () => {
+      void storeGridFsFile({
+        buffer: Buffer.concat(chunks),
+        filename: file.originalname,
+        contentType: file.mimetype,
+        category: "general",
+      }).then((stored) => callback(null, { filename: stored.id, size: stored.length }))
+        .catch(callback);
+    });
+  },
+  _removeFile(_req, file, callback) {
+    void deleteGridFsFile(String(file.filename || "")).then(() => callback(null)).catch(callback);
+  },
+};
+
 export const upload = multer({
-  storage,
+  storage: persistentGridFsStorage,
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!ALLOWED_MIME.has(file.mimetype)) {
@@ -139,6 +131,52 @@ export const upload = multer({
 });
 
 export const UPLOADS_PUBLIC_PATH = "/uploads";
+
+// Persistent-storage uploads use memoryStorage so uploaded bytes can be written
+// directly to MongoDB GridFS instead of Render's ephemeral filesystem.
+const memoryStorage = multer.memoryStorage();
+const persistentFileFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
+  if (!ALLOWED_MIME.has(file.mimetype)) {
+    return cb(new Error("Unsupported file type. Please upload a PDF, Word document, or image."));
+  }
+  cb(null, true);
+};
+
+export const ticketAttachmentUpload = multer({
+  storage: memoryStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: persistentFileFilter,
+});
+
+export const candidateResumeUpload = multer({
+  storage: memoryStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(file.mimetype)) {
+      return cb(new Error("Resume must be a PDF, DOC, or DOCX file."));
+    }
+    cb(null, true);
+  },
+});
+
+export const persistentProfileImageUpload = multer({
+  storage: memoryStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!PROFILE_IMAGE_MIME.has(file.mimetype)) {
+      return cb(new Error("Invalid profile image. Please upload a PNG, JPEG, or WebP image."));
+    }
+    cb(null, true);
+  },
+});
+
+// Kept for documents.routes.ts compatibility in deployments that use the
+// GridFS-based document upload route. Its handler receives file.buffer.
+export const documentsGridFsUpload = multer({
+  storage: memoryStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: persistentFileFilter,
+});
 
 const PROFILE_IMAGE_MIME = new Set([
   "image/png",

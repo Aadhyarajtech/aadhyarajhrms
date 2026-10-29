@@ -216,7 +216,7 @@ export function PayrollValidationModal({
                 onClick={() => refetch()}
                 disabled={isFetching}
                 title="Refresh Validation"
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-2xs transition hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-2xs transition hover:bg-gray-50 hover:text-gray-800 disabled:opacity-50"
               >
                 <RefreshCw size={13} className={cx(isFetching && "animate-spin text-indigo-600")} />
               </button>
@@ -400,7 +400,7 @@ export function PayrollValidationModal({
                     AI Executive Briefing
                   </h4>
                 </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-gray-700">
+                <p className="mt-1.5 text-xs leading-relaxed text-gray-800">
                   {result.aiSummary}
                 </p>
 
@@ -491,7 +491,7 @@ export function PayrollValidationModal({
                   {filteredItems.length === 0 ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 py-8 text-center">
                       <CheckCircle2 size={24} className="text-emerald-500" />
-                      <p className="mt-1.5 text-xs font-medium text-gray-700">
+                      <p className="mt-1.5 text-xs font-medium text-gray-800">
                         No issues detected in this category
                       </p>
                       <p className="text-[11px] text-gray-400">
@@ -576,7 +576,7 @@ export function PayrollValidationModal({
                               {/* Single employee mention fallback */}
                               {item.employeeName && !hasEmployees && (
                                 <div className="mt-2 flex items-center gap-2">
-                                  <span className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700 shadow-2xs border border-gray-200">
+                                  <span className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-[11px] font-medium text-gray-800 shadow-2xs border border-gray-200">
                                     <User size={11} className="text-gray-400" />
                                     {item.employeeName}
                                     {item.employeeCode && (
@@ -599,7 +599,7 @@ export function PayrollValidationModal({
                                     {item.affectedEmployees!.map((emp) => (
                                       <span
                                         key={emp.id}
-                                        className="inline-flex items-center gap-1.5 rounded-md bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-700 border border-gray-200/80 shadow-2xs"
+                                        className="inline-flex items-center gap-1.5 rounded-md bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-800 border border-gray-200/80 shadow-2xs"
                                       >
                                         <User size={10} className="text-gray-400 shrink-0" />
                                         <span>{emp.name}</span>

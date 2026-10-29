@@ -278,7 +278,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
               <h2 className="font-display text-[17px] font-bold text-ink tracking-tight">
                 AI Custom Report Builder
               </h2>
-              <p className="text-[11px] text-ink-faint">
+              <p className="text-[11px] text-ink">
                 Configure datasets • Select columns • Group & visualize • Export
               </p>
             </div>
@@ -286,7 +286,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
 
           {/* Quick template chips */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] text-ink-faint font-medium mr-1">Templates:</span>
+            <span className="text-[10px] text-ink font-medium mr-1">Templates:</span>
             {REPORT_TEMPLATES.map((tmpl) => (
               <button
                 key={tmpl.id}
@@ -310,7 +310,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
               onChange={(e) => setPromptText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handlePromptGenerate()}
               placeholder='Describe a report: "Payroll by department", "Attendance this month", "Leave pending approvals"…'
-              className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-200 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-300 placeholder:text-ink-faint transition-all"
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-200 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-300 placeholder:text-ink transition-all"
             />
           </div>
           <Button
@@ -351,7 +351,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
                 <Icon size={15} />
               </div>
               <div className="text-xs font-bold text-ink">{tab.label}</div>
-              <div className="text-[10px] text-ink-faint leading-snug mt-0.5">{tab.desc}</div>
+              <div className="text-[10px] text-ink leading-snug mt-0.5">{tab.desc}</div>
               {isActive && (
                 <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-teal-500 animate-pulse" />
               )}
@@ -423,7 +423,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
               <div className="flex items-center gap-1 bg-white px-2 py-1.5 rounded-lg border border-slate-200 text-xs">
                 <Calendar size={11} className="text-teal-600" />
                 <input type="date" max="9999-12-31" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="bg-transparent text-ink text-[11px] focus:outline-none w-[90px]" />
-                <span className="text-ink-faint">→</span>
+                <span className="text-ink">→</span>
                 <input type="date" max="9999-12-31" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="bg-transparent text-ink text-[11px] focus:outline-none w-[90px]" />
               </div>
 
@@ -473,7 +473,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
                 </span>
                 <div className="flex items-center gap-2 text-[10px]">
                   <button type="button" onClick={handleSelectAllColumns} className="text-teal-600 font-semibold hover:underline">All</button>
-                  <span className="text-ink-faint">|</span>
+                  <span className="text-ink">|</span>
                   <button type="button" onClick={handleResetDefaultColumns} className="text-ink-soft hover:text-ink hover:underline">Defaults</button>
                 </div>
               </div>
@@ -515,7 +515,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
         <div className="rounded-xl border border-slate-200 bg-white p-14 text-center space-y-2 print:hidden">
           <RefreshCw size={24} className="mx-auto text-teal-600 animate-spin" />
           <h3 className="text-sm font-semibold text-ink">Building Report</h3>
-          <p className="text-[11px] text-ink-faint max-w-xs mx-auto">
+          <p className="text-[11px] text-ink max-w-xs mx-auto">
             Querying database, applying filters, and preparing visualizations…
           </p>
         </div>
@@ -570,7 +570,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
                       {report.source === "llm" ? "✨ Llama 3.3 70B Engine" : "Deterministic Engine"}
                     </span>
                   </div>
-                  <p className="text-[10px] text-ink-faint mt-0.5 print:text-[10pt] print:text-slate-500">
+                  <p className="text-[10px] text-ink mt-0.5 print:text-[10pt] print:text-slate-500">
                     Live synthesis across {report.totalRecords} {report.dataset.toLowerCase()} records • {report.subtitle}
                   </p>
                 </div>
@@ -624,7 +624,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
                           </span>
                           <span className="font-semibold text-ink truncate print:text-[10pt] print:text-slate-900">{rec.action}</span>
                         </div>
-                        <p className="text-[10px] text-ink-faint italic print:text-[9pt] print:text-slate-500">{rec.impact}</p>
+                        <p className="text-[10px] text-ink italic print:text-[9pt] print:text-slate-500">{rec.impact}</p>
                       </div>
                     );
                   })}
@@ -646,11 +646,11 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
                   <div key={kpi.id} className="flex-1 p-4 text-center min-w-0 print:py-3 print:px-2">
                     <div className="flex items-center justify-center gap-1.5 mb-1 print:mb-0.5">
                       <div className={`h-1.5 w-1.5 rounded-full ${statusDot} print:h-2 print:w-2`} />
-                      <span className="text-[10px] font-medium text-ink-faint truncate print:text-[9.5pt] print:font-semibold print:text-slate-600">{kpi.label}</span>
+                      <span className="text-[10px] font-medium text-ink truncate print:text-[9.5pt] print:font-semibold print:text-slate-600">{kpi.label}</span>
                     </div>
                     <div className="text-lg font-extrabold text-ink tracking-tight print:text-[17pt] print:font-black print:text-slate-900">{kpi.value}</div>
                     {kpi.subtext && (
-                      <p className="text-[10px] text-ink-faint mt-0.5 print:text-[8.5pt] print:text-slate-500">{kpi.subtext}</p>
+                      <p className="text-[10px] text-ink mt-0.5 print:text-[8.5pt] print:text-slate-500">{kpi.subtext}</p>
                     )}
                   </div>
                 );
@@ -665,7 +665,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
                 <h3 className="text-xs font-bold text-ink flex items-center gap-1.5 print:text-[11.5pt] print:font-bold print:text-slate-900">
                   <LayoutGrid size={13} className="text-teal-600 print:hidden" />
                   Group: {activeGroupBy.charAt(0).toUpperCase() + activeGroupBy.slice(1)}
-                  <span className="text-[10px] font-normal text-ink-faint ml-1 print:text-[9pt] print:text-slate-500">
+                  <span className="text-[10px] font-normal text-ink ml-1 print:text-[9pt] print:text-slate-500">
                     ({report.groupedSummary.length} groups)
                   </span>
                 </h3>
@@ -705,7 +705,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
                           style={{ width: `${Math.min(pct, 100)}%` }}
                         />
                       </div>
-                      <div className="text-[9px] text-ink-faint mt-0.5 print:text-[8pt]">{pct}%</div>
+                      <div className="text-[9px] text-ink mt-0.5 print:text-[8pt]">{pct}%</div>
                     </button>
                   );
                 })}
@@ -718,7 +718,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
             <div className="rounded-xl border border-slate-200 bg-white p-4 print:border-slate-300 print:p-3.5 print-card">
               <div className="flex items-center justify-between mb-3 print:mb-2">
                 <h3 className="text-xs font-bold text-ink print:text-[12.5pt] print:font-bold print:text-slate-900">{report.chart.title}</h3>
-                <span className="text-[10px] text-ink-faint print:text-[10pt] print:font-medium print:text-slate-500">{activeTab?.label} dataset</span>
+                <span className="text-[10px] text-ink print:text-[10pt] print:font-medium print:text-slate-500">{activeTab?.label} dataset</span>
               </div>
               <div className="h-52 w-full print:h-[300px] print:w-full print:block">
                 <ResponsiveContainer width="100%" height="100%">
@@ -763,7 +763,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
                   </span>
                 )}
               </div>
-              <span className="text-[10px] text-ink-faint print:text-[9pt] print:font-medium print:text-slate-600">
+              <span className="text-[10px] text-ink print:text-[9pt] print:font-medium print:text-slate-600">
                 {filteredRows.length}{drillFilter ? ` of ${report.rows.length}` : ""} records
               </span>
             </div>
@@ -782,7 +782,7 @@ export function AiCustomReportBuilderView({ filters, departments = [] }: Props) 
                 <tbody>
                   {filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan={visibleColumnDefs.length || 1} className="p-8 text-center text-ink-faint text-xs print:p-6">
+                      <td colSpan={visibleColumnDefs.length || 1} className="p-8 text-center text-ink text-xs print:p-6">
                         No records match the current scope.
                       </td>
                     </tr>

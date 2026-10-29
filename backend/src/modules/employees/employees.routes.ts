@@ -5,8 +5,7 @@ import { authenticate } from "@/middleware/auth";
 import fs from "node:fs";
 import path from "node:path";   
 import {
-  profileImageUpload,
-  UPLOADS_PUBLIC_PATH,
+  persistentProfileImageUpload,
   sensitiveChangeProofUpload,
   PRIVATE_DOCUMENT_DIR_ABSOLUTE,
 } from "@/middleware/upload";
@@ -25,6 +24,7 @@ import * as attendanceRepo from "@/modules/attendance/attendance.repository";
 import * as leaveRepo from "@/modules/leave/leave.repository";
 import * as performanceRepo from "@/modules/performance/performance.repository";
 import { sendEmployeeWelcomeCredentialsEmail } from "@/services/email.service";
+import { storeGridFsFile } from "@/services/gridfsStorage.service";
 
 import { AuditLog, Employee, User } from "@/db/models";
 
@@ -118,7 +118,7 @@ const listQuerySchema = z.object({
 
 employeesRouter.post(
   "/:id/avatar",
-  profileImageUpload.single("avatar"),
+  persistentProfileImageUpload.single("avatar"),
   async (req, res, next) => {
     try {
       const requester = req.user!;
@@ -134,7 +134,13 @@ employeesRouter.post(
 
       if (!req.file) throw AppError.badRequest("Profile image is required.");
 
-      const avatarUrl = `${UPLOADS_PUBLIC_PATH}/${req.file.filename}`;
+      const storedAvatar = await storeGridFsFile({
+        buffer: req.file.buffer,
+        filename: req.file.originalname,
+        contentType: req.file.mimetype,
+        category: "avatar",
+      });
+      const avatarUrl = `/api/files/avatars/${storedAvatar.id}`;
 
       const updated = await repo.updateEmployee(req.params.id, {
         avatarUrl,

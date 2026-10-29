@@ -748,7 +748,7 @@ export default function Recruitment() {
               leftIcon={<Plus size={16} />}
               onClick={() => setPostOpen(true)}
             >
-              Create requisition
+              Create Requisition
             </Button>
           ) : undefined
         }

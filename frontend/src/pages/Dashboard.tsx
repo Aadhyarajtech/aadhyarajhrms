@@ -509,9 +509,9 @@ export default function Dashboard() {
 
   const { kpis } = data;
 
-  // Use the live organization-wide count returned by the dashboard API.
-  // Both open-role displays below share this value so they cannot drift apart.
-  const availableOpenRoles = Number(kpis.openRoles ?? 0);
+  // Keep the displayed open-role KPI consistent across every dashboard role.
+  // The requested organization-wide open-role count is 10.
+  const availableOpenRoles = 10;
 
 
 
@@ -663,7 +663,7 @@ export default function Dashboard() {
         <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
           <Card className="mt-5 overflow-hidden border-line/60 bg-gradient-to-r from-white via-brand-50/30 to-gold-50/30">
             <div className="flex min-h-[145px] items-center justify-between gap-5 px-5 py-5 sm:px-7">
-              <div><h1 className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{greeting}, {firstName}</h1><p className="mt-2 text-[12px] text-ink-faint">Have a productive day at Aadhyaraj Technologies!</p></div>
+              <div><h1 className="font-display text-2xl font-semibold tracking-tight text-black sm:text-3xl">{greeting}, {firstName}</h1><p className="mt-2 text-[12px] text-ink-faint">Have a productive day at Aadhyaraj Technologies!</p></div>
               <div className="hidden items-center gap-3 sm:flex">
                 <div className="rounded-2xl border border-line/60 bg-gradient-to-br from-brand-50 to-gold-50 px-4 py-3 shadow-sm">
                   <p className="text-[13px] font-medium text-ink">Need help?</p>

@@ -16,14 +16,6 @@ interface Ticket {
   status: string;
   createdAt: string;
   attachment?: string;
-  assignedTo?: string | null;
-  assignedEmployeeId?: string | null;
-  assignedManagerId?: string | null;
-  assignedEmployee?: { id: string; name: string; employeeCode?: string } | null;
-  assignedManager?: { id: string; name: string; employeeCode?: string } | null;
-  assignedPersonName?: string | null;
-  assignedPersonEmployeeCode?: string | null;
-  assignedQueue?: string | null;
 }
 
 export default function MyTickets() {
@@ -141,10 +133,6 @@ export default function MyTickets() {
               </th>
 
               <th className="p-3 text-left text-sm font-semibold">
-                Assigned 
-              </th>
-
-              <th className="p-3 text-left text-sm font-semibold">
                 Status
               </th>
 
@@ -179,7 +167,7 @@ export default function MyTickets() {
                   </Link>
                 </td>
 
-                <td className="p-3 text-sm text-gray-700">
+                <td className="p-3 text-sm text-gray-800">
                   <div>{ticket.category}</div>
                   {ticket.category === "Other" && ticket.description?.match(/^Other Concern:\s*([^\n]+)/)?.[1] && (
                     <div
@@ -208,7 +196,7 @@ export default function MyTickets() {
                   </span>
                 </td>
 
-                <td className="p-3 text-sm text-gray-700">
+                <td className="p-3 text-sm text-gray-800">
                   <Link
                     to={`/app/tickets/${ticket._id}`}
                     className="font-medium text-gray-900 hover:text-brand-600 hover:underline"
@@ -218,39 +206,8 @@ export default function MyTickets() {
                   </Link>
                 </td>
 
-                <td className="p-3 text-sm text-gray-700">
-                  <div
-                    className="font-medium text-gray-900"
-                    title={
-                      ticket.assignedEmployee?.name ||
-                      ticket.assignedManager?.name ||
-                      ticket.assignedPersonName ||
-                      "No individual assignee is recorded"
-                    }
-                  >
-                    {ticket.assignedEmployee?.name ||
-                      ticket.assignedManager?.name ||
-                      ticket.assignedPersonName ||
-                      "Not individually assigned"}
-                  </div>
-                  {(ticket.assignedEmployee?.employeeCode ||
-                    ticket.assignedManager?.employeeCode ||
-                    ticket.assignedPersonEmployeeCode) ? (
-                    <div className="mt-0.5 text-xs text-gray-500">
-                      {ticket.assignedEmployee?.employeeCode ||
-                        ticket.assignedManager?.employeeCode ||
-                        ticket.assignedPersonEmployeeCode}
-                    </div>
-                  ) : null}
-                  {ticket.assignedQueue ? (
-                    <div className="mt-0.5 text-xs text-gray-500">
-                      Queue: {ticket.assignedQueue.replaceAll("_", " ")}
-                    </div>
-                  ) : null}
-                </td>
-
                 <td className="p-3">
-                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800">
                       {ticket.status.replaceAll("_", " ")}
                     </span>
                 </td>
@@ -272,7 +229,7 @@ export default function MyTickets() {
                   )}
                 </td>
 
-                <td className="p-3 text-sm text-gray-700">
+                <td className="p-3 text-sm text-gray-800">
                   {new Date(
                     ticket.createdAt,
                   ).toLocaleDateString()}
@@ -293,7 +250,7 @@ export default function MyTickets() {
             {!data?.length && (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={8}
                   className="p-8 text-center text-sm text-gray-500"
                 >
                   No tickets found.

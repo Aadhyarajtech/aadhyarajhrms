@@ -1,5 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
+import crypto from "node:crypto";
+import { getGridFsFileBuffer } from "@/services/gridfsStorage.service";
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 import WordExtractor from "word-extractor";
@@ -265,38 +268,49 @@ function extractEducation(text: string): string[] {
   return [...new Set(results)].slice(0, 10);
 }
 
+export async function parseResumeBuffer(
+  buffer: Buffer,
+  originalName: string,
+): Promise<ParsedResume> {
+  const extension = path.extname(originalName).toLowerCase();
+  const temporaryPath = path.join(os.tmpdir(), `hrms-resume-${crypto.randomBytes(8).toString("hex")}${extension}`);
+  try {
+    await fs.writeFile(temporaryPath, buffer);
+    return await parseResumeFile(temporaryPath);
+  } finally {
+    await fs.unlink(temporaryPath).catch(() => undefined);
+  }
+}
+
 export async function parseResumeFile(
   resumeUrl: string,
 ): Promise<ParsedResume> {
-  const filePath = resolveResumePath(resumeUrl);
-
+  let filePath: string | null = null;
+  let temporaryGridFsPath: string | null = null;
   try {
-    await fs.access(filePath);
-  } catch {
-    throw new Error("Uploaded resume file could not be found.");
-  }
-
-  let text: string;
-
-  try {
-    text = await extractText(filePath);
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Resume parsing failed: ${error.message}`);
+    const gridFsMatch = String(resumeUrl).match(/^\/api\/files\/resumes\/([a-fA-F0-9]{24})$/);
+    if (gridFsMatch) {
+      const stored = await getGridFsFileBuffer(gridFsMatch[1], "resume");
+      if (!stored) throw new Error("Uploaded resume file could not be found.");
+      const extension = path.extname(String(stored.file.filename || "resume.pdf")).toLowerCase() || ".pdf";
+      temporaryGridFsPath = path.join(os.tmpdir(), `hrms-resume-${crypto.randomBytes(8).toString("hex")}${extension}`);
+      await fs.writeFile(temporaryGridFsPath, stored.buffer);
+      filePath = temporaryGridFsPath;
+    } else {
+      filePath = resolveResumePath(resumeUrl);
+      await fs.access(filePath);
     }
+
+    const text = await extractText(filePath);
+    if (!text) {
+      throw new Error("No readable text was found in the resume. The document may be scanned or image-only.");
+    }
+    return { text, skills: extractSkills(text), experience: extractExperience(text), education: extractEducation(text) };
+  } catch (error) {
+    if (error instanceof Error && (error.message.startsWith("Uploaded resume") || error.message.startsWith("No readable text"))) throw error;
+    if (error instanceof Error) throw new Error(`Resume parsing failed: ${error.message}`);
     throw new Error("Resume parsing failed.");
+  } finally {
+    if (temporaryGridFsPath) await fs.unlink(temporaryGridFsPath).catch(() => undefined);
   }
-
-  if (!text) {
-    throw new Error(
-      "No readable text was found in the resume. The document may be scanned or image-only.",
-    );
-  }
-
-  return {
-    text,
-    skills: extractSkills(text),
-    experience: extractExperience(text),
-    education: extractEducation(text),
-  };
 }

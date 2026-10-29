@@ -337,7 +337,7 @@ export default function AttendancePatternAnalysis({
             {weekdays.map((item) => (
               <div key={item.day}>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="w-24 text-sm font-medium text-gray-700">
+                  <span className="w-24 text-sm font-medium text-gray-800">
                     {item.day}
                   </span>
 
@@ -592,7 +592,7 @@ export default function AttendancePatternAnalysis({
                       {index + 1}
                     </span>
 
-                    <p className="text-sm leading-6 text-gray-700">
+                    <p className="text-sm leading-6 text-gray-800">
                       {recommendation}
                     </p>
                   </div>

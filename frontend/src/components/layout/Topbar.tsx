@@ -559,7 +559,7 @@ export function Topbar({
           <div className="hidden sm:block">
             <p className="text-[13px] text-ink-faint">
               Welcome back,{" "}
-              <span className="font-medium text-ink">
+              <span className="font-medium text-black">
                 {user?.employee?.firstName ??
                   user?.email}
               </span>

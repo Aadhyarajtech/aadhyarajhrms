@@ -270,7 +270,7 @@ function AttendanceExceptionReview({
   const statusStyles: Record<string, string> = {
     OPEN: "bg-sky-50 text-sky-700 border-sky-200",
     RESOLVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    IGNORED: "bg-gray-100 text-gray-700 border-gray-200",
+    IGNORED: "bg-gray-100 text-gray-800 border-gray-200",
   };
 
   const groupedEmployees =
@@ -430,7 +430,7 @@ function AttendanceExceptionReview({
                                   </div>
                                   <div>
                                     <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Severity</p>
-                                    <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium capitalize ${severityStyles[String(anomaly.severity).toUpperCase()] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
+                                    <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs font-medium capitalize ${severityStyles[String(anomaly.severity).toUpperCase()] ?? "bg-gray-100 text-gray-800 border-gray-200"}`}>
                                       {String(anomaly.severity ?? "LOW").toLowerCase()}
                                     </span>
                                   </div>
@@ -721,11 +721,10 @@ function MyAttendance({
     todayRecord?.breaks?.filter((item) => !item.end).length ?? 0;
 
   const breakInProgress = activeBreakCount > 0;
-
   const canStartBreak =
     !!todayRecord?.checkIn &&
     !todayRecord.checkOut &&
-    !breakInProgress &&
+
     !breakMutation.isPending &&
     !todayLoading;
 

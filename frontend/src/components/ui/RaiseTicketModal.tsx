@@ -266,7 +266,7 @@ export default function RaiseTicketModal({
             type="button"
             onClick={onClose}
             aria-label="Close modal"
-            className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+            className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-800"
           >
             <X className="h-5 w-5" />
           </button>
@@ -638,7 +638,7 @@ export default function RaiseTicketModal({
 
             {attachment && (
               <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-sm">
-                <p className="font-medium text-gray-700">Selected file:</p>
+                <p className="font-medium text-gray-800">Selected file:</p>
 
                 <p className="break-all text-gray-500">{attachment.name}</p>
               </div>
@@ -656,7 +656,7 @@ export default function RaiseTicketModal({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
           >
             Cancel
           </button>
