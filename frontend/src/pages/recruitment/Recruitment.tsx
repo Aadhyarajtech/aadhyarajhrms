@@ -549,7 +549,7 @@ export default function Recruitment() {
       <div className="premium-page space-y-4">
         <PageHeader
           title="Available Job Roles"
-          subtitle="Browse approved openings and identify positions available for employee referrals. Candidate information and recruitment management remain restricted."
+          subtitle="Browse Approved Openings And Identify Positions Available For Employee Referrals. Candidate Information And Recruitment Management Remain Restricted."
         />
       <div className="mb-3 flex justify-end">
         <button
@@ -567,11 +567,11 @@ export default function Recruitment() {
         {!isLoading && !jobsLoadFailed && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-indigo-100 bg-white px-4 py-3 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">Available roles</p>
+              <p className="text-xs font-medium text-slate-500">Available Roles</p>
               <p className="mt-1 text-2xl font-semibold text-slate-900">{availableJobs.length}</p>
             </div>
             <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">Referral opportunities</p>
+              <p className="text-xs font-medium text-slate-500">Referral Opportunities</p>
               <p className="mt-1 text-2xl font-semibold text-slate-900">
                 {availableJobs.filter(isReferralRole).length}
               </p>
@@ -581,7 +581,7 @@ export default function Recruitment() {
 
         {jobsLoadFailed ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-            <h2 className="font-semibold text-amber-950">Unable to load available job roles</h2>
+            <h2 className="font-semibold text-amber-950">Unable To Load Available Job Roles</h2>
             <p className="mt-1 text-sm text-amber-900">
               The job-listing request failed. This is different from having no open roles.
               {jobsLoadError instanceof Error ? ` ${jobsLoadError.message}` : ""}
@@ -599,8 +599,8 @@ export default function Recruitment() {
         ) : availableJobs.length === 0 ? (
           <EmptyState
             icon={Briefcase}
-            title="No available roles"
-            description="There are no currently available job roles to display."
+            title="No Available Roles"
+            description="There Are No Currently Available Job Roles To Display."
           />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -620,18 +620,18 @@ export default function Recruitment() {
                 <div className="mt-3 flex-1 space-y-1.5 text-xs leading-5 text-slate-600">
                   <p className="flex items-center gap-2"><MapPin size={14} className="text-slate-400" />{job.location || "Location not specified"}</p>
                   <p><span className="font-medium">Experience:</span> {job.experienceMin ?? 0}–{job.experienceMax ?? 0} years</p>
-                  <p><span className="font-medium">Employment type:</span> {formatEmploymentType(job.employmentType)}</p>
-                  <p><span className="font-medium">Open positions:</span> {job.openings ?? job.headcount ?? 1}</p>
+                  <p><span className="font-medium">Employment Type:</span> {formatEmploymentType(job.employmentType)}</p>
+                  <p><span className="font-medium">Open Positions:</span> {job.openings ?? job.headcount ?? 1}</p>
                   {isReferralRole(job) && (
                     <p className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
                       <UserPlus size={13} /> Employee referral available
                     </p>
                   )}
                   {Array.isArray(job.skills) && job.skills.length > 0 && (
-                    <p className="line-clamp-2"><span className="font-medium">Required skills:</span> {job.skills.join(", ")}</p>
+                    <p className="line-clamp-2"><span className="font-medium">Required Skills:</span> {job.skills.join(", ")}</p>
                   )}
                   {typeof job.skills === "string" && job.skills.trim() && (
-                    <p className="line-clamp-2"><span className="font-medium">Required skills:</span> {job.skills}</p>
+                    <p className="line-clamp-2"><span className="font-medium">Required Skills:</span> {job.skills}</p>
                   )}
                   {job.description && (
                     <p className="line-clamp-4 min-h-[5rem] border-t border-slate-100 pt-2 leading-5 text-slate-500">{job.description}</p>
@@ -643,7 +643,7 @@ export default function Recruitment() {
                   className="mt-3 flex w-full items-center justify-between border-t border-slate-100 pt-3 text-left text-[11px] font-semibold text-indigo-600 transition hover:text-indigo-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
                   aria-label={`Read full details for ${job.title}`}
                 >
-                  <span>Read role details</span>
+                  <span>Read Role Details</span>
                   <ChevronRight size={14} />
                 </button>
               </Card>
@@ -666,7 +666,7 @@ export default function Recruitment() {
             >
               <div className="sticky top-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-5 py-4 sm:px-6">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Available job role</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Available Job Role</p>
                   <h2 id="available-job-detail-title" className="mt-1 font-display text-xl font-semibold text-slate-900">
                     {selectedAvailableJob.title}
                   </h2>
@@ -678,7 +678,7 @@ export default function Recruitment() {
                   type="button"
                   onClick={() => setSelectedAvailableJob(null)}
                   className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                  aria-label="Close job details"
+                  aria-label="Close Job Details"
                 >
                   <X size={18} />
                 </button>
@@ -691,7 +691,7 @@ export default function Recruitment() {
                     <p className="mt-1 text-sm font-medium text-slate-900">{selectedAvailableJob.location || "Not specified"}</p>
                   </div>
                   <div className="rounded-xl border border-slate-200 p-3">
-                    <p className="text-xs text-slate-500">Employment type</p>
+                    <p className="text-xs text-slate-500">Employment Type</p>
                     <p className="mt-1 text-sm font-medium text-slate-900">{formatEmploymentType(selectedAvailableJob.employmentType)}</p>
                   </div>
                   <div className="rounded-xl border border-slate-200 p-3">
@@ -699,7 +699,7 @@ export default function Recruitment() {
                     <p className="mt-1 text-sm font-medium text-slate-900">{selectedAvailableJob.experienceMin ?? 0}–{selectedAvailableJob.experienceMax ?? 0} years</p>
                   </div>
                   <div className="rounded-xl border border-slate-200 p-3">
-                    <p className="text-xs text-slate-500">Open positions</p>
+                    <p className="text-xs text-slate-500">Open Positions</p>
                     <p className="mt-1 text-sm font-medium text-slate-900">{selectedAvailableJob.openings ?? selectedAvailableJob.headcount ?? 1}</p>
                   </div>
                 </div>
@@ -712,7 +712,7 @@ export default function Recruitment() {
 
                 {(Array.isArray(selectedAvailableJob.skills) ? selectedAvailableJob.skills.length > 0 : Boolean(String(selectedAvailableJob.skills ?? "").trim())) && (
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-900">Required skills</h3>
+                    <h3 className="text-sm font-semibold text-slate-900">Required Skills</h3>
                     <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
                       {Array.isArray(selectedAvailableJob.skills) ? selectedAvailableJob.skills.join(", ") : selectedAvailableJob.skills}
                     </p>
@@ -720,7 +720,7 @@ export default function Recruitment() {
                 )}
 
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Job description</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">Job Description</h3>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
                     {selectedAvailableJob.description || "No job description has been provided."}
                   </p>
@@ -741,7 +741,7 @@ export default function Recruitment() {
     <div className="premium-page space-y-5">
       <PageHeader
         title="Recruitment"
-        subtitle="Manage job requisitions, approvals, postings, and every candidate's journey."
+        subtitle="Manage Job Requisitions, Approvals, Postings, And Every Candidate's Journey."
         action={
           canManageRecruitment ? (
             <Button
@@ -797,33 +797,33 @@ export default function Recruitment() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="relative overflow-hidden rounded-[22px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(79,70,229,0.06)]" role="button" tabIndex={0} onClick={() => navigateKpi("open")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("open"); } }} aria-label="Navigate from open KPI">
+        <div className="relative overflow-hidden rounded-[22px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(79,70,229,0.06)]" role="button" tabIndex={0} onClick={() => navigateKpi("open")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("open"); } }} aria-label="Navigate From Open Kpi">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Open roles</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Open Roles</p>
               <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{openApprovedJobs.length}</p>
             </div>
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
               <Briefcase size={17} />
             </span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Current recruitment requisitions</p>
+          <p className="mt-2 text-[11px] text-slate-500">Current Recruitment Requisitions</p>
         </div>
 
-        <div className="relative overflow-hidden rounded-[22px] border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(14,165,233,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("pipeline")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("pipeline"); } }} aria-label="Navigate from pipeline KPI">
+        <div className="relative overflow-hidden rounded-[22px] border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(14,165,233,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("pipeline")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("pipeline"); } }} aria-label="Navigate From Pipeline Kpi">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-600">In pipeline</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-600">In Pipeline</p>
               <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{pipelineTotal}</p>
             </div>
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sky-600 shadow-sm ring-1 ring-sky-100">
               <TrendingUp size={17} />
             </span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Candidates across all stages</p>
+          <p className="mt-2 text-[11px] text-slate-500">Candidates Across All Stages</p>
         </div>
 
-        <div className="relative overflow-hidden rounded-[22px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(16,185,129,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("hired")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("hired"); } }} aria-label="Navigate from hired KPI">
+        <div className="relative overflow-hidden rounded-[22px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(16,185,129,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("hired")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("hired"); } }} aria-label="Navigate From Hired Kpi">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Hired</p>
@@ -833,10 +833,10 @@ export default function Recruitment() {
               <CheckCircle2 size={17} />
             </span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Completed hiring outcomes</p>
+          <p className="mt-2 text-[11px] text-slate-500">Completed Hiring Outcomes</p>
         </div>
 
-        <div className="relative overflow-hidden rounded-[22px] border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(245,158,11,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("referrals")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("referrals"); } }} aria-label="Navigate from referrals KPI">
+        <div className="relative overflow-hidden rounded-[22px] border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-[0_8px_24px_rgba(245,158,11,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("referrals")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("referrals"); } }} aria-label="Navigate From Referrals Kpi">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Referrals</p>
@@ -846,68 +846,68 @@ export default function Recruitment() {
               <UserPlus size={17} />
             </span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Employee referral volume</p>
+          <p className="mt-2 text-[11px] text-slate-500">Employee Referral Volume</p>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-[22px] border border-orange-100 bg-white p-4 shadow-[0_8px_24px_rgba(249,115,22,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("pending")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("pending"); } }} aria-label="Navigate from pending KPI">
+        <div className="rounded-[22px] border border-orange-100 bg-white p-4 shadow-[0_8px_24px_rgba(249,115,22,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("pending")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("pending"); } }} aria-label="Navigate From Pending Kpi">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">Pending approval</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">Pending Approval</p>
               <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{pendingApprovalCount}</p>
             </div>
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
               <Clock3 size={17} />
             </span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Requisitions awaiting approval</p>
+          <p className="mt-2 text-[11px] text-slate-500">Requisitions Awaiting Approval</p>
         </div>
 
-        <div className="rounded-[22px] border border-cyan-100 bg-white p-4 shadow-[0_8px_24px_rgba(6,182,212,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("openings")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("openings"); } }} aria-label="Navigate from openings KPI">
+        <div className="rounded-[22px] border border-cyan-100 bg-white p-4 shadow-[0_8px_24px_rgba(6,182,212,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("openings")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("openings"); } }} aria-label="Navigate From Openings Kpi">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-cyan-600">Total openings</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-cyan-600">Total Openings</p>
               <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{totalOpenings}</p>
             </div>
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-50 text-cyan-600">
               <Briefcase size={17} />
             </span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Planned positions across requisitions</p>
+          <p className="mt-2 text-[11px] text-slate-500">Planned Positions Across Requisitions</p>
         </div>
 
-        <div className="rounded-[22px] border border-fuchsia-100 bg-white p-4 shadow-[0_8px_24px_rgba(217,70,239,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("average")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("average"); } }} aria-label="Navigate from average KPI">
+        <div className="rounded-[22px] border border-fuchsia-100 bg-white p-4 shadow-[0_8px_24px_rgba(217,70,239,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("average")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("average"); } }} aria-label="Navigate From Average Kpi">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-fuchsia-600">Avg. candidates / role</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-fuchsia-600">Avg. Candidates / Role</p>
               <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{averageCandidatesPerRole}</p>
             </div>
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-fuchsia-50 text-fuchsia-600">
               <UserCheck size={17} />
             </span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Average candidate volume per role</p>
+          <p className="mt-2 text-[11px] text-slate-500">Average Candidate Volume Per Role</p>
         </div>
 
-        <div className="rounded-[22px] border border-violet-100 bg-white p-4 shadow-[0_8px_24px_rgba(124,92,255,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("hiringMix")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("hiringMix"); } }} aria-label="Navigate from hiringMix KPI">
+        <div className="rounded-[22px] border border-violet-100 bg-white p-4 shadow-[0_8px_24px_rgba(124,92,255,0.05)]" role="button" tabIndex={0} onClick={() => navigateKpi("hiringMix")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigateKpi("hiringMix"); } }} aria-label="Navigate From Hiringmix Kpi">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Hiring mix</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Hiring Mix</p>
               <p className="mt-1 font-display text-2xl font-semibold text-slate-900">{(jobs ?? []).filter((job: any) => String(job.hiringMode ?? "STANDARD") !== "STANDARD").length}</p>
             </div>
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
               <GraduationCap size={17} />
             </span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Walk-in or campus requisitions</p>
+          <p className="mt-2 text-[11px] text-slate-500">Walk-In Or Campus Requisitions</p>
         </div>
       </div>
 
       <div ref={pipelineRef} className="scroll-mt-5"><Card className="mb-6 border-indigo-100/70 bg-gradient-to-br from-white to-[#FBFAFF] shadow-[0_10px_30px_rgba(79,70,229,0.05)]">
         <CardHeader
           title="Pipeline Overview"
-          subtitle="Candidates by stage across all recruitment roles"
+          subtitle="Candidates By Stage Across All Recruitment Roles"
         />
 
         <ResponsiveContainer width="100%" height={180}>
@@ -943,7 +943,7 @@ export default function Recruitment() {
         <Card className="border-slate-200/70 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.045)]">
           <CardHeader
             title="Recruitment Source Analytics"
-            subtitle="Applications and hiring performance by source"
+            subtitle="Applications And Hiring Performance By Source"
           />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
@@ -1001,7 +1001,7 @@ export default function Recruitment() {
           <Card className="border-amber-100/80 bg-gradient-to-br from-white to-[#FFFBF2] shadow-[0_10px_28px_rgba(245,158,11,0.045)]">
             <CardHeader
               title="Employee Referrals"
-              subtitle="Referral pipeline performance"
+              subtitle="Referral Pipeline Performance"
             />
             <div className="grid grid-cols-2 gap-3">
               {[
@@ -1032,7 +1032,7 @@ export default function Recruitment() {
           <Card className="border-sky-100/80 bg-gradient-to-br from-white to-[#F5FBFF] shadow-[0_10px_28px_rgba(14,165,233,0.045)]">
             <CardHeader
               title="Volume Hiring"
-              subtitle="Walk-in and campus recruitment"
+              subtitle="Walk-In And Campus Recruitment"
             />
             {[volumeHiringAnalytics?.walkIn, volumeHiringAnalytics?.campus].map(
               (item, index) => (
@@ -1069,17 +1069,17 @@ export default function Recruitment() {
       ) : !jobs?.length ? (
         <EmptyState
           icon={Briefcase}
-          title="No job postings yet"
-          description="Create your first job requisition to start building your recruitment pipeline."
+          title="No Job Postings Yet"
+          description="Create Your First Job Requisition To Start Building Your Recruitment Pipeline."
         />
       ) : (
         <>
           <div ref={requisitionsRef} className="scroll-mt-5 mb-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.045)]">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Hiring workspace</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">Hiring Workspace</p>
                 <h3 className="mt-1 font-display text-lg font-semibold tracking-[-0.015em] text-slate-900">Current Requisitions</h3>
-                <p className="mt-1 text-[11px] text-slate-500">Search and filter requisitions without changing the existing recruitment workflow.</p>
+                <p className="mt-1 text-[11px] text-slate-500">Search And Filter Requisitions Without Changing The Existing Recruitment Workflow.</p>
               </div>
               <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-semibold text-slate-500">
                 <Building2 size={13} />
@@ -1104,7 +1104,7 @@ export default function Recruitment() {
                 className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
               >
                 <option value="ALL">All Statuses</option>
-                <option value="PENDING_APPROVAL">Pending approval</option>
+                <option value="PENDING_APPROVAL">Pending Approval</option>
                 {statusOptions.filter((status) => status !== "PENDING_APPROVAL").map((status) => (
                   <option key={status} value={status}>{status.replace(/_/g, " ")}</option>
                 ))}
@@ -1145,10 +1145,10 @@ export default function Recruitment() {
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
                 <Search size={20} />
               </div>
-              <h4 className="mt-4 font-display text-base font-semibold text-slate-900">No matching requisitions</h4>
-              <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">Try another search term or clear the filters to see all current requisitions.</p>
+              <h4 className="mt-4 font-display text-base font-semibold text-slate-900">No Matching Requisitions</h4>
+              <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">Try Another Search Term Or Clear The Filters To See All Current Requisitions.</p>
               {hasActiveFilters && (
-                <Button variant="outline" className="mt-4" onClick={clearFilters}>Clear filters</Button>
+                <Button variant="outline" className="mt-4" onClick={clearFilters}>Clear Filters</Button>
               )}
             </div>
           ) : (
@@ -1199,7 +1199,7 @@ export default function Recruitment() {
                       <FileText size={12} className="shrink-0" />
                       <span className="truncate">Requisition: {String(job.requisitionStatus ?? "NOT_SET").replace(/_/g, " ").toLowerCase()}</span>
                     </div>
-                    <span className="shrink-0 text-[10px] font-semibold text-indigo-600">Open role</span>
+                    <span className="shrink-0 text-[10px] font-semibold text-indigo-600">Open Role</span>
                   </div>
                 </Card>
               ))}
@@ -1226,10 +1226,10 @@ export default function Recruitment() {
           >
             <div className="z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
               <div>
-                <h2 id="all-recruitment-kpis-title" className="text-lg font-semibold text-slate-900">Recruitment KPI Workspace</h2>
-                <p className="mt-1 text-sm text-slate-500">Select a metric to review its relevant recruitment records.</p>
+                <h2 id="all-recruitment-kpis-title" className="text-lg font-semibold text-slate-900">Recruitment Kpi Workspace</h2>
+                <p className="mt-1 text-sm text-slate-500">Select A Metric To Review Its Relevant Recruitment Records.</p>
               </div>
-              <button type="button" onClick={() => setShowAllKpis(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close KPI workspace">
+              <button type="button" onClick={() => setShowAllKpis(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close Kpi Workspace">
                 <X size={18} />
               </button>
             </div>
@@ -1258,7 +1258,7 @@ export default function Recruitment() {
                 >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{kpi.label}</p>
                   <p className="mt-2 text-2xl font-semibold text-slate-900">{kpi.value}</p>
-                  <p className="mt-2 text-xs font-semibold text-indigo-600">View details →</p>
+                  <p className="mt-2 text-xs font-semibold text-indigo-600">View Details →</p>
                 </button>
               ))}
             </div>
@@ -1274,17 +1274,17 @@ export default function Recruitment() {
                      kpiWorkspace === "workload" ? "Candidates per Role" :
                      kpiWorkspace === "walkin" ? "Walk-in Hiring" : "Campus Hiring"}
                   </h3>
-                  <p className="mt-1 text-xs text-slate-500">Live data from existing Recruitment APIs.</p>
+                  <p className="mt-1 text-xs text-slate-500">Live Data From Existing Recruitment Apis.</p>
                 </div>
                 <select value={kpiWorkspace} onChange={(event) => setKpiWorkspace(event.target.value as typeof kpiWorkspace)}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm sm:w-64"
-                  aria-label="Choose KPI details view">
+                  aria-label="Choose Kpi Details View">
                   <option value="pipeline">Candidate Pipeline</option>
                   <option value="hired">Hired Candidates</option>
                   <option value="referrals">Employee Referrals</option>
                   <option value="openings">Open Positions</option>
-                  <option value="workload">Candidates per Role</option>
-                  <option value="walkin">Walk-in Hiring</option>
+                  <option value="workload">Candidates Per Role</option>
+                  <option value="walkin">Walk-In Hiring</option>
                   <option value="campus">Campus Hiring</option>
                 </select>
               </div>
@@ -1317,9 +1317,9 @@ export default function Recruitment() {
                   })()}
                 </div>
               ) : isKpiCandidatesLoading ? (
-                <div className="p-8 text-center text-sm text-slate-500">Loading candidates…</div>
+                <div className="p-8 text-center text-sm text-slate-500">Loading Candidates…</div>
               ) : isKpiCandidatesError ? (
-                <div className="p-8 text-center text-sm text-rose-600">Unable to load candidate records. Please try again.</div>
+                <div className="p-8 text-center text-sm text-rose-600">Unable To Load Candidate Records. Please Try Again.</div>
               ) : (
                 <div className="min-h-0 flex-1 overflow-auto">
                   {(() => {
@@ -1335,7 +1335,7 @@ export default function Recruitment() {
                         <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Job</th><th className="px-4 py-3">Stage</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Applied</th></tr></thead>
                         <tbody>{candidates.map((candidate: any) => <tr key={candidate.id} className="border-t border-slate-100"><td className="px-4 py-3 font-medium text-slate-800">{candidate.fullName ?? candidate.name ?? [candidate.firstName,candidate.lastName].filter(Boolean).join(" ") ?? "Candidate"}</td><td className="px-4 py-3">{candidate.jobTitle ?? candidate.job?.title ?? candidate.jobPosting?.title ?? "—"}</td><td className="px-4 py-3">{String(candidate.stage ?? candidate.currentStage ?? "—").replace(/_/g," ")}</td><td className="px-4 py-3">{String(candidate.source ?? candidate.applicationSource ?? "—").replace(/_/g," ")}</td><td className="px-4 py-3">{candidate.createdAt ? new Date(candidate.createdAt).toLocaleDateString() : "—"}</td></tr>)}</tbody>
                       </table>
-                    ) : <div className="p-8 text-center text-sm text-slate-500">No matching records found for this view.</div>;
+                    ) : <div className="p-8 text-center text-sm text-slate-500">No Matching Records Found For This View.</div>;
                   })()}
                 </div>
               )}
@@ -1884,7 +1884,7 @@ function PostJobModal({
           </Button>
         </div>
         <TextField
-          label="Job title"
+          label="Job Title"
           required
           className="sm:col-span-2"
           error={errors.title?.message}
@@ -1893,14 +1893,14 @@ function PostJobModal({
 
         <p className="sm:col-span-2 -mt-3 text-[11px] text-ink-faint">
           <span className="font-medium text-ink">💡</span> Enter a job title and click{" "}
-          <span className="font-medium text-brand-600">Generate with AI</span> to automatically fill the job details.
+          <span className="font-medium text-brand-600">Generate With Ai</span> to automatically fill the job details.
         </p>
 
         <div>
           <TextField
             label="Department"
             required
-            placeholder="Type or select a department"
+            placeholder="Type Or Select A Department"
             error={errors.departmentId?.message}
             list="requisition-department-options"
             {...register("departmentId", {
@@ -1925,7 +1925,7 @@ function PostJobModal({
           <TextField
             label="Designation"
             required
-            placeholder="Type or select a designation"
+            placeholder="Type Or Select A Designation"
             error={errors.designationId?.message}
             list="requisition-designation-options"
             {...register("designationId")}
@@ -1941,11 +1941,11 @@ function PostJobModal({
         </div>
 
         <SelectField
-          label="Role category"
+          label="Role Category"
           value={selectedRoleCategory}
           onChange={(event) => applyRoleTemplate(event.target.value)}
         >
-          <option value="">Auto detect from job title</option>
+          <option value="">Auto Detect From Job Title</option>
 
           {Object.entries(ROLE_TEMPLATES).map(([value, template]) => (
             <option key={value} value={value}>
@@ -1955,7 +1955,7 @@ function PostJobModal({
         </SelectField>
 
         <SelectField
-          label="Employment type"
+          label="Employment Type"
           required
           {...register("employmentType")}
         >
@@ -1988,7 +1988,7 @@ function PostJobModal({
             />
 
             <div>
-              <p className="text-sm font-medium text-ink">Use role template</p>
+              <p className="text-sm font-medium text-ink">Use Role Template</p>
 
               <p className="text-xs text-ink-faint">
                 Automatically fill the job description and suggested skills from
@@ -2026,7 +2026,7 @@ function PostJobModal({
         />
 
         <TextField
-          label="Maximum budget / CTC per employee"
+          label="Maximum Budget / Ctc Per Employee"
           type="number"
           min="0"
           placeholder="Optional"
@@ -2035,7 +2035,7 @@ function PostJobModal({
         />
 
         <TextField
-          label="Minimum experience (years)"
+          label="Minimum Experience (Years)"
           type="number"
           min="0"
           required
@@ -2044,7 +2044,7 @@ function PostJobModal({
         />
 
         <TextField
-          label="Maximum experience (years)"
+          label="Maximum Experience (Years)"
           type="number"
           min="0"
           required
@@ -2064,20 +2064,20 @@ function PostJobModal({
         </div>
 
         <SelectField
-          label="Approval levels required"
+          label="Approval Levels Required"
           required
           error={errors.approvalLevelRequired?.message}
           {...register("approvalLevelRequired")}
         >
-          <option value="1">1 level</option>
+          <option value="1">1 Level</option>
 
-          <option value="2">2 levels</option>
+          <option value="2">2 Levels</option>
 
-          <option value="3">3 levels</option>
+          <option value="3">3 Levels</option>
 
-          <option value="4">4 levels</option>
+          <option value="4">4 Levels</option>
 
-          <option value="5">5 levels</option>
+          <option value="5">5 Levels</option>
         </SelectField>
 
         {selectedHiringMode === "WALK_IN" && (
@@ -2094,14 +2094,14 @@ function PostJobModal({
             </div>
 
             <TextField
-              label="Drive date"
+              label="Drive Date"
               type="date"
               required
               {...register("walkInDriveDate")}
              max="9999-12-31" />
 
             <TextField
-              label="Expected candidates"
+              label="Expected Candidates"
               type="number"
               min="0"
               placeholder="100"
@@ -2109,14 +2109,14 @@ function PostJobModal({
             />
 
             <TextField
-              label="Start time"
+              label="Start Time"
               type="time"
               required
               {...register("walkInStartTime")}
             />
 
             <TextField
-              label="End time"
+              label="End Time"
               type="time"
               required
               {...register("walkInEndTime")}
@@ -2126,26 +2126,26 @@ function PostJobModal({
               label="Venue"
               required
               className="sm:col-span-2"
-              placeholder="Office address or walk-in venue"
+              placeholder="Office Address Or Walk-In Venue"
               {...register("walkInVenue")}
             />
 
             <TextField
-              label="Coordinator name"
+              label="Coordinator Name"
               required
-              placeholder="HR / Recruitment coordinator"
+              placeholder="Hr / Recruitment Coordinator"
               {...register("walkInCoordinatorName")}
             />
 
             <TextField
-              label="Coordinator contact"
+              label="Coordinator Contact"
               required
-              placeholder="Phone number or email"
+              placeholder="Phone Number Or Email"
               {...register("walkInCoordinatorContact")}
             />
 
             <TextField
-              label="Registration deadline"
+              label="Registration Deadline"
               type="date"
               {...register("walkInRegistrationDeadline")}
              max="9999-12-31" />
@@ -2193,7 +2193,7 @@ function PostJobModal({
 
             <TextField
               label="Required Skills"
-              placeholder="React, TypeScript, Node.js"
+              placeholder="React, Typescript, Node.Js"
               error={errors.shortlistingCriteria?.requiredSkillsText?.message}
               {...register("shortlistingCriteria.requiredSkillsText")}
             />
@@ -2214,22 +2214,22 @@ function PostJobModal({
             </div>
 
             <TextField
-              label="College name"
+              label="College Name"
               required
               className="sm:col-span-2"
-              placeholder="Enter college or university name"
+              placeholder="Enter College Or University Name"
               {...register("campusCollegeName")}
             />
 
             <TextField
-              label="Campus location"
+              label="Campus Location"
               required
               placeholder="City, State"
               {...register("campusLocation")}
             />
 
             <TextField
-              label="Expected candidates"
+              label="Expected Candidates"
               type="number"
               min="0"
               placeholder="100"
@@ -2237,52 +2237,52 @@ function PostJobModal({
             />
 
             <TextField
-              label="Drive date"
+              label="Drive Date"
               type="date"
               required
               {...register("campusDriveDate")}
              max="9999-12-31" />
 
             <TextField
-              label="Start time"
+              label="Start Time"
               type="time"
               required
               {...register("campusStartTime")}
             />
 
             <TextField
-              label="End time"
+              label="End Time"
               type="time"
               required
               {...register("campusEndTime")}
             />
 
             <TextField
-              label="Placement coordinator"
+              label="Placement Coordinator"
               required
-              placeholder="Coordinator name"
+              placeholder="Coordinator Name"
               {...register("campusPlacementCoordinator")}
             />
 
             <TextField
-              label="Coordinator contact"
+              label="Coordinator Contact"
               required
-              placeholder="Phone number or email"
+              placeholder="Phone Number Or Email"
               {...register("campusCoordinatorContact")}
             />
           </div>
         )}
 
-        <SelectField label="Hiring mode" required {...register("hiringMode")}>
-          <option value="STANDARD">Standard recruitment</option>
+        <SelectField label="Hiring Mode" required {...register("hiringMode")}>
+          <option value="STANDARD">Standard Recruitment</option>
 
-          <option value="WALK_IN">Walk-in recruitment</option>
+          <option value="WALK_IN">Walk-In Recruitment</option>
 
-          <option value="CAMPUS">Campus recruitment</option>
+          <option value="CAMPUS">Campus Recruitment</option>
         </SelectField>
 
         <div className="sm:col-span-2">
-          <p className="mb-2 text-sm font-medium text-ink">Posting channels</p>
+          <p className="mb-2 text-sm font-medium text-ink">Posting Channels</p>
 
           <div className="grid gap-2 sm:grid-cols-2">
             {[
@@ -2317,8 +2317,8 @@ function PostJobModal({
         </div>
 
         <TextField
-          label="Required skills"
-          placeholder="React, Node.js, MongoDB"
+          label="Required Skills"
+          placeholder="React, Node.Js, Mongodb"
           className="sm:col-span-2"
           {...register("skillsText")}
         />
@@ -2329,7 +2329,7 @@ function PostJobModal({
         </p>
 
         <TextareaField
-          label="Screening questions"
+          label="Screening Questions"
           placeholder={
             "Do you have 4+ years of experience?\nAre you willing to relocate?"
           }
@@ -2344,10 +2344,10 @@ function PostJobModal({
         </p>
 
         <TextareaField
-          label="Job description"
+          label="Job Description"
           className="sm:col-span-2"
           error={errors.description?.message}
-          placeholder="Describe responsibilities, qualifications, expectations and other requirements. You can also select a role category and use the automatic template."
+          placeholder="Describe Responsibilities, Qualifications, Expectations And Other Requirements. You Can Also Select A Role Category And Use The Automatic Template."
           {...register("description")}
         />
 
