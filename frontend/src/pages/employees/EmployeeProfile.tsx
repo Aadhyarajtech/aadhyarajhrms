@@ -630,7 +630,7 @@ export default function EmployeeProfile() {
               <button
                 type="button"
                 onClick={() => navigate(`/app/employees/${employee.managerId}`)}
-                className="font-medium text-ink underline-offset-2 transition-colors hover:text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+                className="font-medium text-ink underline-offset-2 transition-colors hover:text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 font-black focus-visible:ring-brand/30"
               >
                 {employee.managerFirstName} {employee.managerLastName}
               </button>
@@ -1233,7 +1233,7 @@ function OverviewTab({
             <Info label="Gender" value={employee.gender ?? "—"} />
 
             <Info
-              label="Marital status"
+              label="Marital Status"
               value={
                 employee.maritalStatus
                   ? employee.maritalStatus.replace(/_/g, " ")
@@ -1242,19 +1242,19 @@ function OverviewTab({
             />
 
             <Info
-              label="Date of birth"
+              label="Date Of Birth"
               value={
                 employee.dateOfBirth ? formatDate(employee.dateOfBirth) : "—"
               }
             />
 
             <Info
-              label="Personal email"
+              label="Personal Email"
               value={employee.personalEmail ?? "—"}
             />
 
             <Info
-              label="Employment type"
+              label="Employment Type"
               value={
                 employee.employmentType
                   ? employee.employmentType.replace(/_/g, " ")
@@ -1273,22 +1273,22 @@ function OverviewTab({
             <Info label="Address" value={employee.address ?? "—"} />
 
             <Info
-              label="Emergency contact"
+              label="Emergency Contact"
               value={employee.emergencyContactName ?? "—"}
             />
 
             <Info
-              label="Emergency phone"
+              label="Emergency Phone"
               value={employee.emergencyContactPhone ?? "—"}
             />
 
             <Info
-              label="Emergency relationship"
+              label="Emergency Relationship"
               value={employee.emergencyContactRelationship ?? "—"}
             />
 
             <Info
-              label="Emergency email"
+              label="Emergency Email"
               value={employee.emergencyContactEmail ?? "—"}
             />
 
@@ -1308,7 +1308,7 @@ function OverviewTab({
               </p>
               <form onSubmit={(event) => void submitSensitiveProfileChange(event)} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-field">Field to update</label>
+                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-field">Field To Update</label>
                   <select id="sensitive-profile-field" value={sensitiveField} onChange={(event) => setSensitiveField(event.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3 text-sm">
                     <option value="bankAccountNumber">Bank account number</option>
                     <option value="bankIfscCode">Bank IFSC code</option>
@@ -1319,15 +1319,15 @@ function OverviewTab({
                   </select>
                 </div>
                 <div>
-                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-value">New value</label>
+                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-value">New Value</label>
                   <input id="sensitive-profile-value" type="password" autoComplete="off" value={sensitiveValue} onChange={(event) => setSensitiveValue(event.target.value)} required className="mt-1.5 h-10 w-full rounded-xl border border-line bg-white px-3 text-sm" placeholder="Enter new value" />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-reason">Reason for change</label>
+                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-reason">Reason For Change</label>
                   <textarea id="sensitive-profile-reason" value={sensitiveReason} onChange={(event) => setSensitiveReason(event.target.value)} required minLength={3} maxLength={1000} rows={3} className="mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" placeholder="Explain why this information needs to change" />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-document">Supporting document <span className="text-danger-500">*</span></label>
+                  <label className="text-[13px] font-medium text-ink-soft" htmlFor="sensitive-profile-document">Supporting Document <span className="text-danger-500">*</span></label>
                   <input
                     id="sensitive-profile-document"
                     type="file"
@@ -1359,7 +1359,7 @@ function OverviewTab({
                 {sensitiveNotice && <p role="status" className="sm:col-span-2 text-sm text-emerald-700">{sensitiveNotice}</p>}
                 <div className="sm:col-span-2">
                   <Button type="submit" disabled={sensitiveBusy}>
-                    {sensitiveBusy ? "Submitting…" : "Submit for approval"}
+                    {sensitiveBusy ? "Submitting…" : "Submit For Approval"}
                   </Button>
                 </div>
               </form>
@@ -1601,19 +1601,19 @@ function OverviewTab({
 
         <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
           <Info
-            label="Current status"
+            label="Current Status"
             value={(employee.status ?? "—").replace(/_/g, " ")}
           />
 
           <Info
-            label="Joining date"
+            label="Joining Date"
             value={
               employee.dateOfJoining ? formatDate(employee.dateOfJoining) : "—"
             }
           />
 
           <Info
-            label="Probation start"
+            label="Probation Start"
             value={
               employee.probationStartDate
                 ? formatDate(employee.probationStartDate)
@@ -1622,7 +1622,7 @@ function OverviewTab({
           />
 
           <Info
-            label="Probation end"
+            label="Probation End"
             value={
               employee.probationEndDate
                 ? formatDate(employee.probationEndDate)
@@ -2024,7 +2024,7 @@ function OverviewTab({
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <Info label="Certification" value={item.name ?? "—"} />
                     <Info
-                      label="Issuing organization"
+                      label="Issuing Organization"
                       value={item.issuingOrganization ?? "—"}
                     />
                     <Info
@@ -2032,11 +2032,11 @@ function OverviewTab({
                       value={item.credentialId ?? "—"}
                     />
                     <Info
-                      label="Issue date"
+                      label="Issue Date"
                       value={item.issueDate ? formatDate(item.issueDate) : "—"}
                     />
                     <Info
-                      label="Expiry date"
+                      label="Expiry Date"
                       value={
                         item.expiryDate ? formatDate(item.expiryDate) : "—"
                       }
@@ -2066,11 +2066,11 @@ function OverviewTab({
                     <Info label="Company" value={item.companyName ?? "—"} />
                     <Info label="Designation" value={item.designation ?? "—"} />
                     <Info
-                      label="Start date"
+                      label="Start Date"
                       value={item.startDate ? formatDate(item.startDate) : "—"}
                     />
                     <Info
-                      label="End date"
+                      label="End Date"
                       value={
                         item.endDate ? formatDate(item.endDate) : "Present"
                       }
@@ -2833,8 +2833,8 @@ function AttendanceTab({ employeeId }: { employeeId: string }) {
           <thead>
             <tr className="text-ink-faint">
               <th className="pb-2 font-medium">Date</th>
-              <th className="pb-2 font-medium">Check-in</th>
-              <th className="pb-2 font-medium">Check-out</th>
+              <th className="pb-2 font-medium">Check-In</th>
+              <th className="pb-2 font-medium">Check-Out</th>
               <th className="pb-2 font-medium">Hours</th>
               <th className="pb-2 font-medium">Status</th>
             </tr>
@@ -4299,12 +4299,12 @@ function EditEmployeeModal({
                     {...register(`workHistory.${index}.designation`)}
                   />
                   <TextField
-                    label="Start date"
+                    label="Start Date"
                     type="date"
                     {...register(`workHistory.${index}.startDate`)}
                   />
                   <TextField
-                    label="End date"
+                    label="End Date"
                     type="date"
                     {...register(`workHistory.${index}.endDate`)}
                   />

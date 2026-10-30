@@ -344,7 +344,7 @@ export default function Documents() {
               <FileText className="h-7 w-7 text-brand-600" />
             </div>
             <h4 className="font-serif text-xl font-medium text-ink">
-              No company documents uploaded
+              No Company Documents Uploaded
             </h4>
             <p className="mt-2 max-w-md text-sm text-ink-muted leading-normal text-center">
               Company-issued offer letters, policies, and contracts will appear here.
@@ -394,7 +394,7 @@ export default function Documents() {
       ) : !employeeUploadedDocs.length ? (
         <EmptyState
           icon={FileBadge2}
-          title="No documents uploaded"
+          title="No Documents Uploaded"
           description="Offer letters, identity proof, and employee records will appear here."
         />
       ) : (
@@ -429,7 +429,7 @@ export default function Documents() {
                 leftIcon={<Upload size={14} />}
                 onClick={() => setIsUploadOpen(true)}
               >
-                Upload document
+                Upload Document
               </Button>
             )}
           </div>
@@ -454,7 +454,7 @@ export default function Documents() {
                 size="sm"
                 onClick={() => setShowInsights((value) => !value)}
               >
-                ✨ {showInsights ? "Hide insights" : "Show insights"}
+                ✨ {showInsights ? "Hide insights" : "Show Insights"}
               </Button>
             </div>
             {showInsights && (
@@ -570,7 +570,7 @@ export default function Documents() {
           ) : !assets.length ? (
             <EmptyState
               icon={Briefcase}
-              title="No assets assigned"
+              title="No Assets Assigned"
               description="Assigned equipment and inventory will appear here once issued."
             />
           ) : (
@@ -596,7 +596,7 @@ export default function Documents() {
             ) : !requestedFromMe.length ? (
               <EmptyState
                 icon={Inbox}
-                title="No pending requests"
+                title="No Pending Requests"
                 description="Documents requested from you will appear here."
               />
             ) : (
@@ -626,7 +626,7 @@ export default function Documents() {
                 className="whitespace-nowrap px-4"
                 onClick={() => setIsRequestCompanyOpen(true)}
               >
-                New request
+                New Request
               </Button>
             </div>
 
@@ -635,7 +635,7 @@ export default function Documents() {
             ) : !requestedByMe.length ? (
               <EmptyState
                 icon={ClipboardList}
-                title="No requests yet"
+                title="No Requests Yet"
                 description="Offer letters, salary certificates, and other company documents you request will appear here."
               />
             ) : (
@@ -1302,7 +1302,7 @@ function UploadDocumentModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Upload document"
+      title="Upload Document"
       size="md"
       footer={
         <>

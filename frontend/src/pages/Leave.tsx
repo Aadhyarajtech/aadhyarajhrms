@@ -257,7 +257,7 @@ export default function Leave() {
     <div className="premium-page space-y-1">
       <PageHeader
         title="Leave"
-        subtitle="Apply for leave, track balances, and manage approvals."
+        subtitle="Apply For Leave, Track Balances, and Manage Approvals."
         action={
           <div className="flex flex-col items-center gap-2">
             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -268,7 +268,7 @@ export default function Leave() {
                   setApplyOpen(true);
                 }}
               >
-                Apply for leave
+                Apply For Leave
               </Button>
 
               {isLeaveAdmin && (
@@ -277,7 +277,7 @@ export default function Leave() {
                   leftIcon={<Users size={16} />}
                   onClick={() => setBulkApplyOpen(true)}
                 >
-                  Apply for employee
+                  Apply For Employee
                 </Button>
               )}
             </div>
@@ -453,7 +453,7 @@ function MyLeave() {
         ) : !activeRequests?.length ? (
           <EmptyState
             icon={CalendarDays}
-            title="No leave requests yet"
+            title="No Leave Requests Yet"
             description="Apply for leave using the button above."
           />
         ) : (
@@ -2224,13 +2224,13 @@ function AdjustLeaveBalanceModal({
         </div>
 
         <SelectField
-          label="Leave type"
+          label="Leave Type"
           value={leaveTypeId}
           onChange={(event) => setLeaveTypeId(event.target.value)}
           disabled={leaveTypesLoading}
           required
         >
-          <option value="">Select a leave type</option>
+          <option value="">Select a Leave Type</option>
           {leaveTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
         </SelectField>
 
@@ -2425,13 +2425,13 @@ function BulkApplyLeaveModal({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <SelectField
-            label="Leave type"
+            label="Leave Type"
             required
             value={leaveTypeId}
             onChange={(event) => setLeaveTypeId(event.target.value)}
           >
             <option value="">
-              {leaveTypesLoading ? "Loading leave types..." : "Select leave type"}
+              {leaveTypesLoading ? "Loading Leave Types..." : "Select Leave Type"}
             </option>
             {leaveTypes?.filter((type) => !/^(maternity|paternity) leave$/i.test(type.name)).map((type) => (
               <option key={type.id} value={type.id}>
@@ -2442,7 +2442,7 @@ function BulkApplyLeaveModal({
 
           <div className="relative">
             <label className="mb-1 block text-[11px] font-medium text-ink">
-              Apply to <span className="text-red-500">*</span>
+              Apply To <span className="text-red-500">*</span>
             </label>
 
             <button
@@ -2831,7 +2831,7 @@ function ApplyModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Apply for leave"
+      title="Apply For Leave"
       footer={
         <>
           <Button
@@ -2846,14 +2846,14 @@ function ApplyModal({
             disabled={mutation.isPending || (isFamilyLeave && !birthCertificate) || (isMaternityLeave && (!Number.isInteger(Number(survivingChildrenBeforeBirth)) || Number(survivingChildrenBeforeBirth) < 0 || survivingChildrenBeforeBirth.trim() === ""))}
             isLoading={mutation.isPending}
           >
-            Submit request
+            Submit Request
           </Button>
         </>
       }
     >
       <div className="space-y-4">
         <SelectField
-          label="Leave type"
+          label="Leave Type"
           required
           error={
             errors.leaveTypeId?.message
@@ -2861,7 +2861,7 @@ function ApplyModal({
           {...register("leaveTypeId")}
         >
           <option value="">
-            Select leave type
+            Select Leave Type
           </option>
 
           {availableLeaveTypes.map((t) => (
@@ -2871,7 +2871,7 @@ function ApplyModal({
 
         <div className="grid grid-cols-2 gap-4">
           <TextField
-            label="Start date"
+            label="Start Date"
             type="date"
             required
             min={todayIso}
@@ -2897,7 +2897,7 @@ function ApplyModal({
             </div>
           ) : (
             <TextField
-              label="End date"
+              label="End Date"
               type="date"
               required
               min={startDate || todayIso}
@@ -2934,7 +2934,7 @@ function ApplyModal({
         {!isFamilyLeave && <div className="space-y-2 rounded-xl border border-line/60 bg-canvas/30 p-3">
           <label className="flex items-center gap-2 text-[12px] font-medium text-ink">
             <input type="checkbox" className="h-4 w-4 rounded border-line" {...register("halfDay")} />
-            Apply as half-day
+            Apply As Half-Day
           </label>
           {watch("halfDay") && (
             <SelectField label="Half-day" required error={errors.halfDayType?.message} {...register("halfDayType")}>

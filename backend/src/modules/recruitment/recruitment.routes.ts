@@ -1415,7 +1415,7 @@ recruitmentRouter.post(
   validate(offerSchema),
   async (req, res, next) => {
     try {
-      const candidate = await repo.generateOffer(req.params.id, req.body);
+      const candidate = await repo.generateOffer(req.params.id, req.body, req.get("origin"));
 
       if (!candidate) {
         throw AppError.notFound("Candidate not found.");

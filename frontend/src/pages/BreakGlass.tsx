@@ -69,19 +69,19 @@ type GrantedData = {
 };
 
 const FIELDS: { value: BreakGlassField; label: string }[] = [
-    { value: "emergencyContactName", label: "Emergency contact name" },
-    { value: "emergencyContactPhone", label: "Emergency contact phone" },
-    { value: "emergencyContactRelationship", label: "Emergency contact relationship" },
-    { value: "emergencyContactEmail", label: "Emergency contact email" },
-    { value: "medicalConditions", label: "Medical conditions" },
-    { value: "bloodGroup", label: "Blood group" },
-    { value: "insurancePolicyNumber", label: "Insurance policy number" },
+    { value: "emergencyContactName", label: "Emergency Contact Name" },
+    { value: "emergencyContactPhone", label: "Emergency Contact Phone" },
+    { value: "emergencyContactRelationship", label: "Emergency Contact Relationship" },
+    { value: "emergencyContactEmail", label: "Emergency Contact Email" },
+    { value: "medicalConditions", label: "Medical Conditions" },
+    { value: "bloodGroup", label: "Blood Group" },
+    { value: "insurancePolicyNumber", label: "Insurance Policy Number" },
     { value: "employeeAadhaar", label: "Aadhaar" },
     { value: "employeePan", label: "PAN" },
     { value: "employeeTan", label: "TAN" },
-    { value: "bankAccountNumber", label: "Bank account number" },
-    { value: "bankIfscCode", label: "Bank IFSC code" },
-    { value: "bankBranch", label: "Bank branch" },
+    { value: "bankAccountNumber", label: "Bank Account Number" },
+    { value: "bankIfscCode", label: "Bank IFSC Code" },
+    { value: "bankBranch", label: "Bank Branch" },
 ];
 
 const STATUS_STYLES: Record<RequestStatus, string> = {
@@ -325,7 +325,7 @@ export default function BreakGlass() {
                     <div className="flex items-start gap-2">
                         <ShieldCheck size={19} className="mt-0.5 shrink-0" />
                         <div>
-                            <p className="font-semibold">Emergency access safeguards</p>
+                            <p className="font-semibold">Emergency Access Safeguards</p>
                             <p className="mt-1">
                                 Request only the minimum information needed. Access is unavailable
                                 until an authorized administrator approves it, and grants expire
@@ -336,7 +336,7 @@ export default function BreakGlass() {
                 </section>
                 {!isAdmin && (
                     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <h2 className="text-lg font-bold">Request emergency access</h2>
+                        <h2 className="text-lg font-bold">Request Emergency Access</h2>
                         <p className="mt-1 text-sm text-slate-500">
                             Provide a clear reason and select only the fields needed for the emergency.
                         </p>
@@ -344,14 +344,14 @@ export default function BreakGlass() {
                         <form onSubmit={createRequest} className="mt-5 space-y-5">
                             <div className="grid gap-4 md:grid-cols-2">
                                 <label className="block text-sm font-semibold">
-                                    Target employee
+                                    Target Employee
                                     <select
                                         value={targetEmployeeId}
                                         onChange={(event) => setTargetEmployeeId(event.target.value)}
                                         required
                                         className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"
                                     >
-                                        <option value="">Select employee</option>
+                                        <option value="">Select Employee</option>
                                         {employees.map((employee) => (
                                             <option key={employee.id} value={employee.id}>
                                                 {employeeName(employee.id)}
@@ -362,16 +362,16 @@ export default function BreakGlass() {
                                 </label>
 
                                 <label className="block text-sm font-semibold">
-                                    Access duration
+                                    Access Duration
                                     <select
                                         value={durationMinutes}
                                         onChange={(event) => setDurationMinutes(Number(event.target.value))}
                                         className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"
                                     >
-                                        <option value={5}>5 minutes</option>
-                                        <option value={10}>10 minutes</option>
-                                        <option value={15}>15 minutes</option>
-                                        <option value={30}>30 minutes</option>
+                                        <option value={5}>5 Minutes</option>
+                                        <option value={10}>10 Minutes</option>
+                                        <option value={15}>15 Minutes</option>
+                                        <option value={30}>30 Minutes</option>
                                     </select>
                                 </label>
                             </div>
@@ -406,7 +406,7 @@ export default function BreakGlass() {
                             </fieldset>
 
                             <label className="block text-sm font-semibold">
-                                Emergency reason
+                                Emergency Reason
                                 <textarea
                                     value={reason}
                                     onChange={(event) => setReason(event.target.value)}
@@ -423,7 +423,7 @@ export default function BreakGlass() {
                                 disabled={busy !== "" || loading}
                                 className="rounded-xl bg-rose-700 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-800 disabled:opacity-50"
                             >
-                                {busy === "create" ? "Submitting..." : "Submit emergency request"}
+                                {busy === "create" ? "Submitting..." : "Submit Emergeny Request"}
                             </button>
                         </form>
                     </section>
@@ -451,7 +451,7 @@ export default function BreakGlass() {
                     <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
                         <div>
                             <h2 className="text-lg font-bold">
-                                {isAdmin ? "All emergency access requests" : "My emergency access requests"}
+                                {isAdmin ? "All emergency access requests" : "My Emergeny Access Request"}
                             </h2>
                             <p className="mt-1 text-sm text-slate-500">
                                 {requests.length} request{requests.length === 1 ? "" : "s"} returned by the server

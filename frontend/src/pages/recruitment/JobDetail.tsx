@@ -4512,11 +4512,10 @@ function OfferLetterModal({
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <a
                   href={resolveAssetUrl(current.offer.offerUrl) ?? "#"}
-                  target="_blank"
-                  rel="noreferrer"
+                  download
                   className="inline-flex text-[12px] font-medium text-brand-600 hover:underline"
                 >
-                  Open generated offer letter
+                  Download generated offer letter
                 </a>
 
                 <Button
@@ -4850,11 +4849,10 @@ function CandidateLifecycleModal({
                     href={
                       resolveAssetUrl(current.offer.offerUrl) ?? "#"
                     }
-                    target="_blank"
-                    rel="noreferrer"
+                    download
                     className="inline-block text-[12px] font-medium text-brand-600 hover:underline"
                   >
-                    Open generated offer letter
+                    Download generated offer letter
                   </a>
                 )}
               </div>

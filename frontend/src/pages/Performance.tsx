@@ -380,7 +380,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
         ) : !review ? (
           <EmptyState
             icon={ClipboardList}
-            title="No review cycle assigned yet"
+            title="No Review Cycle Assigned Yet"
             description="Your manager or HR will initiate your review when the cycle begins."
           />
         ) : (
@@ -869,7 +869,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
               leftIcon={<Plus size={14} />}
               onClick={() => setGoalOpen(true)}
             >
-              Add goal
+              Add Goal
             </Button>
           }
         />
@@ -878,7 +878,7 @@ function MyPerformance({ activeCycleId }: { activeCycleId?: string }) {
         ) : !goals?.length ? (
           <EmptyState
             icon={Target}
-            title="No goals yet"
+            title="No Goals Yet"
             description="Set a goal to track your progress this cycle."
           />
         ) : (
@@ -1989,7 +1989,7 @@ function TeamReviews({
                       }
                       isLoading={ensureMutation.isPending}
                     >
-                      Start review
+                      Start Review
                     </Button>
                   ) : (
                     <Badge tone="neutral">No reporting manager</Badge>
@@ -2023,7 +2023,7 @@ function TeamReviews({
                       })
                     }
                   >
-                    Conduct review
+                    Conduct Review
                   </Button>
                 ) : (
                   <Badge tone="neutral">Awaiting self-review</Badge>
@@ -2046,7 +2046,7 @@ function TeamReviews({
                       })
                     }
                   >
-                    360 feedback
+                    360 Feedback
                   </Button>
                 )}
                 <Button
@@ -2059,7 +2059,7 @@ function TeamReviews({
                     })
                   }
                 >
-                  Assign goal
+                  Assign Goal
                 </Button>
               </div>
             </div>
@@ -2462,7 +2462,7 @@ function FeedbackRequests() {
             <MessageSquare size={18} className="mt-0.5 text-brand-600" />
             <div>
               <p className="text-[13px] font-medium text-ink">
-                Anonymous feedback
+                Anonymous Feedback
               </p>
               <p className="mt-1 text-[12px] leading-5 text-ink-soft">
                 Rate collaboration, communication, and ownership. Your name is
@@ -2476,7 +2476,7 @@ function FeedbackRequests() {
         {!pendingReviews.length ? (
           <EmptyState
             icon={CheckCircle2}
-            title="No pending 360 feedback"
+            title="No Pending 360 Feedback"
             description={
               activeCycle
                 ? "There are no outstanding feedback requests for the active cycle."
@@ -3156,7 +3156,7 @@ function SelfReviewModal({
       <div className="space-y-4">
         <div>
           <label className="text-[13px] font-medium text-ink-soft">
-            Self rating
+            Self Rating
           </label>
           <div className="mt-1.5 flex gap-1">
             {[1, 2, 3, 4, 5].map((n) => (

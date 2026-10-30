@@ -2743,7 +2743,7 @@ export async function getAiAttendanceInsightsForEmployees(
   } else if (attendanceRate >= 75) {
     patterns.push({
       type: "INFO",
-      title: "Moderate overall attendance",
+      title: "Moderate Overall Attendance",
       description: `The selected employee group has an overall attendance rate of ${attendanceRate}%.`,
     });
   } else {
@@ -2767,7 +2767,7 @@ export async function getAiAttendanceInsightsForEmployees(
   } else if (averageWorkHours > 0) {
     patterns.push({
       type: "INFO",
-      title: "Working hours",
+      title: "Working Hours",
       description: `Average recorded working time is ${averageWorkHours} hours per working day.`,
     });
   }

@@ -65,7 +65,6 @@ import {
 
   AnnouncementsApi,
   LeaveApi,
-  RecruitmentApi,
 } from "@/lib/endpoints";
 
 import { GoogleCalendarApi } from "@/lib/googleCalendar";
@@ -241,13 +240,6 @@ export default function Dashboard() {
         employeeId: employeeId!,
       }),
     enabled: !isAdminDashboard && Boolean(employeeId),
-    refetchInterval: 30000,
-    refetchOnWindowFocus: true,
-  });
-
-  useQuery({
-    queryKey: ["dashboard", "recruitment-open-roles"],
-    queryFn: () => RecruitmentApi.jobs(),
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
   });
@@ -509,9 +501,9 @@ export default function Dashboard() {
 
   const { kpis } = data;
 
-  // Keep the displayed open-role KPI consistent across every dashboard role.
-  // The requested organization-wide open-role count is 10.
-  const availableOpenRoles = 10;
+  // Always display the live organization-wide open-role count from the
+  // dashboard API instead of a hardcoded value.
+  const availableOpenRoles = Number(kpis?.openRoles ?? 0);
 
 
 
@@ -681,7 +673,7 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-          <Card className="mt-5"><div className="flex items-center justify-between gap-3"><CardHeader title="Important announcements" subtitle="Recent HR updates and company communications"/><Link to="/app/announcements" className="mr-5 text-[11px] font-medium text-brand-600 hover:underline">View all</Link></div><div className="px-5 pb-5">{announcements.filter(a=>a.status==="PUBLISHED").sort((a,b)=>new Date(b.publishedAt??b.createdAt).getTime()-new Date(a.publishedAt??a.createdAt).getTime()).slice(0,1).map(a=><Link key={a.id} to="/app/announcements" className="flex items-start gap-4 rounded-2xl border border-line/60 bg-gradient-to-r from-brand-50/50 to-white p-4 transition hover:border-brand-200 hover:bg-brand-50/60"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-600"><Megaphone size={18}/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-[13px] font-semibold text-ink">{a.title}</p><Badge tone="brand" className="px-2 py-0.5 text-[9px]">New</Badge></div><p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-ink-faint">{a.body}</p><p className="mt-2 text-[10px] text-ink-faint">{formatDate(a.publishedAt??a.createdAt,{day:"numeric",month:"short",year:"numeric"})}</p></div><ArrowRight size={15} className="mt-1 shrink-0 text-brand-500"/></Link>)}{!announcements.length&&<p className="py-5 text-center text-[12px] text-ink-faint">No announcements available.</p>}</div></Card>
+          <Card className="mt-5"><div className="flex items-center justify-between gap-3"><CardHeader title="Important Announcements" subtitle="Recent HR updates and company communications"/><Link to="/app/announcements" className="mr-5 text-[11px] font-medium text-brand-600 hover:underline">View all</Link></div><div className="px-5 pb-5">{announcements.filter(a=>a.status==="PUBLISHED").sort((a,b)=>new Date(b.publishedAt??b.createdAt).getTime()-new Date(a.publishedAt??a.createdAt).getTime()).slice(0,1).map(a=><Link key={a.id} to="/app/announcements" className="flex items-start gap-4 rounded-2xl border border-line/60 bg-gradient-to-r from-brand-50/50 to-white p-4 transition hover:border-brand-200 hover:bg-brand-50/60"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-600"><Megaphone size={18}/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-[13px] font-semibold text-ink">{a.title}</p><Badge tone="brand" className="px-2 py-0.5 text-[9px]">New</Badge></div><p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-ink-faint">{a.body}</p><p className="mt-2 text-[10px] text-ink-faint">{formatDate(a.publishedAt??a.createdAt,{day:"numeric",month:"short",year:"numeric"})}</p></div><ArrowRight size={15} className="mt-1 shrink-0 text-brand-500"/></Link>)}{!announcements.length&&<p className="py-5 text-center text-[12px] text-ink-faint">No announcements available.</p>}</div></Card>
           <div className="mt-5 grid gap-5 md:grid-cols-2">
             <Card>
               <div className="flex items-center justify-between gap-3">
@@ -721,7 +713,7 @@ export default function Dashboard() {
             </Card>
             <Card><div className="flex items-center justify-between"><CardHeader title="Upcoming holidays & festivals"/><Link to="/app/announcements" className="mr-5 text-[11px] font-medium text-brand-600 hover:underline">View calendar</Link></div><div className="space-y-2 px-5 pb-5">{upcomingHolidays.slice(0,4).map(h=><div key={h.id} className="flex items-center gap-3 rounded-xl border border-success-100 bg-success-50/40 p-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-success-700 shadow-sm"><PartyPopper size={15}/></div><div className="min-w-0 flex-1"><p className="truncate text-[12px] font-medium text-ink">{h.title}</p><p className="mt-0.5 text-[10px] text-ink-faint">{formatDate(h.eventStartAt,{day:"numeric",month:"short",year:"numeric"})}</p></div><Badge tone="brand" className="shrink-0 px-2 py-0.5 text-[9px]">Holiday</Badge></div>)}{!upcomingHolidays.length&&<p className="py-5 text-center text-[12px] text-ink-faint">No upcoming holidays.</p>}</div></Card>
           </div>
-          <Link to="/app/recruitment" className="mt-5 block"><Card hoverable className="overflow-hidden border-0 bg-gradient-to-r from-brand-600 via-brand-600 to-brand-800 text-white shadow-lg"><div className="relative flex min-h-[105px] items-center justify-between overflow-hidden px-6 py-5"><div className="absolute -right-10 -top-16 h-40 w-40 rounded-full bg-white/10"/><div className="absolute right-24 -bottom-20 h-40 w-40 rounded-full bg-white/10"/><div className="relative flex items-center gap-4"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15"><Briefcase size={23}/></div><div><p className="text-[11px] font-medium text-white/70">Recruitment pipeline</p><p className="mt-1 font-display text-2xl font-medium">{availableOpenRoles} open roles</p></div></div><div className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-brand-600 shadow-sm"><ArrowRight size={19}/></div></div></Card></Link>
+          <Link to="/app/recruitment" className="mt-5 block"><Card hoverable className="overflow-hidden border-0 bg-gradient-to-r from-brand-600 via-brand-600 to-brand-800 text-white shadow-lg"><div className="relative flex min-h-[105px] items-center justify-between overflow-hidden px-6 py-5"><div className="absolute -right-10 -top-16 h-40 w-40 rounded-full bg-white/10"/><div className="absolute right-24 -bottom-20 h-40 w-40 rounded-full bg-white/10"/><div className="relative flex items-center gap-4"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15"><Briefcase size={23}/></div><div><p className="text-[11px] font-medium text-white/70">Recruitment Pipeline</p><p className="mt-1 font-display text-2xl font-medium">{availableOpenRoles} Open Roles</p></div></div><div className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-brand-600 shadow-sm"><ArrowRight size={19}/></div></div></Card></Link>
         </div>
       </div>
     );

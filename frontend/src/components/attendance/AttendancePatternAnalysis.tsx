@@ -477,7 +477,7 @@ export default function AttendancePatternAnalysis({
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="rounded-xl bg-white p-4">
               <p className="text-xs text-gray-500">
-                Attendance variation
+                Attendance Variation
               </p>
 
               <p className="mt-2 text-2xl font-bold text-gray-900">
@@ -493,7 +493,7 @@ export default function AttendancePatternAnalysis({
 
             <div className="rounded-xl bg-white p-4">
               <p className="text-xs text-gray-500">
-                Check-in variation
+                Check-in Variation
               </p>
 
               <p className="mt-2 text-2xl font-bold text-gray-900">
@@ -506,7 +506,7 @@ export default function AttendancePatternAnalysis({
 
             <div className="rounded-xl bg-white p-4">
               <p className="text-xs text-gray-500">
-                Work-hour variation
+                Work-hour Variation
               </p>
 
               <p className="mt-2 text-2xl font-bold text-gray-900">

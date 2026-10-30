@@ -1083,7 +1083,7 @@ export default function Recruitment() {
               </div>
               <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-semibold text-slate-500">
                 <Building2 size={13} />
-                {filteredJobs.length} of {jobs.length} roles shown
+                {filteredJobs.length} Of {jobs.length} Roles Shown
               </div>
             </div>
 
@@ -1093,7 +1093,7 @@ export default function Recruitment() {
                 <input
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Search title, department, designation, location..."
+                  placeholder="Search Title, Department, Designation, Location..."
                   className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                 />
               </div>
@@ -1103,7 +1103,7 @@ export default function Recruitment() {
                 onChange={(event) => setStatusFilter(event.target.value)}
                 className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
               >
-                <option value="ALL">All statuses</option>
+                <option value="ALL">All Statuses</option>
                 <option value="PENDING_APPROVAL">Pending approval</option>
                 {statusOptions.filter((status) => status !== "PENDING_APPROVAL").map((status) => (
                   <option key={status} value={status}>{status.replace(/_/g, " ")}</option>
@@ -1115,9 +1115,9 @@ export default function Recruitment() {
                 onChange={(event) => setHiringModeFilter(event.target.value)}
                 className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
               >
-                <option value="ALL">All hiring modes</option>
+                <option value="ALL">All Hiring Modes</option>
                 <option value="STANDARD">Standard</option>
-                <option value="WALK_IN">Walk-in</option>
+                <option value="WALK_IN">Walk-In</option>
                 <option value="CAMPUS">Campus</option>
               </select>
 
@@ -1126,7 +1126,7 @@ export default function Recruitment() {
                 onChange={(event) => setDepartmentFilter(event.target.value)}
                 className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
               >
-                <option value="ALL">All departments</option>
+                <option value="ALL">All Departments</option>
                 {departmentOptions.map((department) => (
                   <option key={department} value={department}>{department}</option>
                 ))}

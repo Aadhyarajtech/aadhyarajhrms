@@ -866,7 +866,7 @@ function MyAttendance({
                 disabled={!canStartBreak}
                 isLoading={breakMutation.isPending && !breakInProgress}
               >
-                Take break
+                Take Break
               </Button>
 
               <Button
@@ -878,7 +878,7 @@ function MyAttendance({
                 disabled={!canEndBreak}
                 isLoading={breakMutation.isPending && breakInProgress}
               >
-                End break
+                End Break
               </Button>
 
               <Button
@@ -890,7 +890,7 @@ function MyAttendance({
                 disabled={!canCheckOut}
                 isLoading={checkOutMutation.isPending}
               >
-                Check out
+                Check Out
               </Button>
             </div>
 
@@ -1194,9 +1194,9 @@ function MyAttendance({
           title={
             selectedEmployeeId
               ? `${selectedEmployeeName?.firstName ?? "Selected employee"} ${selectedEmployeeName?.lastName ?? ""}`.trim() + " attendance log"
-              : "Attendance log"
+              : "Attendance Log"
           }
-          subtitle={`Selected period: ${monthName(month)} ${year}`}
+          subtitle={`Selected Period: ${monthName(month)} ${year}`}
           action={
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => goMonth(-1)}>
@@ -1243,31 +1243,31 @@ function MyAttendance({
         <SummaryCard
           icon={CheckCircle2}
           tone="success"
-          label="Present days"
+          label="Present Days"
           value={summary.present}
         />
         <SummaryCard
           icon={AlertCircle}
           tone="warning"
-          label="Half-day / leave"
+          label="Half-day / Leave"
           value={`${summary.halfDay + summary.onLeave}`}
         />
         <SummaryCard
           icon={Clock}
           tone="gold"
-          label="Late days"
+          label="Late Days"
           value={summary.late}
         />
         <SummaryCard
           icon={Clock}
           tone="brand"
-          label="Total hours"
+          label="Total Hours"
           value={`${summary.totalHours}h`}
         />
         <SummaryCard
           icon={Clock}
           tone="gold"
-          label="Overtime hours"
+          label="Overtime Hours"
           value={`${Math.round(summary.overtime * 100) / 100}h`}
         />
       </div>
@@ -1275,7 +1275,7 @@ function MyAttendance({
       <Card>
         <CardHeader
           title={`${monthName(month)} ${year}`}
-          subtitle="Daily attendance log"
+          subtitle="Daily Attendance Log"
           action={
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => goMonth(-1)}>
@@ -1984,7 +1984,7 @@ function RegularizeModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <label className="block text-[12px] font-medium text-ink">
-              Check-in time
+              Check-In Time
             </label>
             <input
               type="time"

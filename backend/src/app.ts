@@ -135,7 +135,16 @@ export function createApp() {
   // UPLOADS
   // =======================================================
 
-  app.use("/uploads", express.static(UPLOAD_DIR_ABSOLUTE));
+  app.use(
+    "/uploads",
+    express.static(UPLOAD_DIR_ABSOLUTE, {
+      setHeaders: (res, filePath) => {
+        if (filePath.toLowerCase().endsWith(".pdf")) {
+          res.setHeader("Content-Disposition", "attachment");
+        }
+      },
+    }),
+  );
   // Fallback for files uploaded through the shared upload middleware: legacy
   // local files are served by express.static above, new files stream from GridFS.
   app.get("/uploads/:fileId", async (req, res, next) => {
@@ -146,7 +155,7 @@ export function createApp() {
       }
       const safeName = String(file.filename || "attachment").replace(/[^a-zA-Z0-9._ -]/g, "_");
       res.setHeader("Content-Type", file.contentType || "application/octet-stream");
-      res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
+      res.setHeader("Content-Disposition", `${String(file.contentType || "").toLowerCase() === "application/pdf" || safeName.toLowerCase().endsWith(".pdf") ? "attachment" : "inline"}; filename="${safeName}"`);
       res.setHeader("X-Content-Type-Options", "nosniff");
       streamGridFsFile(req.params.fileId, res);
     } catch (error) { next(error); }

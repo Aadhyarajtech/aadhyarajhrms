@@ -163,7 +163,7 @@ export default function SmartRegularizationAssistant({
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="w-full sm:max-w-xs">
               <label className="mb-1.5 block text-[13px] font-medium text-ink-soft">
-                Attendance date
+                Attendance Date
               </label>
 
               <input

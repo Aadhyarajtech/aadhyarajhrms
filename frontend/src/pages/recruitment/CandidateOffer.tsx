@@ -205,11 +205,10 @@ export default function CandidateOffer() {
                   <a
                     className="inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-white px-3 py-2 text-xs font-semibold text-brand-700 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300"
                     href={resolveAssetUrl(offer.offerUrl) ?? "#"}
-                    target="_blank"
-                    rel="noreferrer"
+                    download
                   >
                     <FileText size={15} />
-                    Offer letter
+                    Download offer letter
                   </a>
                 )}
               </div>

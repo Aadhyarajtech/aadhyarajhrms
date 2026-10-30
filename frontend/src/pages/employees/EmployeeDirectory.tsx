@@ -253,7 +253,7 @@ export default function EmployeeDirectory() {
                 Department
               </p>
               <p className="mt-1 max-w-[150px] truncate font-display text-lg font-semibold text-slate-900">
-                {departmentId ? "Filtered" : "All departments"}
+                {departmentId ? "Filtered" : "All Departments"}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
                 Workforce segment

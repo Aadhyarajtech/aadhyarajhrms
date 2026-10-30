@@ -448,7 +448,7 @@ function TeamLeaveRequests({ managerId }: { managerId: string }) {
         teamLeaveRequests.length === 0 && (
           <EmptyState
             icon={CalendarDays}
-            title="No leave requests"
+            title="No Leave Requests"
             description="Leave requests from your direct reports will appear here."
           />
         )}
@@ -758,9 +758,9 @@ function TeamAttendance({ managerId }: { managerId: string }) {
 
                     <th className="pb-3 font-medium">Department</th>
 
-                    <th className="pb-3 font-medium">Check-in</th>
+                    <th className="pb-3 font-medium">Check-In</th>
 
-                    <th className="pb-3 font-medium">Check-out</th>
+                    <th className="pb-3 font-medium">Check-Out</th>
 
                     <th className="pb-3 font-medium">Hours</th>
 
@@ -1015,15 +1015,15 @@ function TeamPerformance({ managerId }: { managerId: string }) {
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
                   <div className="rounded-xl bg-slate-50 px-3 py-2">
-                    <p className="text-[11px] text-ink-faint">Self rating</p>
+                    <p className="text-[11px] text-ink-faint">Self Rating</p>
                     <p className="mt-1 text-sm font-semibold text-ink">{review.selfRating ?? "—"}</p>
                   </div>
                   <div className="rounded-xl bg-slate-50 px-3 py-2">
-                    <p className="text-[11px] text-ink-faint">Manager rating</p>
+                    <p className="text-[11px] text-ink-faint">Manager Rating</p>
                     <p className="mt-1 text-sm font-semibold text-ink">{review.managerRating ?? "—"}</p>
                   </div>
                   <div className="rounded-xl bg-slate-50 px-3 py-2">
-                    <p className="text-[11px] text-ink-faint">Final rating</p>
+                    <p className="text-[11px] text-ink-faint">Final Rating</p>
                     <p className="mt-1 text-sm font-semibold text-ink">{review.finalRating ?? "—"}</p>
                   </div>
                 </div>

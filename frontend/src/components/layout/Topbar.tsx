@@ -602,7 +602,7 @@ export function Topbar({
                   onClick={() => checkOutMutation.mutate(undefined)}
                   isLoading={checkOutMutation.isPending}
                 >
-                  Check out
+                  Check Out
                 </Button>
               ) : todayAttendance?.checkOut ? (
                 <span className="inline-flex items-center gap-1.5 rounded-xl bg-success-50 px-3 py-2 text-[13px] font-medium text-success-700">

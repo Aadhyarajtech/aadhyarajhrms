@@ -2,6 +2,7 @@ import { AppError } from "@/utils/errors";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import PDFDocument from "pdfkit";
 import bcrypt from "bcryptjs";
 import {
   JobPosting,
@@ -2375,6 +2376,7 @@ export async function generateOffer(
     hra?: number;
     specialAllowance?: number;
   },
+  requestOrigin?: string,
 ) {
   const candidate = await Candidate.findById(id).lean();
 
@@ -2420,99 +2422,159 @@ export async function generateOffer(
   const uploads = path.join(process.cwd(), "uploads");
   fs.mkdirSync(uploads, { recursive: true });
 
-  const filename = `offer-${candidate._id}-${Date.now()}.html`;
-  const escapeHtml = (value: unknown) =>
-    String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-
-  const candidateName = `${escapeHtml(candidate.firstName)} ${escapeHtml(candidate.lastName)}`;
-  const jobTitle = escapeHtml(job.title);
-  const joiningDate = escapeHtml(input.joiningDate);
-  const offerLink = `${env.clientOrigins[0]}/candidate/offer/${rawToken}`;
+  const filename = `offer-${candidate._id}-${Date.now()}.pdf`;
+  const filePath = path.join(uploads, filename);
+  const candidateName = `${candidate.firstName ?? ""} ${candidate.lastName ?? ""}`.trim();
+  const jobTitle = String(job.title ?? "Position");
+  // Use the frontend origin that initiated this request. This keeps local
+  // offers on localhost during development and makes deployed offers point
+  // to the deployed HRMS frontend, even when CLIENT_ORIGIN lists multiple
+  // allowed origins (for example localhost first and Vercel second).
+  const normalizedRequestOrigin = requestOrigin?.trim().replace(/\/+$/, "");
+  const offerOrigin = normalizedRequestOrigin &&
+    env.clientOrigins.includes(normalizedRequestOrigin)
+      ? normalizedRequestOrigin
+      : env.clientOrigins[0];
+  const offerLink = `${offerOrigin}/candidate/offer/${rawToken}`;
   const formatInr = (value: number) =>
-    `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+    `INR ${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  const formatDate = (value: string | Date) =>
+    new Date(value).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
 
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Employment Offer — ${jobTitle}</title>
-<style>
-  body{margin:0;background:#f4f7fb;color:#172033;font-family:Inter,Arial,Helvetica,sans-serif;line-height:1.55}
-  .page{max-width:820px;margin:32px auto;padding:20px}
-  .sheet{background:#fff;border:1px solid #e3e8f0;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px rgba(20,35,60,.08)}
-  .header{padding:30px 34px;background:linear-gradient(135deg,#242f8f,#4c5bd4);color:#fff}
-  .brand{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.85}
-  h1{margin:8px 0 4px;font-size:30px;line-height:1.15}
-  .subtitle{margin:0;color:rgba(255,255,255,.82);font-size:14px}
-  .content{padding:34px}
-  .date{text-align:right;color:#697386;font-size:13px;margin-bottom:28px}
-  p{font-size:14px;margin:0 0 15px}
-  .card{margin:24px 0;padding:20px;border:1px solid #e5eaf2;border-radius:16px;background:#fafbfe}
-  .card-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#4c5bd4;margin-bottom:12px}
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{padding:12px 10px;border-bottom:1px solid #e9edf4;text-align:left}
-  th:last-child,td:last-child{text-align:right}
-  tr:last-child td{border-bottom:0;font-weight:700}
-  .cta{margin:28px 0;padding:22px;border-radius:16px;background:#f1f4ff;border:1px solid #dbe2ff}
-  .cta a{display:inline-block;margin-top:12px;padding:12px 18px;border-radius:10px;background:#4c5bd4;color:#fff;text-decoration:none;font-weight:700;font-size:13px}
-  .note{font-size:12px;color:#6b7280}
-  .footer{padding:20px 34px;background:#fafbfe;border-top:1px solid #edf0f5;color:#7b8494;font-size:11px}
-</style>
-</head>
-<body>
-<div class="page"><div class="sheet">
-  <div class="header">
-    <div class="brand">AadhyaRaj Technologies</div>
-    <h1>Employment Offer</h1>
-    <p class="subtitle">Digital offer letter generated through AadhyaRaj HRMS</p>
-  </div>
-  <div class="content">
-    <div class="date">Issued: ${escapeHtml(new Date(now).toLocaleDateString("en-IN"))}</div>
-    <p>Dear <strong>${candidateName}</strong>,</p>
-    <p>We are pleased to offer you the position of <strong>${jobTitle}</strong> with AadhyaRaj Technologies.</p>
-    <p>We look forward to welcoming you and are pleased to present the following compensation and joining details.</p>
+  const pdf = new PDFDocument({
+    size: "A4",
+    margins: { top: 48, right: 52, bottom: 52, left: 52 },
+    info: {
+      Title: `Employment Offer - ${candidateName}`,
+      Subject: `Offer of employment for ${jobTitle}`,
+      Author: "AadhyaRaj Technologies",
+      Creator: "AadhyaRaj HRMS",
+    },
+  });
+  const output = fs.createWriteStream(filePath);
+  pdf.pipe(output);
 
-    <div class="card">
-      <div class="card-title">Offer summary</div>
-      <table>
-        <tr><th>Position</th><td>${jobTitle}</td></tr>
-        <tr><th>Candidate</th><td>${candidateName}</td></tr>
-        <tr><th>Proposed joining date</th><td>${joiningDate}</td></tr>
-      </table>
-    </div>
+  const pageWidth = pdf.page.width;
+  const contentWidth = pageWidth - 104;
+  const navy = "#242F8F";
+  const accent = "#4C5BD4";
+  const ink = "#172033";
+  const muted = "#687386";
+  const line = "#E3E8F0";
 
-    <div class="card">
-      <div class="card-title">Annual compensation</div>
-      <table>
-        <tr><th>Basic Salary</th><td>${formatInr(basic)}</td></tr>
-        <tr><th>House Rent Allowance (HRA)</th><td>${formatInr(hra)}</td></tr>
-        <tr><th>Special Allowance</th><td>${formatInr(specialAllowance)}</td></tr>
-        <tr><th>Total Annual CTC</th><td>${formatInr(input.annualCtc)}</td></tr>
-      </table>
-    </div>
+  pdf.rect(0, 0, pageWidth, 132).fill(navy);
+  pdf.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(10)
+    .text("AADHYARAJ TECHNOLOGIES", 52, 34, { characterSpacing: 1.5 });
+  pdf.fontSize(25).text("Employment Offer Letter", 52, 57);
+  pdf.fillColor("#E4E8FF").font("Helvetica").fontSize(10)
+    .text("Generated through AadhyaRaj HRMS", 52, 94);
 
-    <div class="cta">
-      <strong>Action required</strong>
-      <p style="margin-top:8px">Please review this offer and submit your acceptance or decline decision through the secure candidate portal.</p>
-      <a href="${offerLink}">Review &amp; Respond to Offer</a>
-      <p class="note" style="margin-top:12px">This secure link is valid for 30 days and is intended only for the candidate named above.</p>
-    </div>
+  pdf.fillColor(muted).font("Helvetica").fontSize(9)
+    .text(`Date of issue: ${formatDate(now)}`, 52, 154, {
+      width: contentWidth,
+      align: "right",
+    });
 
-    <p class="note">This document is digitally generated. The candidate's response is recorded in the recruitment system and is not entered by HR, an administrator, or a recruiter.</p>
-    <p>Regards,<br/><strong>AadhyaRaj Technologies — Recruitment Team</strong></p>
-  </div>
-  <div class="footer">SmartHR Pro / AadhyaRaj HRMS • Confidential recruitment document</div>
-</div></div>
-</body>
-</html>`;
+  pdf.fillColor(ink).font("Helvetica").fontSize(11)
+    .text(`Dear ${candidateName},`, 52, 190);
+  pdf.moveDown(0.8);
+  pdf.font("Helvetica").fontSize(10.5).fillColor(ink)
+    .text(
+      `We are pleased to offer you the position of ${jobTitle} with AadhyaRaj Technologies. We look forward to welcoming you and are pleased to present the following compensation and joining details.`,
+      { width: contentWidth, lineGap: 4, align: "left" },
+    );
+  pdf.moveDown(1.4);
 
-  fs.writeFileSync(path.join(uploads, filename), html, "utf8");
+  const drawSectionTitle = (title: string) => {
+    pdf.fillColor(accent).font("Helvetica-Bold").fontSize(10)
+      .text(title.toUpperCase(), 52, pdf.y, { characterSpacing: 0.8 });
+    pdf.moveDown(0.45);
+  };
+
+  const drawRows = (rows: Array<[string, string]>) => {
+    const labelWidth = 270;
+    rows.forEach(([label, value], index) => {
+      const y = pdf.y;
+      pdf.fillColor(ink).font(index === rows.length - 1 ? "Helvetica-Bold" : "Helvetica")
+        .fontSize(10).text(label, 62, y, { width: labelWidth });
+      pdf.fillColor(ink).font(index === rows.length - 1 ? "Helvetica-Bold" : "Helvetica")
+        .fontSize(10).text(value, 62 + labelWidth, y, {
+          width: contentWidth - labelWidth - 20,
+          align: "right",
+        });
+      pdf.moveDown(0.65);
+      pdf.strokeColor(line).lineWidth(0.6)
+        .moveTo(62, pdf.y - 3).lineTo(pageWidth - 62, pdf.y - 3).stroke();
+      pdf.moveDown(0.35);
+    });
+  };
+
+  drawSectionTitle("Offer summary");
+  drawRows([
+    ["Position", jobTitle],
+    ["Candidate", candidateName],
+    ["Proposed joining date", formatDate(input.joiningDate)],
+  ]);
+
+  pdf.moveDown(0.8);
+  drawSectionTitle("Annual compensation");
+  drawRows([
+    ["Basic salary", formatInr(basic)],
+    ["House Rent Allowance (HRA)", formatInr(hra)],
+    ["Special allowance", formatInr(specialAllowance)],
+    ["Total annual CTC", formatInr(input.annualCtc)],
+  ]);
+
+  pdf.moveDown(1.1);
+  pdf.roundedRect(52, pdf.y, contentWidth, 92, 9).fill("#F1F4FF");
+  const actionY = pdf.y + 15;
+  pdf.fillColor(navy).font("Helvetica-Bold").fontSize(10)
+    .text("ACTION REQUIRED", 66, actionY);
+  pdf.fillColor(ink).font("Helvetica").fontSize(9.5)
+    .text(
+      "Please review this offer and submit your acceptance or decline decision through the secure candidate portal:",
+      66,
+      actionY + 19,
+      { width: contentWidth - 28, lineGap: 3 },
+    );
+  pdf.fillColor(accent).font("Helvetica-Bold").fontSize(9.5)
+    .text("Review & Respond to Offer", 66, actionY + 55, {
+      link: offerLink,
+      underline: true,
+    });
+  pdf.y = actionY + 108;
+
+  pdf.fillColor(muted).font("Helvetica").fontSize(8.5)
+    .text(
+      "The secure response link is valid for 30 days and is intended only for the candidate named in this letter. The candidate's response is recorded in the recruitment system and is not entered by HR, an administrator, or a recruiter.",
+      52,
+      pdf.y,
+      { width: contentWidth, lineGap: 3 },
+    );
+  pdf.moveDown(1.4);
+  pdf.fillColor(ink).font("Helvetica").fontSize(10)
+    .text("Regards,", 52, pdf.y);
+  pdf.font("Helvetica-Bold").text("AadhyaRaj Technologies — Recruitment Team");
+  pdf.moveDown(1.2);
+  pdf.strokeColor(line).lineWidth(0.7)
+    .moveTo(52, pdf.y).lineTo(pageWidth - 52, pdf.y).stroke();
+  pdf.moveDown(0.5);
+  pdf.fillColor(muted).font("Helvetica").fontSize(8)
+    .text("SmartHR Pro / AadhyaRaj HRMS • Confidential recruitment document", {
+      width: contentWidth,
+      align: "center",
+    });
+
+  pdf.end();
+  await new Promise<void>((resolve, reject) => {
+    output.once("finish", resolve);
+    output.once("error", reject);
+    pdf.once("error", reject);
+  });
 
   await Candidate.updateOne(
     { _id: id },

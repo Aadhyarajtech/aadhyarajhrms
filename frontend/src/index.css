@@ -77,6 +77,15 @@
 }
 
 @layer utilities {
+  /* Keep placeholder hints muted; entered values retain the normal text color. */
+  input::placeholder,
+  textarea::placeholder,
+  input::-webkit-input-placeholder,
+  textarea::-webkit-input-placeholder {
+    color: #9ca3af !important;
+    opacity: 1;
+  }
+
   .font-display {
     font-feature-settings: "ss01" 1;
   }

@@ -421,7 +421,7 @@ export default function AiAttendanceForecast({
             <div className="mt-5 flex items-center gap-5 text-sm">
               <div className="flex items-center gap-2">
                 <span className="h-3 w-3 rounded-full bg-purple-600" />
-                Predicted attendance
+                Predicted Attendance
               </div>
 
               <div className="flex items-center gap-2">
@@ -442,7 +442,7 @@ export default function AiAttendanceForecast({
           <div className="space-y-4">
             <div className="flex items-center justify-between rounded-2xl bg-surface p-4">
               <span className="text-sm text-ink-faint">
-                Latest attendance
+                Latest Attendance
               </span>
 
               <span className="font-semibold text-ink">
@@ -452,7 +452,7 @@ export default function AiAttendanceForecast({
 
             <div className="flex items-center justify-between rounded-2xl bg-surface p-4">
               <span className="text-sm text-ink-faint">
-                Historical average
+                Historical Average
               </span>
 
               <span className="font-semibold text-ink">
@@ -462,7 +462,7 @@ export default function AiAttendanceForecast({
 
             <div className="flex items-center justify-between rounded-2xl bg-surface p-4">
               <span className="text-sm text-ink-faint">
-                Best month
+                Best Month
               </span>
 
               <span className="font-semibold text-ink">
@@ -472,7 +472,7 @@ export default function AiAttendanceForecast({
 
             <div className="flex items-center justify-between rounded-2xl bg-surface p-4">
               <span className="text-sm text-ink-faint">
-                Lowest month
+                Lowest Month
               </span>
 
               <span className="font-semibold text-ink">

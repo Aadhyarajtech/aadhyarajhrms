@@ -836,7 +836,7 @@ export default function Announcements() {
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search announcements..."
+            placeholder="Search Announcements..."
             className="h-10 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 text-sm text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
         </div>
